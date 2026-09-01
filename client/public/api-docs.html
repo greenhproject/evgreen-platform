@@ -267,13 +267,10 @@
       
       <div class="auth-box">
         <h3>Cómo autenticarse</h3>
-        <p>Incluye tu API Key en el header <code class="inline-code">X-API-Key</code> o como query param <code class="inline-code">api_key</code>:</p>
-        <pre><code># Opción 1: Header (recomendado)
-curl -H "X-API-Key: evg_tu_api_key_aqui" \
-  https://www.evgreen.lat/api/v1/stations
-
-# Opción 2: Query parameter
-curl "https://www.evgreen.lat/api/v1/stations?api_key=evg_tu_api_key_aqui"</code></pre>
+        <p>Incluye tu API Key únicamente en el header <code class="inline-code">X-API-Key</code>. No se aceptan claves en la URL para evitar que queden expuestas en historiales, logs o referers:</p>
+        <pre><code># Header obligatorio
+	curl -H "X-API-Key: evg_tu_api_key_aqui" \
+	  https://www.evgreen.lat/api/v1/stations</code></pre>
       </div>
 
       <h3>Límites de Uso</h3>

@@ -6,9 +6,11 @@
  */
 import { Resend } from "resend";
 import { getPlatformSettings } from "../db";
+import { decryptResendWebhookSecret } from "./resend-webhook-secret";
 
 let _cachedKey: string | undefined;
 let _cachedFrom: string | undefined;
+let _cachedWebhookSecret: string | undefined;
 let _cacheExpiry = 0;
 const CACHE_TTL_MS = 60_000; // 1 minuto de caché
 
@@ -20,10 +22,15 @@ async function refreshCache() {
     const settings = await getPlatformSettings();
     _cachedKey = (settings as any)?.resendApiKey || undefined;
     _cachedFrom = (settings as any)?.emailFrom || undefined;
+    const encryptedWebhookSecret = (settings as any)?.resendWebhookSecretEncrypted;
+    _cachedWebhookSecret = encryptedWebhookSecret
+      ? decryptResendWebhookSecret(encryptedWebhookSecret)
+      : undefined;
   } catch (err) {
     console.warn("[ResendClient] Could not read settings from DB:", err);
     _cachedKey = undefined;
     _cachedFrom = undefined;
+    _cachedWebhookSecret = undefined;
   }
   _cacheExpiry = now + CACHE_TTL_MS;
 }
@@ -34,6 +41,7 @@ async function refreshCache() {
 export function invalidateResendCache() {
   _cachedKey = undefined;
   _cachedFrom = undefined;
+  _cachedWebhookSecret = undefined;
   _cacheExpiry = 0;
 }
 
@@ -51,6 +59,12 @@ export async function getResendApiKey(): Promise<string> {
 export async function getEmailFrom(): Promise<string> {
   await refreshCache();
   return _cachedFrom || "noreply@evgreen.lat";
+}
+
+/** Obtiene la clave de firma exclusivamente desde la configuración cifrada de Admin. */
+export async function getResendWebhookSecret(): Promise<string> {
+  await refreshCache();
+  return _cachedWebhookSecret || "";
 }
 
 /**

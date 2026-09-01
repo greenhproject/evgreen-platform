@@ -1,0 +1,3 @@
+# Verificación de la mejora comercial
+
+La comprobación de tipos y las pruebas unitarias del módulo de transiciones comerciales finalizaron correctamente. La vista previa aislada no expone una sesión autenticada de administración, por lo que no permitió la captura automática. Posteriormente se comprobó la pantalla publicada con una sesión administrativa autenticada: el listado de Espacios Postulados carga y muestra los estados del pipeline. En una oferta publicada se validó visualmente el botón “Mover en pipeline”, el historial de pipeline y el diálogo “Confirmar fondeo”, incluyendo la nota de gestión obligatoria y el botón de confirmación inactivo sin texto. No se ejecutó ningún cambio de estado real.

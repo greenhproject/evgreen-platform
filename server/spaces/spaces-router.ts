@@ -9,11 +9,14 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { getDb } from "../db";
 import { getResendClient } from "../email/resend-client";
+import { buildCrowdfundingProjectInheritanceUpdate, getCrowdfundingInheritanceSnapshot } from "./crowdfunding-inheritance";
 import {
   spaceSubmissions,
   spacePhotos,
   crowdfundingProjects,
   investorLeads,
+  letterEmailEvents,
+  spaceStatusHistory,
 } from "../../drizzle/schema";
 import { eq, desc, and, sql, like, or, inArray, count, gte, lte, isNull, isNotNull } from "drizzle-orm";
 import { randomBytes } from "crypto";
@@ -21,14 +24,24 @@ import { storagePut } from "../storage";
 import { invokeLLM } from "../_core/llm";
 import { buildEmailParams } from "../utils/email-helper";
 import { optionalFormInteger, optionalFormNumber } from "./space-input-normalization";
+import { canManageCommercialPipeline, canManageSpaceAdministration } from "./pipeline-access";
+import { assertCommercialTransition, type SpacePipelineStatus } from "./pipeline-transitions";
 
 // ============================================================================
 // ROLE GUARDS
 // ============================================================================
 
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
-  if (ctx.user.role !== "admin" && ctx.user.role !== "staff") {
+  if (!canManageSpaceAdministration(ctx.user.role)) {
     throw new TRPCError({ code: "FORBIDDEN", message: "Se requiere rol de administrador." });
+  }
+  return next({ ctx });
+});
+
+/** Permite el seguimiento comercial sin abrir privilegios de administración masiva. */
+const commercialPipelineProcedure = protectedProcedure.use(({ ctx, next }) => {
+  if (!canManageCommercialPipeline(ctx.user.role)) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "No tienes permiso para gestionar el pipeline comercial." });
   }
   return next({ ctx });
 });
@@ -43,28 +56,80 @@ async function getDatabase() {
   return db;
 }
 
-async function generateSubmissionCode(): Promise<string> {
-  const db = await getDatabase();
+function toSqlTimestamp(date = new Date()) {
+  return date.toISOString().slice(0, 19).replace("T", " ");
+}
+
+async function recordSpaceStatusChange(
+  db: any,
+  input: {
+    submissionId: number;
+    fromStatus: SpacePipelineStatus;
+    toStatus: SpacePipelineStatus;
+    changedById?: number | null;
+    changedByRole?: string | null;
+    note?: string | null;
+  },
+) {
+  if (input.fromStatus === input.toStatus) return;
+  await db.insert(spaceStatusHistory).values({
+    ...input,
+    changedById: input.changedById ?? null,
+    changedByRole: input.changedByRole ?? null,
+    note: input.note?.trim() || null,
+    createdAt: toSqlTimestamp(),
+  } as any);
+}
+
+export async function generateSubmissionCode(db: any): Promise<string> {
   const year = new Date().getFullYear();
   const prefix = `SPE-${year}-`;
 
-  const [lastSubmission] = await db
+  const submissions = await db
     .select({ code: spaceSubmissions.code })
     .from(spaceSubmissions)
-    .where(like(spaceSubmissions.code, `${prefix}%`))
-    .orderBy(desc(spaceSubmissions.id))
-    .limit(1);
+    .where(like(spaceSubmissions.code, `${prefix}%`));
 
+  // Ignorar códigos legados inválidos o fuera del formato oficial y elegir el
+  // primer consecutivo libre de cuatro dígitos. Esto evita que valores anómalos
+  // como SPE-2026-0NaN o SPE-2026-764057 rompan futuras postulaciones.
+  const usedCodes = new Set(submissions.flatMap((submission: any) => {
+    const match = new RegExp(`^${prefix}(\\d+)$`).exec(submission.code ?? "");
+    const value = match ? Number.parseInt(match[1], 10) : NaN;
+    return Number.isInteger(value) && value >= 1 && value <= 9999 && match?.[1].length === 4 ? [value] : [];
+  }));
   let nextNum = 1;
-  if (lastSubmission) {
-    const lastNum = parseInt(lastSubmission.code.replace(prefix, ""), 10);
-    nextNum = lastNum + 1;
+  while (usedCodes.has(nextNum) && nextNum <= 9999) nextNum++;
+  if (nextNum > 9999) {
+    throw new TRPCError({ code: "CONFLICT", message: "Se agotó la numeración anual de postulaciones de espacios." });
   }
 
   return `${prefix}${nextNum.toString().padStart(4, "0")}`;
 }
 
-function generateLetterToken(): string {
+function isSubmissionCodeCollision(error: unknown): boolean {
+  let current: any = error;
+  for (let depth = 0; current && depth < 3; depth++, current = current.cause) {
+    const message = current instanceof Error ? current.message : String(current);
+    if (message.includes("space_submissions_code_unique") || message.includes("Duplicate entry") || current?.code === "ER_DUP_ENTRY") return true;
+  }
+  return false;
+}
+
+export async function insertSubmissionWithCodeRetry(db: any, buildValues: (code: string) => Record<string, unknown>, maxAttempts = 3) {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const code = await generateSubmissionCode(db);
+    try {
+      const [result] = await db.insert(spaceSubmissions).values(buildValues(code));
+      return { code, result };
+    } catch (error) {
+      if (!isSubmissionCodeCollision(error) || attempt === maxAttempts - 1) throw error;
+    }
+  }
+  throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "No se pudo asignar un código de postulación." });
+}
+
+export function generateLetterToken(): string {
   return randomBytes(32).toString("hex");
 }
 
@@ -87,6 +152,85 @@ const SPACE_TYPE_LABELS: Record<string, string> = {
   highway_rest: "Parador en carretera",
   other: "Otro",
 };
+
+export function getSpaceTypeLabel(spaceType: string | null | undefined) {
+  return SPACE_TYPE_LABELS[spaceType ?? ""] ?? spaceType ?? "Espacio";
+}
+
+const LETTER_ACCEPTANCE_BASE_URL = "https://app.evgreen.lat";
+
+function getLetterAcceptanceUrl(letterToken: string) {
+  return `${LETTER_ACCEPTANCE_BASE_URL}/carta-intencion/${letterToken}`;
+}
+
+export function getLetterShareLinkData(submission: { spaceStatus: string; letterToken: string | null; submitterName: string; spaceName: string }) {
+  if (submission.spaceStatus !== "letter_sent" || !submission.letterToken) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "El enlace alterno solo está disponible para cartas enviadas y pendientes de firma." });
+  }
+  return {
+    acceptUrl: getLetterAcceptanceUrl(submission.letterToken),
+    recipientName: submission.submitterName,
+    spaceName: submission.spaceName,
+  };
+}
+
+export function getRotatedLetterShareLinkData(submission: { spaceStatus: string; letterToken: string | null; submitterName: string; spaceName: string }, nextToken: string) {
+  getLetterShareLinkData(submission);
+  if (!nextToken || nextToken === submission.letterToken) {
+    throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "No se pudo rotar el enlace de firma." });
+  }
+  return { acceptUrl: getLetterAcceptanceUrl(nextToken), revokedPreviousLink: true };
+}
+
+export function buildLetterDispatchUpdate(letterToken: string, providerEmailId: string | null | undefined, now = new Date()) {
+  const timestamp = now.toISOString().slice(0, 19).replace("T", " ");
+  return {
+    spaceStatus: "letter_sent" as const,
+    letterToken,
+    letterSentAt: timestamp,
+    letterEmailId: providerEmailId ?? null,
+    letterDeliveryStatus: "SENT" as const,
+    letterDeliveryUpdatedAt: timestamp,
+  };
+}
+
+/**
+ * Autoriza una publicación excepcional sin alterar los datos de firma externa.
+ * La excepción solo aplica a una carta enviada que sigue pendiente de firma y
+ * exige una justificación de negocio que queda registrada en la postulación.
+ */
+export function getCrowdfundingPublicationDecision(
+  spaceStatus: string,
+  manualFormalizationReason?: string,
+  manualFormalizationEvidence?: string,
+) {
+  if (spaceStatus === "letter_accepted" || spaceStatus === "approved") {
+    return { isManualFormalization: false, reason: null as string | null, evidence: null as string | null };
+  }
+
+  if (spaceStatus === "letter_sent") {
+    const reason = manualFormalizationReason?.trim() ?? "";
+    const evidence = manualFormalizationEvidence?.trim() ?? "";
+    if (reason.length < 15) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Para formalizar internamente se requiere un motivo de al menos 15 caracteres.",
+      });
+    }
+    if (evidence.length < 5) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Para formalizar internamente se requiere evidencia o referencia de aprobación.",
+      });
+    }
+    return { isManualFormalization: true, reason, evidence };
+  }
+
+  throw new TRPCError({
+    code: "BAD_REQUEST",
+    message: "Solo se pueden publicar espacios aprobados, con carta aceptada o cartas enviadas formalizadas excepcionalmente.",
+  });
+}
 
 // ============================================================================
 // SPACES ROUTER
@@ -150,40 +294,37 @@ export const spacesRouter = router({
     }))
     .mutation(async ({ input }) => {
       const db = await getDatabase();
-      const code = await generateSubmissionCode();
-
-      // Insertar la postulación
-      const [result] = await db.insert(spaceSubmissions).values({
-        code,
-        submitterName: input.submitterName,
-        submitterEmail: input.submitterEmail,
-        submitterPhone: input.submitterPhone,
-        submitterCompany: input.submitterCompany || null,
-        submitterDocument: input.submitterDocument || null,
-        spaceName: input.spaceName,
-        spaceType: input.spaceType,
-        spaceTypeOther: input.spaceTypeOther || null,
-        address: input.address,
-        city: input.city,
-        department: input.department || null,
-        latitude: input.latitude || null,
-        longitude: input.longitude || null,
-        availableAreaM2: input.availableAreaM2 || null,
-        parkingSpots: input.parkingSpots || null,
-        transformerCapacityKva: input.transformerCapacityKva || null,
-        hasElectricalPanel: input.hasElectricalPanel ? 1 : 0,
-        electricalDistance: input.electricalDistance || null,
-        hasInternet: input.hasInternet ? 1 : 0,
-        operatingHoursStart: input.operatingHoursStart || "06:00",
-        operatingHoursEnd: input.operatingHoursEnd || "22:00",
-        is24Hours: input.is24Hours ? 1 : 0,
-        estimatedDailyVehicles: input.estimatedDailyVehicles || null,
-        estimatedEvPercent: input.estimatedEvPercent || null,
-        nearbyAttractions: input.nearbyAttractions || null,
-        socioeconomicStratum: input.socioeconomicStratum || null,
-        additionalNotes: input.additionalNotes || null,
-        spaceStatus: "pending",
-      });
+      const { code, result } = await insertSubmissionWithCodeRetry(db, (code) => ({
+            code,
+            submitterName: input.submitterName,
+            submitterEmail: input.submitterEmail,
+            submitterPhone: input.submitterPhone,
+            submitterCompany: input.submitterCompany || null,
+            submitterDocument: input.submitterDocument || null,
+            spaceName: input.spaceName,
+            spaceType: input.spaceType,
+            spaceTypeOther: input.spaceTypeOther || null,
+            address: input.address,
+            city: input.city,
+            department: input.department || null,
+            latitude: input.latitude || null,
+            longitude: input.longitude || null,
+            availableAreaM2: input.availableAreaM2 || null,
+            parkingSpots: input.parkingSpots || null,
+            transformerCapacityKva: input.transformerCapacityKva || null,
+            hasElectricalPanel: input.hasElectricalPanel ? 1 : 0,
+            electricalDistance: input.electricalDistance || null,
+            hasInternet: input.hasInternet ? 1 : 0,
+            operatingHoursStart: input.operatingHoursStart || "06:00",
+            operatingHoursEnd: input.operatingHoursEnd || "22:00",
+            is24Hours: input.is24Hours ? 1 : 0,
+            estimatedDailyVehicles: input.estimatedDailyVehicles || null,
+            estimatedEvPercent: input.estimatedEvPercent || null,
+            nearbyAttractions: input.nearbyAttractions || null,
+            socioeconomicStratum: input.socioeconomicStratum || null,
+            additionalNotes: input.additionalNotes || null,
+            spaceStatus: "pending",
+          }));
 
       const submissionId = result.insertId;
 
@@ -342,6 +483,14 @@ export const spacesRouter = router({
         })
         .where(eq(spaceSubmissions.id, submission.id));
 
+      await recordSpaceStatusChange(db, {
+        submissionId: submission.id,
+        fromStatus: "letter_sent",
+        toStatus: "letter_accepted",
+        changedByRole: "external_signer",
+        note: `Carta de intención firmada por ${input.signerName}.`,
+      });
+
       // Enviar copia del PDF al firmante por email (trazabilidad)
       try {
         if (pdfUrl && submission.submitterEmail) {
@@ -492,7 +641,7 @@ export const spacesRouter = router({
   // ADMIN: Listar todas las postulaciones con filtros
   // ========================================================================
   admin: router({
-    list: adminProcedure
+    list: commercialPipelineProcedure
       .input(z.object({
         status: z.string().optional(),
         search: z.string().optional(),
@@ -602,7 +751,7 @@ export const spacesRouter = router({
     // ========================================================================
     // ADMIN: Obtener detalle de una postulación
     // ========================================================================
-    getById: adminProcedure
+    getById: commercialPipelineProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ input }) => {
         const db = await getDatabase();
@@ -627,6 +776,26 @@ export const spacesRouter = router({
       }),
 
     // ========================================================================
+    // PIPELINE: Historial reciente de cambios de etapa
+    // ========================================================================
+    getStatusHistory: commercialPipelineProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const db = await getDatabase();
+        return db.select({
+          fromStatus: spaceStatusHistory.fromStatus,
+          toStatus: spaceStatusHistory.toStatus,
+          changedByRole: spaceStatusHistory.changedByRole,
+          note: spaceStatusHistory.note,
+          createdAt: spaceStatusHistory.createdAt,
+        })
+          .from(spaceStatusHistory)
+          .where(eq(spaceStatusHistory.submissionId, input.id))
+          .orderBy(desc(spaceStatusHistory.createdAt))
+          .limit(12);
+      }),
+
+    // ========================================================================
     // ADMIN: Actualizar estado de una postulación
     // ========================================================================
     updateStatus: adminProcedure
@@ -646,12 +815,24 @@ export const spacesRouter = router({
         trafficPotentialScore: z.number().int().min(0).max(10).optional(),
         // Datos de inversión estimados
         estimatedInvestmentCop: z.number().optional(),
+		minimumInvestmentCop: z.number().optional(),
+		estimatedRoiPercent: z.string().optional(),
+		estimatedPaybackMonths: z.number().int().optional(),
         estimatedPowerKw: z.number().int().optional(),
         estimatedChargerCount: z.number().int().optional(),
         recommendedChargerType: z.string().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
         const db = await getDatabase();
+
+        const [currentSubmission] = await db
+          .select({ spaceStatus: spaceSubmissions.spaceStatus })
+          .from(spaceSubmissions)
+          .where(eq(spaceSubmissions.id, input.id))
+          .limit(1);
+        if (!currentSubmission) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Postulación no encontrada" });
+        }
 
         const updateData: any = {
           spaceStatus: input.status,
@@ -664,6 +845,13 @@ export const spacesRouter = router({
         if (input.accessibilityScore !== undefined) updateData.accessibilityScore = input.accessibilityScore;
         if (input.trafficPotentialScore !== undefined) updateData.trafficPotentialScore = input.trafficPotentialScore;
         if (input.estimatedInvestmentCop !== undefined) updateData.estimatedInvestmentCop = input.estimatedInvestmentCop;
+		if (input.minimumInvestmentCop !== undefined) updateData.minimumInvestmentCop = input.minimumInvestmentCop;
+		if (input.estimatedRoiPercent !== undefined) updateData.estimatedRoiPercent = input.estimatedRoiPercent;
+		if (input.estimatedPaybackMonths !== undefined) updateData.estimatedPaybackMonths = input.estimatedPaybackMonths;
+		if (input.estimatedInvestmentCop !== undefined || input.minimumInvestmentCop !== undefined || input.estimatedRoiPercent !== undefined || input.estimatedPaybackMonths !== undefined) {
+			updateData.financialProjectionUpdatedAt = new Date().toISOString().slice(0, 19).replace("T", " ");
+			updateData.financialProjectionUpdatedBy = ctx.user.id;
+		}
         if (input.estimatedPowerKw !== undefined) updateData.estimatedPowerKw = input.estimatedPowerKw;
         if (input.estimatedChargerCount !== undefined) updateData.estimatedChargerCount = input.estimatedChargerCount;
         if (input.recommendedChargerType) updateData.recommendedChargerType = input.recommendedChargerType;
@@ -678,6 +866,15 @@ export const spacesRouter = router({
           .set(updateData)
           .where(eq(spaceSubmissions.id, input.id));
 
+        await recordSpaceStatusChange(db, {
+          submissionId: input.id,
+          fromStatus: currentSubmission.spaceStatus as SpacePipelineStatus,
+          toStatus: input.status as SpacePipelineStatus,
+          changedById: ctx.user.id,
+          changedByRole: ctx.user.role,
+          note: input.rejectionReason || "Actualización de etapa desde administración.",
+        });
+
         // ── Auto-crear proyecto crowdfunding DRAFT cuando se aprueba ──
         if (input.status === "approved") {
           const [submission] = await db
@@ -686,27 +883,31 @@ export const spacesRouter = router({
             .where(eq(spaceSubmissions.id, input.id))
             .limit(1);
 
-          if (submission && !submission.crowdfundingProjectId) {
-            const targetAmount = submission.estimatedInvestmentCop || 1000000000;
+		  if (submission && !submission.crowdfundingProjectId) {
+			const inheritedPhotos = await db.select({
+				submissionId: spacePhotos.submissionId, url: spacePhotos.photoUrl, type: spacePhotos.photoType,
+				caption: spacePhotos.caption, sortOrder: spacePhotos.sortOrder,
+			}).from(spacePhotos).where(eq(spacePhotos.submissionId, input.id)).orderBy(spacePhotos.sortOrder);
+			const inherited = getCrowdfundingInheritanceSnapshot(submission, inheritedPhotos);
+			const targetAmount = inherited.targetAmount ?? 0;
             const [cfResult] = await db.insert(crowdfundingProjects).values({
-              name: `Punto de Carga - ${submission.spaceName}`,
-              description: `Punto de carga EV en ${submission.spaceName}, ${submission.city}. ${submission.address}`,
-              city: submission.city,
-              zone: submission.department || submission.city,
-              address: submission.address,
+				name: inherited.name,
+				description: inherited.description,
+				city: inherited.city,
+				zone: inherited.zone,
+				address: inherited.address,
               targetAmount,
-              minimumInvestment: 50000000,
-              totalPowerKw: submission.estimatedPowerKw || 120,
-              chargerCount: submission.estimatedChargerCount || 2,
-              chargerPowerKw: submission.estimatedPowerKw && submission.estimatedChargerCount
-                ? Math.round(submission.estimatedPowerKw / submission.estimatedChargerCount)
-                : 60,
+				minimumInvestment: inherited.minimumInvestment ?? 0,
+				totalPowerKw: inherited.totalPowerKw ?? 0,
+				chargerCount: inherited.chargerCount ?? 0,
+				chargerPowerKw: inherited.chargerPowerKw ?? 0,
                             hasSolarPanels: 0,
               raisedAmount: 0,
-              estimatedRoiPercent: "85.00",
-              estimatedPaybackMonths: 14,
+				estimatedRoiPercent: inherited.estimatedRoiPercent ?? "0.00",
+				estimatedPaybackMonths: inherited.estimatedPaybackMonths ?? 0,
               status: "DRAFT",
               spaceSubmissionId: input.id,
+				spaceInheritanceSnapshot: inherited,
               createdById: ctx.user.id,
             });
             // Vincular el espacio con el proyecto CF
@@ -737,7 +938,7 @@ export const spacesRouter = router({
     // ========================================================================
     // ADMIN: Enviar carta de intención por email
     // ========================================================================
-    sendLetter: adminProcedure
+    sendLetter: commercialPipelineProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
         const db = await getDatabase();
@@ -752,13 +953,12 @@ export const spacesRouter = router({
           throw new TRPCError({ code: "NOT_FOUND", message: "Postulación no encontrada" });
         }
 
-        if (submission.spaceStatus !== "approved") {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Solo se puede enviar carta a postulaciones aprobadas" });
+        if (submission.spaceStatus !== "approved" && submission.spaceStatus !== "letter_sent") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Solo se puede enviar o reenviar carta a postulaciones aprobadas con firma pendiente" });
         }
 
         const letterToken = generateLetterToken();
-        const baseUrl = ctx.req.headers.origin || ctx.req.headers.referer?.replace(/\/$/, "") || "https://evgreen.lat";
-        const acceptUrl = `${baseUrl}/carta-intencion/${letterToken}`;
+        const acceptUrl = getLetterAcceptanceUrl(letterToken);
 
         // Generar HTML del email de carta de intención
         const emailHTML = generateLetterEmailHTML({
@@ -777,7 +977,7 @@ export const spacesRouter = router({
         const emailParams = buildEmailParams({
           from: "EVGreen <admin@evgreen.lat>",
           to: submission.submitterEmail,
-          subject: `Carta de Intención - Espacio ${submission.spaceName} | EVGreen`,
+          subject: `${submission.spaceStatus === "letter_sent" ? "Recordatorio: " : ""}Carta de Intención - Espacio ${submission.spaceName} | EVGreen`,
           html: emailHTML,
           replyTo: "gerencia@greenhproject.com",
         });
@@ -796,14 +996,78 @@ export const spacesRouter = router({
 
         // Actualizar estado y token
         await db.update(spaceSubmissions)
-          .set({
-            spaceStatus: "letter_sent",
-            letterToken,
-            letterSentAt: new Date().toISOString().slice(0, 19).replace("T", " "),
-          })
+          .set(buildLetterDispatchUpdate(letterToken, result.data?.id) as any)
           .where(eq(spaceSubmissions.id, input.id));
 
-        return { success: true, emailId: result.data?.id };
+        await recordSpaceStatusChange(db, {
+          submissionId: input.id,
+          fromStatus: submission.spaceStatus as SpacePipelineStatus,
+          toStatus: "letter_sent",
+          changedById: ctx.user.id,
+          changedByRole: ctx.user.role,
+          note: submission.spaceStatus === "letter_sent" ? "Carta de intención reenviada." : "Carta de intención enviada al postulante.",
+        });
+
+        return { success: true, emailId: result.data?.id, acceptUrl };
+      }),
+
+    // ========================================================================
+    // ADMIN: Obtener enlace alterno de firma para compartir manualmente
+    // ========================================================================
+    getLetterShareLink: commercialPipelineProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await getDatabase();
+        const [submission] = await db
+          .select({ id: spaceSubmissions.id, spaceStatus: spaceSubmissions.spaceStatus, letterToken: spaceSubmissions.letterToken, submitterName: spaceSubmissions.submitterName, spaceName: spaceSubmissions.spaceName })
+          .from(spaceSubmissions)
+          .where(eq(spaceSubmissions.id, input.id))
+          .limit(1);
+
+        if (!submission) throw new TRPCError({ code: "NOT_FOUND", message: "Postulación no encontrada" });
+        return getLetterShareLinkData(submission);
+      }),
+
+    // ========================================================================
+    // ADMIN: Historial seguro de entrega de la carta (sin payload del proveedor)
+    // ========================================================================
+    getLetterDeliveryHistory: commercialPipelineProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const db = await getDatabase();
+        return db.select({
+          eventType: letterEmailEvents.eventType,
+          deliveryStatus: letterEmailEvents.deliveryStatus,
+          recipientEmail: letterEmailEvents.recipientEmail,
+          occurredAt: letterEmailEvents.occurredAt,
+          receivedAt: letterEmailEvents.receivedAt,
+        }).from(letterEmailEvents)
+          .where(eq(letterEmailEvents.submissionId, input.id))
+          .orderBy(desc(letterEmailEvents.occurredAt))
+          .limit(10);
+      }),
+
+    // ========================================================================
+    // ADMIN: Rotar enlace de firma para revocar un vínculo compartido
+    // ========================================================================
+    rotateLetterShareLink: commercialPipelineProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await getDatabase();
+        const [submission] = await db
+          .select({ id: spaceSubmissions.id, spaceStatus: spaceSubmissions.spaceStatus, letterToken: spaceSubmissions.letterToken, submitterName: spaceSubmissions.submitterName, spaceName: spaceSubmissions.spaceName })
+          .from(spaceSubmissions)
+          .where(eq(spaceSubmissions.id, input.id))
+          .limit(1);
+
+        if (!submission) throw new TRPCError({ code: "NOT_FOUND", message: "Postulación no encontrada" });
+        const letterToken = generateLetterToken();
+        const rotated = getRotatedLetterShareLinkData(submission, letterToken);
+        await db.update(spaceSubmissions)
+          .set({ letterToken, letterSentAt: new Date().toISOString().slice(0, 19).replace("T", " ") })
+          .where(eq(spaceSubmissions.id, input.id));
+
+        return rotated;
       }),
 
     // ========================================================================
@@ -923,13 +1187,15 @@ Responde en formato JSON con la siguiente estructura:`;
     // ========================================================================
     // ADMIN: Publicar espacio en crowdfunding
     // ========================================================================
-    publishToCrowdfunding: adminProcedure
+    publishToCrowdfunding: commercialPipelineProcedure
       .input(z.object({
         id: z.number(),
-        targetAmount: z.number().min(1000000, "La meta de inversión debe ser al menos $1.000.000"),
+		targetAmount: z.number().min(1000000, "La meta de inversión debe ser al menos $1.000.000").optional(),
         minimumInvestment: z.number().optional(),
         estimatedRoiPercent: z.string().optional(),
         estimatedPaybackMonths: z.number().int().optional(),
+        manualFormalizationReason: z.string().trim().min(15).max(2000).optional(),
+        manualFormalizationEvidence: z.string().trim().min(5).max(2000).optional(),
       }))
       .mutation(async ({ input, ctx }) => {
         const db = await getDatabase();
@@ -944,23 +1210,33 @@ Responde en formato JSON con la siguiente estructura:`;
           throw new TRPCError({ code: "NOT_FOUND", message: "Postulación no encontrada" });
         }
 
-        if (submission.spaceStatus !== "letter_accepted" && submission.spaceStatus !== "approved") {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Solo se pueden publicar espacios aprobados o con carta de intenci\u00f3n aceptada",
-          });
-        }
+        const publicationDecision = getCrowdfundingPublicationDecision(
+          submission.spaceStatus,
+          input.manualFormalizationReason,
+          input.manualFormalizationEvidence,
+        );
+
+		const inheritedPhotos = await db.select({
+			submissionId: spacePhotos.submissionId, url: spacePhotos.photoUrl, type: spacePhotos.photoType,
+			caption: spacePhotos.caption, sortOrder: spacePhotos.sortOrder,
+		}).from(spacePhotos).where(eq(spacePhotos.submissionId, input.id)).orderBy(spacePhotos.sortOrder);
+		const inherited = getCrowdfundingInheritanceSnapshot(submission, inheritedPhotos);
+		const targetAmount = inherited.targetAmount ?? input.targetAmount;
+		if (!targetAmount) {
+			throw new TRPCError({ code: "BAD_REQUEST", message: "Completa la meta de inversión en Espacios antes de publicar." });
+		}
 
         let crowdfundingProjectId: number;
 
         if (submission.crowdfundingProjectId) {
-          // Ya existe un proyecto CF (creado auto al aprobar) → actualizar
-          await db.update(crowdfundingProjects)
-            .set({
-              targetAmount: input.targetAmount,
-              minimumInvestment: input.minimumInvestment || 50000000,
-              estimatedRoiPercent: input.estimatedRoiPercent || "85.00",
-              estimatedPaybackMonths: input.estimatedPaybackMonths || 14,
+	          // Ya existe un proyecto CF (creado auto al aprobar) → actualizar
+	          await db.update(crowdfundingProjects)
+	            .set({
+					spaceInheritanceSnapshot: inherited,
+					targetAmount,
+				minimumInvestment: inherited.minimumInvestment ?? input.minimumInvestment ?? 50000000,
+				estimatedRoiPercent: inherited.estimatedRoiPercent ?? input.estimatedRoiPercent ?? "85.00",
+				estimatedPaybackMonths: inherited.estimatedPaybackMonths ?? input.estimatedPaybackMonths ?? 14,
               status: "OPEN",
               launchDate: new Date().toISOString().slice(0, 19).replace("T", " "),
             })
@@ -969,40 +1245,126 @@ Responde en formato JSON con la siguiente estructura:`;
         } else {
           // Crear nuevo proyecto de crowdfunding
           const [cfResult] = await db.insert(crowdfundingProjects).values({
-            name: `Punto de Carga - ${submission.spaceName}`,
-            description: `Punto de carga EV en ${submission.spaceName}, ${submission.city}. ${submission.address}`,
-            city: submission.city,
-            zone: submission.department || submission.city,
-            address: submission.address,
-            targetAmount: input.targetAmount,
-            minimumInvestment: input.minimumInvestment || 50000000,
-            totalPowerKw: submission.estimatedPowerKw || 120,
-            chargerCount: submission.estimatedChargerCount || 2,
-            chargerPowerKw: submission.estimatedPowerKw && submission.estimatedChargerCount
-              ? Math.round(submission.estimatedPowerKw / submission.estimatedChargerCount)
-              : 60,
+			name: inherited.name,
+			description: inherited.description,
+			city: inherited.city,
+			zone: inherited.zone,
+			address: inherited.address,
+			targetAmount,
+			minimumInvestment: inherited.minimumInvestment ?? input.minimumInvestment ?? 50000000,
+			totalPowerKw: inherited.totalPowerKw ?? 120,
+			chargerCount: inherited.chargerCount ?? 2,
+			chargerPowerKw: inherited.chargerPowerKw ?? 60,
             hasSolarPanels: 0,
             raisedAmount: 0,
-            estimatedRoiPercent: input.estimatedRoiPercent || "85.00",
-            estimatedPaybackMonths: input.estimatedPaybackMonths || 14,
+			estimatedRoiPercent: inherited.estimatedRoiPercent ?? input.estimatedRoiPercent ?? "85.00",
+			estimatedPaybackMonths: inherited.estimatedPaybackMonths ?? input.estimatedPaybackMonths ?? 14,
             status: "OPEN",
             launchDate: new Date().toISOString().slice(0, 19).replace("T", " "),
             spaceSubmissionId: input.id,
+				spaceInheritanceSnapshot: inherited,
             createdById: ctx.user.id,
           });
           crowdfundingProjectId = cfResult.insertId;
         }
 
         // Actualizar postulaci\u00f3n
+        const now = new Date().toISOString().slice(0, 19).replace("T", " ");
         await db.update(spaceSubmissions)
           .set({
             spaceStatus: "published",
             crowdfundingProjectId,
-            estimatedInvestmentCop: input.targetAmount,
-          })
+			estimatedInvestmentCop: targetAmount,
+            ...(publicationDecision.isManualFormalization
+              ? {
+                  manualFormalizationReason: publicationDecision.reason,
+                  manualFormalizationEvidence: publicationDecision.evidence,
+                  manualFormalizedAt: now,
+                  manualFormalizedBy: ctx.user.id,
+                }
+              : {}),
+          } as any)
           .where(eq(spaceSubmissions.id, input.id));
 
-        return { success: true, crowdfundingProjectId };
+        await recordSpaceStatusChange(db, {
+          submissionId: input.id,
+          fromStatus: submission.spaceStatus as SpacePipelineStatus,
+          toStatus: "published",
+          changedById: ctx.user.id,
+          changedByRole: ctx.user.role,
+          note: publicationDecision.isManualFormalization
+            ? "Oferta publicada con formalización interna registrada."
+            : "Oferta publicada para crowdfunding.",
+        });
+
+        return {
+          success: true,
+          crowdfundingProjectId,
+          manualFormalization: publicationDecision.isManualFormalization,
+        };
+      }),
+
+    // ========================================================================
+    // PIPELINE COMERCIAL: Confirmar el siguiente hito posterior a publicación
+    // ========================================================================
+    advanceCommercialStage: commercialPipelineProcedure
+      .input(z.object({
+        id: z.number(),
+        targetStatus: z.enum(["funded", "in_construction", "operational"]),
+        note: z.string().trim().min(4, "Registra una nota comercial de al menos 4 caracteres.").max(500),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const db = await getDatabase();
+        const [submission] = await db
+          .select({
+            id: spaceSubmissions.id,
+            spaceStatus: spaceSubmissions.spaceStatus,
+            crowdfundingProjectId: spaceSubmissions.crowdfundingProjectId,
+          })
+          .from(spaceSubmissions)
+          .where(eq(spaceSubmissions.id, input.id))
+          .limit(1);
+
+        if (!submission) throw new TRPCError({ code: "NOT_FOUND", message: "Postulación no encontrada" });
+
+        try {
+          assertCommercialTransition(
+            submission.spaceStatus as SpacePipelineStatus,
+            input.targetStatus as SpacePipelineStatus,
+          );
+        } catch (error) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: error instanceof Error ? error.message : "No es posible avanzar la etapa comercial.",
+          });
+        }
+
+        const now = toSqlTimestamp();
+        await db.update(spaceSubmissions)
+          .set({ spaceStatus: input.targetStatus })
+          .where(eq(spaceSubmissions.id, input.id));
+
+        if (submission.crowdfundingProjectId) {
+          const projectUpdate = input.targetStatus === "funded"
+            ? { status: "FUNDED" as const, fundedDate: now }
+            : input.targetStatus === "operational"
+              ? { status: "COMPLETED" as const, operationalDate: now }
+              : { status: "IN_PROGRESS" as const };
+          await db.update(crowdfundingProjects)
+            .set(projectUpdate)
+            .where(eq(crowdfundingProjects.id, submission.crowdfundingProjectId));
+        }
+
+        await recordSpaceStatusChange(db, {
+          submissionId: submission.id,
+          fromStatus: submission.spaceStatus as SpacePipelineStatus,
+          toStatus: input.targetStatus as SpacePipelineStatus,
+          changedById: ctx.user.id,
+          changedByRole: ctx.user.role,
+          note: input.note,
+        });
+
+        return { success: true, status: input.targetStatus };
       }),
 
     // ========================================================================
@@ -1038,6 +1400,9 @@ Responde en formato JSON con la siguiente estructura:`;
         submitterPhone: z.string().optional(),
         submitterCompany: z.string().optional(),
         estimatedInvestmentCop: optionalFormNumber(),
+        minimumInvestmentCop: optionalFormNumber(),
+        estimatedRoiPercent: optionalFormNumber(),
+        estimatedPaybackMonths: optionalFormInteger(),
         estimatedPowerKw: optionalFormInteger(),
         estimatedChargerCount: optionalFormInteger(),
         recommendedChargerType: z.string().optional(),
@@ -1055,7 +1420,7 @@ Responde en formato JSON con la siguiente estructura:`;
         requiresNewTransformer: z.boolean().optional(), // Se guarda en technicalNotes como JSON
         proposedTransformerKva: optionalFormNumber(), // kVA del transformador propuesto
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const db = await getDatabase();
         const { id, requiresNewTransformer, proposedTransformerKva, electricalDistanceM, ...updateFields } = input;
 
@@ -1067,6 +1432,15 @@ Responde en formato JSON con la siguiente estructura:`;
         }
         if (cleanFields.electricalDistance === undefined && electricalDistanceM !== undefined) {
           cleanFields.electricalDistance = electricalDistanceM;
+        }
+        if (
+          cleanFields.estimatedInvestmentCop !== undefined ||
+          cleanFields.minimumInvestmentCop !== undefined ||
+          cleanFields.estimatedRoiPercent !== undefined ||
+          cleanFields.estimatedPaybackMonths !== undefined
+        ) {
+          cleanFields.financialProjectionUpdatedAt = new Date().toISOString().slice(0, 19).replace("T", " ");
+          cleanFields.financialProjectionUpdatedBy = ctx.user.id;
         }
 
         // Manejar transformador nuevo: merge en technicalNotes como JSON
@@ -1090,6 +1464,32 @@ Responde en formato JSON con la siguiente estructura:`;
         await db.update(spaceSubmissions)
           .set(cleanFields)
           .where(eq(spaceSubmissions.id, id));
+
+        const inheritedFields = [
+          "spaceName", "address", "city", "department", "latitude", "longitude",
+          "estimatedInvestmentCop", "minimumInvestmentCop", "estimatedRoiPercent",
+          "estimatedPaybackMonths", "estimatedPowerKw", "estimatedChargerCount",
+          "recommendedChargerType", "technicalScore", "technicalNotes", "aiScore", "aiAnalysis",
+        ];
+        if (inheritedFields.some((field) => cleanFields[field] !== undefined)) {
+          const [updatedSubmission] = await db
+            .select()
+            .from(spaceSubmissions)
+            .where(eq(spaceSubmissions.id, id))
+            .limit(1);
+
+	          if (updatedSubmission?.crowdfundingProjectId) {
+					const inheritedPhotos = await db.select({
+						submissionId: spacePhotos.submissionId, url: spacePhotos.photoUrl, type: spacePhotos.photoType,
+						caption: spacePhotos.caption, sortOrder: spacePhotos.sortOrder,
+					}).from(spacePhotos).where(eq(spacePhotos.submissionId, id)).orderBy(spacePhotos.sortOrder);
+	            const projectUpdate = buildCrowdfundingProjectInheritanceUpdate(updatedSubmission, inheritedPhotos);
+
+            await db.update(crowdfundingProjects)
+              .set(projectUpdate as any)
+              .where(eq(crowdfundingProjects.id, updatedSubmission.crowdfundingProjectId));
+          }
+        }
 
         return { success: true };
       }),
@@ -1201,6 +1601,11 @@ Responde en formato JSON con la siguiente estructura:`;
         const db = await getDatabase();
         const { ids, status } = input;
 
+        const currentSubmissions = await db.select({
+          id: spaceSubmissions.id,
+          spaceStatus: spaceSubmissions.spaceStatus,
+        }).from(spaceSubmissions).where(inArray(spaceSubmissions.id, ids));
+
         const updateData: any = { spaceStatus: status };
         if (["under_review", "approved", "rejected"].includes(status)) {
           updateData.evaluatedBy = ctx.user.id;
@@ -1211,7 +1616,16 @@ Responde en formato JSON con la siguiente estructura:`;
           .set(updateData)
           .where(inArray(spaceSubmissions.id, ids));
 
-        return { success: true, updatedCount: ids.length };
+        await Promise.all(currentSubmissions.map((submission) => recordSpaceStatusChange(db, {
+          submissionId: submission.id,
+          fromStatus: submission.spaceStatus as SpacePipelineStatus,
+          toStatus: status as SpacePipelineStatus,
+          changedById: ctx.user.id,
+          changedByRole: ctx.user.role,
+          note: "Actualización masiva desde administración.",
+        })));
+
+        return { success: true, updatedCount: currentSubmissions.length };
       }),
 
     // ========================================================================
@@ -1397,7 +1811,11 @@ Responde en formato JSON con la siguiente estructura:`;
       platformSharePercent: z.number().min(1).max(99).default(30),
       installedPowerKw: z.number().optional(),
       tarifaKwhCop: z.number().default(1800),
-    }))
+      energyCostPerKwhCop: z.number().min(0).max(10000).default(700),
+    }).refine(
+      data => Math.abs(data.investorSharePercent + data.platformSharePercent - 100) < 0.001,
+      { message: "La participación de Inversionista y EVGreen debe sumar exactamente 100 % del margen neto" },
+    ))
     .mutation(async ({ input, ctx }) => {
       // Solo admins pueden generar prospectos
       if (ctx.user.role !== "admin") {
@@ -1463,6 +1881,7 @@ Responde en formato JSON con la siguiente estructura:`;
         platformSharePercent: input.platformSharePercent,
         installedPowerKw: input.installedPowerKw,
         tarifaKwhCop: input.tarifaKwhCop,
+        energyCostPerKwhCop: input.energyCostPerKwhCop,
         photos: photos.map(p => ({ url: p.photoUrl, caption: p.caption })),
         generatedAt: new Date(),
       });
@@ -1482,7 +1901,7 @@ Responde en formato JSON con la siguiente estructura:`;
 // EMAIL TEMPLATES
 // ============================================================================
 
-function generateLetterEmailHTML(params: {
+export function generateLetterEmailHTML(params: {
   submitterName: string;
   spaceName: string;
   city: string;
@@ -1497,15 +1916,28 @@ function generateLetterEmailHTML(params: {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Carta de Intención - EVGreen</title>
+  <style>
+    @media only screen and (max-width: 620px) {
+      .email-background { padding: 16px 0 !important; }
+      .email-shell { width: 100% !important; max-width: 100% !important; border-radius: 0 !important; }
+      .email-header { padding: 24px 20px !important; }
+      .email-content { padding: 28px 20px !important; }
+      .email-footer { padding: 20px !important; }
+      .email-title { font-size: 24px !important; }
+      .detail-label { width: 36% !important; }
+      .cta-link { display: block !important; padding: 15px 14px !important; font-size: 15px !important; }
+      .acceptance-url { display: inline-block !important; max-width: 280px !important; overflow-wrap: anywhere !important; word-break: break-word !important; }
+    }
+  </style>
 </head>
 <body style="margin:0;padding:0;background-color:#0a0f1a;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#0a0f1a;padding:40px 20px;">
+  <table width="100%" cellpadding="0" cellspacing="0" class="email-background" style="background-color:#0a0f1a;padding:40px 20px;">
     <tr>
       <td align="center">
-        <table width="600" cellpadding="0" cellspacing="0" style="background-color:#111827;border-radius:16px;overflow:hidden;border:1px solid #1f2937;">
+        <table width="600" cellpadding="0" cellspacing="0" class="email-shell" style="width:100%;max-width:600px;background-color:#111827;border-radius:16px;overflow:hidden;border:1px solid #1f2937;">
           <!-- Header -->
           <tr>
-            <td style="background:linear-gradient(135deg,#065f46,#047857,#10b981);padding:32px 40px;text-align:center;">
+            <td class="email-header" style="background:linear-gradient(135deg,#065f46,#047857,#10b981);padding:32px 40px;text-align:center;">
               <h1 style="color:#ffffff;margin:0;font-size:28px;font-weight:700;letter-spacing:-0.5px;">
                 ⚡ EVGreen
               </h1>
@@ -1517,8 +1949,8 @@ function generateLetterEmailHTML(params: {
 
           <!-- Content -->
           <tr>
-            <td style="padding:40px;">
-              <h2 style="color:#10b981;margin:0 0 24px;font-size:22px;font-weight:600;">
+            <td class="email-content" style="padding:40px;">
+              <h2 class="email-title" style="color:#10b981;margin:0 0 24px;font-size:22px;font-weight:600;">
                 Carta de Intención
               </h2>
 
@@ -1539,7 +1971,7 @@ function generateLetterEmailHTML(params: {
                     </p>
                     <table width="100%" cellpadding="4" cellspacing="0">
                       <tr>
-                        <td style="color:#9ca3af;font-size:14px;width:40%;">Código:</td>
+                        <td class="detail-label" style="color:#9ca3af;font-size:14px;width:40%;">Código:</td>
                         <td style="color:#ffffff;font-size:14px;font-weight:600;">${params.code}</td>
                       </tr>
                       <tr>
@@ -1575,7 +2007,7 @@ function generateLetterEmailHTML(params: {
               <table width="100%" cellpadding="0" cellspacing="0">
                 <tr>
                   <td align="center">
-                    <a href="${params.acceptUrl}" style="display:inline-block;background:linear-gradient(135deg,#059669,#10b981);color:#ffffff;text-decoration:none;padding:16px 48px;border-radius:12px;font-size:16px;font-weight:700;letter-spacing:0.5px;">
+                    <a href="${params.acceptUrl}" class="cta-link" style="display:inline-block;background:linear-gradient(135deg,#059669,#10b981);color:#ffffff;text-decoration:none;padding:16px 48px;border-radius:12px;font-size:16px;font-weight:700;letter-spacing:0.5px;">
                       ✍️ Firmar Carta de Intención
                     </a>
                   </td>
@@ -1584,17 +2016,17 @@ function generateLetterEmailHTML(params: {
 
               <p style="color:#6b7280;font-size:13px;line-height:1.5;margin:24px 0 0;text-align:center;">
                 Si el botón no funciona, copie y pegue este enlace en su navegador:<br>
-                <a href="${params.acceptUrl}" style="color:#10b981;word-break:break-all;">${params.acceptUrl}</a>
+                <a href="${params.acceptUrl}" class="acceptance-url" style="color:#10b981;word-break:break-word;overflow-wrap:anywhere;">${params.acceptUrl}</a>
               </p>
             </td>
           </tr>
 
           <!-- Footer -->
           <tr>
-            <td style="background-color:#0d1117;padding:24px 40px;border-top:1px solid #1f2937;">
+            <td class="email-footer" style="background-color:#0d1117;padding:24px 40px;border-top:1px solid #1f2937;">
               <p style="color:#6b7280;font-size:12px;line-height:1.5;margin:0;text-align:center;">
-                Este email fue enviado por EVGreen, una marca de Green House Project S.A.S.<br>
-                NIT 901.856.696-1 | Bogotá, Colombia<br>
+                Este correo fue enviado por EVGreen, una línea de negocio de Green House Project SAS.<br>
+                NIT 901.447.678-0 | Bogotá, Colombia<br>
                 <a href="https://evgreen.lat" style="color:#10b981;">evgreen.lat</a> | 
                 <a href="mailto:gerencia@greenhproject.com" style="color:#10b981;">gerencia@greenhproject.com</a>
               </p>

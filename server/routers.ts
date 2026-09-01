@@ -41,6 +41,9 @@ import { maintenanceScheduleRouter } from "./maintenance/maintenance-schedule-ro
 import { buildApiKeysRouter } from "./api/api-keys-router";
 import { quotesRouter } from "./quotes/quotes-router";
 import { spacesRouter } from "./spaces/spaces-router";
+import { requiresFinancialOverride } from "./spaces/crowdfunding-inheritance";
+import { toIsoDateOrEmpty } from "./transactions/date-serialization";
+import { resolveNocScope } from "./noc/noc-access";
 import { gestorRouter } from "./gestor/gestor-router";
 import { partnersRouter } from "./partners/partners-router";
 import { profilesRouter } from "./profiles/profiles-router";
@@ -50,6 +53,9 @@ import { saasRouter } from "./saas/saas-router";
 import { campaignWizardRouter } from "./banners/campaign-wizard-router";
 import { buildLoyaltyRouter } from "./loyalty/loyalty-router";
 import { advertiserRouter, adminAdvertiserRouter } from "./routers/advertiser";
+import { userOnboardingRouter } from "./routers/user-onboarding";
+import { buildOcpiRouter } from "./ocpi/ocpi-router";
+import { stageSiemLocationSnapshot } from "./ocpi/ocpi-station-snapshot";
 
 // ============================================================================
 // ROLE-BASED PROCEDURES
@@ -218,7 +224,7 @@ const authRouter = router({
 const usersRouter = router({
   list: adminProcedure
     .input(z.object({
-      role: z.enum(["staff", "technician", "investor", "user", "admin", "engineer", "comercial", "host"]).optional(),
+      role: z.enum(["staff", "technician", "investor", "user", "admin", "engineer", "comercial", "host", "advertiser"]).optional(),
     }).optional())
     .query(async ({ input }) => {
       return db.getAllUsers(input?.role);
@@ -233,7 +239,7 @@ const usersRouter = router({
   updateRole: adminProcedure
     .input(z.object({
       userId: z.number(),
-      role: z.enum(["staff", "technician", "investor", "user", "admin", "engineer", "comercial", "host"]),
+      role: z.enum(["staff", "technician", "investor", "user", "admin", "engineer", "comercial", "host", "advertiser"]),
     }))
     .mutation(async ({ input, ctx }) => {
       // Proteger la cuenta maestra
@@ -402,7 +408,7 @@ const usersRouter = router({
         name: z.string().optional(),
         email: z.string().email().optional(),
         phone: z.string().optional(),
-        role: z.enum(["staff", "technician", "investor", "user", "admin", "engineer", "comercial", "host"]).optional(),
+        role: z.enum(["staff", "technician", "investor", "user", "admin", "engineer", "comercial", "host", "advertiser"]).optional(),
         isActive: z.boolean().optional(),
         companyName: z.string().optional(),
         taxId: z.string().optional(),
@@ -449,13 +455,13 @@ const stationsRouter = router({
       if (input?.lat && input?.lng) {
         // getStationsNearLocation devuelve { station: {...}, distance: number }
         // Normalizar a estaciones planas con campo distance
-        const rawStations = await db.getStationsNearLocation(input.lat, input.lng, input.radiusKm || 10);
+        const rawStations = await db.getEvgreenNetworkStationsNearLocation(input.lat, input.lng, input.radiusKm || 10);
         stations = rawStations.map((r: any) => ({
           ...(r.station ?? r),  // soporta ambos formatos por compatibilidad
           distance: r.distance ?? null,
         }));
       } else {
-        stations = await db.getAllChargingStations({ isActive: true, isPublic: true });
+        stations = await db.getEvgreenNetworkStations();
       }
       
       // Agregar tarifa activa y EVSEs a cada estación
@@ -730,9 +736,10 @@ const stationsRouter = router({
         longitude: z.string().optional(),
         operatingHours: z.any().optional(),
         amenities: z.array(z.string()).optional(),
-        isActive: z.boolean().optional(),
-        isPublic: z.boolean().optional(),
-        imageUrl: z.string().nullable().optional(),
+		isActive: z.boolean().optional(),
+		isPublic: z.boolean().optional(),
+		siemReportingEnabled: z.boolean().optional(),
+		imageUrl: z.string().nullable().optional(),
         // Modelo financiero configurable
         evgreenSharePercent: z.string().optional(),
         investorSharePercent: z.string().optional(),
@@ -755,7 +762,21 @@ const stationsRouter = router({
       if (ctx.user.role !== "admin" && ctx.user.role !== "staff" && ctx.user.role !== "technician" && ctx.user.role !== "engineer" && station.ownerId !== ctx.user.id) {
         throw new TRPCError({ code: "FORBIDDEN", message: "No tienes permiso para modificar esta estación" });
       }
-      await db.updateChargingStation(input.id, input.data as any);
+      if (input.data.siemReportingEnabled !== undefined && ctx.user.role !== "admin" && ctx.user.role !== "staff") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Solo administración puede habilitar el reporte regulatorio SIEM." });
+      }
+      const stationData: Record<string, unknown> = { ...input.data };
+      const willBePublic = input.data.isPublic ?? Boolean(station.isPublic);
+      if (!willBePublic) stationData.siemReportingEnabled = false;
+      if (stationData.siemReportingEnabled && !willBePublic) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Una estación privada no puede habilitarse para reporte SIEM." });
+      }
+      await db.updateChargingStation(input.id, stationData as any);
+      try {
+        await stageSiemLocationSnapshot(input.id);
+      } catch (error) {
+        console.warn(`[Stations] No se pudo preparar snapshot SIEM para estación ${input.id}:`, error);
+      }
       return { success: true };
     }),
   
@@ -1727,6 +1748,17 @@ const transactionsRouter = router({
       targetKwh: z.number().optional(), // Si no se especifica, carga hasta que el usuario detenga
     }))
     .mutation(async ({ ctx, input }) => {
+      // La app pública solo puede iniciar sesiones en estaciones publicadas en
+      // la red EVGreen; una estación privada de otro tenant nunca es suficiente
+      // con conocer su ID.
+      const networkStation = await db.getEvgreenNetworkStationById(input.stationId);
+      if (!networkStation) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "La estación no está disponible en la red EVGreen.",
+        });
+      }
+
       // Obtener precio dinámico actual
       const pricing = await dynamicPricing.calculateDynamicKwhPrice(
         input.stationId,
@@ -1761,7 +1793,7 @@ const transactionsRouter = router({
       
       // Verificar que el EVSE esté disponible
       const evse = await db.getEvseById(input.evseId);
-      if (!evse || evse.connectorStatus !== "AVAILABLE") {
+      if (!evse || evse.stationId !== input.stationId || evse.connectorStatus !== "AVAILABLE") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "El conector no está disponible" });
       }
       
@@ -1995,8 +2027,8 @@ const transactionsRouter = router({
         chargeMode: transaction.chargeMode || "full_charge",
 
         // Timestamps exactos
-        startTime: startTime,
-        endTime: endTime?.toISOString() || null,
+        startTime: toIsoDateOrEmpty(transaction.startTime),
+        endTime: toIsoDateOrEmpty(transaction.endTime) || null,
         chargeDurationMinutes,
 
         // Consumo
@@ -2020,8 +2052,8 @@ const transactionsRouter = router({
 
         // Timeline de overstay
         overstay: overstayCost > 0 ? {
-          gracePeriodEnd: endTime ? new Date(endTime.getTime() + gracePeriodMinutes * 60 * 1000).toISOString() : null,
-          overstayStartTime: overstayStartTime?.toISOString() || null,
+          gracePeriodEnd: endTime ? toIsoDateOrEmpty(new Date(endTime.getTime() + gracePeriodMinutes * 60 * 1000)) : null,
+          overstayStartTime: toIsoDateOrEmpty(overstayStartTime) || null,
           minutesBilled: overstayMinutesBilled,
           ratePerMinute: overstayPenaltyPerMin || effectivePrice.overstayPenaltyPerMin,
           totalCharged: overstayCost,
@@ -2056,7 +2088,7 @@ const transactionsRouter = router({
           type: wt.type,
           amount: parseFloat(wt.amount?.toString() || "0"),
           description: wt.description || "",
-          createdAt: wt.createdAt?.toISOString() || "",
+          createdAt: toIsoDateOrEmpty(wt.createdAt),
           status: wt.status,
         })),
 
@@ -2067,7 +2099,7 @@ const transactionsRouter = router({
           remainingAmount: parseFloat(d.remainingAmount?.toString() || "0"),
           reason: d.reason,
         debtStatus: (d as any).debtStatus,
-          createdAt: d.createdAt?.toISOString() || "",
+          createdAt: toIsoDateOrEmpty(d.createdAt),
         })),
 
         // Distribución de ingresos
@@ -3792,6 +3824,7 @@ const settingsRouter = router({
         // Email (Resend)
         resendApiKey: "",
         emailFrom: "noreply@evgreen.lat",
+        resendWebhookSecretConfigured: false,
         // Soporte
         supportEmail: "soporte@greenhproject.com",
         supportPhone: "",
@@ -3866,6 +3899,7 @@ const settingsRouter = router({
       // Email (Resend) - mask key for security
       resendApiKey: settings.resendApiKey ? "re_****" + settings.resendApiKey.slice(-4) : "",
       emailFrom: settings.emailFrom || "noreply@evgreen.lat",
+      resendWebhookSecretConfigured: !!(settings as any).resendWebhookSecretEncrypted,
       // Soporte
       supportEmail: settings.supportEmail || "soporte@greenhproject.com",
       supportPhone: settings.supportPhone || "",
@@ -3945,6 +3979,7 @@ const settingsRouter = router({
       // Email (Resend)
       resendApiKey: z.string().optional(),
       emailFrom: z.string().optional(),
+      resendWebhookSecret: z.string().min(16).max(1000).optional(),
       // Soporte
       supportEmail: z.string().optional(),
       supportPhone: z.string().optional(),
@@ -3960,15 +3995,32 @@ const settingsRouter = router({
       if (data.upmeToken?.startsWith("****")) delete data.upmeToken;
       if (data.alegraToken?.startsWith("****")) delete data.alegraToken;
       if (data.resendApiKey?.startsWith("re_****")) delete data.resendApiKey;
+      if (data.resendWebhookSecret) {
+        const { encryptResendWebhookSecret } = await import("./email/resend-webhook-secret");
+        data.resendWebhookSecretEncrypted = encryptResendWebhookSecret(data.resendWebhookSecret);
+        data.resendWebhookConfiguredAt = new Date().toISOString();
+      }
+      delete data.resendWebhookSecret;
       
       await db.upsertPlatformSettings(data);
       // Invalidar caché de Resend si se actualizó la key
-      if (data.resendApiKey || data.emailFrom) {
+      if (data.resendApiKey || data.emailFrom || data.resendWebhookSecretEncrypted) {
         const { invalidateResendCache } = await import("./email/resend-client");
         invalidateResendCache();
       }
       return { success: true };
     }),
+
+  clearResendWebhookSecret: adminProcedure.mutation(async ({ ctx }) => {
+    await db.upsertPlatformSettings({
+      resendWebhookSecretEncrypted: null,
+      resendWebhookConfiguredAt: null,
+      updatedBy: ctx.user.id,
+    } as any);
+    const { invalidateResendCache } = await import("./email/resend-client");
+    invalidateResendCache();
+    return { success: true };
+  }),
 
   // Alegra: Test connection
   alegraTestConnection: adminProcedure
@@ -4525,12 +4577,26 @@ const crowdfundingRouter = router({
       estimatedPaybackMonths: z.number().optional(),
       status: z.string().optional(),
       targetDate: z.date().optional(),
-      priority: z.number().optional(),
-      stationId: z.number().optional(),
-    }))
-    .mutation(async ({ input }) => {
-      const { id, ...data } = input;
-      await db.updateCrowdfundingProject(id, data);
+	      priority: z.number().optional(),
+	      stationId: z.number().optional(),
+		financialOverrideReason: z.string().trim().min(15).max(2000).optional(),
+	    }))
+	    .mutation(async ({ input, ctx }) => {
+	      const { id, financialOverrideReason, ...data } = input;
+			const current = await db.getCrowdfundingProjectById(id);
+			if (!current) throw new TRPCError({ code: "NOT_FOUND", message: "Proyecto no encontrado" });
+			const editsInheritedFinancialData = requiresFinancialOverride(current, data as Record<string, unknown>);
+			if (editsInheritedFinancialData && !financialOverrideReason) {
+				throw new TRPCError({ code: "BAD_REQUEST", message: "Indica el motivo de la excepción antes de cambiar valores heredados de Espacios." });
+			}
+			if (editsInheritedFinancialData) {
+				await db.recordCrowdfundingFinancialOverride(id, {
+					reason: financialOverrideReason!,
+					occurredAt: new Date().toISOString().slice(0, 19).replace("T", " "),
+					byUserId: ctx.user.id,
+				});
+			}
+	      await db.updateCrowdfundingProject(id, data);
       return { success: true };
     }),
   
@@ -5868,8 +5934,9 @@ const overstayRouter = router({
             .where(
               and(
                 eq(txTable.userId, ctx.user.id),
-                // @ts-expect-error -- Drizzle type mismatch: schema field type vs inferred type
-                eq(txTable.connectorStatus, "COMPLETED")
+                // `status` existe en todas las versiones de transactions y es
+                // la fuente canónica para el ciclo de vida de carga.
+                eq(txTable.status, "COMPLETED")
               )
             )
             .orderBy(desc(txTable.endTime))
@@ -7328,11 +7395,19 @@ const whatsappRouter = router({
 // ============================================================================
 const nocRouter = router({
   // Obtener todos los datos del NOC en una sola query optimizada
-  getNetworkSnapshot: publicProcedure.query(async () => {
+  getNetworkSnapshot: protectedProcedure.query(async ({ ctx }) => {
     const { getAllConnections } = await import("./ocpp/connection-manager");
     const { dualCSMS } = await import("./ocpp/csms-dual");
     const dbInst = await getDb();
     if (!dbInst) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB no disponible" });
+
+    const scope = resolveNocScope({
+      role: ctx.user.role,
+      organizationId: ctx.tenant?.organizationId,
+    });
+    if (!scope) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "No tienes acceso operativo al NOC" });
+    }
 
     const { chargingStations, evses, transactions, users: usersTable } = await import("../drizzle/schema");
     const { desc, gte, count, sum, eq: eqOp, and: andOp, inArray } = await import("drizzle-orm");
@@ -7347,10 +7422,17 @@ const nocRouter = router({
     const startOfMonthStr = toMySQLDate(startOfMonth);
     const startOfWeekStr = toMySQLDate(startOfWeek);
 
-    // Todas las estaciones
-    const allStations = await dbInst.select().from(chargingStations).orderBy(chargingStations.name);
-    // Todos los EVSEs
-    const allEvses = await dbInst.select().from(evses);
+    // Soporte y operación EVGreen ven la red completa. Las organizaciones
+    // solo reciben sus propios activos, siempre sin información financiera.
+    const allStations = scope.mode === "organization"
+      ? await dbInst.select().from(chargingStations)
+        .where(eqOp(chargingStations.organizationId, scope.organizationId!))
+        .orderBy(chargingStations.name)
+      : await dbInst.select().from(chargingStations).orderBy(chargingStations.name);
+    const scopedStationIds = allStations.map(station => station.id);
+    const allEvses = scopedStationIds.length > 0
+      ? await dbInst.select().from(evses).where(inArray(evses.stationId, scopedStationIds))
+      : [];
     // Conexiones OCPP activas
     const liveConnections = getAllConnections();
     const csmsConns = dualCSMS.getConnectionsStatus();
@@ -7359,8 +7441,10 @@ const nocRouter = router({
     for (const c of liveConnections) if (c.isConnected) connectedIds.add(c.ocppIdentity);
 
     // Transacciones activas (IN_PROGRESS)
-    const activeTxs = await dbInst.select().from(transactions)
-      .where(eqOp(transactions.status, "IN_PROGRESS"));
+    const activeTxs = scopedStationIds.length > 0
+      ? await dbInst.select().from(transactions)
+        .where(andOp(eqOp(transactions.status, "IN_PROGRESS"), inArray(transactions.stationId, scopedStationIds)))
+      : [];
 
     // Potencia real de sesiones activas (desde memoria — MeterValues en tiempo real)
     const liveSessionPower = getAllActiveSessionsPower();
@@ -7560,7 +7644,7 @@ const nocRouter = router({
             return {
               id: tx.id,
               kwhConsumed: liveData ? liveData.currentKwh.toFixed(4) : tx.kwhConsumed,
-              totalCost: tx.totalCost,
+              totalCost: scope.canViewFinancials ? tx.totalCost : null,
               startTime: tx.startTime,
               currentPower: Math.round(realPower * 10) / 10,
               soc: liveData?.soc ?? null,
@@ -7582,6 +7666,11 @@ const nocRouter = router({
 
     return {
       timestamp: now,
+      access: {
+        scope: scope.mode,
+        canViewFinancials: scope.canViewFinancials,
+        canViewPersonalActivity: scope.canViewPersonalActivity,
+      },
       // KPIs globales
       kpis: {
         totalStations,
@@ -7594,24 +7683,24 @@ const nocRouter = router({
         today: {
           sessions: Number(todayStats[0]?.count || 0),
           kwh: parseFloat(todayStats[0]?.totalKwh?.toString() || "0"),
-          revenue: parseFloat(todayStats[0]?.totalRevenue?.toString() || "0"),
-          platformFee: parseFloat(todayStats[0]?.platformFee?.toString() || "0"),
+          revenue: scope.canViewFinancials ? parseFloat((todayStats[0] as any)?.totalRevenue?.toString() || "0") : null,
+          platformFee: scope.canViewFinancials ? parseFloat((todayStats[0] as any)?.platformFee?.toString() || "0") : null,
         },
         week: {
           sessions: Number(weekStats[0]?.count || 0),
           kwh: parseFloat(weekStats[0]?.totalKwh?.toString() || "0"),
-          revenue: parseFloat(weekStats[0]?.totalRevenue?.toString() || "0"),
+          revenue: scope.canViewFinancials ? parseFloat((weekStats[0] as any)?.totalRevenue?.toString() || "0") : null,
         },
         month: {
           sessions: Number(monthStats[0]?.count || 0),
           kwh: parseFloat(monthStats[0]?.totalKwh?.toString() || "0"),
-          revenue: parseFloat(monthStats[0]?.totalRevenue?.toString() || "0"),
+          revenue: scope.canViewFinancials ? parseFloat((monthStats[0] as any)?.totalRevenue?.toString() || "0") : null,
         },
       },
       // Estaciones enriquecidas
       stations: enrichedStations,
       // Ticker de actividad reciente
-      recentActivity: recentTxs.map(tx => ({
+      recentActivity: scope.canViewPersonalActivity ? recentTxs.map(tx => ({
         id: tx.id,
         stationName: stationMap.get(tx.stationId) || `Estación #${tx.stationId}`,
         userName: userMap.get(tx.userId) || `Usuario #${tx.userId}`,
@@ -7620,22 +7709,22 @@ const nocRouter = router({
         startTime: tx.startTime,
         endTime: tx.endTime,
         status: tx.status,
-      })),
+      })) : [],
       // Top estaciones
-      topStations: topStations.map(s => ({
+      topStations: scope.canViewFinancials ? topStations.map(s => ({
         stationId: s.stationId,
         name: s.name,
         sessions: Number(s.sessions),
         revenue: parseFloat(s.revenue || "0"),
         kwh: parseFloat(s.kwh || "0"),
-      })),
+      })) : [],
       // Datos por hora para gráfico
-      hourlyData: hourlyData.map(h => ({
+      hourlyData: scope.canViewFinancials ? hourlyData.map(h => ({
         hour: h.hour,
         sessions: Number(h.sessions),
         revenue: parseFloat(h.revenue || "0"),
         kwh: parseFloat(h.kwh || "0"),
-      })),
+      })) : [],
     };
   }),
 });
@@ -7824,6 +7913,7 @@ export const appRouter = router({
   financial: buildFinancialRouter(router, protectedProcedure, adminProcedure),
   maintenanceSchedule: maintenanceScheduleRouter,
   onboarding: onboardingRouter,
+  userOnboarding: userOnboardingRouter,
   backup: backupRouter,
   apiKeys: buildApiKeysRouter(router, adminProcedure),
   refunds: refundsRouter,
@@ -7843,7 +7933,8 @@ export const appRouter = router({
   campaignWizard: campaignWizardRouter,
   loyalty: buildLoyaltyRouter(router, publicProcedure, protectedProcedure, adminProcedure),
   advertiser: advertiserRouter,
-  adminAdvertiser: adminAdvertiserRouter,
+	adminAdvertiser: adminAdvertiserRouter,
+	ocpiAdmin: buildOcpiRouter(router, adminProcedure),
 });
 
 // Iniciar sistema de backup automático al cargar el módulo

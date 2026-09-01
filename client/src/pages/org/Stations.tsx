@@ -49,9 +49,10 @@ export default function OrgStations() {
   const { data: org } = (trpc.organizations as any).getMyOrg.useQuery();
   const { data: stations, isLoading, refetch } = (trpc.organizations as any).getMyStations.useQuery();
 
-  const { data: ocppConnections } = trpc.ocpp.getActiveConnections.useQuery(undefined, {
-    refetchInterval: 5000,
-  });
+  // El portal de organización usa el estado persistido de sus estaciones. La
+  // telemetría OCPP en vivo pertenece a los roles técnicos y no se consulta
+  // desde esta vista para no provocar solicitudes 403 ni exponer el monitor.
+  const ocppConnections: any[] = [];
 
   const isAdmin = org?.myRole === "admin";
 
@@ -70,7 +71,7 @@ export default function OrgStations() {
     s.address?.toLowerCase().includes(search.toLowerCase())
   ) || [];
 
-  const onlineCount = stations?.filter((s: any) => s.isOnline || getOCPPInfo(s)).length || 0;
+  const onlineCount = stations?.filter((s: any) => s.isOnline).length || 0;
   const offlineCount = (stations?.length || 0) - onlineCount;
 
   return (
@@ -130,7 +131,7 @@ export default function OrgStations() {
                 <p>No hay estaciones para mostrar en el mapa</p>
               </div>
             ) : (
-              <OrgStationsMap stations={stations} isAdmin={isAdmin} ocppConnections={ocppConnections || []} onConfigureStation={setConfigStation} />
+              <OrgStationsMap stations={stations} isAdmin={isAdmin} ocppConnections={ocppConnections} onConfigureStation={setConfigStation} />
             )}
           </div>
         </Card>
@@ -247,6 +248,7 @@ function StationConfigModal({ station, open, ocppInfo, onClose, onSaved }: any) 
     contactPhone: station.contactPhone || "",
     isActive: station.isActive ?? true,
     isPublic: station.isPublic ?? true,
+    networkAccessMode: station.networkAccessMode || (station.isPublic ? "EVGREEN_NETWORK" : "PRIVATE"),
     // Tarifa
     pricePerKwh: "",
     pricePerMinute: "",
@@ -291,6 +293,7 @@ function StationConfigModal({ station, open, ocppInfo, onClose, onSaved }: any) 
       contactPhone: form.contactPhone || null,
       isActive: form.isActive,
       isPublic: form.isPublic,
+      networkAccessMode: form.networkAccessMode,
       operatingHours: form.operatingHours,
       autoPricing: form.autoPricing,
     };
@@ -350,7 +353,37 @@ function StationConfigModal({ station, open, ocppInfo, onClose, onSaved }: any) 
             <SectionTitle>Estado de la Estación</SectionTitle>
             <div className="grid grid-cols-2 gap-3">
               <ToggleButton active={form.isActive} onClick={() => setForm({ ...form, isActive: !form.isActive })} icon={<Power className="h-4 w-4" />} label={form.isActive ? "Activa" : "Inactiva"} color="green" />
-              <ToggleButton active={form.isPublic} onClick={() => setForm({ ...form, isPublic: !form.isPublic })} icon={form.isPublic ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />} label={form.isPublic ? "Pública" : "Privada"} color="blue" />
+              <ToggleButton active={form.networkAccessMode !== "PRIVATE"} onClick={() => setForm({ ...form, networkAccessMode: form.networkAccessMode === "PRIVATE" ? "EVGREEN_NETWORK" : "PRIVATE", isPublic: form.networkAccessMode === "PRIVATE" })} icon={form.networkAccessMode !== "PRIVATE" ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />} label={form.networkAccessMode !== "PRIVATE" ? "En red" : "Privada"} color="blue" />
+            </div>
+
+            <div className="rounded-xl border border-border/50 bg-muted/20 p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm font-semibold">Presencia en red</p>
+                  <p className="text-xs text-muted-foreground">Define quién puede descubrir y usar esta estación.</p>
+                </div>
+                <Badge variant="outline" className="text-[10px]">Controlado por organización</Badge>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {[
+                  { value: "PRIVATE", title: "Privada", description: "Solo operación interna" },
+                  { value: "EVGREEN_NETWORK", title: "Red EVGreen", description: "Visible en la app" },
+                  { value: "ROAMING", title: "Roaming", description: "EVGreen + interoperabilidad" },
+                ].map((mode) => (
+                  <button
+                    type="button"
+                    key={mode.value}
+                    onClick={() => setForm({ ...form, networkAccessMode: mode.value, isPublic: mode.value !== "PRIVATE" })}
+                    className={`rounded-lg border p-2.5 text-left transition-colors ${form.networkAccessMode === mode.value ? "border-green-500 bg-green-500/10" : "border-border/60 hover:border-green-500/50"}`}
+                  >
+                    <p className="text-xs font-semibold">{mode.title}</p>
+                    <p className="mt-0.5 text-[10px] leading-tight text-muted-foreground">{mode.description}</p>
+                  </button>
+                ))}
+              </div>
+              {form.networkAccessMode === "ROAMING" && (
+                <p className="text-[11px] text-amber-300">La estación queda habilitada para la política de roaming. La interoperabilidad con terceros requiere una conexión OCPI aprobada.</p>
+              )}
             </div>
 
             {/* Modelo financiero (solo lectura) */}

@@ -86,6 +86,7 @@ interface StationFormData {
   ocppIdentity: string;
   isActive: boolean;
   isPublic: boolean;
+  siemReportingEnabled: boolean;
   premiumZone: string;
   operatingHours: Record<string, { open: string; close: string; closed?: boolean }>;
   imageUrl: string;
@@ -114,6 +115,7 @@ const initialFormData: StationFormData = {
   ocppIdentity: "",
   isActive: true,
   isPublic: true,
+  siemReportingEnabled: false,
   premiumZone: "C",
   imageUrl: "",
   // Modelo financiero configurable
@@ -377,6 +379,7 @@ export default function AdminStations() {
       ocppIdentity: station.ocppIdentity || "",
       isActive: station.isActive ?? true,
       isPublic: station.isPublic ?? true,
+      siemReportingEnabled: Boolean(station.siemReportingEnabled),
       premiumZone: station.premiumZone || "C",
       imageUrl: station.imageUrl || "",
       // Modelo financiero
@@ -562,6 +565,7 @@ export default function AdminStations() {
           longitude: formData.longitude,
           isActive: formData.isActive,
           isPublic: formData.isPublic,
+          siemReportingEnabled: formData.siemReportingEnabled,
           operatingHours: formData.operatingHours as any,
           // Modelo financiero
           evgreenSharePercent: formData.evgreenSharePercent || "30",
@@ -1041,7 +1045,7 @@ export default function AdminStations() {
           <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
             Estado
           </h3>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
               <div>
                 <Label>Estación Activa</Label>
@@ -1059,7 +1063,18 @@ export default function AdminStations() {
               </div>
               <Switch 
                 checked={formData.isPublic}
-                onCheckedChange={(checked) => setFormData({...formData, isPublic: checked})}
+                onCheckedChange={(checked) => setFormData({...formData, isPublic: checked, siemReportingEnabled: checked ? formData.siemReportingEnabled : false})}
+              />
+            </div>
+            <div className="flex items-center justify-between gap-3 p-3 bg-muted/50 rounded-lg sm:col-span-2">
+              <div>
+                <Label>Reporte regulatorio SIEM</Label>
+                <p className="text-xs text-muted-foreground">Incluye esta estación pública en el catálogo regulatorio. No envía tráfico hasta completar la habilitación oficial.</p>
+              </div>
+              <Switch
+                checked={formData.siemReportingEnabled}
+                disabled={!formData.isPublic}
+                onCheckedChange={(checked) => setFormData({...formData, siemReportingEnabled: checked})}
               />
             </div>
           </div>

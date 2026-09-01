@@ -13,6 +13,7 @@ import autoTable from "jspdf-autotable";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const jsPDF = ((jsPDFModule as any).jsPDF ?? (jsPDFModule as any).default?.jsPDF ?? (jsPDFModule as any).default ?? jsPDFModule) as typeof import("jspdf").jsPDF;
 import axios from "axios";
+import { calculateFinancialWaterfall } from "../financial/waterfall";
 
 // ============================================================
 // ASSETS ESTÁTICOS (CDN público — disponible en el servidor)
@@ -62,6 +63,7 @@ export interface ProspectoPdfData {
   // Modelo financiero por potencia instalada
   installedPowerKw?: number;
   tarifaKwhCop?: number;
+  energyCostPerKwhCop?: number;
   // Fotos del espacio
   photos: Array<{ url: string; caption?: string | null }>;
   generatedAt: Date;
@@ -127,7 +129,7 @@ async function downloadImageAsBase64(url: string): Promise<{ data: string; forma
     // Compress and resize images to keep PDF under 5MB
     const sharp = (await import("sharp")).default;
     const imgBuffer = Buffer.from(response.data);
-    const contentType = response.headers["content-type"] || "";
+    const contentType = String(response.headers["content-type"] || "").toLowerCase();
     const isPng = contentType.includes("png") || url.toLowerCase().endsWith(".png");
     if (isPng) {
       // Preserve PNG transparency (for logos), just resize
@@ -578,26 +580,25 @@ function addProyeccionFinanciera(
   const inv = data.estimatedInvestmentCop || 0;
   const powerKw = data.installedPowerKw || data.estimatedPowerKw || 0;
   const tarifaKwh = data.tarifaKwhCop || 1800;
+  const energyCostPerKwh = data.energyCostPerKwhCop ?? 700;
 
-  // Modelo de reparto
+  // Modelo de reparto: el aliado recibe una participación del margen bruto
+  // y EVGreen + Inversionista se reparten exclusivamente el margen neto.
   const allyPct = data.allySharePercent;
-  const netPct = 100 - allyPct;
   const investorNetPct = data.investorSharePercent;
   const platformNetPct = data.platformSharePercent;
-  const investorEffective = (investorNetPct / 100) * netPct;
-  const platformEffective = (platformNetPct / 100) * netPct;
 
-  // Barra de reparto visual (solo inversor y EVGreen visible)
+  // Barra de reparto visual: solo representa la distribución del neto.
   setColor(doc, C.greenLight, "fill");
-  doc.roundedRect(M, y, CW, 26, 3, 3, "F");
+  doc.roundedRect(M, y, CW, 32, 3, 3, "F");
   setColor(doc, C.greenDark, "text");
   doc.setFontSize(9); doc.setFont("helvetica", "bold");
-  doc.text("DISTRIBUCIÓN DE INGRESOS PARA EL INVERSIONISTA", M + 4, y + 6);
+  doc.text("WATERFALL Y DISTRIBUCIÓN DEL MARGEN NETO", M + 4, y + 6);
 
   const barY = y + 11;
   const barW = CW - 8;
   const barH = 7;
-  const investorW = barW * (investorEffective / 100);
+  const investorW = barW * (investorNetPct / 100);
   const platformW = barW - investorW;
 
   setColor(doc, C.green, "fill");
@@ -607,13 +608,14 @@ function addProyeccionFinanciera(
 
   setColor(doc, C.white, "text");
   doc.setFontSize(8); doc.setFont("helvetica", "bold");
-  if (investorW > 20) doc.text(`Inversor ${investorEffective.toFixed(0)}%`, M + 4 + investorW / 2, barY + 5, { align: "center" });
-  if (platformW > 20) doc.text(`EVGreen ${platformEffective.toFixed(0)}%`, M + 4 + investorW + platformW / 2, barY + 5, { align: "center" });
+  if (investorW > 20) doc.text(`Inversor ${investorNetPct.toFixed(0)}%`, M + 4 + investorW / 2, barY + 5, { align: "center" });
+  if (platformW > 20) doc.text(`EVGreen ${platformNetPct.toFixed(0)}%`, M + 4 + investorW + platformW / 2, barY + 5, { align: "center" });
 
   setColor(doc, C.gray700, "text");
-  doc.setFontSize(7.5); doc.setFont("helvetica", "normal");
-  doc.text(`Inversor: ${investorNetPct}% del neto (${investorEffective.toFixed(0)}% del bruto)  ·  EVGreen: ${platformNetPct}% del neto (${platformEffective.toFixed(0)}% del bruto)`, M + 4, barY + 14);
-  y += 32;
+  doc.setFontSize(7.2); doc.setFont("helvetica", "normal");
+  doc.text(`Ingreso bruto − costo energía (${formatCOP(energyCostPerKwh)}/kWh) = margen bruto  ·  Aliado: ${allyPct}% del margen bruto`, M + 4, barY + 14);
+  doc.text(`Margen neto distribuible: Inversor ${investorNetPct}%  ·  EVGreen ${platformNetPct}%`, M + 4, barY + 20);
+  y += 38;
 
   if (powerKw > 0) {
     y = drawSectionTitle(doc, `ESCENARIOS DE OPERACIÓN — ${powerKw} kW INSTALADOS  ·  Tarifa: ${formatCOP(tarifaKwh)}/kWh`, M, y, CW);
@@ -628,19 +630,24 @@ function addProyeccionFinanciera(
       const kwhDay = powerKw * s.hours;
       const kwhMonth = kwhDay * 30;
       const grossMonth = kwhMonth * tarifaKwh;
-      const allyMonth = grossMonth * (allyPct / 100);
-      const netMonth = grossMonth - allyMonth;
-      const investorMonth = netMonth * (investorNetPct / 100);
-      const platformMonth = netMonth * (platformNetPct / 100);
+      const waterfall = calculateFinancialWaterfall({
+        grossRevenue: grossMonth,
+        totalKwh: kwhMonth,
+        energyCostPerKwh,
+        hostSharePercent: allyPct,
+        investorSharePercent: investorNetPct,
+        evgreenSharePercent: platformNetPct,
+      });
+      const investorMonth = waterfall.investorPool;
       const investorYear = investorMonth * 12;
       const roi = inv > 0 ? (investorYear / inv * 100) : 0;
       const payback = inv > 0 && investorMonth > 0 ? inv / investorMonth : 0;
-      return { ...s, kwhDay, kwhMonth, grossMonth, investorMonth, investorYear, roi, payback, platformMonth };
+      return { ...s, kwhDay, kwhMonth, investorMonth, investorYear, roi, payback, waterfall };
     });
 
     // Tarjetas de escenario (3 columnas)
     const cardW = (CW - 8) / 3;
-    const cardH = 68;
+    const cardH = 92;
     scenarioData.forEach((s, i) => {
       const cx = M + i * (cardW + 4);
       const cy = y;
@@ -662,20 +669,24 @@ function addProyeccionFinanciera(
 
       const items = [
         { label: "kWh/mes", value: `${Math.round(s.kwhMonth).toLocaleString("es-CO")} kWh`, highlight: false },
-        { label: "Ingreso bruto/mes", value: formatCOP(s.grossMonth), highlight: false },
-        { label: "Tu retorno/mes", value: formatCOP(s.investorMonth), highlight: true },
-        { label: "Tu retorno/año", value: formatCOP(s.investorYear), highlight: true },
+        { label: "Ingreso bruto", value: formatCOP(s.waterfall.grossRevenue), highlight: false },
+        { label: "Costo energía", value: `− ${formatCOP(s.waterfall.energyCost)}`, highlight: false },
+        { label: "Margen bruto", value: formatCOP(s.waterfall.grossMargin), highlight: false },
+        { label: `Aliado (${allyPct}%)`, value: `− ${formatCOP(s.waterfall.hostPayout)}`, highlight: false },
+        { label: "Margen neto", value: formatCOP(s.waterfall.netDistributableMargin), highlight: false },
+        { label: "Retorno inv./mes", value: formatCOP(s.investorMonth), highlight: true },
+        { label: "Retorno inv./año", value: formatCOP(s.investorYear), highlight: true },
         ...(inv > 0 ? [{ label: "ROI anual", value: `${s.roi.toFixed(1)}%`, highlight: false }] : []),
         ...(inv > 0 && s.payback > 0 ? [{ label: "Recuperación", value: s.payback <= 12 ? `${s.payback.toFixed(1)} meses` : `${(s.payback / 12).toFixed(1)} años`, highlight: false }] : []),
       ];
 
       items.forEach((item, j) => {
-        const iy = cy + 24 + j * 7;
+        const iy = cy + 22 + j * 6.3;
         setColor(doc, C.gray500, "text");
-        doc.setFontSize(6.5); doc.setFont("helvetica", "normal");
+        doc.setFontSize(6.1); doc.setFont("helvetica", "normal");
         doc.text(item.label, cx + 4, iy);
         setColor(doc, item.highlight ? s.color : C.gray900, "text");
-        doc.setFontSize(item.highlight ? 8 : 7.5);
+        doc.setFontSize(item.highlight ? 7.5 : 6.8);
         doc.setFont("helvetica", item.highlight ? "bold" : "normal");
         doc.text(item.value, cx + cardW - 4, iy, { align: "right" });
       });
@@ -686,7 +697,7 @@ function addProyeccionFinanciera(
     // Nota metodológica
     setColor(doc, C.gray500, "text");
     doc.setFontSize(7.5); doc.setFont("helvetica", "italic");
-    const nota = `* Proyecciones basadas en ${powerKw} kW instalados × horas de operación diaria × 30 días × ${formatCOP(tarifaKwh)}/kWh. El inversor recibe el ${investorNetPct}% del ingreso neto. Las cifras son estimaciones orientativas basadas en condiciones actuales del mercado colombiano de movilidad eléctrica.`;
+    const nota = `* Proyecciones basadas en ${powerKw} kW instalados × horas de operación diaria × 30 días × ${formatCOP(tarifaKwh)}/kWh. El retorno y el ROI se calculan sobre el ${investorNetPct}% del margen neto, después del costo de energía de ${formatCOP(energyCostPerKwh)}/kWh y la participación del aliado. Las cifras son estimaciones orientativas y no constituyen una garantía de rentabilidad.`;
     const notaLines = doc.splitTextToSize(nota, CW);
     doc.text(notaLines, M, y);
     y += notaLines.length * 4.5 + 6;

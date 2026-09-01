@@ -1,6 +1,13 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { appRouter } from "./routers";
+import * as db from "./db";
 import type { TrpcContext } from "./_core/context";
+
+const siemSnapshot = vi.hoisted(() => ({ stage: vi.fn() }));
+
+vi.mock("./ocpi/ocpi-station-snapshot", () => ({
+  stageSiemLocationSnapshot: siemSnapshot.stage,
+}));
 
 // Mock all database functions used in routers
 vi.mock("./db", async (importOriginal) => {
@@ -9,7 +16,10 @@ vi.mock("./db", async (importOriginal) => {
     ...actual,
     getDb: vi.fn().mockResolvedValue(null),
     getAllChargingStations: vi.fn().mockResolvedValue([]),
+    getEvgreenNetworkStations: vi.fn().mockResolvedValue([]),
+    getEvgreenNetworkStationsNearLocation: vi.fn().mockResolvedValue([]),
     getChargingStationById: vi.fn().mockResolvedValue(null),
+    updateChargingStation: vi.fn().mockResolvedValue(undefined),
     getNearbyStations: vi.fn().mockResolvedValue([]),
     getUserTransactions: vi.fn().mockResolvedValue([]),
     getTransactionById: vi.fn().mockResolvedValue(null),
@@ -167,6 +177,39 @@ describe("stations router", () => {
       const result = await caller.stations.listPublic();
 
       expect(Array.isArray(result)).toBe(true);
+    });
+  });
+
+  describe("configuración SIEM", () => {
+    const station = { id: 88, ownerId: 1, isPublic: 1 };
+
+    beforeEach(() => {
+      vi.mocked(db.getChargingStationById).mockResolvedValue(station as any);
+      vi.mocked(db.updateChargingStation).mockResolvedValue(undefined as any);
+      siemSnapshot.stage.mockResolvedValue({ staged: true, externalRequest: false });
+    });
+
+    it("impide que el propietario no administrativo habilite el reporte SIEM", async () => {
+      const caller = appRouter.createCaller(createMockContext("user"));
+      await expect(caller.stations.update({ id: station.id, data: { siemReportingEnabled: true } })).rejects.toThrow("Solo administración puede habilitar el reporte regulatorio SIEM.");
+      expect(db.updateChargingStation).not.toHaveBeenCalled();
+    });
+
+    it("permite a administración habilitar SIEM y lo desactiva al volver privada la estación", async () => {
+      const caller = appRouter.createCaller(createMockContext("admin"));
+      await expect(caller.stations.update({ id: station.id, data: { siemReportingEnabled: true } })).resolves.toEqual({ success: true });
+      expect(db.updateChargingStation).toHaveBeenLastCalledWith(station.id, expect.objectContaining({ siemReportingEnabled: true }));
+
+      await expect(caller.stations.update({ id: station.id, data: { isPublic: false } })).resolves.toEqual({ success: true });
+      expect(db.updateChargingStation).toHaveBeenLastCalledWith(station.id, expect.objectContaining({ isPublic: false, siemReportingEnabled: false }));
+    });
+
+    it("prepara el snapshot SIEM solo después de persistir una edición autorizada", async () => {
+      const caller = appRouter.createCaller(createMockContext("admin"));
+      await expect(caller.stations.update({ id: station.id, data: { city: "Medellín" } })).resolves.toEqual({ success: true });
+
+      expect(db.updateChargingStation).toHaveBeenCalledWith(station.id, expect.objectContaining({ city: "Medellín" }));
+      expect(siemSnapshot.stage).toHaveBeenCalledWith(station.id);
     });
   });
 });

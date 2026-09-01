@@ -4,12 +4,21 @@ import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
 import {
   advertiserProfiles,
+  advertiserProfileReviewEvents,
   adCampaigns,
   adCampaignCreatives,
   users,
 } from "../../drizzle/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { invokeLLM } from "../_core/llm";
+import {
+  canApplyAdvertiserDecision,
+  canCreateAdvertiserCampaign,
+  canManageAdvertiserReviews,
+  decisionTargetStatus,
+  type AdvertiserDecision,
+  type AdvertiserProfileStatus,
+} from "../../shared/advertiser-review";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -28,6 +37,70 @@ async function requireAdvertiser(userId: number) {
     });
   }
   return profile[0];
+}
+
+function requirePlatformAdmin(role: string) {
+  if (!canManageAdvertiserReviews(role)) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Esta acción requiere permisos de Administración." });
+  }
+}
+
+const adminAdvertiserDecisionInput = z.object({
+  profileId: z.number().int(),
+  notes: z.string().trim().max(2_000).optional(),
+});
+
+async function updateAdvertiserDecision({
+  profileId,
+  actorId,
+  notes,
+  decision,
+}: {
+  profileId: number;
+  actorId: number;
+  notes?: string;
+  decision: AdvertiserDecision;
+}) {
+  const db = (await getDb())!;
+  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+  const profile = await db
+    .select({ id: advertiserProfiles.id, status: advertiserProfiles.status })
+    .from(advertiserProfiles)
+    .where(eq(advertiserProfiles.id, profileId))
+    .limit(1);
+
+  if (!profile[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Perfil de anunciante no encontrado." });
+
+  const currentStatus = profile[0].status as AdvertiserProfileStatus;
+  if (!canApplyAdvertiserDecision(currentStatus, decision)) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `No es posible cambiar un perfil ${currentStatus} a ${decisionTargetStatus(decision)}.`,
+    });
+  }
+
+  const targetStatus = decisionTargetStatus(decision);
+  const now = new Date().toISOString().slice(0, 19).replace("T", " ");
+  const updateData = {
+    status: targetStatus,
+    adminNotes: notes || null,
+    ...(targetStatus === "approved" ? { approvedById: actorId, approvedAt: now } : {}),
+  };
+
+  await db
+    .update(advertiserProfiles)
+    .set(updateData)
+    .where(eq(advertiserProfiles.id, profileId));
+
+  await db.insert(advertiserProfileReviewEvents).values({
+    profileId,
+    action: targetStatus,
+    notes: notes || null,
+    actorId,
+  });
+
+  return { success: true, status: targetStatus };
 }
 
 // ─── Router de Anunciantes ────────────────────────────────────────────────────
@@ -51,6 +124,13 @@ export const advertiserRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = (await getDb())!;
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+      if (ctx.user.role !== "user" && ctx.user.role !== "advertiser") {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "El registro de anunciante requiere una cuenta de usuario independiente.",
+        });
+      }
 
       const existing = await db
         .select({ id: advertiserProfiles.id })
@@ -140,7 +220,7 @@ export const advertiserRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
       const profile = await requireAdvertiser(ctx.user.id);
 
-      if (profile.status !== "approved") {
+      if (!canCreateAdvertiserCampaign(profile.status as AdvertiserProfileStatus)) {
         throw new TRPCError({
           code: "FORBIDDEN",
           message: "Tu perfil debe ser aprobado antes de crear campañas.",
@@ -484,7 +564,7 @@ Devuelve un JSON con:
 
 export const adminAdvertiserRouter = router({
   listAdvertisers: protectedProcedure.query(async ({ ctx }) => {
-    if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+    requirePlatformAdmin(ctx.user.role);
     const db = (await getDb())!;
     if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
@@ -493,10 +573,17 @@ export const adminAdvertiserRouter = router({
         id: advertiserProfiles.id,
         userId: advertiserProfiles.userId,
         companyName: advertiserProfiles.companyName,
+        taxId: advertiserProfiles.taxId,
         industry: advertiserProfiles.industry,
+        website: advertiserProfiles.website,
         status: advertiserProfiles.status,
+        contactName: advertiserProfiles.contactName,
+        contactPhone: advertiserProfiles.contactPhone,
         contactEmail: advertiserProfiles.contactEmail,
         monthlyBudget: advertiserProfiles.monthlyBudget,
+        adminNotes: advertiserProfiles.adminNotes,
+        approvedAt: advertiserProfiles.approvedAt,
+        approvedById: advertiserProfiles.approvedById,
         createdAt: advertiserProfiles.createdAt,
         userName: users.name,
         userEmail: users.email,
@@ -506,51 +593,47 @@ export const adminAdvertiserRouter = router({
       .orderBy(desc(advertiserProfiles.createdAt));
   }),
 
+  listAdvertiserReviewEvents: protectedProcedure.query(async ({ ctx }) => {
+    requirePlatformAdmin(ctx.user.role);
+    const db = (await getDb())!;
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+    return db
+      .select({
+        id: advertiserProfileReviewEvents.id,
+        profileId: advertiserProfileReviewEvents.profileId,
+        action: advertiserProfileReviewEvents.action,
+        notes: advertiserProfileReviewEvents.notes,
+        actorId: advertiserProfileReviewEvents.actorId,
+        createdAt: advertiserProfileReviewEvents.createdAt,
+      })
+      .from(advertiserProfileReviewEvents)
+      .orderBy(desc(advertiserProfileReviewEvents.createdAt));
+  }),
+
   approveAdvertiser: protectedProcedure
-    .input(z.object({ profileId: z.number().int(), notes: z.string().optional() }))
+    .input(adminAdvertiserDecisionInput)
     .mutation(async ({ ctx, input }) => {
-      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
-      const db = (await getDb())!;
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-
-      const profile = await db
-        .select({ userId: advertiserProfiles.userId })
-        .from(advertiserProfiles)
-        .where(eq(advertiserProfiles.id, input.profileId))
-        .limit(1);
-
-      if (!profile[0]) throw new TRPCError({ code: "NOT_FOUND" });
-
-      await db
-        .update(advertiserProfiles)
-        .set({
-          status: "approved",
-          adminNotes: input.notes,
-          approvedById: ctx.user.id,
-          approvedAt: new Date().toISOString().slice(0, 19).replace("T", " "),
-        })
-        .where(eq(advertiserProfiles.id, input.profileId));
-
-      return { success: true };
+      requirePlatformAdmin(ctx.user.role);
+      return updateAdvertiserDecision({ ...input, actorId: ctx.user.id, decision: "approve" });
     }),
 
   rejectAdvertiser: protectedProcedure
-    .input(z.object({ profileId: z.number().int(), notes: z.string() }))
+    .input(adminAdvertiserDecisionInput.extend({ notes: z.string().trim().min(3).max(2_000) }))
     .mutation(async ({ ctx, input }) => {
-      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
-      const db = (await getDb())!;
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      requirePlatformAdmin(ctx.user.role);
+      return updateAdvertiserDecision({ ...input, actorId: ctx.user.id, decision: "reject" });
+    }),
 
-      await db
-        .update(advertiserProfiles)
-        .set({ status: "rejected", adminNotes: input.notes })
-        .where(eq(advertiserProfiles.id, input.profileId));
-
-      return { success: true };
+  suspendAdvertiser: protectedProcedure
+    .input(adminAdvertiserDecisionInput.extend({ notes: z.string().trim().min(3).max(2_000) }))
+    .mutation(async ({ ctx, input }) => {
+      requirePlatformAdmin(ctx.user.role);
+      return updateAdvertiserDecision({ ...input, actorId: ctx.user.id, decision: "suspend" });
     }),
 
   listPendingCampaigns: protectedProcedure.query(async ({ ctx }) => {
-    if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+    requirePlatformAdmin(ctx.user.role);
     const db = (await getDb())!;
     if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
@@ -574,7 +657,7 @@ export const adminAdvertiserRouter = router({
   approveCampaign: protectedProcedure
     .input(z.object({ campaignId: z.number().int(), notes: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
-      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+      requirePlatformAdmin(ctx.user.role);
       const db = (await getDb())!;
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
@@ -599,7 +682,7 @@ export const adminAdvertiserRouter = router({
   rejectCampaign: protectedProcedure
     .input(z.object({ campaignId: z.number().int(), notes: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+      requirePlatformAdmin(ctx.user.role);
       const db = (await getDb())!;
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 

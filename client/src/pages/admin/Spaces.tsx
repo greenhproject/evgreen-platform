@@ -7,21 +7,24 @@
  * RESPONSIVE: Optimizado para desktop, tablet y móvil
  */
 import { useState, useMemo } from "react";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { ManualFormalizationAudit, ManualFormalizationFields } from "@/components/spaces/ManualFormalizationAudit";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { getSpacePipelineAction } from "@shared/space-pipeline-actions";
 import {
   MapPin, Search, Filter, Eye, Zap, Star, Send, Globe, Brain,
   CheckCircle2, XCircle, Clock, FileText, Loader2, ChevronLeft,
   ChevronRight, Building2, Phone, Mail, Camera, BarChart3,
   TrendingUp, DollarSign, ArrowUpRight, ExternalLink, RefreshCw,
   ChevronDown, X, Pencil, Trash2, AlertTriangle, Users, Download,
-  CheckSquare, Square, Minus, SlidersHorizontal, Calendar, FileDown, Settings2, Plus,
+  CheckSquare, Square, Minus, SlidersHorizontal, Calendar, FileDown, Settings2, Plus, Copy, Link2, MessageCircle,
 } from "lucide-react";
 
 // ============================================================================
@@ -46,6 +49,12 @@ const SPACE_TYPE_LABELS: Record<string, string> = {
   hotel: "Hotel", restaurant: "Restaurante", office_building: "Oficinas",
   residential: "Residencial", supermarket: "Supermercado", hospital: "Hospital",
   university: "Universidad", airport: "Aeropuerto", highway_rest: "Parador", other: "Otro",
+};
+
+const COMMERCIAL_NEXT_STEPS: Partial<Record<string, { status: "funded" | "in_construction" | "operational"; label: string; description: string }>> = {
+  published: { status: "funded", label: "Confirmar fondeo", description: "La meta de inversión fue completada para esta oferta." },
+  funded: { status: "in_construction", label: "Iniciar construcción", description: "La oferta pasa de fondeada a ejecución de obra." },
+  in_construction: { status: "operational", label: "Marcar operativo", description: "La estación queda lista para operación comercial." },
 };
 
 function formatCOP(value: number): string {
@@ -103,6 +112,8 @@ async function compressImageFile(file: File, maxDim: number, quality: number): P
 }
 
 export default function AdminSpaces() {
+  const { user } = useAuth();
+  const canManageAdministrativeActions = user?.role === "admin" || user?.role === "staff";
   const [statusFilter, setStatusFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -367,7 +378,7 @@ export default function AdminSpaces() {
       )}
 
       {/* Bulk Action Bar */}
-      {selectedIds.size > 0 && (
+      {canManageAdministrativeActions && selectedIds.size > 0 && (
         <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <CheckSquare className="w-4 h-4 text-emerald-400" />
@@ -458,7 +469,7 @@ export default function AdminSpaces() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-[#1f2937]">
-                <th className="text-left px-3 py-3 w-10">
+                {canManageAdministrativeActions && <th className="text-left px-3 py-3 w-10">
                   <button onClick={toggleSelectAll} className="text-gray-400 hover:text-emerald-400 transition-colors">
                     {allSelected ? (
                       <CheckSquare className="w-4 h-4 text-emerald-400" />
@@ -468,7 +479,7 @@ export default function AdminSpaces() {
                       <Square className="w-4 h-4" />
                     )}
                   </button>
-                </th>
+                </th>}
                 <th className="text-left px-4 py-3 text-gray-400 font-medium">Código</th>
                 <th className="text-left px-4 py-3 text-gray-400 font-medium">Espacio</th>
                 <th className="text-left px-4 py-3 text-gray-400 font-medium">Postulante</th>
@@ -483,13 +494,13 @@ export default function AdminSpaces() {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={10} className="text-center py-12">
+                  <td colSpan={canManageAdministrativeActions ? 10 : 9} className="text-center py-12">
                     <Loader2 className="w-6 h-6 text-emerald-400 animate-spin mx-auto" />
                   </td>
                 </tr>
               ) : submissions.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="text-center py-12 text-gray-500">
+                  <td colSpan={canManageAdministrativeActions ? 10 : 9} className="text-center py-12 text-gray-500">
                     No se encontraron postulaciones
                   </td>
                 </tr>
@@ -500,7 +511,7 @@ export default function AdminSpaces() {
                   const isSelected = selectedIds.has(sub.id);
                   return (
                     <tr key={sub.id} className={`border-b border-[#1f2937]/50 hover:bg-[#1f2937]/30 transition-colors ${isSelected ? "bg-emerald-500/5" : ""}`}>
-                      <td className="px-3 py-3">
+                      {canManageAdministrativeActions && <td className="px-3 py-3">
                         <button onClick={() => toggleSelect(sub.id)} className="text-gray-400 hover:text-emerald-400 transition-colors">
                           {isSelected ? (
                             <CheckSquare className="w-4 h-4 text-emerald-400" />
@@ -508,7 +519,7 @@ export default function AdminSpaces() {
                             <Square className="w-4 h-4" />
                           )}
                         </button>
-                      </td>
+                      </td>}
                       <td className="px-4 py-3">
                         <span className="font-mono text-xs text-emerald-400">{sub.code}</span>
                       </td>
@@ -581,7 +592,7 @@ export default function AdminSpaces() {
       {/* Mobile Card List (visible only on mobile) */}
       <div className="md:hidden space-y-3">
         {/* Mobile select all */}
-        <div className="flex items-center justify-between px-1">
+        {canManageAdministrativeActions && <div className="flex items-center justify-between px-1">
           <button onClick={toggleSelectAll} className="flex items-center gap-2 text-xs text-gray-400 hover:text-emerald-400 transition-colors">
             {allSelected ? <CheckSquare className="w-4 h-4 text-emerald-400" /> : <Square className="w-4 h-4" />}
             <span>Seleccionar todos</span>
@@ -589,7 +600,7 @@ export default function AdminSpaces() {
           {selectedIds.size > 0 && (
             <span className="text-xs text-emerald-400">{selectedIds.size} seleccionados</span>
           )}
-        </div>
+        </div>}
 
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
@@ -610,9 +621,9 @@ export default function AdminSpaces() {
                 className={`w-full text-left bg-[#111827] border rounded-xl p-4 transition-colors ${isSelected ? "border-emerald-500/50 bg-emerald-500/5" : "border-[#1f2937]"}`}
               >
                 <div className="flex items-start gap-3">
-                  <button onClick={() => toggleSelect(sub.id)} className="mt-0.5 text-gray-400 hover:text-emerald-400 transition-colors flex-shrink-0">
+                  {canManageAdministrativeActions && <button onClick={() => toggleSelect(sub.id)} className="mt-0.5 text-gray-400 hover:text-emerald-400 transition-colors flex-shrink-0">
                     {isSelected ? <CheckSquare className="w-4 h-4 text-emerald-400" /> : <Square className="w-4 h-4" />}
-                  </button>
+                  </button>}
                   <div className="flex-1 min-w-0" onClick={() => setSelectedId(sub.id)}>
                     <div className="flex items-start justify-between gap-3 mb-2">
                       <div className="min-w-0 flex-1">
@@ -1044,15 +1055,24 @@ function SpaceDetailDialog({
   onClose: () => void;
   onRefresh: () => void;
 }) {
+  const { user } = useAuth();
   const { data: space, isLoading, refetch } = trpc.spaces.admin.getById.useQuery({ id });
+  const { data: statusHistory } = trpc.spaces.admin.getStatusHistory.useQuery({ id });
   const updateStatusMutation = trpc.spaces.admin.updateStatus.useMutation();
   const sendLetterMutation = trpc.spaces.admin.sendLetter.useMutation();
+  const getLetterShareLinkMutation = trpc.spaces.admin.getLetterShareLink.useMutation();
+  const rotateLetterShareLinkMutation = trpc.spaces.admin.rotateLetterShareLink.useMutation();
+  const { data: letterDeliveryHistory } = trpc.spaces.admin.getLetterDeliveryHistory.useQuery({ id });
   const generateAIMutation = trpc.spaces.admin.generateAIScore.useMutation();
   const publishMutation = trpc.spaces.admin.publishToCrowdfunding.useMutation();
   const updateSpaceMutation = trpc.spaces.admin.updateSpace.useMutation();
   const deleteSpaceMutation = trpc.spaces.admin.deleteSpace.useMutation();
+  const advanceCommercialStageMutation = trpc.spaces.admin.advanceCommercialStage.useMutation();
   const generateProspectoMutation = trpc.spaces.generateProspectoPdf.useMutation();
   const [showPublishDialog, setShowPublishDialog] = useState(false);
+  const [showPipelineActionDialog, setShowPipelineActionDialog] = useState(false);
+  const [showCommercialStageDialog, setShowCommercialStageDialog] = useState(false);
+  const [commercialStageNote, setCommercialStageNote] = useState("");
   const [showProspectoDialog, setShowProspectoDialog] = useState(false);
   const [prospectoConfig, setProspectoConfig] = useState({
     allySharePercent: 10,
@@ -1060,8 +1080,11 @@ function SpaceDetailDialog({
     platformSharePercent: 30,
     installedPowerKw: undefined as number | undefined,
     tarifaKwhCop: 1800,
+    energyCostPerKwhCop: 700,
   });
   const [publishAmount, setPublishAmount] = useState("");
+  const [manualFormalizationReason, setManualFormalizationReason] = useState("");
+  const [manualFormalizationEvidence, setManualFormalizationEvidence] = useState("");
   const [rejectionReason, setRejectionReason] = useState("");
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [expandedPhoto, setExpandedPhoto] = useState<string | null>(null);
@@ -1070,6 +1093,7 @@ function SpaceDetailDialog({
   const [editForm, setEditForm] = useState<Record<string, any>>({});
   const [editPhotos, setEditPhotos] = useState<Array<{ file: File; preview: string; photoType: string }>>([]);
   const [showGestorDialog, setShowGestorDialog] = useState(false);
+  const [letterShareLink, setLetterShareLink] = useState<string | null>(null);
   const addPhotosMutation = trpc.spaces.admin.addPhotos.useMutation();
   const [gestorForm, setGestorForm] = useState({ gestorId: "", commissionPercent: "3.75" });
   const { data: gestoresData } = trpc.gestor.listarGestores.useQuery();
@@ -1093,6 +1117,9 @@ function SpaceDetailDialog({
   const statusInfo = STATUS_LABELS[space.spaceStatus as string] || STATUS_LABELS.pending;
   const StatusIcon = statusInfo.icon;
   const aiAnalysis = space.aiAnalysis ? JSON.parse(space.aiAnalysis) : null;
+  const commercialNextStep = COMMERCIAL_NEXT_STEPS[space.spaceStatus as string];
+  const pipelineAction = getSpacePipelineAction(space.spaceStatus as string);
+  const canManageAdministrativeDetails = user?.role === "admin" || user?.role === "staff";
 
   const handleStatusUpdate = async (status: string) => {
     try {
@@ -1119,12 +1146,62 @@ function SpaceDetailDialog({
 
   const handleSendLetter = async () => {
     try {
-      await sendLetterMutation.mutateAsync({ id });
-      toast.success("Carta de intención enviada por email");
+      const result = await sendLetterMutation.mutateAsync({ id });
+      setLetterShareLink(result.acceptUrl);
+      toast.success("Carta enviada por email. El enlace alterno ya está listo para compartir.");
       refetch();
       onRefresh();
     } catch (err: any) {
       toast.error(err.message || "Error al enviar carta");
+    }
+  };
+
+  const handleResendLetter = async () => {
+    try {
+      const result = await sendLetterMutation.mutateAsync({ id });
+      setLetterShareLink(result.acceptUrl);
+      toast.success("Carta reenviada por correo. El enlace anterior fue revocado.");
+      refetch();
+      onRefresh();
+    } catch (err: any) {
+      toast.error(err.message || "No fue posible reenviar la carta");
+    }
+  };
+
+  const handleGetLetterShareLink = async () => {
+    try {
+      const result = await getLetterShareLinkMutation.mutateAsync({ id });
+      setLetterShareLink(result.acceptUrl);
+      toast.success("Enlace de firma listo para compartir.");
+    } catch (err: any) {
+      toast.error(err.message || "No fue posible obtener el enlace de firma");
+    }
+  };
+
+  const handleCopyLetterLink = async () => {
+    if (!letterShareLink) return;
+    try {
+      await navigator.clipboard.writeText(letterShareLink);
+      toast.success("Enlace de firma copiado. Compártelo solo con el responsable del espacio.");
+    } catch {
+      toast.error("No se pudo copiar automáticamente. Inténtalo de nuevo desde un navegador con permisos.");
+    }
+  };
+
+  const handleWhatsAppShare = () => {
+    if (!letterShareLink) return;
+    const message = `Hola${space.submitterName ? ` ${space.submitterName}` : ""}, te compartimos la Carta de Intención para el espacio “${space.spaceName}”. Puedes revisarla y firmarla de forma segura aquí: ${letterShareLink}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
+  };
+
+  const handleRotateLetterShareLink = async () => {
+    try {
+      const result = await rotateLetterShareLinkMutation.mutateAsync({ id });
+      setLetterShareLink(result.acceptUrl);
+      toast.success("Enlace rotado. El vínculo anterior dejó de ser válido.");
+      refetch();
+    } catch (err: any) {
+      toast.error(err.message || "No fue posible rotar el enlace de firma");
     }
   };
 
@@ -1144,14 +1221,76 @@ function SpaceDetailDialog({
       toast.error("La meta de inversión debe ser al menos $1.000.000");
       return;
     }
+    const requiresManualFormalization = space.spaceStatus === "letter_sent";
+    if (requiresManualFormalization && manualFormalizationReason.trim().length < 15) {
+      toast.error("Describe el motivo de la formalización interna (mínimo 15 caracteres).");
+      return;
+    }
+    if (requiresManualFormalization && manualFormalizationEvidence.trim().length < 5) {
+      toast.error("Registra una evidencia o referencia de la aprobación interna.");
+      return;
+    }
     try {
-      await publishMutation.mutateAsync({ id, targetAmount: amount });
-      toast.success("Espacio publicado en el muro de crowdfunding");
+      const result = await publishMutation.mutateAsync({
+        id,
+        targetAmount: amount,
+        ...(requiresManualFormalization ? {
+          manualFormalizationReason: manualFormalizationReason.trim(),
+          manualFormalizationEvidence: manualFormalizationEvidence.trim(),
+        } : {}),
+      });
+      toast.success(result.manualFormalization
+        ? "Espacio formalizado internamente y publicado. La firma externa sigue pendiente."
+        : "Espacio publicado en el muro de crowdfunding");
       setShowPublishDialog(false);
+      setManualFormalizationReason("");
+      setManualFormalizationEvidence("");
       refetch();
       onRefresh();
     } catch (err: any) {
       toast.error(err.message || "Error al publicar");
+    }
+  };
+
+  const handlePipelineAction = () => {
+    if (commercialNextStep) {
+      setCommercialStageNote("");
+      setShowCommercialStageDialog(true);
+      return;
+    }
+    if (pipelineAction) setShowPipelineActionDialog(true);
+  };
+
+  const handlePipelineActionConfirmation = async () => {
+    if (!pipelineAction) return;
+    if (pipelineAction.kind === "send_letter") {
+      await handleSendLetter();
+      setShowPipelineActionDialog(false);
+      return;
+    }
+    if (pipelineAction.kind === "publish") {
+      setShowPipelineActionDialog(false);
+      setShowPublishDialog(true);
+      return;
+    }
+    setShowPipelineActionDialog(false);
+  };
+
+  const handleCommercialStageAdvance = async () => {
+    if (!commercialNextStep) return;
+    try {
+      await advanceCommercialStageMutation.mutateAsync({
+        id,
+        targetStatus: commercialNextStep.status,
+        note: commercialStageNote.trim(),
+      });
+      toast.success(`Oferta movida a: ${STATUS_LABELS[commercialNextStep.status].label}`);
+      setShowCommercialStageDialog(false);
+      setCommercialStageNote("");
+      refetch();
+      onRefresh();
+    } catch (err: any) {
+      toast.error(err.message || "No fue posible mover la oferta en el pipeline");
     }
   };
 
@@ -1175,12 +1314,12 @@ function SpaceDetailDialog({
             <div className="flex flex-col gap-2">
             {/* Row 1: Status-specific actions */}
             <div className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1">
-              {space.spaceStatus === "pending" && (
+              {canManageAdministrativeDetails && space.spaceStatus === "pending" && (
                 <Button size="sm" onClick={() => handleStatusUpdate("under_review")} className="bg-blue-600 hover:bg-blue-700 text-white flex-shrink-0 text-xs">
                   <Eye className="w-3.5 h-3.5 mr-1" /> Revisar
                 </Button>
               )}
-              {(space.spaceStatus === "pending" || space.spaceStatus === "under_review") && (
+              {canManageAdministrativeDetails && (space.spaceStatus === "pending" || space.spaceStatus === "under_review") && (
                 <>
                   <Button size="sm" onClick={handleGenerateAI} disabled={generateAIMutation.isPending} className="bg-purple-600 hover:bg-purple-700 text-white flex-shrink-0 text-xs">
                     {generateAIMutation.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Brain className="w-3.5 h-3.5 mr-1" />}
@@ -1194,28 +1333,49 @@ function SpaceDetailDialog({
                   </Button>
                 </>
               )}
-              {space.spaceStatus === "approved" && (
-                <Button size="sm" onClick={handleSendLetter} disabled={sendLetterMutation.isPending} className="bg-purple-600 hover:bg-purple-700 text-white flex-shrink-0 text-xs">
-                  {sendLetterMutation.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Send className="w-3.5 h-3.5 mr-1" />}
-                  Enviar carta
+              {pipelineAction && !commercialNextStep && (
+                <Button size="sm" onClick={handlePipelineAction} className="bg-green-600 hover:bg-green-700 text-white flex-shrink-0 text-xs">
+                  <Globe className="w-3.5 h-3.5 mr-1" /> Mover en pipeline
                 </Button>
               )}
-              {space.spaceStatus === "letter_accepted" && (
-                <Button size="sm" onClick={() => setShowPublishDialog(true)} className="bg-green-600 hover:bg-green-700 text-white flex-shrink-0 text-xs">
-                  <Globe className="w-3.5 h-3.5 mr-1" /> Publicar
+              {commercialNextStep && (
+                <Button size="sm" onClick={handlePipelineAction} className="bg-emerald-600 hover:bg-emerald-700 text-white flex-shrink-0 text-xs">
+                  <ArrowUpRight className="w-3.5 h-3.5 mr-1" /> Mover en pipeline
+                </Button>
+              )}
+              {canManageAdministrativeDetails && space.spaceStatus === "letter_sent" && (
+                <Button size="sm" variant="outline" onClick={() => setShowPublishDialog(true)} className="border-amber-400/50 text-amber-200 hover:bg-amber-500/10 flex-shrink-0 text-xs">
+                  <AlertTriangle className="w-3.5 h-3.5 mr-1" /> Formalizar y publicar
                 </Button>
               )}
             </div>
+            {space.spaceStatus === "letter_sent" && (
+              <div className="rounded-lg border border-purple-500/30 bg-purple-500/10 p-3 text-sm">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div><p className="font-medium text-purple-100">Enlace alterno de firma</p><p className="text-xs text-purple-200/80">Úsalo si el correo no llega. El enlace es único y solo funciona mientras la carta esté pendiente de firma.</p>{(space as any).letterDeliveryStatus && <p className="mt-1 text-xs text-purple-100">Correo: <strong>{({ SENT: "Enviado", DELIVERED: "Entregado", DELAYED: "Con retraso", BOUNCED: "Rebotado", FAILED: "Fallido", OPENED: "Abierto", CLICKED: "Enlace abierto", COMPLAINED: "Marcado como spam", SUPPRESSED: "Suprimido" } as Record<string, string>)[(space as any).letterDeliveryStatus] ?? "En seguimiento"}</strong></p>}</div>
+                  {!letterShareLink && <Button size="sm" variant="outline" onClick={handleGetLetterShareLink} disabled={getLetterShareLinkMutation.isPending} className="border-purple-400/50 text-purple-100 hover:bg-purple-500/20">{getLetterShareLinkMutation.isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Link2 className="mr-1 h-3.5 w-3.5" />}Obtener enlace</Button>}
+                </div>
+                {letterShareLink && <div className="mt-3 flex flex-col gap-2 sm:flex-row"><Input value={letterShareLink} readOnly className="h-9 border-purple-400/30 bg-slate-950/40 text-xs text-purple-100" /><Button size="sm" variant="outline" onClick={handleCopyLetterLink} className="border-purple-400/50 text-purple-100 hover:bg-purple-500/20"><Copy className="mr-1 h-3.5 w-3.5" />Copiar</Button><Button size="sm" onClick={handleWhatsAppShare} className="bg-emerald-600 text-white hover:bg-emerald-700"><MessageCircle className="mr-1 h-3.5 w-3.5" />WhatsApp</Button><Button size="sm" variant="outline" onClick={handleResendLetter} disabled={sendLetterMutation.isPending} className="border-sky-400/50 text-sky-100 hover:bg-sky-500/20">{sendLetterMutation.isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Send className="mr-1 h-3.5 w-3.5" />}Reenviar</Button><Button size="sm" variant="outline" onClick={handleRotateLetterShareLink} disabled={rotateLetterShareLinkMutation.isPending} className="border-amber-400/50 text-amber-100 hover:bg-amber-500/20">{rotateLetterShareLinkMutation.isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1 h-3.5 w-3.5" />}Rotar</Button></div>}
+                {letterDeliveryHistory && letterDeliveryHistory.length > 0 && <div className="mt-3 border-t border-purple-400/20 pt-2"><p className="text-[11px] font-medium uppercase tracking-wide text-purple-200">Historial de correo</p><div className="mt-1 space-y-1">{letterDeliveryHistory.slice(0, 4).map((event, index) => <div key={`${event.eventType}-${event.occurredAt}-${index}`} className="flex items-center justify-between gap-2 text-xs text-purple-100/90"><span>{({ SENT: "Enviado", DELIVERED: "Entregado", DELAYED: "Con retraso", BOUNCED: "Rebotado", FAILED: "Fallido", OPENED: "Abierto", CLICKED: "Enlace abierto", COMPLAINED: "Marcado como spam", SUPPRESSED: "Suprimido" } as Record<string, string>)[event.deliveryStatus] ?? event.eventType}</span><span className="shrink-0 text-purple-200/65">{new Date(event.occurredAt).toLocaleString("es-CO")}</span></div>)}</div></div>}
+              </div>
+            )}
+            {(space as any).manualFormalizedAt && (space as any).manualFormalizationReason && (space as any).manualFormalizationEvidence && (
+              <ManualFormalizationAudit
+                formalizedAt={(space as any).manualFormalizedAt}
+                reason={(space as any).manualFormalizationReason}
+                evidence={(space as any).manualFormalizationEvidence}
+              />
+            )}
               {/* Row 2: Permanent actions - always visible 2x2 grid */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <Button size="sm" onClick={() => setShowProspectoDialog(true)} className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs w-full">
                   <FileDown className="w-3.5 h-3.5 mr-1" /> Prospecto PDF
                 </Button>
-                <Button size="sm" variant="outline" onClick={handleGenerateAI} disabled={generateAIMutation.isPending} className="border-[#374151] text-gray-300 text-xs w-full">
+                {canManageAdministrativeDetails && <Button size="sm" variant="outline" onClick={handleGenerateAI} disabled={generateAIMutation.isPending} className="border-[#374151] text-gray-300 text-xs w-full">
                   {generateAIMutation.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Brain className="w-3.5 h-3.5 mr-1" />}
                   Re-evaluar IA
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => {
+                </Button>}
+                {canManageAdministrativeDetails && <Button size="sm" variant="outline" onClick={() => {
                     // Pre-poblar con TODOS los datos actuales del espacio
                     const techNotes = (() => { try { return space.technicalNotes ? JSON.parse(space.technicalNotes) : {}; } catch { return {}; } })();
                     const ai = aiAnalysis || {};
@@ -1226,8 +1386,11 @@ function SpaceDetailDialog({
                       longitude: space.longitude ? String(space.longitude) : "",
                       submitterName: space.submitterName, submitterEmail: space.submitterEmail,
                       submitterPhone: space.submitterPhone || "", submitterCompany: (space as any).submitterCompany || "",
-                      estimatedInvestmentCop: space.estimatedInvestmentCop || "",
-                      estimatedPowerKw: space.estimatedPowerKw || "",
+	                      estimatedInvestmentCop: space.estimatedInvestmentCop || "",
+						minimumInvestmentCop: (space as any).minimumInvestmentCop || "",
+						estimatedRoiPercent: (space as any).estimatedRoiPercent || "",
+						estimatedPaybackMonths: (space as any).estimatedPaybackMonths || "",
+	                      estimatedPowerKw: space.estimatedPowerKw || "",
                       estimatedChargerCount: space.estimatedChargerCount || "",
                       additionalNotes: space.additionalNotes || "",
                       nearbyAttractions: (space as any).nearbyAttractions || "",
@@ -1257,11 +1420,33 @@ function SpaceDetailDialog({
                     setShowEditDialog(true);
                   }} className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10 text-xs w-full">
                   <Pencil className="w-3.5 h-3.5 mr-1" /> Editar
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => setShowDeleteDialog(true)} className="border-red-500/30 text-red-400 hover:bg-red-500/10 text-xs w-full">
+                </Button>}
+                {canManageAdministrativeDetails && <Button size="sm" variant="outline" onClick={() => setShowDeleteDialog(true)} className="border-red-500/30 text-red-400 hover:bg-red-500/10 text-xs w-full">
                   <Trash2 className="w-3.5 h-3.5 mr-1" /> Eliminar
-                </Button>
+                </Button>}
               </div>
+            </div>
+
+            <div className="rounded-xl border border-[#374151] bg-[#0a0f1a] p-3 sm:p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-medium text-white flex items-center gap-2"><Clock className="w-4 h-4 text-emerald-400" /> Historial del pipeline</p>
+                <span className="text-[11px] text-gray-500">Últimos movimientos</span>
+              </div>
+              {statusHistory && statusHistory.length > 0 ? (
+                <div className="mt-3 space-y-2">
+                  {statusHistory.slice(0, 4).map((event, index) => (
+                    <div key={`${event.fromStatus}-${event.toStatus}-${event.createdAt}-${index}`} className="flex flex-col gap-1 border-l-2 border-emerald-500/40 pl-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="text-xs text-gray-200">{STATUS_LABELS[event.fromStatus]?.label || event.fromStatus} <span className="text-emerald-400">→</span> {STATUS_LABELS[event.toStatus]?.label || event.toStatus}</p>
+                        {event.note && <p className="mt-0.5 text-[11px] text-gray-400">{event.note}</p>}
+                      </div>
+                      <p className="shrink-0 text-[10px] text-gray-500">{new Date(event.createdAt).toLocaleString("es-CO")}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-gray-500">Los próximos movimientos quedarán registrados aquí.</p>
+              )}
             </div>
 
             {/* Content grid - single column on mobile, two columns on desktop */}
@@ -1578,6 +1763,47 @@ function SpaceDetailDialog({
         </DialogContent>
       </Dialog>
 
+      <Dialog open={showCommercialStageDialog} onOpenChange={setShowCommercialStageDialog}>
+        <DialogContent className="bg-[#111827] border-[#1f2937] text-white max-w-[95vw] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-emerald-300"><ArrowUpRight className="w-5 h-5" /> {commercialNextStep?.label || "Mover en pipeline"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-gray-300">{commercialNextStep?.description} Este avance queda registrado en el historial comercial.</p>
+            <div>
+              <Label className="mb-1.5 block text-sm text-gray-300">Nota de gestión *</Label>
+              <Textarea value={commercialStageNote} onChange={(event) => setCommercialStageNote(event.target.value)} placeholder="Ej.: Confirmación del comité de inversión recibida el 19 de agosto." rows={4} className="bg-[#0a0f1a] border-[#374151] text-white placeholder:text-gray-600 resize-none text-sm" />
+            </div>
+          </div>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="outline" onClick={() => setShowCommercialStageDialog(false)} className="border-[#374151] text-gray-300 w-full sm:w-auto">Cancelar</Button>
+            <Button onClick={handleCommercialStageAdvance} disabled={advanceCommercialStageMutation.isPending || commercialStageNote.trim().length < 4} className="bg-emerald-600 hover:bg-emerald-700 text-white w-full sm:w-auto">
+              {advanceCommercialStageMutation.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-1.5" />} Confirmar movimiento
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showPipelineActionDialog} onOpenChange={setShowPipelineActionDialog}>
+        <DialogContent className="bg-[#111827] border-[#1f2937] text-white max-w-[95vw] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-emerald-300"><ArrowUpRight className="w-5 h-5" /> {pipelineAction?.title || "Mover en pipeline"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-gray-300">{pipelineAction?.description}</p>
+            {pipelineAction?.kind === "await_external_signature" && (
+              <p className="rounded-lg border border-purple-400/25 bg-purple-500/10 p-3 text-xs text-purple-100">Para apoyar el cierre puedes usar el enlace alterno o reenviar el correo; no se alterará el estado ni se realizará una formalización interna.</p>
+            )}
+          </div>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="outline" onClick={() => setShowPipelineActionDialog(false)} className="border-[#374151] text-gray-300 w-full sm:w-auto">Cancelar</Button>
+            <Button onClick={handlePipelineActionConfirmation} disabled={sendLetterMutation.isPending} className="bg-emerald-600 hover:bg-emerald-700 text-white w-full sm:w-auto">
+              {sendLetterMutation.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-1.5" />} {pipelineAction?.confirmLabel || "Confirmar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Edit Dialog — EXPANDIDO */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
         <DialogContent className="bg-[#111827] border-[#1f2937] text-white max-w-[95vw] sm:max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -1759,11 +1985,23 @@ function SpaceDetailDialog({
             {/* SECCIÓN: Inversión y comercial */}
             <div className="bg-[#0a0f1a] border border-[#374151] rounded-lg p-3">
               <p className="text-emerald-400 text-xs font-semibold mb-2 uppercase tracking-wide">💰 Datos Comerciales</p>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                <div>
-                  <Label className="text-gray-300 text-xs mb-1 block">Inversión estimada (COP)</Label>
-                  <Input type="number" value={editForm.estimatedInvestmentCop || ""} onChange={e => setEditForm(p => ({ ...p, estimatedInvestmentCop: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
-                </div>
+	              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+	                <div>
+	                  <Label className="text-gray-300 text-xs mb-1 block">Inversión estimada (COP)</Label>
+	                  <Input type="number" value={editForm.estimatedInvestmentCop || ""} onChange={e => setEditForm(p => ({ ...p, estimatedInvestmentCop: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+	                </div>
+				<div>
+				  <Label className="text-gray-300 text-xs mb-1 block">Inversión mínima (COP)</Label>
+				  <Input type="number" value={editForm.minimumInvestmentCop || ""} onChange={e => setEditForm(p => ({ ...p, minimumInvestmentCop: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+				</div>
+				<div>
+				  <Label className="text-gray-300 text-xs mb-1 block">ROI estimado (%)</Label>
+				  <Input type="number" step="0.01" value={editForm.estimatedRoiPercent || ""} onChange={e => setEditForm(p => ({ ...p, estimatedRoiPercent: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+				</div>
+				<div>
+				  <Label className="text-gray-300 text-xs mb-1 block">Payback estimado (meses)</Label>
+				  <Input type="number" value={editForm.estimatedPaybackMonths || ""} onChange={e => setEditForm(p => ({ ...p, estimatedPaybackMonths: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+				</div>
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">Potencia (kW)</Label>
                   <Input type="number" value={editForm.estimatedPowerKw || ""} onChange={e => setEditForm(p => ({ ...p, estimatedPowerKw: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
@@ -1945,8 +2183,11 @@ function SpaceDetailDialog({
                 if (editForm.requiresNewTransformer !== undefined) payload.requiresNewTransformer = editForm.requiresNewTransformer;
                 if (editForm.proposedTransformerKva !== undefined) payload.proposedTransformerKva = editForm.proposedTransformerKva;
                 // Comerciales
-                if (editForm.estimatedInvestmentCop) payload.estimatedInvestmentCop = parseInt(editForm.estimatedInvestmentCop);
-                if (editForm.estimatedPowerKw) payload.estimatedPowerKw = parseInt(editForm.estimatedPowerKw);
+				if (editForm.estimatedInvestmentCop) payload.estimatedInvestmentCop = parseInt(editForm.estimatedInvestmentCop);
+				if (editForm.minimumInvestmentCop) payload.minimumInvestmentCop = parseInt(editForm.minimumInvestmentCop);
+				if (editForm.estimatedRoiPercent) payload.estimatedRoiPercent = parseFloat(editForm.estimatedRoiPercent);
+				if (editForm.estimatedPaybackMonths) payload.estimatedPaybackMonths = parseInt(editForm.estimatedPaybackMonths);
+				if (editForm.estimatedPowerKw) payload.estimatedPowerKw = parseInt(editForm.estimatedPowerKw);
                 if (editForm.estimatedChargerCount) payload.estimatedChargerCount = parseInt(editForm.estimatedChargerCount);
                 // IA manual
                 if (editForm.aiScore !== undefined) payload.aiScore = editForm.aiScore;
@@ -2053,6 +2294,14 @@ function SpaceDetailDialog({
             <p className="text-xs sm:text-sm text-gray-400">
               Al publicar, este espacio aparecerá en el muro de crowdfunding para que inversionistas puedan financiar la instalación.
             </p>
+            {space.spaceStatus === "letter_sent" && (
+              <ManualFormalizationFields
+                reason={manualFormalizationReason}
+                evidence={manualFormalizationEvidence}
+                onReasonChange={setManualFormalizationReason}
+                onEvidenceChange={setManualFormalizationEvidence}
+              />
+            )}
             <div>
               <Label className="text-gray-300 mb-1.5 block text-sm">Meta de inversión (COP) *</Label>
               <Input
@@ -2099,10 +2348,10 @@ function SpaceDetailDialog({
               <h4 className="text-emerald-400 text-sm font-semibold flex items-center gap-2">
                 <Settings2 className="w-4 h-4" /> Modelo de Reparto de Ingresos
               </h4>
-              <p className="text-gray-500 text-xs">El aliado recibe su % del ingreso bruto. Inversor y EVGreen se reparten el resto.</p>
+              <p className="text-gray-500 text-xs">Ingreso bruto − costo de energía = margen bruto. El aliado participa sobre ese margen; Inversor y EVGreen se reparten exclusivamente el margen neto resultante.</p>
               <div className="grid grid-cols-3 gap-2">
                 <div>
-                  <Label className="text-gray-300 text-xs mb-1 block">Aliado (% bruto)</Label>
+                  <Label className="text-gray-300 text-xs mb-1 block">Aliado (% margen bruto)</Label>
                   <Input
                     type="number" min={0} max={50}
                     value={prospectoConfig.allySharePercent}
@@ -2138,21 +2387,19 @@ function SpaceDetailDialog({
                   />
                 </div>
               </div>
-              {/* Barra visual de reparto 3 segmentos */}
+              {/* Barra visual del reparto neto: el aliado se descuenta antes. */}
               {(() => {
-                const allyEff = prospectoConfig.allySharePercent;
-                const net = 100 - allyEff;
-                const invEff = (prospectoConfig.investorSharePercent / 100) * net;
-                const platEff = (prospectoConfig.platformSharePercent / 100) * net;
+                const allyPct = prospectoConfig.allySharePercent;
+                const invNetPct = prospectoConfig.investorSharePercent;
+                const platformNetPct = prospectoConfig.platformSharePercent;
                 return (
                   <>
                     <div className="w-full h-3 rounded-full overflow-hidden flex">
-                      <div className="bg-blue-500 transition-all duration-300" style={{ width: `${allyEff}%` }} />
-                      <div className="bg-emerald-500 transition-all duration-300" style={{ width: `${invEff}%` }} />
+                      <div className="bg-emerald-500 transition-all duration-300" style={{ width: `${invNetPct}%` }} />
                       <div className="bg-gray-500 flex-1" />
                     </div>
                     <p className="text-gray-500 text-xs text-center">
-                      <span className="text-blue-400">Aliado {allyEff}%</span> · <span className="text-emerald-400">Inversor {invEff.toFixed(0)}%</span> · <span className="text-gray-400">EVGreen {platEff.toFixed(0)}%</span> <span className="text-gray-600">(% sobre bruto)</span>
+                      <span className="text-blue-400">Aliado {allyPct}% del margen bruto</span> · <span className="text-emerald-400">Inversor {invNetPct}%</span> · <span className="text-gray-400">EVGreen {platformNetPct}%</span> <span className="text-gray-600">(sobre margen neto)</span>
                     </p>
                   </>
                 );
@@ -2165,7 +2412,7 @@ function SpaceDetailDialog({
                 <TrendingUp className="w-4 h-4" /> Parámetros de Proyección
               </h4>
               <p className="text-xs text-gray-400 -mt-1">El modelo calcula 3 escenarios: pesimista (4h/día), realista (6h/día) y optimista (9h/día).</p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">Potencia instalada (kW)</Label>
                   <Input
@@ -2182,6 +2429,15 @@ function SpaceDetailDialog({
                     type="number" min={500}
                     value={prospectoConfig.tarifaKwhCop}
                     onChange={e => setProspectoConfig(c => ({ ...c, tarifaKwhCop: parseInt(e.target.value) || 1800 }))}
+                    className="bg-[#111827] border-[#374151] text-white h-8 text-sm"
+                  />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Costo energía (COP/kWh)</Label>
+                  <Input
+                    type="number" min={0}
+                    value={prospectoConfig.energyCostPerKwhCop}
+                    onChange={e => setProspectoConfig(c => ({ ...c, energyCostPerKwhCop: Math.max(0, parseInt(e.target.value) || 0) }))}
                     className="bg-[#111827] border-[#374151] text-white h-8 text-sm"
                   />
                 </div>
@@ -2202,6 +2458,7 @@ function SpaceDetailDialog({
                     platformSharePercent: prospectoConfig.platformSharePercent,
                     installedPowerKw: prospectoConfig.installedPowerKw,
                     tarifaKwhCop: prospectoConfig.tarifaKwhCop,
+                    energyCostPerKwhCop: prospectoConfig.energyCostPerKwhCop,
                   });
                   if (result.pdfUrl) {
                     // Usar elemento <a> para compatibilidad con Android WebView

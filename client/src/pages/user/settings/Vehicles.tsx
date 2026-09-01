@@ -11,6 +11,7 @@ import { useLocation } from "wouter";
 import { useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { VEHICLE_BRANDS } from "@shared/vehicle-brands";
 
 const connectorTypes = [
   { value: "TYPE_1", label: "Tipo 1 (AC)" },
@@ -24,11 +25,6 @@ const connectorTypes = [
 ] as const;
 
 type ConnectorTypeValue = typeof connectorTypes[number]["value"];
-
-const evBrands = [
-  "Tesla", "BYD", "Renault", "Nissan", "Chevrolet", "BMW", "Mercedes-Benz",
-  "Audi", "Volkswagen", "Hyundai", "Kia", "Ford", "Volvo", "Porsche", "Otro"
-];
 
 interface FormData {
   brand: string;
@@ -214,7 +210,7 @@ export default function Vehicles() {
                         <SelectValue placeholder="Selecciona marca" />
                       </SelectTrigger>
                       <SelectContent>
-                        {evBrands.map(brand => (
+                        {VEHICLE_BRANDS.map(brand => (
                           <SelectItem key={brand} value={brand}>{brand}</SelectItem>
                         ))}
                       </SelectContent>

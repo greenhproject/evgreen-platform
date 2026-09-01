@@ -16,7 +16,7 @@ describe("Debt Management - Schema", () => {
     expect(columns).toContain("originalAmount");
     expect(columns).toContain("remainingAmount");
     expect(columns).toContain("reason");
-    expect(columns).toContain("status");
+    expect(columns).toContain("debtStatus");
   });
 
   it("should export UserDebt and InsertUserDebt types", async () => {

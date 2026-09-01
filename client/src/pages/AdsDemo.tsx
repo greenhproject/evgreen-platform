@@ -11,8 +11,10 @@ import { Button } from "@/components/ui/button";
 import {
   Sparkles, Zap, Target, BarChart3, Users, Clock, TrendingUp,
   MapPin, Car, ChevronRight, Play, CheckCircle2, ArrowRight,
-  Bot, Send, Loader2, Star, Shield, Globe
+  Bot, Send, Loader2, Star, Shield, Globe, Activity, Radio,
+  RotateCcw, SlidersHorizontal
 } from "lucide-react";
+import { VEHICLE_BRANDS } from "@shared/vehicle-brands";
 
 // ─── Datos de demo ────────────────────────────────────────────────────────────
 
@@ -335,7 +337,6 @@ function ReachPredictor() {
   );
 
   const cities = ["Bogotá", "Medellín", "Cali", "Barranquilla", "Cartagena", "Bucaramanga"];
-  const brands = ["Tesla", "BYD", "BMW", "Mercedes-Benz", "Audi", "Hyundai", "Kia", "Renault"];
   const tiers = [
     { value: "", label: "Todos" },
     { value: "FREE", label: "Free" },
@@ -361,154 +362,132 @@ function ReachPredictor() {
   const dwell = prediction?.avgDwellTimeMinutes ?? 0;
   const totalUsers = prediction?.totalUsers ?? 1;
   const reachPct = totalUsers > 0 ? Math.round((reach / totalUsers) * 100) : 0;
+  const activeFilterCount = selectedCities.length + selectedBrands.length + (selectedTier ? 1 : 0) + (minCharges > 0 ? 1 : 0);
+
+  const resetFilters = () => {
+    setSelectedCities(["Bogotá"]);
+    setSelectedBrands([]);
+    setSelectedTier("");
+    setMinCharges(0);
+  };
 
   return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-900/80 p-6 space-y-5">
-      <div className="flex items-center gap-2">
-        <Target className="w-5 h-5 text-emerald-400" />
-        <h3 className="font-semibold text-white">Predictor de alcance en tiempo real</h3>
-        <Badge variant="secondary" className="ml-auto text-xs bg-slate-700">
-          Datos reales
-        </Badge>
-      </div>
+    <section className="relative overflow-hidden rounded-[28px] border border-slate-700/80 bg-[#07101f] p-1 shadow-[0_24px_80px_rgba(0,0,0,0.28)]">
+      <div className="pointer-events-none absolute inset-0 opacity-50 [background-image:linear-gradient(rgba(67,255,190,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(67,255,190,0.05)_1px,transparent_1px)] [background-size:28px_28px]" />
+      <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-emerald-400/10 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-28 left-1/3 h-56 w-56 rounded-full bg-blue-500/10 blur-3xl" />
 
-      {/* Ciudades */}
-      <div>
-        <div className="text-xs text-slate-400 mb-2 flex items-center gap-1">
-          <MapPin className="w-3 h-3" /> Ciudades objetivo
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {cities.map(city => (
-            <button
-              key={city}
-              onClick={() => toggleCity(city)}
-              className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
-                selectedCities.includes(city)
-                  ? "bg-emerald-600 text-white"
-                  : "bg-slate-800 text-slate-400 hover:text-white border border-slate-700"
-              }`}
-            >
-              {city}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Marcas */}
-      <div>
-        <div className="text-xs text-slate-400 mb-2 flex items-center gap-1">
-          <Car className="w-3 h-3" /> Marcas de vehículo (opcional)
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {brands.map(brand => (
-            <button
-              key={brand}
-              onClick={() => toggleBrand(brand)}
-              className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
-                selectedBrands.includes(brand)
-                  ? "bg-blue-600 text-white"
-                  : "bg-slate-800 text-slate-400 hover:text-white border border-slate-700"
-              }`}
-            >
-              {brand}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Suscripción + cargas mínimas */}
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <div className="text-xs text-slate-400 mb-2">Suscripción</div>
-          <div className="flex flex-wrap gap-1">
-            {tiers.map(t => (
-              <button
-                key={t.value}
-                onClick={() => setSelectedTier(t.value)}
-                className={`px-2 py-1 rounded-full text-xs transition-all ${
-                  selectedTier === t.value
-                    ? "bg-purple-600 text-white"
-                    : "bg-slate-800 text-slate-400 hover:text-white border border-slate-700"
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div>
-          <div className="text-xs text-slate-400 mb-2">Cargas mínimas/mes</div>
-          <div className="flex gap-1">
-            {[0, 2, 4, 8].map(n => (
-              <button
-                key={n}
-                onClick={() => setMinCharges(n)}
-                className={`px-2 py-1 rounded-full text-xs transition-all ${
-                  minCharges === n
-                    ? "bg-amber-600 text-white"
-                    : "bg-slate-800 text-slate-400 hover:text-white border border-slate-700"
-                }`}
-              >
-                {n === 0 ? "Todos" : `${n}+`}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Results */}
-      <div className="rounded-xl bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 p-4">
-        {isLoading ? (
-          <div className="flex items-center justify-center gap-2 py-4 text-slate-400">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            <span className="text-sm">Calculando alcance...</span>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <div className="grid grid-cols-3 gap-3 text-center">
-              <div>
-                <div className="text-2xl font-bold text-emerald-400">
-                  {reach.toLocaleString("es-CO")}
-                </div>
-                <div className="text-xs text-slate-400">Usuarios alcanzables</div>
-              </div>
-              <div>
-                <div className="text-2xl font-bold text-blue-400">
-                  {impressions.toLocaleString("es-CO")}
-                </div>
-                <div className="text-xs text-slate-400">Impresiones/día</div>
-              </div>
-              <div>
-                <div className="text-2xl font-bold text-amber-400">
-                  {dwell}min
-                </div>
-                <div className="text-xs text-slate-400">Dwell Time prom.</div>
-              </div>
+      <div className="relative rounded-[24px] border border-white/[0.06] bg-slate-950/70 p-4 sm:p-6">
+        <header className="mb-5 flex flex-col gap-4 border-b border-white/[0.08] pb-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-emerald-400/30 bg-emerald-400/10">
+              <Target className="h-5 w-5 text-emerald-300" />
+              <span className="absolute inset-1 rounded-xl border border-emerald-300/15" />
             </div>
-
-            {/* Reach bar */}
             <div>
-              <div className="flex justify-between text-xs text-slate-400 mb-1">
-                <span>Cobertura del segmento</span>
-                <span className="text-white font-medium">{reachPct}%</span>
+              <div className="mb-1 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-300/80">
+                <Radio className="h-3 w-3 animate-pulse" /> EVGreen Audience Intelligence
               </div>
-              <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full transition-all duration-700"
-                  style={{ width: `${Math.min(reachPct, 100)}%` }}
-                />
+              <h3 className="text-base font-semibold tracking-tight text-white sm:text-lg">Predictor de alcance en vivo</h3>
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-2 sm:justify-end">
+            <div className="flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/[0.08] px-3 py-1.5 text-xs font-medium text-emerald-200">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-300 shadow-[0_0_10px_rgba(110,231,183,1)]" />
+              Datos en vivo
+            </div>
+            <button type="button" onClick={resetFilters} className="inline-flex items-center gap-1.5 rounded-full px-2 py-1.5 text-xs text-slate-400 transition-colors hover:bg-white/5 hover:text-white">
+              <RotateCcw className="h-3.5 w-3.5" /> Reiniciar
+            </button>
+          </div>
+        </header>
+
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-white/[0.08] bg-slate-900/40 p-3.5 sm:p-4">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-xs font-medium text-slate-200"><MapPin className="h-3.5 w-3.5 text-emerald-300" /> Paso 01 · Geografía</div>
+                <span className="font-mono text-[10px] uppercase tracking-wider text-slate-500">{selectedCities.length} mercados</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {cities.map((city) => {
+                  const selected = selectedCities.includes(city);
+                  return <button key={city} type="button" onClick={() => toggleCity(city)} className={`group inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-all ${selected ? "border-emerald-300/50 bg-emerald-400/15 text-emerald-100 shadow-[0_0_20px_rgba(52,211,153,0.12)]" : "border-slate-700 bg-slate-900/80 text-slate-400 hover:border-slate-500 hover:text-slate-100"}`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${selected ? "bg-emerald-300" : "bg-slate-600 group-hover:bg-slate-400"}`} />{city}
+                  </button>;
+                })}
               </div>
             </div>
 
-            <div className="text-xs text-slate-500 text-center">
-              {reach > 0
-                ? `Tu campaña llegaría al ${reachPct}% de los usuarios en el segmento seleccionado`
-                : "Selecciona filtros para ver la predicción"}
+            <div className="rounded-2xl border border-white/[0.08] bg-slate-900/40 p-3.5 sm:p-4">
+              <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-2 text-xs font-medium text-slate-200"><Car className="h-3.5 w-3.5 text-blue-300" /> Paso 02 · Perfil del vehículo <span className="text-slate-500">(opcional)</span></div>
+                <span className="font-mono text-[10px] uppercase tracking-wider text-slate-500">{selectedBrands.length ? `${selectedBrands.length} marcas activas` : "todas las marcas"}</span>
+              </div>
+              <div className="grid max-h-40 grid-cols-2 gap-1.5 overflow-y-auto pr-1 sm:grid-cols-3">
+                {VEHICLE_BRANDS.map((brand) => {
+                  const selected = selectedBrands.includes(brand);
+                  return <button key={brand} type="button" onClick={() => toggleBrand(brand)} className={`flex items-center justify-between rounded-lg border px-2.5 py-2 text-left text-xs transition-all ${selected ? "border-blue-300/40 bg-blue-500/15 text-blue-100" : "border-slate-800 bg-slate-950/50 text-slate-400 hover:border-slate-600 hover:text-slate-100"}`}>
+                    <span className="truncate">{brand}</span>
+                    {selected && <CheckCircle2 className="ml-1 h-3.5 w-3.5 shrink-0 text-blue-300" />}
+                  </button>;
+                })}
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="rounded-2xl border border-white/[0.08] bg-slate-900/40 p-3.5 sm:p-4">
+                <div className="mb-3 flex items-center gap-2 text-xs font-medium text-slate-200"><SlidersHorizontal className="h-3.5 w-3.5 text-fuchsia-300" /> Paso 03 · Suscripción</div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {tiers.map((tier) => <button key={tier.value || "all"} type="button" onClick={() => setSelectedTier(tier.value)} className={`rounded-lg border px-2 py-2 text-xs font-medium transition-all ${selectedTier === tier.value ? "border-fuchsia-300/50 bg-fuchsia-500/20 text-fuchsia-100" : "border-slate-800 bg-slate-950/50 text-slate-400 hover:border-slate-600 hover:text-slate-100"}`}>{tier.label}</button>)}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-white/[0.08] bg-slate-900/40 p-3.5 sm:p-4">
+                <div className="mb-3 flex items-center gap-2 text-xs font-medium text-slate-200"><Activity className="h-3.5 w-3.5 text-amber-300" /> Paso 04 · Actividad mensual</div>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {[0, 2, 4, 8].map((charges) => <button key={charges} type="button" onClick={() => setMinCharges(charges)} className={`rounded-lg border px-1 py-2 text-xs font-medium transition-all ${minCharges === charges ? "border-amber-300/50 bg-amber-400/20 text-amber-100" : "border-slate-800 bg-slate-950/50 text-slate-400 hover:border-slate-600 hover:text-slate-100"}`}>{charges === 0 ? "Todas" : `${charges}+`}</button>)}
+                </div>
+              </div>
             </div>
           </div>
-        )}
+
+          <aside className="relative overflow-hidden rounded-2xl border border-emerald-400/20 bg-gradient-to-b from-emerald-950/40 via-slate-900/90 to-slate-950 p-4 sm:p-5">
+            <div className="pointer-events-none absolute -right-8 top-10 h-28 w-28 rounded-full border border-emerald-300/15" />
+            <div className="pointer-events-none absolute -right-3 top-16 h-[4.5rem] w-[4.5rem] rounded-full border border-emerald-300/10" />
+            <div className="relative">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-200/70">Proyección de audiencia</p>
+                <span className="rounded-md border border-white/10 bg-white/5 px-1.5 py-1 font-mono text-[10px] text-slate-400">{activeFilterCount.toString().padStart(2, "0")} filtros</span>
+              </div>
+
+              {isLoading ? (
+                <div className="flex min-h-56 flex-col items-center justify-center gap-3 text-center text-slate-400"><Loader2 className="h-7 w-7 animate-spin text-emerald-300" /><p className="text-sm">Procesando señal de audiencia…</p></div>
+              ) : (
+                <div className="mt-6 space-y-5">
+                  <div>
+                    <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-slate-500">Alcance estimado</p>
+                    <p className="mt-1 text-4xl font-bold tracking-tight text-emerald-300 sm:text-5xl">{reach.toLocaleString("es-CO")}</p>
+                    <p className="mt-1 text-xs text-emerald-100/60">conductores alcanzables</p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 border-y border-white/[0.08] py-4">
+                    <div><p className="font-mono text-[10px] uppercase tracking-wide text-slate-500">Impresiones/día</p><p className="mt-1 text-xl font-semibold text-blue-300">{impressions.toLocaleString("es-CO")}</p></div>
+                    <div className="border-l border-white/[0.08] pl-3"><p className="font-mono text-[10px] uppercase tracking-wide text-slate-500">Dwell time</p><p className="mt-1 text-xl font-semibold text-amber-300">{dwell}<span className="ml-0.5 text-xs">min</span></p></div>
+                  </div>
+
+                  <div>
+                    <div className="mb-2 flex items-center justify-between text-xs"><span className="text-slate-400">Cobertura del segmento</span><span className="font-mono font-semibold text-white">{reachPct}%</span></div>
+                    <div className="relative h-2.5 overflow-hidden rounded-full bg-slate-800"><div className="absolute inset-0 opacity-40 [background-image:repeating-linear-gradient(90deg,transparent_0,transparent_9%,rgba(255,255,255,0.25)_10%)]" /><div className="relative h-full rounded-full bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-300 shadow-[0_0_18px_rgba(45,212,191,0.75)] transition-all duration-700" style={{ width: `${Math.min(reachPct, 100)}%` }} /></div>
+                  </div>
+
+                  <p className="rounded-xl border border-white/[0.08] bg-black/20 px-3 py-2.5 text-center text-xs leading-5 text-slate-400">{reach > 0 ? `Señal activa: tu campaña cubriría el ${reachPct}% del segmento configurado.` : "Ajusta los filtros para calcular una señal de audiencia."}</p>
+                </div>
+              )}
+            </div>
+          </aside>
+        </div>
       </div>
-    </div>
+    </section>
   );
 }
 

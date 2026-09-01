@@ -17,6 +17,178 @@
 - [x] Test: validar que `electricalDistanceM` y `estimatedEvPercent` se acepten al provenir de inputs de texto
 - [x] Test: ejecutar `spaces.admin.updateSpace` con texto y comprobar persistencia numérica y compatibilidad con el alias histórico
 
+## Auditoría SaaS, tenants y presencia en red (2026-08-14)
+- [x] Audit: verificar aislamiento de datos, permisos y rutas para cada empresa/tenant
+- [x] Feature: controlar si una estación participa en la red EVGreen o se opera como red privada/roaming
+- [x] Test: cubrir cruces de tenant y visibilidad de estaciones en consultas públicas y administrativas
+- [x] Audit: documentar criterios y brechas de salida a producción
+- [x] Test: validar con dos tenants que listados, detalle por ID y endpoints públicos no filtren datos entre organizaciones
+- [x] Audit: migrar o justificar todos los procedimientos tenant-sensibles del proyecto con tenantProcedure o checks explícitos por organizationId
+- [x] Fix: alinear las búsquedas internas de membresía con ctx.tenant.organizationId en tarifas, tickets, branding, dominio, billing y API keys
+- [x] Documentación: crear checklist trazable de readiness SaaS, visibilidad de red, ROAMING/OCPI y bloqueantes globales
+- [x] QA de producción: resolver los fallos preexistentes de la suite completa antes de declarar release general completamente listo
+- [ ] Feature: conectar el modo ROAMING con Cargame mediante OCPI antes de habilitar interoperabilidad externa real
+- [ ] Research: confirmar el programa de interoperabilidad, la versión OCPI, los endpoints y las credenciales sandbox de Cargame
+- [ ] Feature: implementar publicación y consumo OCPI bidireccional con Cargame, condicionado a acuerdo y credenciales oficiales
+- [x] Feature: centro administrativo para configurar URL, Party ID, credenciales, mTLS, módulos y activación OCPI sin editar código
+- [x] Security: almacenar y devolver secretos OCPI de forma enmascarada, solo para administradores autorizados
+- [x] Test: cubrir permisos, validación de configuración y ocultamiento de secretos OCPI
+- [x] Documentación: operación del centro OCPI y secuencia de activación con CargaME
+- [x] Feature: catálogo OCPI de estaciones elegibles para roaming con mapeo Locations/EVSEs/Connectors
+- [x] Feature: bitácora auditable de sincronización OCPI y controles de publicación manual desde Admin
+- [x] Test: cubrir elegibilidad de estaciones, aislamiento de red y ausencia de tráfico externo sin configuración activa
+- [x] Feature: acción manual `LOCATION_PUBLISH` con dry-run seguro hasta contar con credenciales oficiales
+- [x] Test: asegurar que `previewCatalog` y publicación manual no generan tráfico externo sin activación OCPI
+- [x] Test: ejecutar `getCatalog`, `previewCatalog` y `publishCatalog` con fetch espiado y verificar bitácora sin solicitudes externas
+- [x] Feature: almacenamiento de ubicaciones remotas OCPI por socio para consumo de red CargaME
+- [x] Feature: endpoints OCPI autenticados para recibir Locations del socio y consultar catálogo remoto desde Admin
+- [x] Test: validar aislamiento por socio, idempotencia de actualización y rechazo de credenciales ausentes
+- [x] Test: cubrir aislamiento por socio en OCPI inbound con el mismo Location ID para partners distintos
+- [x] Security: validar estrictamente la identidad OCPI y los campos mínimos del payload Location entrante
+- [x] Feature: registrar en la bitácora OCPI cada recepción válida o rechazada sin guardar secretos
+- [x] Test: cubrir payloads OCPI inválidos, inconsistencias de identidad y trazabilidad de recepciones
+- [x] Test: verificar que una Location válida genere el evento auditable LOCATION_RECEIVED con la identidad correcta
+- [x] Test: verificar que la auditoría de recepción válida no persista secretos ni encabezados sensibles
+- [x] Research: confirmar fuentes oficiales de CargaME/SIEM/UPME, onboarding y ruta para solicitar sandbox
+- [x] Audit: contrastar el contrato OCPI implementado con los requisitos públicos publicados por el ecosistema colombiano
+- [x] Documentación: ampliar la matriz de activación OCPI con evidencias, responsables y bloqueantes de credenciales
+- [x] Feature: separar la elegibilidad de reporte regulatorio SIEM del modo comercial ROAMING por estación
+- [x] Feature: configurar desde Admin qué estaciones públicas están habilitadas para el catálogo SIEM sin iniciar tráfico externo
+- [x] Test: cubrir estaciones públicas SIEM, exclusión de privadas e independencia frente al modo ROAMING
+- [x] Security: restringir la habilitación SIEM por estación a los roles administrativos autorizados
+- [x] Test: verificar que el propietario no administrativo no puede habilitar SIEM y que Admin sí puede hacerlo
+- [x] UI: alinear el texto del catálogo OCPI en Admin con la elegibilidad regulatoria SIEM independiente de ROAMING
+- [x] Feature: cola persistente e idempotente de eventos OCPI por estación para la futura publicación SIEM
+- [x] Feature: bitácora administrativa de eventos OCPI pendientes, enviados y fallidos sin exponer payloads sensibles
+- [x] Test: cubrir deduplicación, aislamiento y garantía de cero tráfico externo mientras no existan credenciales oficiales
+- [x] Feature: implementar transición auditable de la cola OCPI a estados SENT/FAILED/DEAD con actualización de intentos y errores, manteniendo cero tráfico externo hasta contar con credenciales oficiales
+- [x] Test: cubrir cambios de estado de la cola OCPI (PENDING→SENT/FAILED/DEAD), contador de intentos y exposición segura de errores sin payload sensible
+- [x] Feature: integrar la transición de la cola OCPI en un flujo administrativo dry-run sin tráfico externo
+- [x] Test: cubrir el flujo integrado que actualiza la cola y expone estados seguros en Admin
+- [x] Feature: integrar acciones administrativas dry-run para registrar resultados FAILED y DEAD sin tráfico externo
+- [x] Test: cubrir transiciones integradas PENDING→FAILED/DEAD y confirmar que el listado no expone payloads ni secretos
+- [x] Test: verificar directamente que listOutboxEvents no selecciona payload ni dedupeKey sensible
+- [x] Documentación: describir la cola SIEM, sus estados dry-run y las condiciones para habilitar un despachador certificado
+- [x] Feature: proyectar cambios de estado de conectores desde la fuente única de verdad hacia la cola SIEM
+- [x] Test: cubrir deduplicación y aislamiento de eventos EVSE_STATUS por estación y organización
+- [x] Documentación: describir la proyección ConnectorStateService→cola SIEM y su garantía de cero tráfico externo
+- [x] Feature: actualizar el snapshot Location SIEM cuando Admin edite datos elegibles de una estación
+- [x] Test: cubrir el encolado idempotente tras edición y la exclusión de estaciones no SIEM
+- [x] Documentación: describir la actualización del snapshot SIEM después de editar una estación
+- [x] UI: evitar que el control de sincronización automática sugiera un despacho externo aún no certificado
+- [x] Test: confirmar que la decisión de publicación OCPI sigue siendo dry-run sin credenciales oficiales
+- [x] QA: registrar la verificación del centro OCPI y los límites de acceso no autenticado del entorno publicado
+- [x] Test: eliminar colisiones de códigos fijos en pruebas de crowdfunding de espacios contra la base compartida
+- [x] Fix: reintentar de forma segura la creación de postulaciones cuando exista una colisión concurrente de código
+- [x] Test: cubrir la recuperación ante clave única duplicada durante la creación de espacios
+- [x] Test: simular ER_DUP_ENTRY y verificar que spaces.submit regenere el código y cree la postulación
+- [x] Test: confirmar que códigos heredados inválidos o fuera de cuatro dígitos no rompen el consecutivo oficial
+- [x] Documentación: registrar la corrección de consecutivos de espacios y el resultado de la suite completa
+- [x] Feature: permitir a Admin copiar y compartir por WhatsApp el enlace único de firma de una carta de intención
+- [x] UI: corregir la plantilla móvil de la carta de intención para evitar desbordamiento horizontal del botón y enlace
+- [x] Fix: asegurar que el pie legal de la carta use Green House Project SAS y NIT 901.447.678-0
+- [x] Test: cubrir la obtención administrativa segura de un enlace activo de firma y la exclusión de cartas no elegibles
+- [x] Test: verificar que la plantilla de carta preserve el CTA móvil, enlace visible y razón social legal correcta
+- [x] Documentación: describir el uso seguro de copiar y compartir por WhatsApp el enlace de firma desde Admin
+- [x] Feature: permitir rotar el token de una carta pendiente desde Admin y revocar el enlace compartido anterior
+- [x] Test: confirmar que el token anterior deja de ser válido al reenviar una carta pendiente
+- [x] Test: rotar una carta pendiente en base de datos y verificar que acceptLetter rechace el token anterior
+- [x] Test: verificar que, tras rotar la carta, el nuevo token quede persistido y sea el único enlace aceptado
+- [x] Documentación: explicar cuándo rotar un enlace de firma y cómo compartir el nuevo vínculo de forma segura
+- [x] Feature: reenviar por correo una carta pendiente desde un flujo rápido de seguimiento, rotando su enlace de firma
+- [x] Feature: exponer al rol comercial las acciones permitidas de carta para sus espacios vinculados
+- [x] Security: impedir que Comercial apruebe, edite datos estructurales, elimine espacios o gestione cartas ajenas
+- [x] Test: cubrir permisos comerciales, alcance por espacio vinculado y reenvío con revocación del token anterior
+- [x] Test: verificar que un comercial no puede ejecutar reenviarCartaSeguimiento sobre un espacio asignado a otro gestor
+- [x] Test: verificar explícitamente que usuarios con rol comercial no pueden usar rutas admin de aprobar, editar o eliminar espacios
+- [x] Documentación/QA: registrar de forma trazable qué acciones de carta sí puede ejecutar Comercial y cuáles permanecen exclusivas de Admin/Staff
+- [x] Audit: identificar qué estados de entrega de cartas están disponibles hoy y qué trazabilidad falta en Admin
+- [x] Feature: almacenar eventos verificados de entrega, apertura, retraso y rebote de cartas de intención
+- [x] Feature: mostrar en Admin el último estado de entrega y el historial seguro de cada carta
+- [x] Security: verificar la firma de webhooks de correo e impedir eventos duplicados o no asociados a una carta
+- [x] Test: cubrir firmas inválidas, idempotencia y proyección de estados de correo en cartas
+- [x] Feature: permitir a Admin reenviar una carta pendiente desde el panel de enlace alterno, rotando su vínculo de firma
+- [x] Test: verificar que Admin puede reenviar una carta pendiente y que el nuevo correo reinicia su estado de entrega
+- [x] Test: ejecutar spaces.admin.sendLetter como Admin sobre una carta letter_sent y verificar que reenvía correctamente
+- [x] Test: comprobar en BD que el reenvío administrativo rota token y reinicia identificador, estado y fecha de entrega
+- [x] Test: verificar que el reenvío administrativo falla en estados no elegibles sin alterar la trazabilidad previa
+- [x] Activación: registrar en Resend el endpoint público de eventos y seleccionar los tipos de correo de cartas
+- [x] Documentación: describir la activación de webhooks de entrega y la lectura del historial de cartas en Admin
+- [x] QA operativo: verificar en Resend y Admin el primer evento firmado generado por una nueva carta real enviada después de la publicación
+- [x] QA operativo: reenviar SPE-2026-0103 autorizada y verificar evento firmado más historial administrativo
+- [x] Fix: reemplazar la dependencia de RESEND_WEBHOOK_SECRET por la clave cifrada administrada desde base de datos/UI para eliminar el 503
+- [x] QA operativo: confirmar que los reintentos de email.sent y email.delivered obtienen respuesta 2xx y aparecen en Admin
+- [x] Test: firmar un evento SVIX con la clave cifrada persistida y verificar que el receptor local lo acepta
+- [x] Feature: guardar la clave de firma de Resend cifrada en configuración de plataforma administrable desde UI
+- [x] Feature: permitir a Admin consultar estado, actualizar y borrar la configuración del webhook sin exponer la clave
+- [x] Security: usar la clave cifrada de base de datos para verificar webhooks y no depender de variables de entorno
+- [x] Test: cubrir permisos Admin, enmascaramiento, cifrado y verificación de firma con la clave persistida
+- [x] Feature: permitir a Admin formalizar internamente una carta pendiente para desbloquear la publicación de un espacio
+- [x] Feature: exigir un motivo obligatorio y registrar responsable, fecha y evidencia de aprobación excepcional
+- [x] Security: impedir la formalización manual desde roles no administrativos y no alterar la firma externa del cliente
+- [x] Test: cubrir publicación excepcional, auditoría, motivo obligatorio y denegación a roles no autorizados
+- [x] Test: ejecutar publishToCrowdfunding como Admin sobre carta pendiente y verificar auditoría persistida
+- [x] Test: verificar que un usuario no administrativo no puede formalizar ni publicar excepcionalmente un espacio
+- [x] Feature: persistir una evidencia explícita de aprobación excepcional como referencia, URL o acta interna
+- [x] UI: exigir y mostrar la evidencia de aprobación excepcional en el diálogo de formalización manual
+- [x] Test: cubrir persistencia y visualización de evidencia junto con motivo, responsable y fecha
+- [x] QA UI: confirmar que Admin → Espacios muestra motivo, evidencia y fecha de formalización manual en el detalle y exige ambos campos en el diálogo
+- [ ] QA UI: formalizar un espacio de prueba o abrir uno ya formalizado y confirmar visualmente en Admin → Espacios que el detalle muestra motivo, evidencia y fecha persistidos
+- [ ] QA UI: capturar evidencia verificable del resumen auditable renderizado tras formalización manual persistida antes de marcar la verificación como completa
+- [x] Audit: definir la fuente única de verdad para inversión, ROI y payback entre Espacios y Crowdfunding
+- [x] Feature: heredar automáticamente la proyección financiera de un espacio al crear o publicar su proyecto de crowdfunding
+- [x] Feature: diferenciar visualmente valores heredados de ajustes manuales con motivo auditable
+- [x] Test: cubrir consistencia financiera, herencia al publicar y reglas de excepción manual
+- [x] Audit: mapear todos los campos técnicos, comerciales, financieros y recursos del espacio hacia Crowdfunding
+- [x] Feature: precargar en Crowdfunding todos los datos aprobados del espacio sin redigitación administrativa
+- [x] Feature: conservar fotos, ubicación, análisis IA y supuestos de cálculo como snapshots heredados del espacio
+- [x] Test: cubrir la cobertura completa del mapeo y detectar campos obligatorios no heredados
+- [x] Feature: heredar fotos y metadatos del espacio hacia la ficha administrativa y pública de crowdfunding
+- [x] UI: mostrar una galería de imágenes heredadas en el borrador y proyecto publicado sin segunda carga
+- [x] Fix UI: mostrar de forma visible la galería heredada en el editor de Crowdfunding para que Administración pueda verificar las fotos del sitio
+- [x] QA UI: comprobar que un proyecto vinculado con fotos muestra miniaturas y captions heredados antes de publicarlo
+- [x] Test: renderizar la galería heredada del editor y comprobar que muestra miniaturas, orden y captions del espacio
+- [x] Test: cubrir que las fotos vinculadas al espacio aparecen en el payload de crowdfunding y respetan el orden/captions
+- [x] Test: verificar que editar inversión, ROI, payback, potencia o ubicación en Espacios sincroniza el proyecto vinculado
+- [x] Feature: exigir motivo y registrar responsable al sobrescribir valores heredados en Crowdfunding
+- [x] Test: cubrir que la excepción financiera no puede guardarse sin motivo y conserva el snapshot original del espacio
+- [x] Test: verificar que editar campos no financieros o reenviar los mismos valores heredados no exige motivo de excepción
+- [x] Feature: mostrar en Crowdfunding el diff de valores heredados vs. ajustados y el historial de override con motivo, responsable y fecha
+- [x] Test: renderizar la comparación heredada y confirmar etiquetas de valor original, ajuste, motivo, responsable y fecha
+- [x] Feature: persistir la galería y metadatos heredados dentro del snapshot y conectarla a la ficha pública de crowdfunding
+- [x] Test: agregar prueba tRPC de override que rechace cambios sin motivo y preserve el snapshot original
+- [x] Test: agregar prueba de integración que edite un espacio y verifique la sincronización del proyecto vinculado
+- [x] Documentación: describir la fuente única de verdad de Espacios, snapshots heredados, galería y excepciones auditables de Crowdfunding
+- [x] QA UI: confirmar en Admin → Crowdfunding que un proyecto vinculado muestra galería, valores heredados y comparación financiera
+- [x] Test: cubrir el payload real de Crowdfunding confirmando fotos ordenadas, captions y metadatos heredados
+- [x] Test: renderizar el resumen y los campos de formalización manual para comprobar motivo, evidencia, fecha y etiquetas obligatorias
+- [x] Test: renderizar el diálogo de formalización manual y verificar etiquetas y ayudas obligatorias de motivo y evidencia
+- [x] Documentación: describir cuándo usar la formalización interna, qué evidencia registrar y que no reemplaza una firma externa
+- [x] QA: abrir Admin → Espacios y confirmar visualmente que SPE-2026-0103 muestra historial de entrega con estado DELIVERED después del replay exitoso
+- [x] QA: reintentar y verificar explícitamente el evento email.sent de SPE-2026-0103 hasta obtener 2xx y proyección administrativa
+- [x] QA UI: capturar visualmente el historial de SPE-2026-0103 con email.sent y DELIVERED en Admin → Espacios
+- [x] QA operativo: capturar el resultado 2xx de Resend para el replay de email.sent y email.delivered
+- [x] QA UI: confirmar visualmente en Admin → Crowdfunding la comparación de valores heredados vs ajustados y el snapshot financiero
+- [x] Audit: contrastar las fórmulas financieras del prospecto SPE-2026-0129 con el flujo real de ingresos, costos, aliados y participaciones
+- [x] Feature: calcular ingreso bruto, costo energético configurable por kWh, comisión configurable del aliado y margen neto distribuible por espacio
+- [x] Feature: configurar y auditar porcentajes de reparto neto para inversionista y EVGreen, garantizando que la suma sea 100 %
+- [x] Fix: recalcular utilidad anual, ROI y payback desde la participación del inversionista sobre margen neto, sin usar ingresos brutos como retorno
+- [x] UI: mostrar en Espacios, Crowdfunding y Prospecto el puente financiero desglosado y los supuestos configurables aplicados
+- [x] Test: cubrir fórmulas, límites, configuración, reparto y consistencia del ROI/payback con cálculos deterministas
+- [x] QA: regenerar y revisar visualmente el prospecto SPE-2026-0129 con el nuevo desglose financiero
+- [x] Bug: garantizar que “Mover en pipeline” abra únicamente el diálogo de transición de estado y nunca el flujo de formalización manual
+- [x] UX: mantener “Formalizar y publicar” como acción administrativa excepcional, separada y visible solo cuando corresponda
+- [x] Test: cubrir que el botón de pipeline usa transitionPipeline y que la formalización manual requiere su propia acción, motivo y evidencia
+- [x] QA UI: comprobar que una carta enviada puede avanzar por el pipeline sin activar formalización manual y que el historial registra el movimiento
+- [x] Audit: rastrear la galería de fotos desde Espacios y el snapshot de Crowdfunding hasta la consulta pública de inversión
+- [x] Fix: exponer fotografías heredadas de Espacios en el payload público de los proyectos publicados, sin filtrar ni duplicar datos ajenos
+- [x] UI: mostrar galería real con foto principal, miniaturas, captions y estados vacíos claros en la ficha de inversión
+- [x] Test: cubrir que la consulta pública devuelve y aísla la galería heredada del espacio vinculado
+- [ ] QA UI: abrir TEXACO LA GLORIETA en /investors y confirmar sus fotos reales en la ficha pública
+- [ ] Deck comercial: rediseñar la propuesta Zeus–EVGreen como alianza para hubs integrales de energía y multiservicios
+- [ ] Deck comercial: analizar el PDF entregado, validar contenido de Zeus y estructurar una narrativa de propuesta de valor más impactante
+- [ ] Deck comercial: producir y revisar una presentación visualmente coherente con identidad EVGreen y fuentes verificables
+
 ## Bugs Reportados — Módulo de Espacios (2026-08-06)
 - [x] Fix: títulos mostrando "// @ts-ignore" como texto visible en el detalle de espacio (JSX comments incorrectos)
 - [x] Fix: error al generar Prospecto PDF (posible fallo en jsPDF GState/setGState en Node.js)
@@ -4002,3 +4174,89 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Unificar oportunidades y estaciones vinculadas en una cartera mobile-first con métricas mensuales.
 - [x] Implementar liquidación auditable por día/mes sobre transacciones completadas, energía, gastos prorrateados y margen distribuible.
 - [x] Limitar la comisión comercial a la bolsa EVGreen para no afectar la participación del inversionista.
+
+## Deck de inversión — Estación de 480 kW (Excel de referencia)
+
+- [x] Analizar el CAPEX de referencia cercano a $1.500 millones y sus rubros desde el Excel aportado.
+- [x] Modelar escenarios pesimista, realista y optimista con margen bruto, aliado, margen neto y distribución 60/40.
+- [x] Comparar de forma responsable el CAPEX y el modelo operativo frente a una EDS tradicional, sin datos no verificables.
+- [x] Generar y revisar una presentación visual de inversión con supuestos, límites y riesgos claros.
+- [x] Deck confidencial: reemplazar el desglose monetario y porcentual de CAPEX por una solución llave en mano de COP 1.500 millones con categorías no valorizadas.
+- [x] Deck confidencial: revisar y publicar la versión sin precios internos, reservas ni porcentajes de costos.
+- [x] Deck técnico: regenerar las imágenes del hub para ubicar BESS, transformador y gabinetes técnicos a nivel de superficie, fuera de la circulación vehicular.
+- [x] Deck técnico: revisar y publicar la versión sin representaciones subterráneas irreales de equipos eléctricos.
+- [x] Deck operativo: comunicar cuatro cargadores DC y SLA de soporte 24/7 como parte del OPEX de EVGreen.
+- [x] Deck operativo: revisar y publicar la versión actualizada con capacidad y soporte incluidos.
+- [x] Incident: diagnosticar por qué Google Maps muestra “For development purposes only” y un error de carga en el NOC publicado.
+- [ ] Fix: restaurar la autorización de Maps con una clave restringida a los dominios de EVGreen y las APIs estrictamente necesarias.
+- [ ] QA: validar en /admin/tv que el mapa publicado carga sin marca de desarrollo ni alerta de Google, sin afectar los datos de estaciones.
+- [x] Incident: alinear la configuración de overrides con el lockfile para recuperar el build de producción bloqueado por pnpm.
+- [x] Bug: estabilizar el refresco de estaciones y marcadores para evitar que desaparezcan durante reconsultas o transiciones de carga.
+- [x] Test: cubrir la preservación del último snapshot válido de estaciones mientras una actualización se encuentra en curso.
+- [ ] QA móvil: validar que el mapa de usuarios no muestra “For development purposes only” y que las estaciones permanecen visibles tras actualizar.
+- [ ] Maps CLI: verificar proyecto, APIs habilitadas y restricciones efectivas de la credencial mediante herramientas oficiales de Google Cloud.
+- [ ] Maps deploy: contrastar de forma no reveladora la clave compilada por Railway contra la variable actualmente desplegada y forzar un build si están desalineadas.
+- [x] Incident: diagnosticar por qué /advertiser/dashboard renderiza la landing pública en lugar del portal de anunciantes.
+- [x] Fix: registrar la ruta de anunciantes y redirigir usuarios sin rol al acceso/registro correcto, no a la landing.
+- [x] Test: cubrir acceso de admin, anunciante, usuario autenticado sin rol y visitante a /advertiser/dashboard.
+- [ ] QA: validar en producción que “Ver plataforma” abre el portal de anunciantes con una URL y estado coherentes.
+- [x] Incident: alinear el esquema de transacciones de Railway con las columnas requeridas por overstay.getMyStatus para eliminar el error 500.
+- [x] Test: cubrir que el estado de sobretiempo tolera registros históricos y no falla ante columnas/migraciones incompletas.
+- [ ] QA producción: validar que overstay.getMyStatus responde sin 500 después de la migración segura.
+- [x] Fix: basar las búsquedas de sobretiempo en el estado canónico compatible de transacciones y evitar dependencia innecesaria de transactionStatus.
+- [x] Incident: diagnosticar las consultas OCPP no autorizadas que ejecuta el portal de organización para usuarios de gerencia.
+- [x] Fix: condicionar o retirar consultas OCPP técnicas fuera de los roles autorizados, sin relajar el control de acceso.
+- [x] Incident: alinear el esquema de configuración de facturación de organizaciones para eliminar organizations.getMyBilling 500.
+- [x] Test: cubrir la carga de configuración de organización sin llamadas OCPP para rol de gerencia y sin errores de esquema.
+- [ ] QA: validar con gerencia@greenhproject.com el portal de organización sin 403/500 en consola.
+- [x] Incident: diagnosticar el error de detalle de transacción `createdAt.toISOString is not a function` en Administración.
+- [x] Fix: normalizar fechas Date y texto de transacciones antes de formatearlas en el detalle administrativo.
+- [x] Test: cubrir formato de fecha para transacciones con Date, ISO string, timestamp y valor ausente.
+- [ ] QA: abrir detalles de transacciones históricas y recientes sin 500 ni error de renderizado.
+- [x] UX NOC: agregar un botón visible de “Volver al menú” hacia el panel administrativo.
+- [x] Test NOC: cubrir la ruta de retorno del NOC y su etiqueta accesible.
+- [ ] QA NOC: validar en producción el retorno al menú desde escritorio y móvil.
+- [x] NOC SaaS: definir y aplicar matriz de visibilidad para administración, soporte, organización y roles técnicos.
+- [x] NOC SaaS: exponer métricas y estados operativos por tenant, sin ingresos, liquidaciones, tarifas ni márgenes para roles no financieros.
+- [x] NOC SaaS: permitir a Soporte monitorizar toda la red y a cada organización únicamente sus activos autorizados.
+- [x] Test NOC SaaS: cubrir aislamiento de tenant, alcance de soporte y ocultamiento de métricas financieras.
+- [ ] QA NOC SaaS: validar el NOC desde organización, soporte y administración en producción.
+- [x] UX NOC SaaS: agregar “Monitor Operativo” al menú de Organización con acceso a /admin/tv limitado por tenant.
+- [x] Test NOC SaaS: cubrir que el enlace del menú de Organización usa la ruta segura del NOC.
+- [ ] QA NOC SaaS: validar el acceso y el retorno Organización → NOC → Organización.
+- [x] Fix NOC SaaS: permitir a cada organización visualizar únicamente sus KPI y actividad financiera propia en el NOC.
+- [x] Test NOC SaaS: verificar que organización recibe finanzas propias y que Soporte global no recibe ninguna métrica monetaria.
+- [ ] QA NOC SaaS: validar KPI financieros propios de Centro Comercial Andino EV sin exponer información de otros tenants.
+- [x] Role: exponer Anunciante (advertiser) en el selector de roles de Administración.
+- [x] Test: validar que Anunciante redirige al portal de campañas y que los demás roles conservan sus destinos.
+- [ ] QA: asignar Anunciante a una cuenta y abrir /advertiser/dashboard sin redirección a la landing.
+- [x] Admin Ads: mostrar perfiles de anunciantes pendientes en un centro de revisión accesible desde Administración.
+- [x] Admin Ads: permitir aprobar, rechazar o suspender perfiles con motivo y trazabilidad del administrador responsable.
+- [x] Test Admin Ads: cubrir permisos, transición de estados y bloqueo de campañas para perfiles no aprobados.
+- [ ] QA Admin Ads: aprobar un perfil pendiente y validar que puede crear campañas sin intervención manual en base de datos.
+- [x] Research Vardí: validar en fuentes oficiales las marcas vigentes del Grupo Vardí para catálogo de vehículos.
+- [x] Feature Vardí: incorporar Chery y marcas verificadas del Grupo Vardí en perfiles, vehículos y segmentación de campañas.
+- [x] Test Vardí: asegurar que el catálogo es consistente entre selección de vehículo y audiencia de anunciantes.
+- [ ] QA Vardí: confirmar que Chery y las marcas verificadas se ven en los formularios públicos y del portal de anuncios.
+
+## Auditoría de seguridad defensiva — 2026-08-21
+
+- [x] Establecer una línea base de seguridad: estado de compilación, dependencias, cabeceras HTTP y superficie pública.
+- [x] Revisar autenticación, autorización por rol, rutas administrativas y aislamiento multi-tenant sin realizar explotación activa.
+- [x] Revisar secretos, validación de entradas, CORS, cookies, limitación de solicitudes y endpoints expuestos.
+- [x] Corregir hallazgos verificables de bajo riesgo y añadir pruebas de regresión de seguridad.
+- [x] Elaborar informe de hallazgos, severidad, evidencia, remediación y riesgos residuales.
+- [x] Feature Admin Ads: agregar suspensión con motivo obligatorio, historial auditable de decisiones y controles exclusivamente administrativos.
+- [x] UI Admin Ads: priorizar perfiles pendientes, filtros por estado y detalle responsivo de contacto, empresa, presupuesto y trazabilidad.
+- [x] Test Admin Ads: cubrir transición aprobada, rechazada y suspendida, así como rechazo de acciones para roles no administrativos.
+- [x] UI Ads: rediseñar el predictor de alcance con jerarquía tecnológica, controles táctiles y métricas de mayor impacto visual.
+- [ ] QA UI Ads: validar visualmente el predictor en escritorio y móvil sin alterar la segmentación ni las métricas.
+- [x] Documento técnico: comparar ingresos diarios de cargadores de 120 kW, 40 kW y 7,5 kW en escenarios pesimista, realista y optimista.
+- [x] Lámina ejecutiva: explicar con métricas verificables por qué el 10 % de carga rápida puede superar el 15 % de carga AC/lenta en ingreso absoluto.
+- [x] Onboarding inicial: crear un wizard progresivo para usuarios nuevos que capture identidad, vehículo, preferencias y perfil fiscal sin fricción.
+- [x] Consentimiento onboarding: solicitar de forma independiente autorización de datos, notificaciones push y comunicaciones por WhatsApp, con trazabilidad y revocación desde Perfil.
+- [ ] QA onboarding: comprobar primera sesión, reanudación, salto de pasos, edición posterior y experiencia móvil antes de publicar.
+- [x] Presentación de inversión: auditar el modelo ELECTROLINERAS y construir un deck para levantar USD 100 millones destinados a 200 estaciones rápidas en Colombia.
+- [x] Presentación de inversión: validar CapEx, OpEx, estructura de pago y el retorno objetivo cercano a 12 % anual sin prometer resultados no sustentados.
+- [x] Deck EDS: rediseñar la presentación comercial adjunta con composición limpia, imágenes profesionales de alta resolución y estética EVGreen.
+- [x] Deck EDS: incluir gloria.reyes@greenhproject.com en el cierre como contacto comercial.

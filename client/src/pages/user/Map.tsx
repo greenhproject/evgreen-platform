@@ -32,6 +32,7 @@ import {
   Timer
 } from "lucide-react";
 import { AIInsightCard } from "@/components/AIInsightCard";
+import { createStationMarkerFingerprint } from "@/lib/station-marker-stability";
 
 // Tipo inferido del API - usamos any para flexibilidad con datos del backend
 type StationData = {
@@ -400,6 +401,13 @@ export default function UserMap() {
     });
   }, [stationsWithDistance, searchQuery, filters]);
 
+  // La distancia cambia con cada tick de GPS, pero no altera un marcador. El
+  // fingerprint solo cambia cuando cambia una estación o su disponibilidad.
+  const stationMarkerFingerprint = useMemo(
+    () => createStationMarkerFingerprint(filteredStations),
+    [filteredStations]
+  );
+
   // Agregar marcadores de estaciones filtradas al mapa
   useEffect(() => {
     if (!mapInstance) return;
@@ -525,7 +533,7 @@ export default function UserMap() {
         markers.forEach(marker => marker.map = null);
       }, 300);
     };
-  }, [mapInstance, filteredStations, userLocation]);
+  }, [mapInstance, stationMarkerFingerprint]);
 
   return (
     <UserLayout showHeader={false} showBottomNav={true}>

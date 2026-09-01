@@ -6,6 +6,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
 import { MapView } from "@/components/Map";
+import { useAuth } from "@/_core/hooks/useAuth";
 
 // ─── tipos ────────────────────────────────────────────────────────────────────
 type StationStatus = "charging" | "available" | "offline" | "faulted" | "inactive";
@@ -39,6 +40,17 @@ function fmtElapsed(start: Date | string) {
   const m  = Math.floor(ms / 60000);
   const h  = Math.floor(m / 60);
   return h > 0 ? `${h}h ${m % 60}m` : `${m}m`;
+}
+
+function getNocMenuPath(role?: string) {
+  switch (role) {
+    case "admin": return "/admin";
+    case "staff": return "/staff/event";
+    case "engineer": return "/engineer";
+    case "technician": return "/technician";
+    case "user": return "/org";
+    default: return "/";
+  }
 }
 
 // ─── sub-components ───────────────────────────────────────────────────────────
@@ -187,6 +199,7 @@ function Ticker({ items }: { items: any[] }) {
 
 // ─── main component ───────────────────────────────────────────────────────────
 export default function TVDashboard() {
+  const { user } = useAuth();
   const mapRef = useRef<google.maps.Map | null>(null);
   const markersRef = useRef<google.maps.Marker[]>([]);
   const [countdown, setCountdown] = useState(15);
@@ -273,6 +286,9 @@ export default function TVDashboard() {
   };
 
   const kpis = data?.kpis;
+  const canViewFinancials = data?.access?.canViewFinancials ?? false;
+  const canViewPersonalActivity = data?.access?.canViewPersonalActivity ?? false;
+  const menuPath = getNocMenuPath(user?.role);
   const stations = data?.stations || [];
   const byStatus = {
     charging:  stations.filter(s => s.overallStatus === "charging"),
@@ -302,6 +318,15 @@ export default function TVDashboard() {
           <span className="text-[11px] text-gray-500">↻ {countdown}s</span>
         </div>
         <div className="flex items-center gap-3">
+          <a
+            href={menuPath}
+            className="inline-flex items-center gap-1.5 rounded-md border border-white/15 px-2 py-1.5 text-[11px] font-medium text-gray-300 hover:border-green-400/60 hover:text-white focus:outline-none focus:ring-2 focus:ring-green-400/70"
+            title="Volver al menú administrativo"
+            aria-label="Volver al menú administrativo"
+          >
+            <span aria-hidden="true">←</span>
+            <span className="hidden sm:inline">Menú</span>
+          </a>
           <LiveClock />
           <button onClick={toggleFS} className="text-gray-400 hover:text-white text-base" title="Pantalla completa">
             {isFS ? "⊡" : "⛶"}
@@ -310,14 +335,14 @@ export default function TVDashboard() {
       </header>
 
       {/* ── KPI BAR ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 px-3 py-2 border-b border-white/10 bg-[#06101e]">
+      <div className={`grid grid-cols-2 sm:grid-cols-3 ${canViewFinancials ? "lg:grid-cols-8" : "lg:grid-cols-6"} gap-2 px-3 py-2 border-b border-white/10 bg-[#06101e]`}>
         <KpiCard label="En línea"      value={String(kpis?.onlineStations ?? "—")}        sub={`de ${kpis?.totalStations ?? "—"}`}            color="#22c55e" icon="🟢" />
         <KpiCard label="Cargando"      value={String(kpis?.chargingStations ?? "—")}       sub={`${kpis?.activeSessionsCount ?? 0} sesiones`}  color="#3b82f6" icon="⚡" />
         <KpiCard label="Potencia"      value={`${kpis?.totalPowerDelivering ?? 0} kW`}     sub="ahora mismo"                                   color="#a78bfa" icon="🔋" />
         <KpiCard label="Alertas"       value={String((kpis?.offlineStations ?? 0) + (kpis?.faultedStations ?? 0))} sub={`${kpis?.offlineStations ?? 0} off · ${kpis?.faultedStations ?? 0} falla`} color={((kpis?.offlineStations ?? 0) + (kpis?.faultedStations ?? 0)) > 0 ? "#ef4444" : "#6b7280"} icon="⚠️" />
-        <KpiCard label="Hoy $"         value={fmtCOP(kpis?.today.revenue ?? 0)}            sub={`${kpis?.today.sessions ?? 0} sesiones`}       color="#f59e0b" icon="💰" />
+        {canViewFinancials && <KpiCard label="Hoy $" value={fmtCOP(kpis?.today.revenue ?? 0)} sub={`${kpis?.today.sessions ?? 0} sesiones`} color="#f59e0b" icon="💰" />}
         <KpiCard label="Hoy kWh"       value={fmtKwh(kpis?.today.kwh ?? 0)}                sub="energía entregada"                             color="#06b6d4" icon="⚡" />
-        <KpiCard label="Mes $"         value={fmtCOP(kpis?.month.revenue ?? 0)}            sub={`${kpis?.month.sessions ?? 0} sesiones`}       color="#10b981" icon="📅" />
+        {canViewFinancials && <KpiCard label="Mes $" value={fmtCOP(kpis?.month.revenue ?? 0)} sub={`${kpis?.month.sessions ?? 0} sesiones`} color="#10b981" icon="📅" />}
         <KpiCard label="Mes kWh"       value={fmtKwh(kpis?.month.kwh ?? 0)}               sub={`${kpis?.week.sessions ?? 0} esta semana`}     color="#8b5cf6" icon="📊" />
       </div>
 
@@ -344,7 +369,7 @@ export default function TVDashboard() {
               ))}
             </div>
             {/* Top stations */}
-            {data?.topStations && data.topStations.length > 0 && (
+            {canViewFinancials && data?.topStations && data.topStations.length > 0 && (
               <div className="absolute top-3 left-3 bg-black/75 backdrop-blur-sm rounded-lg p-2 border border-white/10 text-xs min-w-[160px]">
                 <div className="text-gray-400 mb-1.5 text-[10px] uppercase tracking-wide font-medium">🏆 Top mes</div>
                 {data.topStations.map((s, i) => (
@@ -373,7 +398,7 @@ export default function TVDashboard() {
           </div>
 
           {/* hourly chart */}
-          {data?.hourlyData && data.hourlyData.length > 0 && (
+          {canViewFinancials && data?.hourlyData && data.hourlyData.length > 0 && (
             <div className="px-3 py-2 border-b border-white/10">
               <div className="text-[10px] text-gray-500 mb-1 uppercase tracking-wide">Ingresos por hora (hoy)</div>
               <HourlyBars data={data.hourlyData} />
@@ -398,9 +423,11 @@ export default function TVDashboard() {
           <span className="text-[10px] text-green-400 font-medium uppercase tracking-wide">Actividad</span>
         </div>
         <div className="flex-1 overflow-hidden">
-          {data?.recentActivity && data.recentActivity.length > 0
-            ? <Ticker items={data.recentActivity} />
-            : <span className="text-[11px] text-gray-600">Sin actividad reciente</span>
+          {!canViewPersonalActivity
+            ? <span className="text-[11px] text-gray-600">Vista operativa: actividad de usuarios y cobros protegidos</span>
+            : data?.recentActivity && data.recentActivity.length > 0
+              ? <Ticker items={data.recentActivity} />
+              : <span className="text-[11px] text-gray-600">Sin actividad reciente</span>
           }
         </div>
       </div>

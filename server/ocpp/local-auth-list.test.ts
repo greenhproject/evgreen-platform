@@ -64,14 +64,9 @@ describe("Local Auth List - Database Functions", () => {
     expect(typeof db.getAllLocalAuthListsStatus).toBe("function");
   });
 
-  it("getLocalAuthListWithEntries should return list and entries for non-existent station", async () => {
+  it("getLocalAuthListWithEntries should reject a non-existent station without creating an orphan list", async () => {
     const db = await import("../db");
-    const result = await db.getLocalAuthListWithEntries(99999);
-    expect(result).toHaveProperty("list");
-    expect(result).toHaveProperty("entries");
-    expect(result.list).toHaveProperty("listVersion");
-    expect(result.list).toHaveProperty("status");
-    expect(Array.isArray(result.entries)).toBe(true);
+    await expect(db.getLocalAuthListWithEntries(99999)).rejects.toThrow("Station not found");
   });
 
   it("getPendingOfflineTransactions should return array", async () => {

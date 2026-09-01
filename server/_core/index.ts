@@ -28,6 +28,8 @@ import { runWeeklyReportJob } from "../email/weekly-report-email";
 import * as ocppManager from "../ocpp/connection-manager";
 import * as alertsService from "../ocpp/alerts-service";
 import { dualCSMS } from "../ocpp/csms-dual";
+import { dispatchOrganizationWebhookEvent } from "../api/webhook-dispatcher";
+import { handleResendWebhook } from "../email/resend-webhook-router";
 
 // Grace period para desconexiones temporales del legacy CSMS
 // Evita notificaciones por reconexiones intermitentes (WiFi inestable, reinicios breves)
@@ -56,6 +58,11 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 async function startServer() {
   const app = express();
   const server = createServer(app);
+
+  // Railway termina TLS en su proxy. Confiar solo en el primer proxy permite
+  // obtener la IP real para los límites de solicitudes sin aceptar cabeceras
+  // X-Forwarded-* arbitrarias de más de un salto.
+  app.set("trust proxy", 1);
   
   // CRÍTICO: server.timeout DEBE ser 0 para permitir conexiones WebSocket OCPP de larga duración.
   // El timeout del servidor HTTP de Node.js aplica a TODAS las conexiones, incluyendo WebSocket.
@@ -154,6 +161,8 @@ async function startServer() {
 
   // Cookie parser (needed for Auth0 state cookie)
   app.use(cookieParser());
+  // Resend firma el cuerpo crudo con Svix; esta ruta debe montarse antes del parser JSON global.
+  app.post("/api/resend/webhook", express.text({ type: "application/json", limit: "1mb" }), handleResendWebhook);
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -213,6 +222,9 @@ async function startServer() {
   // API Pública REST v1 para integración externa
   const { default: publicApiRouter } = await import("../api/public-api");
   app.use("/api/v1", express.json(), publicApiRouter);
+  // OCPI inbound: Locations recibidas de CargaME/SIEM con token configurado por Admin.
+  const { default: ocpiInboundRouter } = await import("../ocpi/ocpi-inbound-router");
+  app.use("/ocpi/2.2.1", express.json({ limit: "1mb" }), ocpiInboundRouter);
 
   // Página de documentación de API
   app.get("/api-docs", (_req, res) => {
@@ -241,8 +253,6 @@ async function startServer() {
   // ============================================
   app.get("/api/health", async (_req, res) => {
     try {
-      const { getPoolStats } = await import("../db");
-      const poolStats = getPoolStats();
       let dbOk = false;
       try {
         const { getDb } = await import("../db");
@@ -252,16 +262,8 @@ async function startServer() {
           dbOk = true;
         }
       } catch { dbOk = false; }
-      const mem = process.memoryUsage();
       res.json({
         status: dbOk ? 'healthy' : 'degraded',
-        uptime: Math.floor(process.uptime()),
-        database: { connected: dbOk, pool: poolStats },
-        memory: {
-          rss: Math.round(mem.rss / 1024 / 1024) + 'MB',
-          heapUsed: Math.round(mem.heapUsed / 1024 / 1024) + 'MB',
-          heapTotal: Math.round(mem.heapTotal / 1024 / 1024) + 'MB',
-        },
         timestamp: new Date().toISOString(),
       });
     } catch (error: any) {
@@ -1739,6 +1741,24 @@ async function handleOCPP16Message(
         } catch (notifErr) {
           console.error(`[OCPP] Error sending charge complete notification:`, notifErr);
         }
+      }
+
+      // Evento externo no bloqueante: la organización de la estación es el único alcance permitido.
+      try {
+        const stationForWebhook = await db.getChargingStationById(transaction.stationId);
+        void dispatchOrganizationWebhookEvent(stationForWebhook?.organizationId, "charging.completed", {
+          eventId: `charging.completed:${transaction.id}`,
+          transactionId: transaction.id,
+          stationId: transaction.stationId,
+          stationName: stationForWebhook?.name ?? stationName,
+          energyKwh: Number(energyDelivered.toFixed(4)),
+          totalCostCop: Math.round(totalCost),
+          durationMinutes: Math.round(durationMinutes),
+          completedAt: endTime.toISOString(),
+          stopReason: payload.reason || "Remote",
+        });
+      } catch (webhookErr) {
+        console.error(`[OCPP] Error preparing tenant webhook:`, webhookErr);
       }
       // ============================================================
       // ACUMULACIÓN DE PUNTOS DE FIDELIZACIÓN (1 pt por kWh)

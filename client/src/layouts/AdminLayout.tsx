@@ -56,7 +56,8 @@ import {
   MessageCircle,
   MonitorPlay,
   Star,
-  Megaphone
+	Megaphone
+	,Network
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -75,20 +76,21 @@ const adminMenuItems: { icon: any; label: string; path: string; roles?: string[]
   { icon: UserCheck, label: "Onboarding", path: "/admin/onboarding" },
   { icon: Server, label: "Backup & Recovery", path: "/admin/backup" },
   { icon: Building2, label: "Crowdfunding", path: "/admin/crowdfunding" },
-  { icon: Terminal, label: "Monitor OCPP", path: "/admin/ocpp-monitor" },
+	{ icon: Terminal, label: "Monitor OCPP", path: "/admin/ocpp-monitor" },
+	{ icon: Network, label: "OCPI / CargaME", path: "/admin/ocpi" },
   { icon: Timer, label: "Penalizaciones", path: "/admin/overstay" },
   { icon: ParkingSquare, label: "Ocupación Parqueadero", path: "/admin/occupancy-liquidations" },
   { icon: Banknote, label: "Deudas", path: "/admin/debts" },
   { icon: BarChart3, label: "Reportes", path: "/admin/reports" },
   { icon: Image, label: "Banners", path: "/admin/banners" },
-  { icon: Megaphone, label: "Anunciantes", path: "/admin/advertisers", roles: ["admin", "staff"] },
+  { icon: Megaphone, label: "Anunciantes", path: "/admin/advertisers", roles: ["admin"] },
   { icon: Bell, label: "Notificaciones", path: "/admin/notifications" },
   { icon: RotateCcw, label: "Reembolsos", path: "/admin/refunds" },
   { icon: AlertCircle, label: "Reclamos", path: "/admin/claims" },
   { icon: Headphones, label: "Soporte", path: "/admin/support" },
   { icon: PhoneCall, label: "Inicio Remoto", path: "/admin/remote-start" },
   { icon: FileText, label: "Cotizaciones", path: "/admin/quotes", roles: ["admin", "staff", "host", "comercial"] },
-  { icon: MapPin, label: "Espacios", path: "/admin/spaces" },
+  { icon: MapPin, label: "Espacios", path: "/admin/spaces", roles: ["admin", "staff", "comercial"] },
   { icon: Calculator, label: "Centro Financiero", path: "/admin/financial" },
   { icon: Wrench, label: "Fondo Mantenimiento", path: "/admin/maintenance-fund" },
   { icon: Bot, label: "Asistente IA", path: "/admin/ai-settings" },
@@ -104,7 +106,7 @@ function getMenuItemsForRole(role: string | undefined) {
   if (!role) return [];
   // Admin y staff ven todo
   if (role === "admin" || role === "staff") return adminMenuItems;
-  // Comercial solo ve Cotizaciones
+  // Comercial accede exclusivamente a cotizaciones y al pipeline de espacios.
   if (role === "comercial") return adminMenuItems.filter(item => item.roles?.includes("comercial"));
   // Host ve todo (es admin de estación)
   if (role === "host") return adminMenuItems;

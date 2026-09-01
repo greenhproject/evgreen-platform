@@ -44,6 +44,7 @@ import {
   Star,
   Gift,
   ExternalLink,
+  Sparkles,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -109,6 +110,16 @@ export default function UserProfile() {
     onError: () => {
       toast.error("No se pudo eliminar la cuenta. Intenta de nuevo.");
     },
+  });
+
+  const utils = trpc.useUtils();
+  const restartOnboardingMutation = trpc.userOnboarding.restart.useMutation({
+    onSuccess: async () => {
+      await utils.userOnboarding.getStatus.invalidate();
+      toast.success("Abriremos la configuración guiada de tu experiencia.");
+      setLocation("/map");
+    },
+    onError: (error) => toast.error(error.message || "No se pudo abrir la configuración guiada."),
   });
 
   const { data: socSuggestion } = trpc.charging.getSocAccuracySuggestion.useQuery(undefined, {
@@ -232,6 +243,15 @@ export default function UserProfile() {
                 Actualizar a Premium
               </Button>
             )}
+            <Button
+              variant="outline"
+              className="w-full mt-3"
+              onClick={() => restartOnboardingMutation.mutate()}
+              disabled={restartOnboardingMutation.isPending}
+            >
+              <Sparkles className="w-4 h-4 mr-2" />
+              {restartOnboardingMutation.isPending ? "Preparando…" : "Configurar mi experiencia"}
+            </Button>
           </Card>
         </motion.div>
 

@@ -107,7 +107,7 @@ export async function processRecurringBilling(): Promise<{
   // 5. Obtener suscripciones que necesitan cobro hoy
   let subs: any[];
   try {
-    subs = await db.getActiveSubscriptionsForBilling();
+    subs = (await db.getActiveSubscriptionsForBilling()) || [];
   } catch (err: any) {
     result.errors.push(`Consulta BD: ${err.message}`);
     return result;
@@ -349,11 +349,18 @@ async function chargeWithPaymentSource(
       return true;
     }
 
-    await db.incrementSubscriptionFailedPayments(sub.id);
+    // Wompi puede dejar un cobro asincrónico en PENDING; no se suspende ni se
+    // incrementa el contador hasta recibir el resultado definitivo por webhook.
+    if (txStatus === "PENDING") {
+      console.log(`[Billing] ⏳ Cobro Wompi pendiente: sub ${sub.id}`);
+      return true;
+    }
+
+    // El incremento y la suspensión se ejecutan una sola vez en
+    // handleFailedRenewal para evitar contar doble el mismo intento.
     return false;
   } catch (err: any) {
     console.error(`[Billing] Error tarjeta sub ${sub.id}:`, err);
-    await db.incrementSubscriptionFailedPayments(sub.id);
     return false;
   }
 }

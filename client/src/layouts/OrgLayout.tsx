@@ -40,6 +40,7 @@ import {
   FileText,
   DollarSign,
   Webhook,
+  Activity,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
@@ -50,6 +51,7 @@ import { trpc } from "@/lib/trpc";
 const ALL_ORG_MENU_ITEMS = [
   { key: 'dashboard',       icon: LayoutDashboard, label: "Dashboard",              path: "/org" },
   { key: 'stations',        icon: MapPin,           label: "Mis Estaciones",         path: "/org/stations" },
+  { key: 'noc',             icon: Activity,         label: "Monitor Operativo",     path: "/admin/tv" },
   { key: 'transactions',    icon: CreditCard,       label: "Transacciones",          path: "/org/transactions" },
   { key: 'analytics',       icon: BarChart2,        label: "Analítica",              path: "/org/analytics" },
   { key: 'dynamic_pricing', icon: BrainCircuit,     label: "Precios Dinámicos IA",   path: "/org/dynamic-pricing" },
@@ -98,7 +100,7 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
   const secondaryColor = org?.secondaryColor || "#1e40af";
   const logoUrl = org?.logoUrl || null;
   const appName = org?.appName || org?.name || "EVGreen";
-  const activeModules: string[] = modulesData?.modules || DEFAULT_MODULES;
+  const activeModules: string[] = Array.from(new Set([...(modulesData?.modules || DEFAULT_MODULES), "noc"]));
 
   // Filter menu items based on active modules
   const menuItems = ALL_ORG_MENU_ITEMS.filter(item => activeModules.includes(item.key));

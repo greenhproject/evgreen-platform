@@ -24,11 +24,15 @@ vi.mock("../db", () => ({
   cancelUserSubscription: vi.fn(),
   createNotification: vi.fn(),
   getUserById: vi.fn(() => ({ id: 1, fcmToken: null })),
+  getUserWallet: vi.fn(),
+  updateWalletBalance: vi.fn(),
+  createWalletTransaction: vi.fn(),
+  getDb: vi.fn(async () => null),
 }));
 
 // Mock de FCM
 vi.mock("../firebase/fcm", () => ({
-  sendPushNotification: vi.fn(() => true),
+  sendPushNotification: vi.fn().mockResolvedValue(true),
 }));
 
 // Mock de fetch
@@ -51,6 +55,9 @@ const mockKeys = {
 describe("Recurring Billing Service", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockFetch.mockReset();
+    (db.getUserWallet as any).mockResolvedValue({ id: 1, balance: "0" });
+    (db.getUserById as any).mockResolvedValue({ id: 1, fcmToken: null, email: null });
   });
 
   describe("processRecurringBilling", () => {
@@ -60,7 +67,7 @@ describe("Recurring Billing Service", () => {
       const result = await processRecurringBilling();
 
       expect(result.processed).toBe(0);
-      expect(result.errors).toContain("Wompi no configurado");
+      expect(result.successful).toBe(0);
     });
 
     it("retorna resultado vacío si no hay suscripciones pendientes", async () => {
@@ -93,7 +100,7 @@ describe("Recurring Billing Service", () => {
       expect(db.createNotification).toHaveBeenCalledWith(
         expect.objectContaining({
           userId: 10,
-          title: "Suscripción cancelada por falta de pago",
+          title: "❌ Plan Básico cancelado",
         })
       );
     });
@@ -147,7 +154,7 @@ describe("Recurring Billing Service", () => {
       expect(db.createNotification).toHaveBeenCalledWith(
         expect.objectContaining({
           userId: 10,
-          title: "Cobro de suscripción exitoso",
+          title: "✅ Plan Básico renovado",
         })
       );
     });
@@ -239,7 +246,7 @@ describe("Recurring Billing Service", () => {
       expect(db.createNotification).toHaveBeenCalledWith(
         expect.objectContaining({
           userId: 30,
-          title: "Error en cobro de suscripción",
+          title: "⚠️ No se pudo renovar tu Plan Básico",
         })
       );
     });
@@ -263,7 +270,7 @@ describe("Recurring Billing Service", () => {
       expect(db.createNotification).toHaveBeenCalledWith(
         expect.objectContaining({
           userId: 40,
-          title: "Renovación de suscripción pendiente",
+          title: "⚠️ No se pudo renovar tu Plan Premium",
         })
       );
     });
@@ -308,7 +315,7 @@ describe("Recurring Billing Service", () => {
       expect(sendPushNotification).toHaveBeenCalledWith(
         "fcm_token_abc",
         expect.objectContaining({
-          title: "Cobro de suscripción exitoso",
+          title: "✅ Plan Básico renovado",
         })
       );
     });

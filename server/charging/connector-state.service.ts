@@ -18,9 +18,12 @@
  */
 
 import { eq, and, inArray } from "drizzle-orm";
-import { getDb } from "../db";
-import { evses, evseStateLog, chargingStations, chargers } from "../../drizzle/schema";
+import { getDb, getPlatformSettings } from "../db";
+import { evses, evseStateLog, chargingStations, chargers, organizations } from "../../drizzle/schema";
 import { updateConnectorStatus } from "../ocpp/connection-manager";
+import { getSiemEligibility } from "../ocpi/ocpi-catalog";
+import { getEvseStatusDedupeKey, buildOcpiEvseStatusPayload } from "../ocpi/ocpi-status-projection";
+import { stageOcpiEvent } from "../ocpi/ocpi-outbox";
 
 // ============================================================================
 // TIPOS
@@ -172,6 +175,13 @@ export const ConnectorStateService = {
       console.warn(`[ConnectorState] No se pudo propagar estado a estación ${evse.stationId}:`, err);
     }
 
+    // Preparación local para SIEM: nunca bloquea la operación de carga ni envía red.
+    try {
+      await ConnectorStateService._stageSiemEvseStatus(evse, newStatus, db);
+    } catch (err) {
+      console.warn(`[ConnectorState] No se pudo preparar evento SIEM para EVSE ${evseId}:`, err);
+    }
+
     console.log(
       `[ConnectorState] EVSE ${evseId} (estación ${evse.stationId}): ${previousStatus} → ${newStatus} [${triggeredBy}${reason ? `: ${reason}` : ""}]`
     );
@@ -319,5 +329,37 @@ export const ConnectorStateService = {
         .set({ chargerStatus, isOnline: chargerAllFaulted ? 0 : 1 })
         .where(eq(chargers.id, charger.id));
     }
+  },
+
+  async _stageSiemEvseStatus(evse: any, status: ConnectorStatus, db: any): Promise<void> {
+    const [station] = await db.select({
+      id: chargingStations.id,
+      organizationId: chargingStations.organizationId,
+      isActive: chargingStations.isActive,
+      isPublic: chargingStations.isPublic,
+      networkAccessMode: chargingStations.networkAccessMode,
+      siemReportingEnabled: chargingStations.siemReportingEnabled,
+      organizationStatus: organizations.orgStatus,
+      networkMember: organizations.networkMember,
+    }).from(chargingStations).leftJoin(organizations, eq(chargingStations.organizationId, organizations.id)).where(eq(chargingStations.id, evse.stationId)).limit(1);
+    if (!station || !getSiemEligibility(station as any).eligible) return;
+
+    const settings: any = await getPlatformSettings();
+    const updatedAt = new Date().toISOString();
+    await stageOcpiEvent(db, {
+      eventType: "EVSE_STATUS",
+      organizationId: station.organizationId,
+      stationId: station.id,
+      dedupeKey: getEvseStatusDedupeKey(station.id, evse.id),
+      payload: buildOcpiEvseStatusPayload({
+        countryCode: settings?.ocpiCountryCode || "CO",
+        partyId: settings?.ocpiPartyId || "EVG",
+        stationId: station.id,
+        evseId: evse.id,
+        evseUid: evse.evseIdLocal,
+        status,
+        updatedAt,
+      }),
+    });
   },
 };

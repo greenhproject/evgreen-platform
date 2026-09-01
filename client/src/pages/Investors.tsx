@@ -67,6 +67,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { MapView } from "@/components/Map";
+import { resolveInheritedProjectPhotos } from "@shared/project-gallery";
 
 // ============================================================================
 // NOTA: Todos los parámetros financieros (costos de energía, precios de venta,
@@ -858,6 +859,8 @@ export default function Investors() {
     const [showContactForm, setShowContactForm] = useState(false);
     const [contactForm, setContactForm] = useState({ name: "", email: "", phone: "", interestedAmount: "", message: "" });
     const [contactSent, setContactSent] = useState(false);
+    const selectedPremiumPhotos = resolveInheritedProjectPhotos(selectedPremium);
+    const activeGalleryPhotos = selectedPremium ? selectedPremiumPhotos : (selectedSpace?.photos || []);
 
     // Premium stations from crowdfunding (OPEN, ACTIVE, IN_PROGRESS, FUNDED) with coordinates
     const premiumStations = useMemo(() => {
@@ -1367,11 +1370,20 @@ export default function Investors() {
               {selectedPremium ? (
                 /* PREMIUM DETAIL VIEW */
                 <div className="bg-gradient-to-br from-amber-900/30 to-slate-800/80 border border-amber-500/30 rounded-2xl overflow-hidden">
-                  <div className="relative h-36 bg-gradient-to-br from-amber-600/30 to-amber-800/30 flex items-center justify-center">
-                    <div className="text-center">
-                      <Star className="w-12 h-12 text-amber-400 mx-auto mb-1" />
-                      <span className="text-amber-400 text-xs font-bold tracking-wider">ESTACIÓN PREMIUM</span>
-                    </div>
+                  <div className="relative h-36 bg-gradient-to-br from-amber-600/30 to-amber-800/30 flex items-center justify-center overflow-hidden">
+                    {selectedPremiumPhotos.length > 0 ? (
+                      <>
+                        <img src={selectedPremiumPhotos[0].url} alt={selectedPremiumPhotos[0].caption || `Registro fotográfico de ${selectedPremium.name}`} className="w-full h-full object-cover" />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/10 to-transparent" />
+                        <span className="absolute bottom-3 left-3 inline-flex items-center gap-1.5 rounded-full bg-black/65 px-2.5 py-1 text-[10px] font-medium text-amber-200 backdrop-blur-sm"><Camera className="h-3 w-3" /> {selectedPremiumPhotos.length} fotos del sitio</span>
+                      </>
+                    ) : (
+                      <div className="text-center">
+                        <Star className="w-12 h-12 text-amber-400 mx-auto mb-1" />
+                        <span className="text-amber-400 text-xs font-bold tracking-wider">ESTACIÓN PREMIUM</span>
+                        <p className="mt-1 text-[10px] text-amber-100/70">Registro fotográfico pendiente</p>
+                      </div>
+                    )}
                     <button
                       onClick={() => setSelectedPremium(null)}
                       className="absolute top-3 right-3 w-8 h-8 rounded-full bg-black/50 backdrop-blur-sm text-white flex items-center justify-center hover:bg-black/70"
@@ -1445,6 +1457,20 @@ export default function Investors() {
                         <span className="text-white font-medium">{selectedPremium.estimatedPaybackMonths} meses</span>
                       </div>
                     </div>
+
+                    {selectedPremiumPhotos.length > 0 && (
+                      <div className="space-y-2">
+                        <h4 className="text-sm font-medium text-amber-400 flex items-center gap-1.5"><Camera className="w-4 h-4" /> Registro fotográfico del sitio ({selectedPremiumPhotos.length})</h4>
+                        <div className="grid grid-cols-3 gap-2">
+                          {selectedPremiumPhotos.map((photo, index) => (
+                            <button key={`${photo.url}-${index}`} onClick={() => setLightboxIdx(index)} className="relative aspect-square overflow-hidden rounded-lg border border-amber-500/20 bg-black/30 hover:border-amber-400/70 focus:outline-none focus:ring-2 focus:ring-amber-400">
+                              <img src={photo.url} alt={photo.caption || PHOTO_TYPE_LABELS[photo.type] || "Foto del sitio"} className="h-full w-full object-cover" />
+                              <span className="absolute inset-x-1 bottom-1 truncate rounded bg-black/65 px-1.5 py-0.5 text-[10px] text-amber-100">{photo.caption || PHOTO_TYPE_LABELS[photo.type] || "Registro del sitio"}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     {/* CTA */}
                     <div className="flex gap-2">
@@ -1868,7 +1894,7 @@ export default function Investors() {
         </div>
 
         {/* Lightbox */}
-        {lightboxIdx !== null && selectedSpace?.photos && (
+        {lightboxIdx !== null && activeGalleryPhotos.length > 0 && (
           <div
             className="fixed inset-0 z-[9999] bg-black/90 backdrop-blur-sm flex items-center justify-center"
             onClick={() => setLightboxIdx(null)}
@@ -1880,16 +1906,16 @@ export default function Investors() {
               >
                 <X className="w-5 h-5" />
               </button>
-              {selectedSpace.photos.length > 1 && (
+              {activeGalleryPhotos.length > 1 && (
                 <>
                   <button
-                    onClick={() => setLightboxIdx((lightboxIdx - 1 + selectedSpace.photos.length) % selectedSpace.photos.length)}
+                    onClick={() => setLightboxIdx((lightboxIdx - 1 + activeGalleryPhotos.length) % activeGalleryPhotos.length)}
                     className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors z-10"
                   >
                     <ChevronLeft className="w-5 h-5" />
                   </button>
                   <button
-                    onClick={() => setLightboxIdx((lightboxIdx + 1) % selectedSpace.photos.length)}
+                    onClick={() => setLightboxIdx((lightboxIdx + 1) % activeGalleryPhotos.length)}
                     className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors z-10"
                   >
                     <ChevronRight className="w-5 h-5" />
@@ -1897,18 +1923,18 @@ export default function Investors() {
                 </>
               )}
               <img
-                src={selectedSpace.photos[lightboxIdx].url}
-                alt={selectedSpace.photos[lightboxIdx].caption || "Foto del espacio"}
+                src={activeGalleryPhotos[lightboxIdx].url}
+                alt={activeGalleryPhotos[lightboxIdx].caption || "Foto del espacio"}
                 className="w-full max-h-[80vh] object-contain rounded-xl"
               />
               <div className="text-center mt-4">
                 <span className="text-sm text-emerald-400 font-medium">
-                  {PHOTO_TYPE_LABELS[selectedSpace.photos[lightboxIdx].type] || selectedSpace.photos[lightboxIdx].type}
+                  {PHOTO_TYPE_LABELS[activeGalleryPhotos[lightboxIdx].type] || activeGalleryPhotos[lightboxIdx].type}
                 </span>
-                {selectedSpace.photos[lightboxIdx].caption && (
-                  <p className="text-sm text-gray-400 mt-1">{selectedSpace.photos[lightboxIdx].caption}</p>
+                {activeGalleryPhotos[lightboxIdx].caption && (
+                  <p className="text-sm text-gray-400 mt-1">{activeGalleryPhotos[lightboxIdx].caption}</p>
                 )}
-                <p className="text-xs text-gray-600 mt-1">{lightboxIdx + 1} / {selectedSpace.photos.length}</p>
+                <p className="text-xs text-gray-600 mt-1">{lightboxIdx + 1} / {activeGalleryPhotos.length}</p>
               </div>
             </div>
           </div>

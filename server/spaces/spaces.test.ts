@@ -6,8 +6,8 @@ import { describe, expect, it, vi, beforeAll, afterAll } from "vitest";
 import { appRouter } from "../routers";
 import type { TrpcContext } from "../_core/context";
 import { getDb } from "../db";
-import { spaceSubmissions } from "../../drizzle/schema";
-import { like, or } from "drizzle-orm";
+import { spacePhotos, spaceSubmissions } from "../../drizzle/schema";
+import { eq, like, or } from "drizzle-orm";
 
 // ============================================================================
 // HELPERS
@@ -393,6 +393,106 @@ describe("spaces.acceptLetter", () => {
   });
 });
 
+describe("publicación excepcional con formalización interna", () => {
+  it("publica una carta pendiente solo con motivo y persiste la auditoría del administrador", async () => {
+    const publicCaller = appRouter.createCaller(createPublicContext());
+    const adminCaller = appRouter.createCaller(createAdminContext());
+    const { submissionId } = await publicCaller.spaces.submit({
+      submitterName: "Formalización interna Test",
+      submitterEmail: "formalizacion-interna@example.com",
+      submitterPhone: "3000000999",
+      spaceName: "Espacio formalización interna Test",
+      spaceType: "parking",
+      address: "Carrera 15 # 20-30",
+      city: "Bogotá",
+    });
+
+    await adminCaller.spaces.admin.updateStatus({ id: submissionId, status: "approved" });
+    const db = await getDb();
+    await db!.update(spaceSubmissions)
+      .set({ spaceStatus: "letter_sent", letterToken: `manual-${submissionId}` })
+      .where(eq(spaceSubmissions.id, submissionId));
+
+    const result = await adminCaller.spaces.admin.publishToCrowdfunding({
+      id: submissionId,
+      targetAmount: 150000000,
+      manualFormalizationReason: "Acuerdo comercial confirmado por comité interno y responsable del espacio.",
+      manualFormalizationEvidence: "Acta de Comité Comercial 2026-08-19, aprobación registrada.",
+    });
+    expect(result.manualFormalization).toBe(true);
+
+    const detail = await adminCaller.spaces.admin.getById({ id: submissionId });
+    expect(detail.spaceStatus).toBe("published");
+    expect(detail.manualFormalizationReason).toContain("Acuerdo comercial confirmado");
+    expect(detail.manualFormalizationEvidence).toContain("Acta de Comité Comercial");
+    expect(detail.manualFormalizedBy).toBe(1);
+    expect(detail.manualFormalizedAt).toBeTruthy();
+    expect(detail.letterAcceptedAt).toBeNull();
+  });
+
+  it("rechaza la publicación excepcional sin motivo suficiente y a un rol no administrativo", async () => {
+    const publicCaller = appRouter.createCaller(createPublicContext());
+    const adminCaller = appRouter.createCaller(createAdminContext());
+    const userCaller = appRouter.createCaller(createUserContext());
+    const { submissionId } = await publicCaller.spaces.submit({
+      submitterName: "Permiso manual Test",
+      submitterEmail: "permiso-manual@example.com",
+      submitterPhone: "3000000888",
+      spaceName: "Espacio permiso manual Test",
+      spaceType: "parking",
+      address: "Carrera 30 # 10-20",
+      city: "Medellín",
+    });
+    const db = await getDb();
+    await db!.update(spaceSubmissions)
+      .set({ spaceStatus: "letter_sent", letterToken: `manual-denied-${submissionId}` })
+      .where(eq(spaceSubmissions.id, submissionId));
+
+    await expect(adminCaller.spaces.admin.publishToCrowdfunding({
+      id: submissionId,
+      targetAmount: 150000000,
+      manualFormalizationEvidence: "Acta interna",
+    })).rejects.toThrow("se requiere un motivo");
+
+    await expect(userCaller.spaces.admin.publishToCrowdfunding({
+      id: submissionId,
+      targetAmount: 150000000,
+      manualFormalizationReason: "Aprobación interna documentada y autorizada correctamente.",
+      manualFormalizationEvidence: "Acta interna 2026-08-19.",
+    })).rejects.toThrow();
+  });
+});
+
+describe("rotación administrativa de enlaces de carta", () => {
+  it("persiste solo el token nuevo y rechaza el vínculo anterior", async () => {
+    const publicCaller = appRouter.createCaller(createPublicContext());
+    const { submissionId } = await publicCaller.spaces.submit({
+      submitterName: "Rotación de enlace",
+      submitterEmail: "rotacion-enlace@example.com",
+      submitterPhone: "3001234567",
+      spaceName: "Espacio de rotación segura",
+      spaceType: "parking",
+      address: "Carrera 10 # 20-30",
+      city: "Bogotá",
+    });
+    const previousToken = `previous-${submissionId}`;
+    const db = await getDb();
+    await db!.update(spaceSubmissions).set({ spaceStatus: "letter_sent", letterToken: previousToken }).where(eq(spaceSubmissions.id, submissionId));
+
+    const adminCaller = appRouter.createCaller(createAdminContext());
+    const rotation = await adminCaller.spaces.admin.rotateLetterShareLink({ id: submissionId });
+    expect(rotation.revokedPreviousLink).toBe(true);
+    expect(rotation.acceptUrl).not.toContain(previousToken);
+
+    const [persisted] = await db!.select({ letterToken: spaceSubmissions.letterToken }).from(spaceSubmissions).where(eq(spaceSubmissions.id, submissionId)).limit(1);
+    expect(persisted.letterToken).toBe(rotation.acceptUrl.split("/").pop());
+    expect(persisted.letterToken).not.toBe(previousToken);
+
+    await expect(publicCaller.spaces.acceptLetter({ token: previousToken, signerName: "Persona Prueba", signerDocument: "123456789" }))
+      .rejects.toThrow("Token de carta de intención inválido o expirado");
+  });
+});
+
 // ============================================================================
 // INTEGRACIÓN SPACES ↔ CROWDFUNDING
 // ============================================================================
@@ -444,7 +544,7 @@ describe("spaces → crowdfunding integration", () => {
     expect(linkedCF!.linkedSubmitterName).toBe("CF Integration Test");
   });
 
-  it("no duplica CF al aprobar un espacio ya aprobado", async () => {
+	  it("no duplica CF al aprobar un espacio ya aprobado", async () => {
     // 1. Crear y aprobar
     const publicCtx = createPublicContext();
     const publicCaller = appRouter.createCaller(publicCtx);
@@ -483,10 +583,85 @@ describe("spaces → crowdfunding integration", () => {
     expect(detail2.crowdfundingProjectId).toBe(cfId1); // Mismo ID
 
     const cfAfter = await adminCaller.crowdfunding.getAllProjects();
-    expect(cfAfter.length).toBe(countBefore); // No se creó otro
-  });
+	    expect(cfAfter.length).toBe(countBefore); // No se creó otro
+	  });
 
-  it("getAllProjects incluye DRAFT para admin (includePrivate)", async () => {
+	  it("sincroniza inversión, retorno, potencia y ubicación al editar un espacio con proyecto vinculado", async () => {
+	    const publicCaller = appRouter.createCaller(createPublicContext());
+	    const adminCaller = appRouter.createCaller(createAdminContext());
+	    const { submissionId } = await publicCaller.spaces.submit({
+	      submitterName: "Herencia completa Test",
+	      submitterEmail: "herencia-completa@example.com",
+	      submitterPhone: "3001234567",
+	      spaceName: "Espacio herencia completa Test",
+	      spaceType: "mall",
+	      address: "Carrera 7 # 72-10",
+	      city: "Bogotá",
+	    });
+
+	    await adminCaller.spaces.admin.updateStatus({ id: submissionId, status: "approved" });
+	    const before = await adminCaller.spaces.admin.getById({ id: submissionId });
+
+	    await adminCaller.spaces.admin.updateSpace({
+	      id: submissionId,
+	      city: "Medellín",
+	      estimatedInvestmentCop: 950000000,
+	      minimumInvestmentCop: 15000000,
+	      estimatedRoiPercent: 78.5,
+	      estimatedPaybackMonths: 21,
+	      estimatedPowerKw: 300,
+	      estimatedChargerCount: 3,
+	      recommendedChargerType: "DC CCS2",
+	    });
+
+	    const projects = await adminCaller.crowdfunding.getAllProjects();
+	    const linked = projects.find((project: any) => project.id === before.crowdfundingProjectId) as any;
+	    expect(linked).toMatchObject({
+	      city: "Medellín",
+	      targetAmount: 950000000,
+	      minimumInvestment: 15000000,
+	      totalPowerKw: 300,
+	      chargerCount: 3,
+	      estimatedPaybackMonths: 21,
+	    });
+	    expect(Number(linked.estimatedRoiPercent)).toBe(78.5);
+	    expect(linked.spaceInheritanceSnapshot).toMatchObject({
+	      targetAmount: 950000000,
+	      city: "Medellín",
+	      estimatedPaybackMonths: 21,
+	    });
+	  });
+
+	  it("incluye en el payload real de Crowdfunding las fotos heredadas con orden y caption", async () => {
+	    const publicCaller = appRouter.createCaller(createPublicContext());
+	    const adminCaller = appRouter.createCaller(createAdminContext());
+	    const { submissionId } = await publicCaller.spaces.submit({
+	      submitterName: "Galería heredada Test",
+	      submitterEmail: "galeria-heredada@example.com",
+	      submitterPhone: "3001234567",
+	      spaceName: "Espacio galería heredada Test",
+	      spaceType: "parking",
+	      address: "Calle 100 # 15-20",
+	      city: "Bogotá",
+	    });
+	    const db = await getDb();
+	    await db!.insert(spacePhotos).values([
+      { submissionId, photoUrl: "https://cdn.example.test/site-overview.jpg", photoKey: `tests/${submissionId}/site-overview.jpg`, photoType: "general", caption: "Vista general", sortOrder: 2 },
+      { submissionId, photoUrl: "https://cdn.example.test/electrical-panel.jpg", photoKey: `tests/${submissionId}/electrical-panel.jpg`, photoType: "electrical_panel", caption: "Tablero eléctrico", sortOrder: 1 },
+	    ]);
+
+	    await adminCaller.spaces.admin.updateStatus({ id: submissionId, status: "approved" });
+	    const detail = await adminCaller.spaces.admin.getById({ id: submissionId });
+	    const linked = (await adminCaller.crowdfunding.getAllProjects()).find((project: any) => project.id === detail.crowdfundingProjectId) as any;
+
+	    expect(linked.inheritedPhotos).toEqual([
+	      { url: "https://cdn.example.test/electrical-panel.jpg", type: "electrical_panel", caption: "Tablero eléctrico" },
+	      { url: "https://cdn.example.test/site-overview.jpg", type: "general", caption: "Vista general" },
+	    ]);
+	    expect(linked.spaceInheritanceSnapshot.photos).toEqual(linked.inheritedPhotos);
+	  });
+
+	  it("getAllProjects incluye DRAFT para admin (includePrivate)", async () => {
     const adminCtx = createAdminContext();
     const adminCaller = appRouter.createCaller(adminCtx);
 

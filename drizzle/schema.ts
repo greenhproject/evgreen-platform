@@ -1,4 +1,4 @@
-import { mysqlTable, mysqlSchema, AnyMySqlColumn, int, mysqlEnum, text, varchar, decimal, timestamp, json, bigint, index, date, tinyint, datetime, foreignKey, float } from "drizzle-orm/mysql-core"
+import { mysqlTable, mysqlSchema, AnyMySqlColumn, int, mysqlEnum, text, varchar, decimal, timestamp, json, bigint, index, uniqueIndex, date, tinyint, datetime, foreignKey, float } from "drizzle-orm/mysql-core"
 import { sql } from "drizzle-orm"
 
 export const aiConfig = mysqlTable("ai_config", {
@@ -67,6 +67,7 @@ export const aiUsage = mysqlTable("ai_usage", {
 export const apiKeys = mysqlTable("api_keys", {
 	id: int().autoincrement().notNull(),
 	userId: int().notNull(),
+	organizationId: int("organization_id"),
 	name: varchar({ length: 100 }).notNull(),
 	keyHash: varchar({ length: 64 }).notNull(),
 	keyPrefix: varchar({ length: 12 }).notNull(),
@@ -79,11 +80,13 @@ export const apiKeys = mysqlTable("api_keys", {
 },
 (table) => [
 	index("api_keys_keyHash_unique").on(table.keyHash),
+	index("idx_api_keys_organization_id").on(table.organizationId),
 ]);
 
 export const apiWebhooks = mysqlTable("api_webhooks", {
 	id: int().autoincrement().notNull(),
 	userId: int().notNull(),
+	organizationId: int("organization_id"),
 	url: varchar({ length: 500 }).notNull(),
 	events: json().notNull(),
 	secret: varchar({ length: 64 }),
@@ -91,7 +94,9 @@ export const apiWebhooks = mysqlTable("api_webhooks", {
 	lastTriggeredAt: timestamp({ mode: 'string' }),
 	failCount: int().default(0).notNull(),
 	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
-});
+}, (table) => [
+	index("idx_api_webhooks_organization_id").on(table.organizationId),
+]);
 
 export const backupLogs = mysqlTable("backup_logs", {
 	id: int().autoincrement().notNull(),
@@ -297,6 +302,11 @@ export const chargingStations = mysqlTable("charging_stations", {
 	ocppPassword: varchar({ length: 255 }),
 	isOnline: tinyint().default(0).notNull(),
 	isPublic: tinyint().default(1).notNull(),
+	// PRIVATE: solo operación interna del tenant; EVGREEN_NETWORK: visible en la app EVGreen;
+	// ROAMING: visible en EVGreen y preparado para interoperabilidad OCPI autorizada.
+	networkAccessMode: mysqlEnum("network_access_mode", ['PRIVATE','EVGREEN_NETWORK','ROAMING']).default('EVGREEN_NETWORK').notNull(),
+	// Obligación regulatoria SIEM independiente de la participación comercial en ROAMING.
+	siemReportingEnabled: tinyint("siem_reporting_enabled").default(0).notNull(),
 	isActive: tinyint().default(1).notNull(),
 	operatingHours: json(),
 	amenities: json(),
@@ -332,6 +342,9 @@ export const chargingStations = mysqlTable("charging_stations", {
 },
 (table) => [
 	index("charging_stations_ocppIdentity_unique").on(table.ocppIdentity),
+	index("idx_station_network_visibility").on(table.networkAccessMode, table.isActive, table.isPublic),
+	index("idx_station_siem_reporting").on(table.siemReportingEnabled, table.isActive, table.isPublic),
+	index("idx_station_organization").on(table.organizationId),
 ]);
 
 export const claims = mysqlTable("claims", {
@@ -406,6 +419,10 @@ export const crowdfundingProjects = mysqlTable("crowdfunding_projects", {
 	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
 	updatedAt: timestamp({ mode: 'string' }).defaultNow().onUpdateNow().notNull(),
 	spaceSubmissionId: int(),
+	spaceInheritanceSnapshot: json("space_inheritance_snapshot"),
+	financialOverrideReason: text("financial_override_reason"),
+	financialOverrideAt: timestamp("financial_override_at", { mode: 'string' }),
+	financialOverrideBy: int("financial_override_by"),
 });
 
 export const demoRequests = mysqlTable("demoRequests", {
@@ -488,8 +505,66 @@ export const evses = mysqlTable("evses", {
 	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
 	updatedAt: timestamp({ mode: 'string' }).defaultNow().onUpdateNow().notNull(),
 },
-(table) => [
-	index("idx_evses_station").on(table.stationId),
+	(table) => [
+		index("idx_evses_station").on(table.stationId),
+	]);
+
+export const ocpiSyncRuns = mysqlTable("ocpi_sync_runs", {
+	id: int().autoincrement().notNull(),
+	stationId: int(),
+	operation: mysqlEnum("ocpi_sync_operation", ['CATALOG_PREVIEW','LOCATION_PUBLISH','LOCATION_RECEIVED','LOCATION_REJECTED']).notNull(),
+	status: mysqlEnum("ocpi_sync_status", ['PENDING','SKIPPED','SUCCESS','FAILED']).notNull(),
+	message: text(),
+	details: json(),
+	createdBy: int(),
+	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
+	completedAt: timestamp({ mode: 'string' }),
+}, (table) => [
+  index("idx_ocpi_sync_runs_station_created").on(table.stationId, table.createdAt),
+  index("idx_ocpi_sync_runs_status_created").on(table.status, table.createdAt),
+]);
+
+export const ocpiRemoteLocations = mysqlTable("ocpi_remote_locations", {
+  id: int().autoincrement().notNull(),
+  provider: varchar({ length: 32 }).default("CARGAME").notNull(),
+  countryCode: varchar("country_code", { length: 2 }).notNull(),
+  partyId: varchar("party_id", { length: 3 }).notNull(),
+  locationId: varchar("location_id", { length: 64 }).notNull(),
+  name: varchar({ length: 255 }),
+  address: varchar({ length: 255 }),
+  city: varchar({ length: 120 }),
+  latitude: varchar({ length: 32 }),
+  longitude: varchar({ length: 32 }),
+  status: varchar({ length: 32 }).default("ACTIVE").notNull(),
+  lastUpdated: datetime("last_updated", { mode: "string" }),
+  rawLocation: json("raw_location").notNull(),
+  createdAt: timestamp("created_at", { mode: "string" }).default("CURRENT_TIMESTAMP").notNull(),
+  updatedAt: timestamp("updated_at", { mode: "string" }).defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_ocpi_remote_location_partner").on(table.provider, table.countryCode, table.partyId, table.locationId),
+	index("idx_ocpi_remote_locations_updated").on(table.provider, table.updatedAt),
+]);
+
+export const ocpiOutboxEvents = mysqlTable("ocpi_outbox_events", {
+  id: int().autoincrement().notNull(),
+  scope: mysqlEnum("ocpi_outbox_scope", ["SIEM", "ROAMING"]).default("SIEM").notNull(),
+  eventType: mysqlEnum("ocpi_outbox_event_type", ["LOCATION_UPSERT", "TARIFF_UPSERT", "SESSION_UPSERT", "EVSE_STATUS"]).notNull(),
+  organizationId: int("organization_id"),
+  stationId: int("station_id"),
+  dedupeKey: varchar("dedupe_key", { length: 191 }).notNull(),
+  payload: json().notNull(),
+  status: mysqlEnum("ocpi_outbox_status", ["PENDING", "SENT", "FAILED", "DEAD"]).default("PENDING").notNull(),
+  attemptCount: int("attempt_count").default(0).notNull(),
+  nextAttemptAt: timestamp("next_attempt_at", { mode: "string" }),
+  lastError: varchar("last_error", { length: 500 }),
+  sentAt: timestamp("sent_at", { mode: "string" }),
+  createdAt: timestamp("created_at", { mode: "string" }).default("CURRENT_TIMESTAMP").notNull(),
+  updatedAt: timestamp("updated_at", { mode: "string" }).defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  uniqueIndex("uq_ocpi_outbox_dedupe").on(table.dedupeKey),
+  index("idx_ocpi_outbox_status_created").on(table.status, table.createdAt),
+  index("idx_ocpi_outbox_station").on(table.stationId, table.createdAt),
+  index("idx_ocpi_outbox_organization").on(table.organizationId, table.createdAt),
 ]);
 
 export const favoriteStations = mysqlTable("favorite_stations", {
@@ -499,7 +574,8 @@ export const favoriteStations = mysqlTable("favorite_stations", {
 	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
 },
 (table) => [
-	index("unique_user_station").on(table.userId, table.stationId),
+	index("favorite_stations_userId_idx").on(table.userId),
+	index("favorite_stations_stationId_idx").on(table.stationId),
 ]);
 
 export const financialReports = mysqlTable("financial_reports", {
@@ -1169,7 +1245,25 @@ export const platformSettings = mysqlTable("platform_settings", {
 	supportAutoAssign: tinyint().default(1).notNull(),
 	resendApiKey: text(),
 	emailFrom: varchar({ length: 255 }).default('noreply@evgreen.lat'),
+	resendWebhookSecretEncrypted: text("resend_webhook_secret_encrypted"),
+	resendWebhookConfiguredAt: timestamp("resend_webhook_configured_at", { mode: 'string' }),
 	whatsappPenaltyNotifIntervalMinutes: int().default(5).notNull(),
+	// OCPI / CargaME-SIEM: secretos cifrados y configuración administrable.
+	ocpiProvider: mysqlEnum("ocpi_provider", ['CARGAME']).default('CARGAME').notNull(),
+	ocpiEnvironment: mysqlEnum("ocpi_environment", ['SANDBOX','PRODUCTION']).default('SANDBOX').notNull(),
+	ocpiEnabled: tinyint("ocpi_enabled").default(0).notNull(),
+	ocpiAutoSync: tinyint("ocpi_auto_sync").default(0).notNull(),
+	ocpiVersionsUrl: text("ocpi_versions_url"),
+	ocpiCountryCode: varchar("ocpi_country_code", { length: 2 }).default('CO'),
+	ocpiPartyId: varchar("ocpi_party_id", { length: 3 }),
+	ocpiModules: json("ocpi_modules"),
+	ocpiTokenEncrypted: text("ocpi_token_encrypted"),
+	ocpiInboundTokenEncrypted: text("ocpi_inbound_token_encrypted"),
+	ocpiMtlsCertEncrypted: text("ocpi_mtls_cert_encrypted"),
+	ocpiMtlsKeyEncrypted: text("ocpi_mtls_key_encrypted"),
+	ocpiLastTestAt: timestamp("ocpi_last_test_at", { mode: 'string' }),
+	ocpiLastTestStatus: mysqlEnum("ocpi_last_test_status", ['NEVER','SUCCESS','FAILED']).default('NEVER').notNull(),
+	ocpiLastTestMessage: text("ocpi_last_test_message"),
 });
 
 export const priceHistory = mysqlTable("price_history", {
@@ -1480,12 +1574,24 @@ export const spaceSubmissions = mysqlTable("space_submissions", {
 	letterSentAt: timestamp({ mode: 'string' }),
 	letterAcceptedAt: timestamp({ mode: 'string' }),
 	letterToken: varchar({ length: 100 }),
+	letterEmailId: varchar({ length: 120 }),
+	letterDeliveryStatus: mysqlEnum("letter_delivery_status", ['SENT','DELIVERED','DELAYED','BOUNCED','FAILED','OPENED','CLICKED','COMPLAINED','SUPPRESSED']).default('SENT'),
+	letterDeliveryUpdatedAt: timestamp({ mode: 'string' }),
 	letterSignerName: varchar({ length: 255 }),
 	letterSignerDocument: varchar({ length: 50 }),
 	letterSignerIp: varchar({ length: 50 }),
-	crowdfundingProjectId: int(),
-	estimatedInvestmentCop: bigint({ mode: "number" }),
-	estimatedPowerKw: int(),
+	manualFormalizationReason: text("manual_formalization_reason"),
+	manualFormalizationEvidence: text("manual_formalization_evidence"),
+	manualFormalizedAt: timestamp("manual_formalized_at", { mode: 'string' }),
+	manualFormalizedBy: int("manual_formalized_by"),
+		crowdfundingProjectId: int(),
+		estimatedInvestmentCop: bigint({ mode: "number" }),
+		minimumInvestmentCop: bigint("minimum_investment_cop", { mode: "number" }),
+		estimatedRoiPercent: decimal("estimated_roi_percent", { precision: 7, scale: 2 }),
+		estimatedPaybackMonths: int("estimated_payback_months"),
+		financialProjectionUpdatedAt: timestamp("financial_projection_updated_at", { mode: "string" }),
+		financialProjectionUpdatedBy: int("financial_projection_updated_by"),
+		estimatedPowerKw: int(),
 	estimatedChargerCount: int(),
 	recommendedChargerType: varchar({ length: 50 }),
 	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
@@ -1500,6 +1606,42 @@ export const spaceSubmissions = mysqlTable("space_submissions", {
 },
 (table) => [
 	index("space_submissions_code_unique").on(table.code),
+	index("idx_space_letter_email_id").on(table.letterEmailId),
+]);
+
+/**
+ * Bitácora inmutable de los movimientos del pipeline de cada espacio.
+ * Conserva el estado anterior, el nuevo, el actor y la nota comercial o técnica
+ * que justificó el avance. El actor puede ser nulo para eventos públicos como
+ * la firma de la carta de intención.
+ */
+export const spaceStatusHistory = mysqlTable("space_status_history", {
+	id: int().autoincrement().notNull(),
+	submissionId: int("submission_id").notNull(),
+	fromStatus: mysqlEnum("from_status", ['pending','under_review','approved','rejected','letter_sent','letter_accepted','published','funded','in_construction','operational']).notNull(),
+	toStatus: mysqlEnum("to_status", ['pending','under_review','approved','rejected','letter_sent','letter_accepted','published','funded','in_construction','operational']).notNull(),
+	changedById: int("changed_by_id"),
+	changedByRole: varchar("changed_by_role", { length: 32 }),
+	note: text(),
+	createdAt: timestamp("created_at", { mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
+}, (table) => [
+	index("idx_space_status_history_submission_created").on(table.submissionId, table.createdAt),
+]);
+
+export const letterEmailEvents = mysqlTable("letter_email_events", {
+	id: int().autoincrement().notNull(),
+	submissionId: int().notNull(),
+	providerEventId: varchar({ length: 120 }).notNull(),
+	providerEmailId: varchar({ length: 120 }).notNull(),
+	eventType: varchar({ length: 60 }).notNull(),
+	deliveryStatus: mysqlEnum("letter_email_delivery_status", ['SENT','DELIVERED','DELAYED','BOUNCED','FAILED','OPENED','CLICKED','COMPLAINED','SUPPRESSED']).notNull(),
+	recipientEmail: varchar({ length: 320 }),
+	occurredAt: timestamp({ mode: 'string' }).notNull(),
+	receivedAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
+}, (table) => [
+	uniqueIndex("letter_email_events_provider_event_unique").on(table.providerEventId),
+	index("idx_letter_email_events_submission").on(table.submissionId, table.occurredAt),
+	index("idx_letter_email_events_email").on(table.providerEmailId),
 ]);
 
 export const stationAvailabilityAlerts = mysqlTable("station_availability_alerts", {
@@ -1812,6 +1954,35 @@ export const userDataConsents = mysqlTable("user_data_consents", {
 	index("idx_consent_type").on(table.userId, table.consentType),
 ]);
 
+export const userOnboardingProgress = mysqlTable("user_onboarding_progress", {
+	id: int().autoincrement().notNull(),
+	userId: int("user_id").notNull(),
+	version: varchar({ length: 30 }).default('2026-08-v1').notNull(),
+	status: mysqlEnum("user_onboarding_status", ['IN_PROGRESS', 'COMPLETED', 'SKIPPED']).default('IN_PROGRESS').notNull(),
+	currentStep: int("current_step").default(1).notNull(),
+	startedAt: timestamp("started_at", { mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
+	lastSavedAt: timestamp("last_saved_at", { mode: 'string' }).defaultNow().onUpdateNow().notNull(),
+	completedAt: timestamp("completed_at", { mode: 'string' }),
+	skippedAt: timestamp("skipped_at", { mode: 'string' }),
+},
+(table) => [
+	uniqueIndex("user_onboarding_progress_user_unique").on(table.userId),
+]);
+
+export const userOnboardingEvents = mysqlTable("user_onboarding_events", {
+	id: int().autoincrement().notNull(),
+	userId: int("user_id").notNull(),
+	eventType: varchar("event_type", { length: 60 }).notNull(),
+	granted: tinyint(),
+	policyVersion: varchar("policy_version", { length: 30 }),
+	ipAddress: varchar("ip_address", { length: 45 }),
+	userAgent: varchar("user_agent", { length: 512 }),
+	createdAt: timestamp("created_at", { mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
+},
+(table) => [
+	index("user_onboarding_events_user_created_idx").on(table.userId, table.createdAt),
+]);
+
 export const userDebts = mysqlTable("user_debts", {
 	id: int().autoincrement().notNull(),
 	userId: int().notNull(),
@@ -1972,6 +2143,7 @@ export const users = mysqlTable("users", {
 	kindOfPerson: mysqlEnum("kind_of_person", ['PERSON_ENTITY','LEGAL_ENTITY']),
 	regime: mysqlEnum(['SIMPLIFIED_REGIME','COMMON_REGIME','NOT_RESPONSIBLE_FOR_IVA']),
 	alegraContactId: varchar({ length: 50 }),
+	electronicInvoiceOptIn: tinyint("electronic_invoice_opt_in").default(0).notNull(),
 	investorTypes: json(),
 	onboardingCompleted: tinyint().default(0),
 	onboardingStep: int().default(0),
@@ -2350,6 +2522,16 @@ export const advertiserProfiles = mysqlTable("advertiser_profiles", {
 	updatedAt: timestamp({ mode: 'string' }).defaultNow().onUpdateNow().notNull(),
 });
 
+/** Bitácora inmutable de decisiones administrativas sobre perfiles de anunciantes. */
+export const advertiserProfileReviewEvents = mysqlTable("advertiser_profile_review_events", {
+	id: int().autoincrement().notNull(),
+	profileId: int().notNull(),
+	action: mysqlEnum(['approved', 'rejected', 'suspended']).notNull(),
+	notes: text(),
+	actorId: int().notNull(),
+	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
+});
+
 export const adCampaigns = mysqlTable("ad_campaigns", {
 	id: int().autoincrement().notNull(),
 	advertiserId: int().notNull(),
@@ -2396,6 +2578,8 @@ export const adCampaignCreatives = mysqlTable("ad_campaign_creatives", {
 // Types — Portal de Anunciantes
 export type InsertAdvertiserProfile = typeof advertiserProfiles.$inferInsert;
 export type AdvertiserProfile = typeof advertiserProfiles.$inferSelect;
+export type InsertAdvertiserProfileReviewEvent = typeof advertiserProfileReviewEvents.$inferInsert;
+export type AdvertiserProfileReviewEvent = typeof advertiserProfileReviewEvents.$inferSelect;
 export type InsertAdCampaign = typeof adCampaigns.$inferInsert;
 export type AdCampaign = typeof adCampaigns.$inferSelect;
 export type InsertAdCampaignCreative = typeof adCampaignCreatives.$inferInsert;
