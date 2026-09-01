@@ -4260,3 +4260,4 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Presentación de inversión: validar CapEx, OpEx, estructura de pago y el retorno objetivo cercano a 12 % anual sin prometer resultados no sustentados.
 - [x] Deck EDS: rediseñar la presentación comercial adjunta con composición limpia, imágenes profesionales de alta resolución y estética EVGreen.
 - [x] Deck EDS: incluir gloria.reyes@greenhproject.com en el cierre como contacto comercial.
+- [x] Deck EDS contenido: reconstruir la versión moderna conservando las cifras, beneficios, escenarios, programa solar, impacto, tecnología y condiciones de las 16 láminas originales.
