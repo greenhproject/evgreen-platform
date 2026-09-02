@@ -1,0 +1,4 @@
+zone,delivered_kwh_month,purchased_kwh_month,energy_rate_b_per_kwh,demand_cost_b_month,total_grid_cost_b_month,effective_grid_cost_b_per_delivered_kwh,sale_price_b_per_kwh,revenue_b_month,contribution_after_grid_b_month,scenario,utilization
+EDEMET,4320.0,4695.65,0.15086,2474.4,3197.06,0.7401,0.35,1512.0,-1685.06,Conservador,0.05
+EDEMET,12960.0,14086.96,0.15086,2474.4,4613.83,0.356,0.425,5508.0,894.17,Base,0.15
+EDEMET,25920.0,28173.91,0.15086,2474.4,6738.99,0.26,0.5,12960.0,6221.01,Alto uso,0.3
