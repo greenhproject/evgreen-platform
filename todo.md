@@ -4263,3 +4263,4 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Deck EDS contenido: reconstruir la versión moderna conservando las cifras, beneficios, escenarios, programa solar, impacto, tecnología y condiciones de las 16 láminas originales.
 - [x] Deck EDS renders: sustituir toda referencia visual genérica de electrolineras por los renders arquitectónicos oficiales diurno y nocturno entregados por el usuario.
 - [x] Corrección concurrente: resolver imports y tipado de notificaciones nativas que bloquean TypeScript tras la actualización iOS.
+- [x] Deck EDS QA: eliminar la redundancia entre láminas 2 y 3, unificar el lenguaje visual y contrastar cada dato con el PDF fuente.
