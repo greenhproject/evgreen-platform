@@ -1,0 +1,123 @@
+{
+  "assumptions": {
+    "charger_kw": 120,
+    "days_per_month": 30,
+    "delivery_efficiency": 0.92,
+    "assumed_billed_demand_kw": 120,
+    "currency": "PAB/USD"
+  },
+  "edemet_scenarios": [
+    {
+      "zone": "EDEMET",
+      "delivered_kwh_month": 4320.0,
+      "purchased_kwh_month": 4695.65,
+      "energy_rate_b_per_kwh": 0.15086,
+      "demand_cost_b_month": 2474.4,
+      "total_grid_cost_b_month": 3197.06,
+      "effective_grid_cost_b_per_delivered_kwh": 0.7401,
+      "sale_price_b_per_kwh": 0.35,
+      "revenue_b_month": 1512.0,
+      "contribution_after_grid_b_month": -1685.06,
+      "scenario": "Conservador",
+      "utilization": 0.05
+    },
+    {
+      "zone": "EDEMET",
+      "delivered_kwh_month": 12960.0,
+      "purchased_kwh_month": 14086.96,
+      "energy_rate_b_per_kwh": 0.15086,
+      "demand_cost_b_month": 2474.4,
+      "total_grid_cost_b_month": 4613.83,
+      "effective_grid_cost_b_per_delivered_kwh": 0.356,
+      "sale_price_b_per_kwh": 0.425,
+      "revenue_b_month": 5508.0,
+      "contribution_after_grid_b_month": 894.17,
+      "scenario": "Base",
+      "utilization": 0.15
+    },
+    {
+      "zone": "EDEMET",
+      "delivered_kwh_month": 25920.0,
+      "purchased_kwh_month": 28173.91,
+      "energy_rate_b_per_kwh": 0.15086,
+      "demand_cost_b_month": 2474.4,
+      "total_grid_cost_b_month": 6738.99,
+      "effective_grid_cost_b_per_delivered_kwh": 0.26,
+      "sale_price_b_per_kwh": 0.5,
+      "revenue_b_month": 12960.0,
+      "contribution_after_grid_b_month": 6221.01,
+      "scenario": "Alto uso",
+      "utilization": 0.3
+    }
+  ],
+  "zone_sensitivity_base_case": [
+    {
+      "zone": "EDEMET",
+      "delivered_kwh_month": 12960.0,
+      "purchased_kwh_month": 14086.96,
+      "energy_rate_b_per_kwh": 0.15086,
+      "demand_cost_b_month": 2474.4,
+      "total_grid_cost_b_month": 4613.83,
+      "effective_grid_cost_b_per_delivered_kwh": 0.356,
+      "sale_price_b_per_kwh": 0.425,
+      "revenue_b_month": 5508.0,
+      "contribution_after_grid_b_month": 894.17,
+      "scenario": "Base",
+      "utilization": 0.15
+    },
+    {
+      "zone": "ENSA",
+      "delivered_kwh_month": 12960.0,
+      "purchased_kwh_month": 14086.96,
+      "energy_rate_b_per_kwh": 0.15448,
+      "demand_cost_b_month": 1494.0,
+      "total_grid_cost_b_month": 3679.21,
+      "effective_grid_cost_b_per_delivered_kwh": 0.2839,
+      "sale_price_b_per_kwh": 0.425,
+      "revenue_b_month": 5508.0,
+      "contribution_after_grid_b_month": 1828.79,
+      "scenario": "Base",
+      "utilization": 0.15
+    },
+    {
+      "zone": "EDECHI",
+      "delivered_kwh_month": 12960.0,
+      "purchased_kwh_month": 14086.96,
+      "energy_rate_b_per_kwh": 0.11969,
+      "demand_cost_b_month": 2943.6,
+      "total_grid_cost_b_month": 4643.88,
+      "effective_grid_cost_b_per_delivered_kwh": 0.3583,
+      "sale_price_b_per_kwh": 0.425,
+      "revenue_b_month": 5508.0,
+      "contribution_after_grid_b_month": 864.12,
+      "scenario": "Base",
+      "utilization": 0.15
+    }
+  ],
+  "edemet_break_even_utilization": [
+    {
+      "zone": "EDEMET",
+      "sale_price_b_per_kwh": 0.35,
+      "variable_grid_cost_b_per_delivered_kwh": 0.164,
+      "fixed_grid_cost_b_month": 2488.67,
+      "break_even_delivered_kwh_month": 13378.38,
+      "break_even_utilization": 0.1548
+    },
+    {
+      "zone": "EDEMET",
+      "sale_price_b_per_kwh": 0.425,
+      "variable_grid_cost_b_per_delivered_kwh": 0.164,
+      "fixed_grid_cost_b_month": 2488.67,
+      "break_even_delivered_kwh_month": 9534.34,
+      "break_even_utilization": 0.1104
+    },
+    {
+      "zone": "EDEMET",
+      "sale_price_b_per_kwh": 0.5,
+      "variable_grid_cost_b_per_delivered_kwh": 0.164,
+      "fixed_grid_cost_b_month": 2488.67,
+      "break_even_delivered_kwh_month": 7406.28,
+      "break_even_utilization": 0.0857
+    }
+  ]
+}
