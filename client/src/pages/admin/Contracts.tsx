@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { BadgeCheck, CheckCircle2, ClipboardCheck, Download, FileCheck2, FileOutput, FileSignature, FileText, History, Landmark, Loader2, Plus, Send, Settings2, ShieldCheck, Upload, XCircle } from "lucide-react";
+import { BadgeCheck, CheckCircle2, ClipboardCheck, Download, FileCheck2, FileOutput, FileSignature, FileText, History, Landmark, Loader2, Pencil, Plus, Send, Settings2, ShieldCheck, Upload, XCircle } from "lucide-react";
 
 type ContractAction = { id: number; type: "manual" | "docusign" | "cancel" | "verify" | "reject" } | null;
 
@@ -81,6 +81,7 @@ const emptyParty = { legalName: "", taxId: "", representativeName: "", represent
 export default function AdminContracts() {
   const utils = trpc.useUtils();
   const [templateDialog, setTemplateDialog] = useState(false);
+  const [templateReviewId, setTemplateReviewId] = useState<number | null>(null);
   const [contractDialog, setContractDialog] = useState(false);
   const [selectedSpaceId, setSelectedSpaceId] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
@@ -144,7 +145,7 @@ export default function AdminContracts() {
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[0.95fr_1.6fr]">
-        <div className="rounded-2xl border border-white/10 bg-slate-900/50 p-5"><div className="flex items-center justify-between"><div><h2 className="font-semibold text-white">Plantillas y versiones</h2><p className="mt-1 text-sm text-slate-400">Cambie condiciones creando una nueva versión; las expedidas quedan inmutables.</p></div><History className="h-5 w-5 text-slate-500" /></div><div className="mt-5 space-y-3">{templatesLoading ? <Loader2 className="animate-spin text-emerald-400" /> : templates.length === 0 ? <p className="rounded-xl border border-dashed border-white/15 p-4 text-sm text-slate-400">Aún no hay plantillas. Cargue el DOCX revisado por Legal.</p> : templates.map((template: any) => <div key={template.id} className="rounded-xl border border-white/10 bg-slate-950/40 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-medium text-white">{template.name}</p><p className="mt-1 text-xs text-slate-500">v{template.version} · {template.sourceFilename}</p></div><StatusBadge status={template.status} /></div><p className="mt-3 text-xs text-slate-500">SHA-256: {template.contentHash.slice(0, 16)}…</p></div>)}</div></div>
+        <div className="rounded-2xl border border-white/10 bg-slate-900/50 p-5"><div className="flex items-center justify-between"><div><h2 className="font-semibold text-white">Plantillas y versiones</h2><p className="mt-1 text-sm text-slate-400">Cambie condiciones creando una nueva versión; las expedidas quedan inmutables.</p></div><History className="h-5 w-5 text-slate-500" /></div><div className="mt-5 space-y-3">{templatesLoading ? <Loader2 className="animate-spin text-emerald-400" /> : templates.length === 0 ? <p className="rounded-xl border border-dashed border-white/15 p-4 text-sm text-slate-400">Aún no hay plantillas. Cargue el DOCX revisado por Legal.</p> : templates.map((template: any) => <div key={template.id} className="rounded-xl border border-white/10 bg-slate-950/40 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-medium text-white">{template.name}</p><p className="mt-1 text-xs text-slate-500">v{template.version} · {template.sourceFilename}</p></div><StatusBadge status={template.status} /></div><p className="mt-3 text-xs text-slate-500">SHA-256: {template.contentHash.slice(0, 16)}…</p><Button size="sm" variant="ghost" className="mt-3" onClick={() => setTemplateReviewId(template.id)}><Pencil className="mr-1.5 h-3.5 w-3.5" />{template.status === "DRAFT" ? "Revisar y activar" : "Ver versión"}</Button></div>)}</div></div>
 
         <div className="rounded-2xl border border-white/10 bg-slate-900/50 p-5"><div className="flex items-center justify-between"><div><h2 className="font-semibold text-white">Contratos por sitio</h2><p className="mt-1 text-sm text-slate-400">Control de emisión, firma, devolución y verificación.</p></div><Landmark className="h-5 w-5 text-emerald-400" /></div><div className="mt-5 space-y-3">{contractsLoading ? <Loader2 className="animate-spin text-emerald-400" /> : contracts.length === 0 ? <p className="rounded-xl border border-dashed border-white/15 p-4 text-sm text-slate-400">No se han emitido contratos todavía.</p> : contracts.map((contract: any) => <article key={contract.id} className="rounded-xl border border-white/10 bg-slate-950/40 p-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div><div className="flex flex-wrap items-center gap-2"><p className="font-medium text-white">{contract.spaceName}</p><StatusBadge status={contract.status} /></div><p className="mt-1 text-sm text-slate-400">{contract.contractNumber} · {contract.city} · {contract.templateName} v{contract.templateVersion}</p><p className="mt-2 text-xs text-slate-500">Actualizado {formatDate(contract.updatedAt)} · SHA-256 {contract.contentHash.slice(0, 16)}…</p></div><div className="flex flex-wrap gap-2">{contract.draftPdfUrl && <Button size="sm" variant="outline" onClick={() => window.open(contract.draftPdfUrl, "_blank", "noopener,noreferrer")}><Download className="mr-1.5 h-3.5 w-3.5" />PDF</Button>}{contract.status === "READY" && <><Button size="sm" variant="outline" onClick={() => setContractAction({ id: contract.id, type: "manual" })}><FileOutput className="mr-1.5 h-3.5 w-3.5" />Emitir manual</Button><Button size="sm" disabled={!docusign?.ready} onClick={() => setContractAction({ id: contract.id, type: "docusign" })}><Send className="mr-1.5 h-3.5 w-3.5" />DocuSign</Button></>}{contract.status === "MANUAL_PDF_ISSUED" && <Button size="sm" variant="outline" onClick={() => { setManualUploadContractId(contract.id); signedPdfInput.current?.click(); }}><Upload className="mr-1.5 h-3.5 w-3.5" />Cargar firmado</Button>}{contract.status === "MANUAL_PDF_RETURNED" && <><Button size="sm" onClick={() => setContractAction({ id: contract.id, type: "verify" })}><CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />Verificar</Button><Button size="sm" variant="outline" onClick={() => setContractAction({ id: contract.id, type: "reject" })}><XCircle className="mr-1.5 h-3.5 w-3.5" />Rechazar</Button></>}{!["DOCUSIGN_COMPLETED", "MANUAL_PDF_VERIFIED", "CANCELLED"].includes(contract.status) && <Button size="sm" variant="ghost" className="text-red-300 hover:text-red-200" onClick={() => setContractAction({ id: contract.id, type: "cancel" })}>Anular</Button>}</div></div></article>)}</div></div>
       </section>
@@ -152,6 +153,7 @@ export default function AdminContracts() {
     </div>
 
     <TemplateDialog open={templateDialog} onOpenChange={setTemplateDialog} onCreated={invalidate} />
+    <TemplateReviewDialog templateId={templateReviewId} onOpenChange={open => !open && setTemplateReviewId(null)} onSaved={invalidate} />
     <Dialog open={contractDialog} onOpenChange={setContractDialog}><DialogContent className="max-h-[92vh] max-w-5xl overflow-y-auto bg-[#09130f] text-slate-100"><DialogHeader><DialogTitle>Nuevo contrato de concesión</DialogTitle><DialogDescription>Se congelará una versión aprobada y sus variables antes de habilitar cualquiera de las dos rutas de firma.</DialogDescription></DialogHeader><div className="grid gap-4 py-3 md:grid-cols-2"><div><Label>Espacio con carta aceptada</Label><select className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={selectedSpaceId} onChange={event => loadSpaceData(event.target.value)}><option value="">Seleccionar espacio</option>{spaces.map((space: any) => <option value={space.id} key={space.id}>{space.spaceName} · {space.city} · {space.code}</option>)}</select></div><div><Label>Plantilla activa</Label><select className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={selectedTemplateId} onChange={event => setSelectedTemplateId(event.target.value)}><option value="">Seleccionar plantilla</option>{activeTemplates.map((template: any) => <option value={template.id} key={template.id}>{template.name} · v{template.version}</option>)}</select></div></div>{selectedSpace && <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-3 text-sm text-emerald-100">Carta aceptada: {formatDate(selectedSpace.letterAcceptedAt)} · Sitio: {selectedSpace.address}</div>}<div className="grid gap-4 lg:grid-cols-2"><PartyFields prefix="EDS" title="Parte 1 · EDS o aliado del sitio" value={ally} onChange={setAlly} /><PartyFields prefix="GHP" title="Parte 2 · Green House Project SAS" value={operator} onChange={setOperator} /></div><section className="rounded-2xl border border-white/10 bg-slate-950/50 p-4"><p className="mb-4 text-sm font-semibold text-white">Condiciones parametrizadas</p><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{Object.entries(variables).map(([key, value]) => <div key={key}><Label className="text-xs">{key.replaceAll("_", " ")}</Label><Input value={value} onChange={event => setVariables(previous => ({ ...previous, [key]: event.target.value }))} /></div>)}</div></section><DialogFooter><Button variant="outline" onClick={() => setContractDialog(false)}>Cancelar</Button><Button onClick={startContract} disabled={createContract.isPending}>{createContract.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Generar contrato congelado</Button></DialogFooter></DialogContent></Dialog>
 
     <AlertDialog open={Boolean(contractAction)} onOpenChange={open => !open && setContractAction(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{contractAction?.type === "manual" ? "Emitir PDF para firma manuscrita" : contractAction?.type === "docusign" ? "Enviar contrato a DocuSign" : contractAction?.type === "verify" ? "Verificar PDF firmado manualmente" : contractAction?.type === "reject" ? "Rechazar PDF manuscrito" : "Anular contrato"}</AlertDialogTitle><AlertDialogDescription>{contractAction?.type === "manual" ? "El PDF se descargará con la versión, variables y hash ya congelados. Luego podrá cargarse el escaneo firmado." : contractAction?.type === "docusign" ? "Se enviará el mismo PDF congelado primero al representante de la EDS y después al representante de Green House Project SAS." : "Esta decisión se registrará de forma permanente en el expediente contractual."}</AlertDialogDescription></AlertDialogHeader>{["verify", "reject", "cancel"].includes(contractAction?.type || "") && <Textarea value={decisionNote} onChange={event => setDecisionNote(event.target.value)} placeholder="Explique la verificación, rechazo o motivo de anulación (mínimo 10 caracteres)." />}<AlertDialogFooter><AlertDialogCancel>Volver</AlertDialogCancel><AlertDialogAction onClick={() => { if (!contractAction) return; if (["verify", "reject", "cancel"].includes(contractAction.type) && decisionNote.trim().length < 10) return toast.error("Registra una nota de al menos 10 caracteres."); if (contractAction.type === "manual") issueManual.mutate({ id: contractAction.id }); if (contractAction.type === "docusign") sendDocusign.mutate({ id: contractAction.id }); if (contractAction.type === "verify") verifyManual.mutate({ id: contractAction.id, accepted: true, note: decisionNote.trim() }); if (contractAction.type === "reject") verifyManual.mutate({ id: contractAction.id, accepted: false, note: decisionNote.trim() }); if (contractAction.type === "cancel") cancelContract.mutate({ id: contractAction.id, reason: decisionNote.trim() }); }}>Confirmar</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
@@ -165,6 +167,50 @@ function TemplateDialog({ open, onOpenChange, onCreated }: { open: boolean; onOp
   const create = trpc.contracts.createTemplateFromDocx.useMutation({ onSuccess: (result) => { toast.success(`Plantilla creada${result.conversionWarnings.length ? " con advertencias de formato" : ""}. Revísela y actívela después de aprobación jurídica.`); onCreated(); onOpenChange(false); }, onError: error => toast.error(error.message) });
   const submit = async () => { if (!file) return toast.error("Selecciona la plantilla DOCX revisada por Legal."); if (file.size > 10 * 1024 * 1024) return toast.error("La plantilla no puede superar 10 MB."); try { create.mutate({ name, version, filename: file.name, contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", fileBase64: await readFileAsBase64(file) }); } catch (error: any) { toast.error(error.message); } };
   return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="bg-[#09130f] text-slate-100"><DialogHeader><DialogTitle>Importar plantilla DOCX</DialogTitle><DialogDescription>Importe únicamente una versión aprobada jurídicamente. Después podrá revisar su conversión y activarla para contratos futuros.</DialogDescription></DialogHeader><div className="space-y-4 py-3"><div><Label>Nombre de la plantilla</Label><Input value={name} onChange={event => setName(event.target.value)} /></div><div><Label>Versión jurídica</Label><Input value={version} onChange={event => setVersion(event.target.value)} placeholder="Ej. 1.1" /></div><div><Label>Archivo DOCX</Label><Input type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={event => setFile(event.target.files?.[0] || null)} /><p className="mt-2 text-xs text-slate-500">Máximo 10 MB. El original se conserva en el expediente y se convierte a un borrador revisable.</p></div></div><DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button><Button onClick={submit} disabled={create.isPending}>{create.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Importar</Button></DialogFooter></DialogContent></Dialog>;
+}
+
+function TemplateReviewDialog({ templateId, onOpenChange, onSaved }: { templateId: number | null; onOpenChange: (open: boolean) => void; onSaved: () => void }) {
+  const { data: template, isLoading } = trpc.contracts.getTemplate.useQuery({ id: templateId || 0 }, { enabled: Boolean(templateId) });
+  const [htmlContent, setHtmlContent] = useState("");
+  const [legalReviewNote, setLegalReviewNote] = useState("");
+
+  useEffect(() => {
+    if (template) {
+      setHtmlContent(template.htmlContent);
+      setLegalReviewNote(template.legalReviewNote || "");
+    }
+  }, [template]);
+
+  const update = trpc.contracts.updateDraftTemplate.useMutation({
+    onSuccess: () => { toast.success("Borrador actualizado; la versión activa no se modificó."); onSaved(); },
+    onError: error => toast.error(error.message),
+  });
+  const activate = trpc.contracts.activateTemplate.useMutation({
+    onSuccess: () => { toast.success("Nueva versión activada solo para contratos futuros."); onSaved(); onOpenChange(false); },
+    onError: error => toast.error(error.message),
+  });
+  const isDraft = template?.status === "DRAFT";
+
+  return <Dialog open={Boolean(templateId)} onOpenChange={onOpenChange}>
+    <DialogContent className="max-h-[92vh] max-w-4xl overflow-y-auto bg-[#09130f] text-slate-100">
+      <DialogHeader>
+        <DialogTitle>{template ? `${template.name} · v${template.version}` : "Plantilla contractual"}</DialogTitle>
+        <DialogDescription>Revise las variables y el contenido antes de activar esta versión. La activación retira la versión anterior solo para nuevos contratos; los expedientes existentes permanecen inmutables.</DialogDescription>
+      </DialogHeader>
+      {isLoading || !template ? <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-emerald-400" /></div> : <div className="space-y-4 py-3">
+        <div className="rounded-xl border border-white/10 bg-slate-950/50 p-3 text-xs text-slate-400"><span className="font-semibold text-slate-200">Archivo fuente:</span> {template.sourceFilename} · SHA-256 {template.contentHash}</div>
+        <div><Label>Nota de revisión jurídica y comercial</Label><Textarea value={legalReviewNote} onChange={event => setLegalReviewNote(event.target.value)} placeholder="Indique aprobación, responsable y alcance de los cambios de esta versión." /></div>
+        <div><Label>Contenido HTML importado</Label><Textarea rows={16} value={htmlContent} disabled={!isDraft} onChange={event => setHtmlContent(event.target.value)} className="font-mono text-xs leading-5" /><p className="mt-2 text-xs text-slate-500">Use marcadores como <code>{"{{ALIADO_RAZON_SOCIAL}}"}</code>. Solo las versiones en borrador pueden editarse.</p></div>
+      </div>}
+      <DialogFooter>
+        {isDraft && <>
+          <Button variant="outline" onClick={() => update.mutate({ id: template.id, htmlContent, legalReviewNote })} disabled={update.isPending}>Guardar borrador</Button>
+          <Button onClick={() => activate.mutate({ id: template.id, legalReviewNote })} disabled={activate.isPending || legalReviewNote.trim().length < 20}>{activate.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Activar para nuevos contratos</Button>
+        </>}
+        <Button variant="ghost" onClick={() => onOpenChange(false)}>Cerrar</Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>;
 }
 
 function DocusignSettings() {
