@@ -38,6 +38,25 @@ Antes de enviar a firma, el sistema debe congelar la plantilla y los datos resue
 
 La evidencia mínima por firma debe conservar: versión y hash del documento firmado, identidad declarada, identidad autenticada, fecha/hora con zona UTC, IP, navegador/dispositivo, método de autenticación, aceptación de términos, evento de visualización, envío, recordatorio, firma, rechazo, expiración y certificado final. El documento final y el certificado deben ser inmutables, accesibles y almacenados permanentemente.
 
+## Dos modalidades emitidas desde un único borrador
+
+Administración debe generar primero un **borrador congelado**: plantilla y versión, variables resueltas, anexos, PDF de lectura y hash SHA-256. Desde ese mismo borrador se habilitan dos alternativas mutuamente excluyentes de formalización; ninguna puede regenerar variables sin crear una versión nueva.
+
+| Modalidad | Acción del aliado | Resultado que se conserva | Estado contractual |
+|---|---|---|---|
+| Firma electrónica DocuSign | Revisa y firma desde el enlace móvil, en el orden definido para EDS y GHP | Envelope ID, eventos, PDF combinado firmado y Certificate of Completion | `SENT`, `DELIVERED`, `COMPLETED`, `DECLINED`, `VOIDED` o `EXPIRED` |
+| Firma manuscrita | Descarga el PDF final, lo imprime y las dos partes firman manualmente; Administración carga el PDF escaneado de retorno | PDF original, hash, PDF firmado manualmente, evidencia de carga, actor y fecha de verificación | `MANUAL_PDF_ISSUED`, `MANUAL_PDF_RETURNED`, `MANUAL_PDF_VERIFIED` o `MANUAL_PDF_REJECTED` |
+
+El PDF de firma manuscrita debe incluir bloques de firma para ambos representantes, sus nombres, identificación, cargo, fecha y referencia a la versión/hash del contrato. El sistema debe etiquetar expresamente este archivo como **firma manuscrita cargada y verificada**, sin presentarlo como certificado por DocuSign.
+
+## Integración DocuSign
+
+DocuSign permite crear sobres como borradores o enviarlos con documentos, destinatarios y campos; también permite crear sobres desde plantillas. [3] La integración de EVGreen debe crear primero un sobre en borrador, fijar los datos de cada firmante y enviar únicamente después de la confirmación administrativa. Al completarse, la API permite descargar el PDF combinado y el Certificate of Completion. [4]
+
+EVGreen debe recibir y registrar los eventos `envelope-sent`, `envelope-delivered`, `recipient-completed`, `envelope-completed`, `envelope-declined` y `envelope-voided`; DocuSign Connect documenta esos eventos y permite distinguir la entrega del documento, la firma del destinatario y la finalización del sobre. [5]
+
+La configuración administrativa debe guardar, siempre cifrados y enmascarados, el Integration Key, User ID, Account ID, entorno, clave privada JWT o método OAuth aprobado, URI de retorno y secreto de validación de webhook. Debe incluir una prueba de conexión antes de permitir enviar un contrato.
+
 ## Conclusiones de cumplimiento técnico
 
 La Ley 527 permite reconocer jurídicamente mensajes de datos, exige un método para identificar al iniciador y evidenciar aprobación, y requiere conservar integridad, origen, destino y fecha/hora del documento. El Decreto 2364 define la firma electrónica de forma tecnológicamente neutra y exige que el método sea confiable y permita detectar alteraciones posteriores. [1] [2]
@@ -48,3 +67,6 @@ Para una concesión a diez años, el enlace público de la carta de intención e
 
 [1] [Ley 527 de 1999 — Función Pública](https://www.funcionpublica.gov.co/eva/gestornormativo/norma.php?i=4276).  
 [2] [Decreto 2364 de 2012 — Función Pública](https://www.funcionpublica.gov.co/eva/gestornormativo/norma.php?i=50583).
+[3] [DocuSign eSignature API — Create Envelope](https://developers.docusign.com/docs/esign-rest-api/reference/envelopes/envelopes/create/).  
+[4] [DocuSign eSignature API — Download Envelope Documents](https://developers.docusign.com/docs/esign-rest-api/how-to/download-envelope-documents/).  
+[5] [DocuSign Connect — Webhook Event Triggers](https://developers.docusign.com/platform/webhooks/connect/event-triggers/).
