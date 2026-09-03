@@ -4275,6 +4275,8 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [ ] Publicación contractual: resolver o escalar la cuota agotada de servicios Cloud Run que impide crear el despliegue, sin modificar código válido.
 - [x] Incidente contratos: resolver el 401 "Please login" al cargar plantillas DOCX, preservando la autenticación y autorización exclusiva de Administración.
 - [ ] QA incidente contratos: iniciar sesión nuevamente en evgreen.lat y validar la carga real de una plantilla DOCX como Administración.
+- [x] Incidente plantillas: corregir el rechazo SQL al importar una plantilla DOCX completa, sin truncar contenido HTML ni variables contractuales.
+- [ ] QA incidente plantillas: repetir la importación real de la plantilla DOCX completa desde Administración y confirmar que la versión aparece disponible.
 - [ ] Contratos de concesión: implementar firma electrónica móvil con consentimiento explícito, captura de evidencia y enlace único revocable.
 - [ ] Contratos de concesión: almacenar de forma permanente el contrato final, evidencias y bitácora de acceso, firma, rechazo, expiración y reenvío.
 - [ ] Contratos de concesión: validar autorización, trazabilidad, generación y experiencia móvil antes de publicar el flujo.

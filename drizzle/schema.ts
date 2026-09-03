@@ -1,4 +1,4 @@
-import { mysqlTable, mysqlSchema, AnyMySqlColumn, int, mysqlEnum, text, varchar, decimal, timestamp, json, bigint, index, uniqueIndex, date, tinyint, datetime, foreignKey, float } from "drizzle-orm/mysql-core"
+import { mysqlTable, mysqlSchema, AnyMySqlColumn, int, mysqlEnum, text, longtext, varchar, decimal, timestamp, json, bigint, index, uniqueIndex, date, tinyint, datetime, foreignKey, float } from "drizzle-orm/mysql-core"
 import { sql } from "drizzle-orm"
 
 export const aiConfig = mysqlTable("ai_config", {
@@ -1667,7 +1667,9 @@ export const contractTemplates = mysqlTable("contract_templates", {
 	sourceMimeType: varchar("source_mime_type", { length: 100 }).notNull(),
 	sourceFileUrl: text("source_file_url").notNull(),
 	sourceFileKey: varchar("source_file_key", { length: 500 }).notNull(),
-	htmlContent: text("html_content").notNull(),
+	// Una plantilla contractual con tablas y anexos puede superar el límite de 64 KiB de TEXT.
+	// LONGTEXT preserva el HTML íntegro que se congela posteriormente en cada expediente.
+	htmlContent: longtext("html_content").notNull(),
 	variableSchema: json("variable_schema").notNull(),
 	contentHash: varchar("content_hash", { length: 64 }).notNull(),
 	legalReviewNote: text("legal_review_note"),
@@ -1693,7 +1695,8 @@ export const siteContracts = mysqlTable("site_contracts", {
 	templateVersion: varchar("template_version", { length: 64 }).notNull(),
 	status: mysqlEnum("site_contract_status", ['DRAFT', 'READY', 'DOCUSIGN_SENT', 'DOCUSIGN_COMPLETED', 'DOCUSIGN_DECLINED', 'DOCUSIGN_VOIDED', 'DOCUSIGN_EXPIRED', 'MANUAL_PDF_ISSUED', 'MANUAL_PDF_RETURNED', 'MANUAL_PDF_VERIFIED', 'MANUAL_PDF_REJECTED', 'CANCELLED']).default('DRAFT').notNull(),
 	variablesSnapshot: json("variables_snapshot").notNull(),
-	contractHtml: text("contract_html").notNull(),
+	// Debe admitir la versión materializada completa de la plantilla, sin perder anexos.
+	contractHtml: longtext("contract_html").notNull(),
 	contentHash: varchar("content_hash", { length: 64 }).notNull(),
 	draftPdfUrl: text("draft_pdf_url"),
 	draftPdfKey: varchar("draft_pdf_key", { length: 500 }),
