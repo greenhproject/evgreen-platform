@@ -45,7 +45,8 @@ export function useAuth(options?: UseAuthOptions) {
     } finally {
       localStorage.removeItem(NATIVE_TOKEN_KEY);
       localStorage.removeItem('manus-runtime-user-info');
-      // Clear local cookie (set on evgreen://localhost, not app.evgreen.lat)
+      // Clear local cookie (scoped to whatever origin the app's WebView is running on —
+      // see capacitor.config.ts's server.hostname for the native app's virtual origin)
       document.cookie = `${COOKIE_NAME}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax`;
 
       if (isNativePlatform()) {
