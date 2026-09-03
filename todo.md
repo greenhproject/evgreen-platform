@@ -4279,6 +4279,7 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [ ] QA incidente plantillas: repetir la importación real de la plantilla DOCX completa desde Administración y confirmar que la versión aparece disponible.
 - [ ] Incidente plantillas producción: identificar y corregir la discrepancia de esquema que mantiene fallando la inserción completa en evgreen.lat.
 - [x] Incidente listado contractual: resolver el error 500 al consultar plantillas y contratos después del despliegue productivo.
+- [ ] Incidente bootstrap contractual: revalidar y crear el esquema idempotente también al atender la primera consulta administrativa, no solo al arrancar el servicio.
 - [ ] QA listado contractual: comprobar en evgreen.lat que las listas de plantillas y contratos cargan tras un reintento transitorio de base de datos.
 - [ ] Validación contractual real: reproducir lista e importación con la plantilla DOCX aportada por el usuario antes de declarar resuelto el incidente.
 - [ ] Contratos de concesión: implementar firma electrónica móvil con consentimiento explícito, captura de evidencia y enlace único revocable.
