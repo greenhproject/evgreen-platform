@@ -25,6 +25,7 @@ import { appendContractSignatureBlocks, generateContractPdf, sanitizeContractHtm
 import { decryptDocusignSecret, encryptDocusignSecret, maskDocusignSecret } from "./docusign-crypto";
 import { buildDocusignConsentUrl, downloadDocusignArtifacts, DocusignSettings, sendDocusignEnvelope, testDocusignConnection, voidDocusignEnvelope } from "./docusign-client";
 import { createManualDownloadExpiry, hashManualDownloadToken } from "./manual-contract-download";
+import { ensureContractDocumentStorage } from "./ensure-contract-document-storage";
 
 const FILE_MAX_BYTES = 10 * 1024 * 1024;
 const CONTRACT_DURATION_YEARS = 10;
@@ -102,6 +103,9 @@ function safeFilename(filename: string): string {
 }
 
 async function getContractsDb() {
+  // Cubre despliegues donde la conexión de inicio todavía no estaba disponible
+  // cuando se registró el servidor. La rutina es idempotente por instancia.
+  await ensureContractDocumentStorage();
   const db = await getDb();
   if (!db) {
     throw new TRPCError({

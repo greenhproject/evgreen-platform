@@ -98,6 +98,7 @@ const DOCUSIGN_PLATFORM_COLUMNS = [
 ] as const;
 
 let verificationPromise: Promise<void> | null = null;
+let contractSchemaReady = false;
 
 async function hasColumn(db: any, table: string, column: string): Promise<boolean> {
   const result = await db.execute(sql`
@@ -116,13 +117,13 @@ async function hasColumn(db: any, table: string, column: string): Promise<boolea
  * columnas TEXT existentes; no elimina, transforma ni reescribe documentos.
  */
 export async function ensureContractDocumentStorage(): Promise<void> {
+  if (contractSchemaReady) return;
   if (verificationPromise) return verificationPromise;
 
   verificationPromise = (async () => {
     const db = await getDb();
     if (!db) {
-      console.warn("[Contracts] No database connection; document storage verification skipped");
-      return;
+      throw new Error("La base de datos no está disponible para verificar el esquema contractual.");
     }
 
     // Railway utiliza una base de datos independiente de la usada en desarrollo.
@@ -160,9 +161,12 @@ export async function ensureContractDocumentStorage(): Promise<void> {
       ));
       console.log(`[Contracts] Expanded ${target.table}.${target.column} from ${columnType} to LONGTEXT`);
     }
+    contractSchemaReady = true;
+    console.log("[Contracts] Contract schema verified for this instance");
   })().catch((error) => {
     verificationPromise = null;
     console.error("[Contracts] Document storage verification failed", error);
+    throw error;
   });
 
   return verificationPromise;
