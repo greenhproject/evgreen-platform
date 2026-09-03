@@ -31,6 +31,7 @@ import { dualCSMS } from "../ocpp/csms-dual";
 import { dispatchOrganizationWebhookEvent } from "../api/webhook-dispatcher";
 import { handleResendWebhook } from "../email/resend-webhook-router";
 import { handleDocusignWebhook } from "../contracts/docusign-webhook";
+import { handleManualContractDownload } from "../contracts/manual-contract-download";
 
 // Grace period para desconexiones temporales del legacy CSMS
 // Evita notificaciones por reconexiones intermitentes (WiFi inestable, reinicios breves)
@@ -166,6 +167,8 @@ async function startServer() {
   app.post("/api/resend/webhook", express.text({ type: "application/json", limit: "1mb" }), handleResendWebhook);
   // DocuSign Connect firma el cuerpo JSON exacto con HMAC; nunca debe pasar primero por express.json().
   app.post("/api/docusign/webhook", express.text({ type: ["application/json", "application/*+json"], limit: "2mb" }), handleDocusignWebhook);
+  // PDF contractual manual: token opaco, revocable y con vencimiento; el archivo se entrega mediante URL temporal de almacenamiento.
+  app.get("/api/contracts/manual/:token", handleManualContractDownload);
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));

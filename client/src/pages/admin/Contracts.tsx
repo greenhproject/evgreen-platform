@@ -101,7 +101,13 @@ export default function AdminContracts() {
 
   const invalidate = () => Promise.all([utils.contracts.listTemplates.invalidate(), utils.contracts.listContracts.invalidate(), utils.contracts.listEligibleSpaces.invalidate(), utils.contracts.getDocusignConfig.invalidate()]);
   const createContract = trpc.contracts.createContract.useMutation({ onSuccess: result => { toast.success(`Contrato ${result.contractNumber} creado y congelado.`); setContractDialog(false); invalidate(); }, onError: error => toast.error(error.message) });
-  const issueManual = trpc.contracts.issueManualPdf.useMutation({ onSuccess: result => { toast.success("PDF final emitido para firma manuscrita."); if (result.pdfUrl) window.open(result.pdfUrl, "_blank", "noopener,noreferrer"); invalidate(); }, onError: error => toast.error(error.message) });
+  const issueManual = trpc.contracts.issueManualPdf.useMutation({ onSuccess: result => {
+    const shareUrl = result.sharePath ? new URL(result.sharePath, window.location.origin).toString() : "";
+    if (shareUrl && navigator.clipboard) navigator.clipboard.writeText(shareUrl).then(() => toast.success("PDF emitido y enlace temporal copiado para compartir con la EDS.")).catch(() => toast.success("PDF emitido; copie el enlace desde la lista de contratos."));
+    else toast.success("PDF final emitido para firma manuscrita.");
+    if (result.pdfUrl) window.open(result.pdfUrl, "_blank", "noopener,noreferrer");
+    invalidate();
+  }, onError: error => toast.error(error.message) });
   const sendDocusign = trpc.contracts.sendToDocusign.useMutation({ onSuccess: () => { toast.success("Contrato enviado a DocuSign en el orden configurado."); invalidate(); }, onError: error => toast.error(error.message) });
   const cancelContract = trpc.contracts.cancelContract.useMutation({ onSuccess: () => { toast.success("Contrato cancelado y registrado en el expediente."); setContractAction(null); invalidate(); }, onError: error => toast.error(error.message) });
   const verifyManual = trpc.contracts.verifyManualSignedPdf.useMutation({ onSuccess: () => { toast.success("El resultado de la revisión manual quedó registrado."); setContractAction(null); invalidate(); }, onError: error => toast.error(error.message) });
