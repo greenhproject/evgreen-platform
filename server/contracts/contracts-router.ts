@@ -11,7 +11,7 @@ import {
   siteContracts,
   spaceSubmissions,
 } from "../../drizzle/schema";
-import { getDb, getPlatformSettings, upsertPlatformSettings } from "../db";
+import { getDb, getPlatformSettings, upsertPlatformSettings, withRetry } from "../db";
 import { storageGet, storagePut } from "../storage";
 import {
   DEFAULT_CONTRACT_VARIABLES,
@@ -99,6 +99,22 @@ function contractNumber(): string {
 
 function safeFilename(filename: string): string {
   return filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120) || "plantilla.docx";
+}
+
+async function getContractsDb() {
+  const db = await getDb();
+  if (!db) {
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "La base de datos contractual no está disponible temporalmente. Intente de nuevo en unos segundos.",
+    });
+  }
+  return db;
+}
+
+/** Solo reintenta errores transitorios de red; no oculta errores de permisos o datos. */
+function withContractDbRetry<T>(context: string, operation: () => Promise<T>): Promise<T> {
+  return withRetry(operation, `contracts.${context}`);
 }
 
 function decodeBase64(base64: string): Buffer {
@@ -204,12 +220,12 @@ export const contractsRouter = trpcRouter({
     }),
 
     listTemplates: legalAdminProcedure.query(async () => {
-      const db = (await getDb())!;
-      return db.select({
-        id: contractTemplates.id, name: contractTemplates.name, version: contractTemplates.version, status: contractTemplates.status,
-        sourceFilename: contractTemplates.sourceFilename, contentHash: contractTemplates.contentHash, legalReviewNote: contractTemplates.legalReviewNote,
-        approvedAt: contractTemplates.approvedAt, createdAt: contractTemplates.createdAt, updatedAt: contractTemplates.updatedAt,
-      }).from(contractTemplates).orderBy(desc(contractTemplates.createdAt));
+      const db = await getContractsDb();
+      return withContractDbRetry("listTemplates", () => db.select({
+          id: contractTemplates.id, name: contractTemplates.name, version: contractTemplates.version, status: contractTemplates.status,
+          sourceFilename: contractTemplates.sourceFilename, contentHash: contractTemplates.contentHash, legalReviewNote: contractTemplates.legalReviewNote,
+          approvedAt: contractTemplates.approvedAt, createdAt: contractTemplates.createdAt, updatedAt: contractTemplates.updatedAt,
+        }).from(contractTemplates).orderBy(desc(contractTemplates.createdAt)));
     }),
 
     getTemplate: legalAdminProcedure.input(z.object({ id: z.number().int().positive() })).query(async ({ input }: any) => {
@@ -232,12 +248,12 @@ export const contractsRouter = trpcRouter({
       const key = `contracts/templates/${crypto.randomBytes(10).toString("hex")}-${safeFilename(input.filename)}`;
       const uploaded = await storagePut(key, source, input.contentType);
       const variables = Array.from(new Set([...DEFAULT_CONTRACT_VARIABLES, ...Array.from(htmlContent.matchAll(/{{\s*([A-Z0-9_]+)\s*}}/g)).map(match => match[1]) ]));
-      const db = (await getDb())!;
-      const [result] = await db.insert(contractTemplates).values({
+      const db = await getContractsDb();
+      const [result] = await withContractDbRetry("createTemplateFromDocx", () => db.insert(contractTemplates).values({
         name: input.name, version: input.version, sourceFilename: input.filename, sourceMimeType: input.contentType,
         sourceFileUrl: uploaded.url, sourceFileKey: uploaded.key, htmlContent,
         variableSchema: { variables, required: variables }, contentHash: sourceHash, createdBy: ctx.user.id,
-      });
+      }));
       return { success: true, templateId: result.insertId, conversionWarnings: converted.messages.map(message => message.message) };
     }),
 
@@ -276,13 +292,13 @@ export const contractsRouter = trpcRouter({
     }),
 
     listContracts: legalAdminProcedure.query(async () => {
-      const db = (await getDb())!;
-      return db.select({
-        id: siteContracts.id, contractNumber: siteContracts.contractNumber, status: siteContracts.status, templateName: siteContracts.templateName,
-        templateVersion: siteContracts.templateVersion, contentHash: siteContracts.contentHash, createdAt: siteContracts.createdAt,
-        updatedAt: siteContracts.updatedAt, issuedAt: siteContracts.issuedAt, completedAt: siteContracts.completedAt, draftPdfUrl: siteContracts.draftPdfUrl,
-        spaceName: spaceSubmissions.spaceName, submissionCode: spaceSubmissions.code, city: spaceSubmissions.city,
-      }).from(siteContracts).innerJoin(spaceSubmissions, eq(siteContracts.submissionId, spaceSubmissions.id)).orderBy(desc(siteContracts.updatedAt));
+      const db = await getContractsDb();
+      return withContractDbRetry("listContracts", () => db.select({
+          id: siteContracts.id, contractNumber: siteContracts.contractNumber, status: siteContracts.status, templateName: siteContracts.templateName,
+          templateVersion: siteContracts.templateVersion, contentHash: siteContracts.contentHash, createdAt: siteContracts.createdAt,
+          updatedAt: siteContracts.updatedAt, issuedAt: siteContracts.issuedAt, completedAt: siteContracts.completedAt, draftPdfUrl: siteContracts.draftPdfUrl,
+          spaceName: spaceSubmissions.spaceName, submissionCode: spaceSubmissions.code, city: spaceSubmissions.city,
+        }).from(siteContracts).innerJoin(spaceSubmissions, eq(siteContracts.submissionId, spaceSubmissions.id)).orderBy(desc(siteContracts.updatedAt)));
     }),
 
     getContract: legalAdminProcedure.input(z.object({ id: z.number().int().positive() })).query(async ({ input }: any) => {
