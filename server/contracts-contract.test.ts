@@ -8,6 +8,7 @@ import {
 } from "../shared/site-contracts";
 import { validateDocusignWebhookSignature } from "./contracts/docusign-client";
 import { extractDocusignEnvelopeEvent } from "./contracts/docusign-webhook";
+import { createManualDownloadExpiry, hashManualDownloadToken } from "./contracts/manual-contract-download";
 
 describe("expediente contractual de concesión", () => {
   it("solo habilita DocuSign para contratos congelados y listos", () => {
@@ -42,5 +43,11 @@ describe("expediente contractual de concesión", () => {
   it("extrae el sobre y estado de eventos Connect con estructura JSON", () => {
     expect(extractDocusignEnvelopeEvent({ event: "envelope-completed", data: { envelopeId: "envelope-123", envelopeSummary: { status: "completed" } } })).toEqual({ envelopeId: "envelope-123", status: "completed", eventType: "envelope-completed" });
     expect(extractDocusignEnvelopeEvent({ event: "envelope-completed" })).toBeNull();
+  });
+
+  it("almacena solo el hash de un enlace manual y le asigna una vigencia temporal", () => {
+    expect(hashManualDownloadToken("enlace-opaco-de-prueba")).toHaveLength(64);
+    expect(hashManualDownloadToken("enlace-opaco-de-prueba")).not.toContain("enlace-opaco");
+    expect(new Date(createManualDownloadExpiry(1)).getTime()).toBeGreaterThan(Date.now() + 55 * 60 * 1000);
   });
 });

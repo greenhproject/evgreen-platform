@@ -24,6 +24,7 @@ import {
 import { appendContractSignatureBlocks, generateContractPdf, sanitizeContractHtml, sha256 } from "./contract-pdf-service";
 import { decryptDocusignSecret, encryptDocusignSecret, maskDocusignSecret } from "./docusign-crypto";
 import { buildDocusignConsentUrl, downloadDocusignArtifacts, DocusignSettings, sendDocusignEnvelope, testDocusignConnection, voidDocusignEnvelope } from "./docusign-client";
+import { createManualDownloadExpiry, hashManualDownloadToken } from "./manual-contract-download";
 
 const FILE_MAX_BYTES = 10 * 1024 * 1024;
 const CONTRACT_DURATION_YEARS = 10;
@@ -350,9 +351,11 @@ export const contractsRouter = trpcRouter({
       const [contract] = await db.select().from(siteContracts).where(eq(siteContracts.id, input.id)).limit(1);
       if (!contract) throw new TRPCError({ code: "NOT_FOUND", message: "Contrato no encontrado." });
       if (!canIssueManualPdf(contract.status as any)) throw new TRPCError({ code: "CONFLICT", message: "Este contrato no puede emitirse para firma manuscrita en su estado actual." });
-      await db.update(siteContracts).set({ status: "MANUAL_PDF_ISSUED", issuedAt: contract.issuedAt || nowSql() }).where(eq(siteContracts.id, input.id));
-      await recordContractEvent(db, { contractId: input.id, eventType: "MANUAL_PDF_ISSUED", channel: "MANUAL_PDF", ctx, details: { contentHash: contract.contentHash } });
-      return { success: true, pdfUrl: contract.draftPdfUrl, contractNumber: contract.contractNumber, contentHash: contract.contentHash };
+      const rawToken = crypto.randomBytes(32).toString("base64url");
+      const expiresAt = createManualDownloadExpiry();
+      await db.update(siteContracts).set({ status: "MANUAL_PDF_ISSUED", issuedAt: contract.issuedAt || nowSql(), manualDownloadTokenHash: hashManualDownloadToken(rawToken), manualDownloadExpiresAt: expiresAt }).where(eq(siteContracts.id, input.id));
+      await recordContractEvent(db, { contractId: input.id, eventType: "MANUAL_PDF_ISSUED", channel: "MANUAL_PDF", ctx, details: { contentHash: contract.contentHash, linkExpiresAt: expiresAt } });
+      return { success: true, pdfUrl: contract.draftPdfUrl, sharePath: `/api/contracts/manual/${rawToken}`, shareExpiresAt: expiresAt, contractNumber: contract.contractNumber, contentHash: contract.contentHash };
     }),
 
     uploadManualSignedPdf: legalAdminProcedure.input(z.object({ id: z.number().int().positive(), fileName: z.string().trim().min(1).max(255), fileBase64: z.string().min(1) })).mutation(async ({ input, ctx }: any) => {

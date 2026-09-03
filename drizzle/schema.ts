@@ -1705,6 +1705,8 @@ export const siteContracts = mysqlTable("site_contracts", {
 	docusignCertificateKey: varchar("docusign_certificate_key", { length: 500 }),
 	manualSignedPdfUrl: text("manual_signed_pdf_url"),
 	manualSignedPdfKey: varchar("manual_signed_pdf_key", { length: 500 }),
+	manualDownloadTokenHash: varchar("manual_download_token_hash", { length: 64 }),
+	manualDownloadExpiresAt: timestamp("manual_download_expires_at", { mode: 'string' }),
 	manualReturnedAt: timestamp("manual_returned_at", { mode: 'string' }),
 	manualVerifiedAt: timestamp("manual_verified_at", { mode: 'string' }),
 	manualVerifiedBy: int("manual_verified_by"),
@@ -1718,8 +1720,9 @@ export const siteContracts = mysqlTable("site_contracts", {
 	createdAt: timestamp("created_at", { mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
 	updatedAt: timestamp("updated_at", { mode: 'string' }).defaultNow().onUpdateNow().notNull(),
 }, (table) => [
-	uniqueIndex("site_contracts_number_unique").on(table.contractNumber),
-	uniqueIndex("site_contracts_docusign_envelope_unique").on(table.docusignEnvelopeId),
+		uniqueIndex("site_contracts_number_unique").on(table.contractNumber),
+		uniqueIndex("site_contracts_docusign_envelope_unique").on(table.docusignEnvelopeId),
+		uniqueIndex("site_contracts_manual_download_token_unique").on(table.manualDownloadTokenHash),
 	index("idx_site_contracts_submission").on(table.submissionId, table.createdAt),
 	index("idx_site_contracts_status").on(table.status, table.updatedAt),
 ]);
