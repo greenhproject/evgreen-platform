@@ -9,5 +9,7 @@ describe("capacidad documental contractual", () => {
     expect(source).toContain('table: "contract_templates", column: "html_content"');
     expect(source).toContain('table: "site_contracts", column: "contract_html"');
     expect(source).toContain("LONGTEXT NOT NULL");
+    expect(source).toContain("const CONTRACT_TABLES");
+    expect(source).toContain("CREATE TABLE IF NOT EXISTS");
   });
 });
