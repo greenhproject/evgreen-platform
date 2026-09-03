@@ -32,6 +32,7 @@ import { dispatchOrganizationWebhookEvent } from "../api/webhook-dispatcher";
 import { handleResendWebhook } from "../email/resend-webhook-router";
 import { handleDocusignWebhook } from "../contracts/docusign-webhook";
 import { handleManualContractDownload } from "../contracts/manual-contract-download";
+import { ensureContractDocumentStorage } from "../contracts/ensure-contract-document-storage";
 
 // Grace period para desconexiones temporales del legacy CSMS
 // Evita notificaciones por reconexiones intermitentes (WiFi inestable, reinicios breves)
@@ -58,6 +59,9 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 }
 
 async function startServer() {
+  // Aplica de forma idempotente únicamente la ampliación no destructiva que
+  // necesita una plantilla DOCX contractual extensa antes de atender cargas.
+  await ensureContractDocumentStorage();
   const app = express();
   const server = createServer(app);
 
