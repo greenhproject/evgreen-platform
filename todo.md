@@ -4265,3 +4265,9 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Corrección concurrente: resolver imports y tipado de notificaciones nativas que bloquean TypeScript tras la actualización iOS.
 - [x] Deck EDS QA: eliminar la redundancia entre láminas 2 y 3, unificar el lenguaje visual y contrastar cada dato con el PDF fuente.
 - [x] Estudio Panamá: investigar precios públicos de carga rápida, tarifas de suministro eléctrico, cargos de demanda e impuestos para modelar un negocio de carga realista.
+- [x] Contratos de concesión: auditar el flujo de carta de intención, espacios, plantillas y firma vigente para enlazar la formalización posterior.
+- [x] Contratos de concesión: definir plantilla contractual parametrizada con variables de contraparte, sitio, plazo, notificaciones y condiciones comerciales revisables.
+- [ ] Contratos de concesión: permitir a Administración cargar y versionar plantillas y generar borradores por sitio sin exponer información de otras negociaciones.
+- [ ] Contratos de concesión: implementar firma electrónica móvil con consentimiento explícito, captura de evidencia y enlace único revocable.
+- [ ] Contratos de concesión: almacenar de forma permanente el contrato final, evidencias y bitácora de acceso, firma, rechazo, expiración y reenvío.
+- [ ] Contratos de concesión: validar autorización, trazabilidad, generación y experiencia móvil antes de publicar el flujo.
