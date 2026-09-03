@@ -56,6 +56,7 @@ import { advertiserRouter, adminAdvertiserRouter } from "./routers/advertiser";
 import { userOnboardingRouter } from "./routers/user-onboarding";
 import { buildOcpiRouter } from "./ocpi/ocpi-router";
 import { stageSiemLocationSnapshot } from "./ocpi/ocpi-station-snapshot";
+import { contractsRouter } from "./contracts/contracts-router";
 
 // ============================================================================
 // ROLE-BASED PROCEDURES
@@ -7931,9 +7932,10 @@ export const appRouter = router({
   noc: nocRouter,
   feedback: feedbackRouter,
   campaignWizard: campaignWizardRouter,
-  loyalty: buildLoyaltyRouter(router, publicProcedure, protectedProcedure, adminProcedure),
-  advertiser: advertiserRouter,
+	loyalty: buildLoyaltyRouter(router, publicProcedure, protectedProcedure, adminProcedure),
+	advertiser: advertiserRouter,
 	adminAdvertiser: adminAdvertiserRouter,
+	contracts: contractsRouter,
 	ocpiAdmin: buildOcpiRouter(router, adminProcedure),
 });
 

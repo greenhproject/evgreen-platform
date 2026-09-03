@@ -4269,8 +4269,8 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Contratos de concesión: definir plantilla contractual parametrizada con variables de contraparte, sitio, plazo, notificaciones y condiciones comerciales revisables.
 - [ ] Contratos de concesión: permitir a Administración cargar y versionar plantillas y generar borradores por sitio sin exponer información de otras negociaciones.
 - [ ] Contratos de concesión: permitir activar o retirar versiones de plantilla solo para contratos futuros, conservando inmutables los contratos emitidos, firmados y sus hashes.
-- [ ] Contratos de concesión: generar desde el mismo borrador congelado una ruta DocuSign y un PDF descargable con espacios de firma manuscrita para ambas partes.
-- [ ] Contratos de concesión: permitir registrar el retorno del PDF firmado manualmente sin confundirlo con una firma electrónica certificada.
+- [x] Contratos de concesión: generar desde el mismo borrador congelado una ruta DocuSign y un PDF descargable con espacios de firma manuscrita para ambas partes.
+- [x] Contratos de concesión: permitir registrar el retorno del PDF firmado manualmente sin confundirlo con una firma electrónica certificada.
 - [ ] Contratos de concesión: implementar firma electrónica móvil con consentimiento explícito, captura de evidencia y enlace único revocable.
 - [ ] Contratos de concesión: almacenar de forma permanente el contrato final, evidencias y bitácora de acceso, firma, rechazo, expiración y reenvío.
 - [ ] Contratos de concesión: validar autorización, trazabilidad, generación y experiencia móvil antes de publicar el flujo.

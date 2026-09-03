@@ -1264,6 +1264,19 @@ export const platformSettings = mysqlTable("platform_settings", {
 	ocpiLastTestAt: timestamp("ocpi_last_test_at", { mode: 'string' }),
 	ocpiLastTestStatus: mysqlEnum("ocpi_last_test_status", ['NEVER','SUCCESS','FAILED']).default('NEVER').notNull(),
 	ocpiLastTestMessage: text("ocpi_last_test_message"),
+	// DocuSign: configuración administrable. Las credenciales sensibles se guardan cifradas.
+	docusignEnvironment: mysqlEnum("docusign_environment", ['SANDBOX', 'PRODUCTION']).default('SANDBOX').notNull(),
+	docusignEnabled: tinyint("docusign_enabled").default(0).notNull(),
+	docusignIntegrationKey: varchar("docusign_integration_key", { length: 100 }),
+	docusignUserId: varchar("docusign_user_id", { length: 100 }),
+	docusignAccountId: varchar("docusign_account_id", { length: 100 }),
+	docusignBaseUri: varchar("docusign_base_uri", { length: 255 }),
+	docusignConsentRedirectUri: varchar("docusign_consent_redirect_uri", { length: 500 }),
+	docusignPrivateKeyEncrypted: text("docusign_private_key_encrypted"),
+	docusignWebhookSecretEncrypted: text("docusign_webhook_secret_encrypted"),
+	docusignLastTestAt: timestamp("docusign_last_test_at", { mode: 'string' }),
+	docusignLastTestStatus: mysqlEnum("docusign_last_test_status", ['NEVER', 'SUCCESS', 'FAILED']).default('NEVER').notNull(),
+	docusignLastTestMessage: text("docusign_last_test_message"),
 });
 
 export const priceHistory = mysqlTable("price_history", {
@@ -1642,6 +1655,113 @@ export const letterEmailEvents = mysqlTable("letter_email_events", {
 	uniqueIndex("letter_email_events_provider_event_unique").on(table.providerEventId),
 	index("idx_letter_email_events_submission").on(table.submissionId, table.occurredAt),
 	index("idx_letter_email_events_email").on(table.providerEmailId),
+]);
+
+/** Plantillas legales versionadas; solo una versión aprobada puede activarse para nuevos contratos. */
+export const contractTemplates = mysqlTable("contract_templates", {
+	id: int().autoincrement().notNull(),
+	name: varchar({ length: 255 }).notNull(),
+	version: varchar({ length: 64 }).notNull(),
+	status: mysqlEnum("contract_template_status", ['DRAFT', 'ACTIVE', 'RETIRED']).default('DRAFT').notNull(),
+	sourceFilename: varchar("source_filename", { length: 255 }).notNull(),
+	sourceMimeType: varchar("source_mime_type", { length: 100 }).notNull(),
+	sourceFileUrl: text("source_file_url").notNull(),
+	sourceFileKey: varchar("source_file_key", { length: 500 }).notNull(),
+	htmlContent: text("html_content").notNull(),
+	variableSchema: json("variable_schema").notNull(),
+	contentHash: varchar("content_hash", { length: 64 }).notNull(),
+	legalReviewNote: text("legal_review_note"),
+	approvedBy: int("approved_by"),
+	approvedAt: timestamp("approved_at", { mode: 'string' }),
+	retiredBy: int("retired_by"),
+	retiredAt: timestamp("retired_at", { mode: 'string' }),
+	createdBy: int("created_by").notNull(),
+	createdAt: timestamp("created_at", { mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
+	updatedAt: timestamp("updated_at", { mode: 'string' }).defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+	uniqueIndex("contract_templates_name_version_unique").on(table.name, table.version),
+	index("idx_contract_templates_status").on(table.status, table.createdAt),
+]);
+
+/** Expediente inmutable de cada contrato emitido para un sitio, independiente de la carta de intención. */
+export const siteContracts = mysqlTable("site_contracts", {
+	id: int().autoincrement().notNull(),
+	contractNumber: varchar("contract_number", { length: 64 }).notNull(),
+	submissionId: int("submission_id").notNull(),
+	templateId: int("template_id").notNull(),
+	templateName: varchar("template_name", { length: 255 }).notNull(),
+	templateVersion: varchar("template_version", { length: 64 }).notNull(),
+	status: mysqlEnum("site_contract_status", ['DRAFT', 'READY', 'DOCUSIGN_SENT', 'DOCUSIGN_COMPLETED', 'DOCUSIGN_DECLINED', 'DOCUSIGN_VOIDED', 'DOCUSIGN_EXPIRED', 'MANUAL_PDF_ISSUED', 'MANUAL_PDF_RETURNED', 'MANUAL_PDF_VERIFIED', 'MANUAL_PDF_REJECTED', 'CANCELLED']).default('DRAFT').notNull(),
+	variablesSnapshot: json("variables_snapshot").notNull(),
+	contractHtml: text("contract_html").notNull(),
+	contentHash: varchar("content_hash", { length: 64 }).notNull(),
+	draftPdfUrl: text("draft_pdf_url"),
+	draftPdfKey: varchar("draft_pdf_key", { length: 500 }),
+	docusignEnvelopeId: varchar("docusign_envelope_id", { length: 100 }),
+	docusignEnvelopeStatus: varchar("docusign_envelope_status", { length: 64 }),
+	docusignCompletedPdfUrl: text("docusign_completed_pdf_url"),
+	docusignCompletedPdfKey: varchar("docusign_completed_pdf_key", { length: 500 }),
+	docusignCertificateUrl: text("docusign_certificate_url"),
+	docusignCertificateKey: varchar("docusign_certificate_key", { length: 500 }),
+	manualSignedPdfUrl: text("manual_signed_pdf_url"),
+	manualSignedPdfKey: varchar("manual_signed_pdf_key", { length: 500 }),
+	manualReturnedAt: timestamp("manual_returned_at", { mode: 'string' }),
+	manualVerifiedAt: timestamp("manual_verified_at", { mode: 'string' }),
+	manualVerifiedBy: int("manual_verified_by"),
+	expiresAt: timestamp("expires_at", { mode: 'string' }),
+	issuedAt: timestamp("issued_at", { mode: 'string' }),
+	completedAt: timestamp("completed_at", { mode: 'string' }),
+	cancelledAt: timestamp("cancelled_at", { mode: 'string' }),
+	cancelledBy: int("cancelled_by"),
+	cancellationReason: text("cancellation_reason"),
+	createdBy: int("created_by").notNull(),
+	createdAt: timestamp("created_at", { mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
+	updatedAt: timestamp("updated_at", { mode: 'string' }).defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+	uniqueIndex("site_contracts_number_unique").on(table.contractNumber),
+	uniqueIndex("site_contracts_docusign_envelope_unique").on(table.docusignEnvelopeId),
+	index("idx_site_contracts_submission").on(table.submissionId, table.createdAt),
+	index("idx_site_contracts_status").on(table.status, table.updatedAt),
+]);
+
+/** Foto jurídica de los dos representantes y las dos sociedades al emitir un contrato. */
+export const siteContractParties = mysqlTable("site_contract_parties", {
+	id: int().autoincrement().notNull(),
+	contractId: int("contract_id").notNull(),
+	role: mysqlEnum("contract_party_role", ['OPERATOR', 'ALLY']).notNull(),
+	legalName: varchar("legal_name", { length: 255 }).notNull(),
+	taxId: varchar("tax_id", { length: 64 }).notNull(),
+	representativeName: varchar("representative_name", { length: 255 }).notNull(),
+	representativeDocument: varchar("representative_document", { length: 64 }).notNull(),
+	representativeTitle: varchar("representative_title", { length: 120 }),
+	email: varchar({ length: 320 }).notNull(),
+	phone: varchar({ length: 50 }),
+	notificationAddress: varchar("notification_address", { length: 500 }).notNull(),
+	domicile: varchar({ length: 160 }),
+	signingOrder: int("signing_order").notNull(),
+	createdAt: timestamp("created_at", { mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
+}, (table) => [
+	uniqueIndex("site_contract_parties_contract_role_unique").on(table.contractId, table.role),
+	index("idx_site_contract_parties_contract_order").on(table.contractId, table.signingOrder),
+]);
+
+/** Bitácora de emisión, envíos, firmas, rechazos, descargas y verificaciones manuales. */
+export const siteContractEvents = mysqlTable("site_contract_events", {
+	id: int().autoincrement().notNull(),
+	contractId: int("contract_id").notNull(),
+	eventType: varchar("event_type", { length: 80 }).notNull(),
+	channel: mysqlEnum("contract_event_channel", ['INTERNAL', 'DOCUSIGN', 'MANUAL_PDF']).default('INTERNAL').notNull(),
+	externalEventId: varchar("external_event_id", { length: 160 }),
+	actorUserId: int("actor_user_id"),
+	actorRole: varchar("actor_role", { length: 32 }),
+	actorEmail: varchar("actor_email", { length: 320 }),
+	ipAddress: varchar("ip_address", { length: 64 }),
+	userAgent: text("user_agent"),
+	details: json(),
+	createdAt: timestamp("created_at", { mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
+}, (table) => [
+	uniqueIndex("site_contract_events_external_unique").on(table.externalEventId),
+	index("idx_site_contract_events_contract_created").on(table.contractId, table.createdAt),
 ]);
 
 export const stationAvailabilityAlerts = mysqlTable("station_availability_alerts", {

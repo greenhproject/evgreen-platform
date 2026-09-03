@@ -57,6 +57,10 @@ EVGreen debe recibir y registrar los eventos `envelope-sent`, `envelope-delivere
 
 La configuración administrativa debe guardar, siempre cifrados y enmascarados, el Integration Key, User ID, Account ID, entorno, clave privada JWT o método OAuth aprobado, URI de retorno y secreto de validación de webhook. Debe incluir una prueba de conexión antes de permitir enviar un contrato.
 
+Para una integración de servicio administrada por GHP, el flujo JWT de DocuSign exige Integration Key, User ID, par de claves RSA y consentimiento previo para actuar en nombre de la cuenta. El token no tiene refresco y expira en una hora; la prueba de conexión debe intercambiar el JWT y consultar `/oauth/userinfo` para resolver y persistir el `base_uri` correspondiente al Account ID seleccionado. [6] [7]
+
+El endpoint de DocuSign Connect debe recibir el cuerpo sin transformarlo y validar HMAC-SHA256 sobre sus bytes originales. Solo se aceptará el evento si al menos una firma `X-Docusign-Signature-*`, comparada en tiempo constante, coincide con el hash base64 calculado usando una clave HMAC configurada en DocuSign y cifrada en la plataforma. [8] [9]
+
 ## Conclusiones de cumplimiento técnico
 
 La Ley 527 permite reconocer jurídicamente mensajes de datos, exige un método para identificar al iniciador y evidenciar aprobación, y requiere conservar integridad, origen, destino y fecha/hora del documento. El Decreto 2364 define la firma electrónica de forma tecnológicamente neutra y exige que el método sea confiable y permita detectar alteraciones posteriores. [1] [2]
@@ -70,3 +74,7 @@ Para una concesión a diez años, el enlace público de la carta de intención e
 [3] [DocuSign eSignature API — Create Envelope](https://developers.docusign.com/docs/esign-rest-api/reference/envelopes/envelopes/create/).  
 [4] [DocuSign eSignature API — Download Envelope Documents](https://developers.docusign.com/docs/esign-rest-api/how-to/download-envelope-documents/).  
 [5] [DocuSign Connect — Webhook Event Triggers](https://developers.docusign.com/platform/webhooks/connect/event-triggers/).
+[6] [DocuSign — JWT Grant Authentication](https://developers.docusign.com/platform/auth/jwt/).  
+[7] [DocuSign — How to Get an Access Token with JWT Grant](https://developers.docusign.com/platform/auth/jwt-get-token/).  
+[8] [DocuSign Connect — Validate an HMAC Signature](https://developers.docusign.com/platform/webhooks/connect/validate/).  
+[9] [DocuSign Connect — HMAC Security](https://developers.docusign.com/platform/webhooks/connect/hmac/).

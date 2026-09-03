@@ -30,6 +30,7 @@ import * as alertsService from "../ocpp/alerts-service";
 import { dualCSMS } from "../ocpp/csms-dual";
 import { dispatchOrganizationWebhookEvent } from "../api/webhook-dispatcher";
 import { handleResendWebhook } from "../email/resend-webhook-router";
+import { handleDocusignWebhook } from "../contracts/docusign-webhook";
 
 // Grace period para desconexiones temporales del legacy CSMS
 // Evita notificaciones por reconexiones intermitentes (WiFi inestable, reinicios breves)
@@ -163,6 +164,8 @@ async function startServer() {
   app.use(cookieParser());
   // Resend firma el cuerpo crudo con Svix; esta ruta debe montarse antes del parser JSON global.
   app.post("/api/resend/webhook", express.text({ type: "application/json", limit: "1mb" }), handleResendWebhook);
+  // DocuSign Connect firma el cuerpo JSON exacto con HMAC; nunca debe pasar primero por express.json().
+  app.post("/api/docusign/webhook", express.text({ type: ["application/json", "application/*+json"], limit: "2mb" }), handleDocusignWebhook);
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
