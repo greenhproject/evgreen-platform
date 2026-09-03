@@ -159,6 +159,7 @@ const SpaceSubmission = lazy(() => import("./pages/SpaceSubmission"));
 const SpaceLetterAccept = lazy(() => import("./pages/SpaceLetterAccept"));
 const Crowdfunding = lazy(() => import("./pages/Crowdfunding"));
 const AdminSpaces = lazy(() => import("./pages/admin/Spaces"));
+const AdminContracts = lazy(() => import("./pages/admin/Contracts"));
 const AdminOccupancyLiquidations = lazy(() => import("./pages/admin/OccupancyLiquidations"));
 const AdminFeedback = lazy(() => import("./pages/admin/Feedback"));
 const AdminOCPIConfig = lazy(() => import("./pages/admin/OCPIConfig"));
@@ -1357,13 +1358,20 @@ function Router() {
         </Route>
 
         {/* Administración de Espacios */}
-        <Route path="/admin/spaces">
-          <ProtectedRoute allowedRoles={["admin", "staff", "comercial"]}>
-            <AdminLayout>
-              <AdminSpaces />
-            </AdminLayout>
-          </ProtectedRoute>
-        </Route>
+		<Route path="/admin/spaces">
+		  <ProtectedRoute allowedRoles={["admin", "staff", "comercial"]}>
+			<AdminLayout>
+			  <AdminSpaces />
+			</AdminLayout>
+		  </ProtectedRoute>
+		</Route>
+		<Route path="/admin/contracts">
+		  <ProtectedRoute allowedRoles={["admin"]}>
+			<AdminLayout>
+			  <AdminContracts />
+			</AdminLayout>
+		  </ProtectedRoute>
+		</Route>
 
         {/* Liquidaciones de Ocupación de Parqueaderos */}
         <Route path="/admin/occupancy-liquidations">
