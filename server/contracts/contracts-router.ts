@@ -307,8 +307,10 @@ export const contractsRouter = trpcRouter({
       if (!space) throw new TRPCError({ code: "NOT_FOUND", message: "Espacio no encontrado." });
       if (!space.letterAcceptedAt) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Solo se puede formalizar un contrato después de firmar la carta de intención." });
       if (!template || template.status !== "ACTIVE") throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Seleccione una plantilla contractual activa y aprobada." });
+      const number = contractNumber();
       const variables = normalizeContractVariables({
         ...input.variables,
+        NUMERO_CONTRATO: number,
         GHP_RAZON_SOCIAL: input.operator.legalName, GHP_NIT: input.operator.taxId, GHP_REPRESENTANTE: input.operator.representativeName,
         GHP_DOCUMENTO_REPRESENTANTE: input.operator.representativeDocument, GHP_DIRECCION: input.operator.notificationAddress,
         GHP_CORREO_NOTIFICACIONES: input.operator.email, GHP_TELEFONO: input.operator.phone || "",
@@ -326,7 +328,6 @@ export const contractsRouter = trpcRouter({
         allyName: input.ally.legalName, allyRepresentative: input.ally.representativeName, allyDocument: input.ally.representativeDocument,
         operatorName: input.operator.legalName, operatorRepresentative: input.operator.representativeName, operatorDocument: input.operator.representativeDocument,
       });
-      const number = contractNumber();
       const contentHash = sha256(contractHtml);
       const pdfBuffer = await generateContractPdf({ contractHtml, contractNumber: number, contentHash });
       const pdfUpload = await storagePut(`contracts/drafts/${number}-${contentHash.slice(0, 12)}.pdf`, pdfBuffer, "application/pdf");
@@ -433,7 +434,7 @@ export async function processDocusignContractCompletion(input: { envelopeId: str
     changes.completedAt = nowSql();
   }
   await db.update(siteContracts).set(changes).where(eq(siteContracts.id, contract.id));
-  await recordContractEvent(db, { contractId: contract.id, eventType: `DOCUSIGN_${input.eventType.toUpperCase()}`, channel: "DOCUSIGN", externalEventId: `${input.envelopeId}:${input.eventType}:${input.status}`, details: { status: input.status, rawEvent: input.rawEvent } });
+  await recordContractEvent(db, { contractId: contract.id, eventType: `DOCUSIGN_${input.eventType.toUpperCase()}`, channel: "DOCUSIGN", externalEventId: `${input.envelopeId}:${input.eventType}:${input.status}`, details: { status: input.status, eventType: input.eventType } });
   return { matched: true, contractId: contract.id };
 }
 

@@ -4267,8 +4267,8 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Estudio Panamá: investigar precios públicos de carga rápida, tarifas de suministro eléctrico, cargos de demanda e impuestos para modelar un negocio de carga realista.
 - [x] Contratos de concesión: auditar el flujo de carta de intención, espacios, plantillas y firma vigente para enlazar la formalización posterior.
 - [x] Contratos de concesión: definir plantilla contractual parametrizada con variables de contraparte, sitio, plazo, notificaciones y condiciones comerciales revisables.
-- [ ] Contratos de concesión: permitir a Administración cargar y versionar plantillas y generar borradores por sitio sin exponer información de otras negociaciones.
-- [ ] Contratos de concesión: permitir activar o retirar versiones de plantilla solo para contratos futuros, conservando inmutables los contratos emitidos, firmados y sus hashes.
+- [x] Contratos de concesión: permitir a Administración cargar y versionar plantillas y generar borradores por sitio sin exponer información de otras negociaciones.
+- [x] Contratos de concesión: permitir activar o retirar versiones de plantilla solo para contratos futuros, conservando inmutables los contratos emitidos, firmados y sus hashes.
 - [x] Contratos de concesión: generar desde el mismo borrador congelado una ruta DocuSign y un PDF descargable con espacios de firma manuscrita para ambas partes.
 - [x] Contratos de concesión: permitir registrar el retorno del PDF firmado manualmente sin confundirlo con una firma electrónica certificada.
 - [ ] Contratos de concesión: implementar firma electrónica móvil con consentimiento explícito, captura de evidencia y enlace único revocable.
