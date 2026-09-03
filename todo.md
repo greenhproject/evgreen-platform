@@ -4272,6 +4272,9 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Contratos de concesión: generar desde el mismo borrador congelado una ruta DocuSign y un PDF descargable con espacios de firma manuscrita para ambas partes.
 - [x] Contratos de concesión: permitir registrar el retorno del PDF firmado manualmente sin confundirlo con una firma electrónica certificada.
 - [x] Contratos de concesión: emitir un enlace externo revocable y temporal para descargar el PDF manual, registrando cada apertura sin persistir el token.
+- [ ] Publicación contractual: resolver o escalar la cuota agotada de servicios Cloud Run que impide crear el despliegue, sin modificar código válido.
+- [x] Incidente contratos: resolver el 401 "Please login" al cargar plantillas DOCX, preservando la autenticación y autorización exclusiva de Administración.
+- [ ] QA incidente contratos: iniciar sesión nuevamente en evgreen.lat y validar la carga real de una plantilla DOCX como Administración.
 - [ ] Contratos de concesión: implementar firma electrónica móvil con consentimiento explícito, captura de evidencia y enlace único revocable.
 - [ ] Contratos de concesión: almacenar de forma permanente el contrato final, evidencias y bitácora de acceso, firma, rechazo, expiración y reenvío.
 - [ ] Contratos de concesión: validar autorización, trazabilidad, generación y experiencia móvil antes de publicar el flujo.

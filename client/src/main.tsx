@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink, TRPCClientError } from "@trpc/client";
 import { createRoot } from "react-dom/client";
 import { getApiUrl } from "@/lib/utils";
+import { isRejectedSessionMessage } from "@shared/auth-session-recovery";
 import superjson from "superjson";
 import App from "./App";
 import { getLoginUrl } from "./const";
@@ -66,7 +67,7 @@ const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!(error instanceof TRPCClientError)) return;
   if (typeof window === "undefined") return;
 
-  const isUnauthorized = error.message === UNAUTHED_ERR_MSG;
+  const isUnauthorized = error.message === UNAUTHED_ERR_MSG || isRejectedSessionMessage(error.message);
   if (!isUnauthorized) return;
   if (isNoRedirectPath()) return;
 
@@ -75,10 +76,12 @@ const redirectToLoginIfUnauthorized = (error: unknown) => {
   // RoleBasedRedirect already handles showing Landing when not authenticated.
   if (isNativePlatform()) return;
 
-  const hadSession = document.cookie.includes('session') || localStorage.getItem('manus-runtime-user-info') !== 'null';
-  if (!hadSession) return;
-
-  window.location.href = getLoginUrl();
+  // Una sesión puede caducar mientras la SPA conserva el perfil en caché. Limpiarlo
+  // evita renderizar paneles administrativos sin una cookie válida y fuerza un nuevo
+  // intercambio Auth0 en el mismo dominio que consume el API.
+  localStorage.removeItem('manus-runtime-user-info');
+  queryClient.removeQueries({ queryKey: [["auth", "me"]] });
+  window.location.replace(getLoginUrl());
 };
 
 queryClient.getQueryCache().subscribe(event => {
