@@ -10,6 +10,7 @@ describe("capacidad documental contractual", () => {
     expect(source).toContain('table: "site_contracts", column: "contract_html"');
     expect(source).toContain("LONGTEXT NOT NULL");
     expect(source).toContain("const CONTRACT_TABLES");
+    expect(source).toContain("const CONTRACT_REQUIRED_COLUMNS");
     expect(source).toContain("CREATE TABLE IF NOT EXISTS");
     expect(source).toContain("contractSchemaReady");
     expect(source).toContain("Contract schema verified for this instance");

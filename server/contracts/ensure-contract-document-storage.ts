@@ -97,6 +97,44 @@ const DOCUSIGN_PLATFORM_COLUMNS = [
   "ADD COLUMN `docusign_consent_redirect_uri` varchar(500)",
 ] as const;
 
+// Cubre tablas creadas por despliegues previos pero sin las migraciones más
+// recientes. Se agregan únicamente columnas ausentes; nunca se borran datos.
+const CONTRACT_REQUIRED_COLUMNS = [
+  { table: "contract_templates", column: "name", definition: "ADD COLUMN `name` varchar(255) NOT NULL DEFAULT ''" },
+  { table: "contract_templates", column: "version", definition: "ADD COLUMN `version` varchar(64) NOT NULL DEFAULT '1'" },
+  { table: "contract_templates", column: "status", definition: "ADD COLUMN `status` enum('DRAFT','ACTIVE','RETIRED') NOT NULL DEFAULT 'DRAFT'" },
+  { table: "contract_templates", column: "source_filename", definition: "ADD COLUMN `source_filename` varchar(255) NOT NULL DEFAULT ''" },
+  { table: "contract_templates", column: "source_mime_type", definition: "ADD COLUMN `source_mime_type` varchar(100) NOT NULL DEFAULT ''" },
+  { table: "contract_templates", column: "source_file_url", definition: "ADD COLUMN `source_file_url` text" },
+  { table: "contract_templates", column: "source_file_key", definition: "ADD COLUMN `source_file_key` varchar(500)" },
+  { table: "contract_templates", column: "html_content", definition: "ADD COLUMN `html_content` longtext" },
+  { table: "contract_templates", column: "variable_schema", definition: "ADD COLUMN `variable_schema` json" },
+  { table: "contract_templates", column: "content_hash", definition: "ADD COLUMN `content_hash` varchar(64) NOT NULL DEFAULT ''" },
+  { table: "contract_templates", column: "legal_review_note", definition: "ADD COLUMN `legal_review_note` text" },
+  { table: "contract_templates", column: "approved_by", definition: "ADD COLUMN `approved_by` int" },
+  { table: "contract_templates", column: "approved_at", definition: "ADD COLUMN `approved_at` timestamp NULL" },
+  { table: "contract_templates", column: "retired_by", definition: "ADD COLUMN `retired_by` int" },
+  { table: "contract_templates", column: "retired_at", definition: "ADD COLUMN `retired_at` timestamp NULL" },
+  { table: "contract_templates", column: "created_by", definition: "ADD COLUMN `created_by` int" },
+  { table: "contract_templates", column: "created_at", definition: "ADD COLUMN `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP" },
+  { table: "contract_templates", column: "updated_at", definition: "ADD COLUMN `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" },
+  { table: "site_contracts", column: "contract_number", definition: "ADD COLUMN `contract_number` varchar(64) NOT NULL DEFAULT ''" },
+  { table: "site_contracts", column: "submission_id", definition: "ADD COLUMN `submission_id` int" },
+  { table: "site_contracts", column: "template_id", definition: "ADD COLUMN `template_id` int" },
+  { table: "site_contracts", column: "template_name", definition: "ADD COLUMN `template_name` varchar(255) NOT NULL DEFAULT ''" },
+  { table: "site_contracts", column: "template_version", definition: "ADD COLUMN `template_version` varchar(64) NOT NULL DEFAULT ''" },
+  { table: "site_contracts", column: "status", definition: "ADD COLUMN `status` enum('DRAFT','READY','DOCUSIGN_SENT','DOCUSIGN_COMPLETED','DOCUSIGN_DECLINED','DOCUSIGN_VOIDED','DOCUSIGN_EXPIRED','MANUAL_PDF_ISSUED','MANUAL_PDF_RETURNED','MANUAL_PDF_VERIFIED','MANUAL_PDF_REJECTED','CANCELLED') NOT NULL DEFAULT 'DRAFT'" },
+  { table: "site_contracts", column: "variables_snapshot", definition: "ADD COLUMN `variables_snapshot` json" },
+  { table: "site_contracts", column: "contract_html", definition: "ADD COLUMN `contract_html` longtext" },
+  { table: "site_contracts", column: "content_hash", definition: "ADD COLUMN `content_hash` varchar(64) NOT NULL DEFAULT ''" },
+  { table: "site_contracts", column: "draft_pdf_url", definition: "ADD COLUMN `draft_pdf_url` text" },
+  { table: "site_contracts", column: "draft_pdf_key", definition: "ADD COLUMN `draft_pdf_key` varchar(500)" },
+  { table: "site_contracts", column: "issued_at", definition: "ADD COLUMN `issued_at` timestamp NULL" },
+  { table: "site_contracts", column: "completed_at", definition: "ADD COLUMN `completed_at` timestamp NULL" },
+  { table: "site_contracts", column: "created_at", definition: "ADD COLUMN `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP" },
+  { table: "site_contracts", column: "updated_at", definition: "ADD COLUMN `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" },
+] as const;
+
 let verificationPromise: Promise<void> | null = null;
 let contractSchemaReady = false;
 
@@ -138,6 +176,13 @@ export async function ensureContractDocumentStorage(): Promise<void> {
       if (column && !(await hasColumn(db, "platform_settings", column))) {
         await db.execute(sql.raw(`ALTER TABLE \`platform_settings\` ${definition}`));
         console.log(`[Contracts] Added platform_settings.${column}`);
+      }
+    }
+
+    for (const target of CONTRACT_REQUIRED_COLUMNS) {
+      if (!(await hasColumn(db, target.table, target.column))) {
+        await db.execute(sql.raw(`ALTER TABLE \`${target.table}\` ${target.definition}`));
+        console.log(`[Contracts] Added ${target.table}.${target.column}`);
       }
     }
 
