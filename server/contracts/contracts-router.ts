@@ -249,7 +249,13 @@ async function generateFrozenContractPdf(input: {
 }): Promise<Buffer> {
   const metadata = mappedPdfMetadata(input.template);
   if (metadata.sourceFormat !== "PDF_ACROFORM") {
-    return generateContractPdf({ contractHtml: input.contractHtml, contractNumber: input.contractNumber, contentHash: input.contentHash });
+    return generateContractPdf({
+      contractHtml: input.contractHtml,
+      contractNumber: input.contractNumber,
+      contentHash: input.contentHash,
+      templateName: input.template.name,
+      templateVersion: input.template.version,
+    });
   }
   if (!input.template.sourceFileKey || !Object.keys(metadata.mappings).length) {
     throw new TRPCError({ code: "PRECONDITION_FAILED", message: "La plantilla PDF no conserva su archivo fuente o el mapeo validado." });

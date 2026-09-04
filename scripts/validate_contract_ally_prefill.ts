@@ -1,9 +1,12 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import { eq } from "drizzle-orm";
 import { users } from "../drizzle/schema";
 import { sdk } from "../server/_core/sdk";
 import { getDb } from "../server/db";
 
 const baseUrl = process.env.CONTRACT_BASE_URL || "http://127.0.0.1:3000";
+const outputPath = process.env.CONTRACT_PREVIEW_OUTPUT || "";
 
 async function request(pathname: string, token: string, input?: unknown, expectedStatus = 200) {
   const response = await fetch(`${baseUrl}/api/trpc/${pathname}`, {
@@ -67,6 +70,10 @@ async function main() {
   });
   const digitalPdf = Buffer.from(digitalPreview.data.pdfBase64, "base64");
   if (digitalPdf.subarray(0, 4).toString("utf8") !== "%PDF") throw new Error("La carta digital no produjo un PDF válido usando la precarga.");
+  if (outputPath) {
+    await fs.mkdir(path.dirname(outputPath), { recursive: true });
+    await fs.writeFile(outputPath, digitalPdf);
+  }
 
   const missingDocument = await request("contracts.previewContractPdf", token, {
     submissionId: Number(manual.id), templateId: Number(template.id), variables: variablesFor(manual), ally: allyFor(manual),
@@ -86,7 +93,7 @@ async function main() {
   console.log(JSON.stringify({
     baseUrl,
     template: { id: template.id, version: template.version, status: template.status },
-    digitalLetter: { code: digital.code, sourceDocument: digital.allyPrefill.representativeDocument, pdfBytes: digitalPdf.length },
+    digitalLetter: { code: digital.code, sourceDocument: digital.allyPrefill.representativeDocument, pdfBytes: digitalPdf.length, outputPath: outputPath || null },
     manualFormalization: { code: manual.code, missingDocumentStatus: missingDocument.status, message: missingDocument.message, completedPreviewBytes: manualPdf.length },
     contractCountBefore: contractsBefore.length,
     contractCountAfter: contractsAfter.length,
