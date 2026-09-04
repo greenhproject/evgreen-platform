@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import * as mammoth from "mammoth";
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, ne, or } from "drizzle-orm";
 import { z } from "zod";
 import { protectedProcedure, router as trpcRouter } from "../_core/trpc";
 import {
@@ -26,6 +26,7 @@ import { ensureContractDocumentStorage } from "./ensure-contract-document-storag
 import { ensureInitialContractTemplate } from "./seed-initial-contract-template";
 import { buildContractDraft, UnresolvedContractVariablesError } from "./contract-draft-builder";
 import { getTemplateDeletionEligibility } from "./template-deletion";
+import { getContractSpaceEligibility } from "./contract-space-eligibility";
 
 const FILE_MAX_BYTES = 10 * 1024 * 1024;
 
@@ -380,13 +381,30 @@ export const contractsRouter = trpcRouter({
 
     listEligibleSpaces: legalAdminProcedure.query(async () => {
       const db = (await getDb())!;
-      return db.select({
-        id: spaceSubmissions.id, code: spaceSubmissions.code, spaceName: spaceSubmissions.spaceName, spaceStatus: spaceSubmissions.spaceStatus,
-        submitterName: spaceSubmissions.submitterName, submitterCompany: spaceSubmissions.submitterCompany, submitterEmail: spaceSubmissions.submitterEmail,
-        submitterPhone: spaceSubmissions.submitterPhone, submitterDocument: spaceSubmissions.submitterDocument, address: spaceSubmissions.address,
-        city: spaceSubmissions.city, department: spaceSubmissions.department, country: spaceSubmissions.country, availableAreaM2: spaceSubmissions.availableAreaM2,
-        parkingSpots: spaceSubmissions.parkingSpots, letterAcceptedAt: spaceSubmissions.letterAcceptedAt,
-      }).from(spaceSubmissions).where(and(eq(spaceSubmissions.spaceStatus, "letter_accepted"))).orderBy(desc(spaceSubmissions.letterAcceptedAt));
+      const [formalizedSpaces, existingContracts] = await Promise.all([
+        db.select({
+          id: spaceSubmissions.id, code: spaceSubmissions.code, spaceName: spaceSubmissions.spaceName, spaceStatus: spaceSubmissions.spaceStatus,
+          submitterName: spaceSubmissions.submitterName, submitterCompany: spaceSubmissions.submitterCompany, submitterEmail: spaceSubmissions.submitterEmail,
+          submitterPhone: spaceSubmissions.submitterPhone, submitterDocument: spaceSubmissions.submitterDocument, address: spaceSubmissions.address,
+          city: spaceSubmissions.city, department: spaceSubmissions.department, country: spaceSubmissions.country, availableAreaM2: spaceSubmissions.availableAreaM2,
+          parkingSpots: spaceSubmissions.parkingSpots, letterAcceptedAt: spaceSubmissions.letterAcceptedAt,
+          manualFormalizedAt: spaceSubmissions.manualFormalizedAt,
+        }).from(spaceSubmissions).where(or(isNotNull(spaceSubmissions.letterAcceptedAt), isNotNull(spaceSubmissions.manualFormalizedAt))),
+        db.select({
+          id: siteContracts.id,
+          submissionId: siteContracts.submissionId,
+          contractNumber: siteContracts.contractNumber,
+          status: siteContracts.status,
+          updatedAt: siteContracts.updatedAt,
+        }).from(siteContracts).where(ne(siteContracts.status, "CANCELLED")).orderBy(desc(siteContracts.updatedAt)),
+      ]);
+      const contractBySubmission = new Map<number, { id: number; contractNumber: string; status: string }>();
+      existingContracts.forEach(contract => {
+        if (!contractBySubmission.has(contract.submissionId)) contractBySubmission.set(contract.submissionId, contract);
+      });
+      return formalizedSpaces
+        .map(space => ({ ...space, ...getContractSpaceEligibility(space, contractBySubmission.get(space.id) || null) }))
+        .sort((left, right) => new Date(right.formalizedAt || 0).getTime() - new Date(left.formalizedAt || 0).getTime());
     }),
 
     listContracts: legalAdminProcedure.query(async () => {
@@ -420,7 +438,8 @@ export const contractsRouter = trpcRouter({
         db.select().from(contractTemplates).where(eq(contractTemplates.id, input.templateId)).limit(1),
       ]);
       if (!space) throw new TRPCError({ code: "NOT_FOUND", message: "Espacio no encontrado." });
-      if (!space.letterAcceptedAt) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "La vista previa contractual exige una carta de intención aceptada." });
+      const eligibility = getContractSpaceEligibility(space);
+      if (!eligibility.isFormalized) throw new TRPCError({ code: "PRECONDITION_FAILED", message: eligibility.eligibilityReason });
       if (!template || template.status === "RETIRED") throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Seleccione una plantilla en borrador o activa." });
       requireValidContractTemplateMarkers(template.htmlContent);
       const number = `EVG-PREV-${new Date().getUTCFullYear()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
@@ -442,12 +461,19 @@ export const contractsRouter = trpcRouter({
       ally: partySchema, operator: partySchema, expiresAt: z.string().datetime().optional(),
     })).mutation(async ({ input, ctx }: any) => {
       const db = (await getDb())!;
-      const [[space], [template]] = await Promise.all([
+      const [[space], [template], existingContracts] = await Promise.all([
         db.select().from(spaceSubmissions).where(eq(spaceSubmissions.id, input.submissionId)).limit(1),
         db.select().from(contractTemplates).where(eq(contractTemplates.id, input.templateId)).limit(1),
+        db.select({ id: siteContracts.id, contractNumber: siteContracts.contractNumber, status: siteContracts.status })
+          .from(siteContracts)
+          .where(and(eq(siteContracts.submissionId, input.submissionId), ne(siteContracts.status, "CANCELLED")))
+          .orderBy(desc(siteContracts.updatedAt))
+          .limit(1),
       ]);
       if (!space) throw new TRPCError({ code: "NOT_FOUND", message: "Espacio no encontrado." });
-      if (!space.letterAcceptedAt) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Solo se puede formalizar un contrato después de firmar la carta de intención." });
+      const eligibility = getContractSpaceEligibility(space, existingContracts[0] || null);
+      if (!eligibility.isFormalized) throw new TRPCError({ code: "PRECONDITION_FAILED", message: eligibility.eligibilityReason });
+      if (!eligibility.canCreateContract) throw new TRPCError({ code: "CONFLICT", message: eligibility.eligibilityReason });
       if (!template || template.status !== "ACTIVE") throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Seleccione una plantilla contractual activa y aprobada." });
       const number = contractNumber();
       requireValidContractTemplateMarkers(template.htmlContent);
