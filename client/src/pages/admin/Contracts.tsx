@@ -102,7 +102,6 @@ export default function AdminContracts() {
   const [selectedSpaceId, setSelectedSpaceId] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [ally, setAlly] = useState({ ...emptyParty });
-  const [operator, setOperator] = useState({ ...emptyParty, legalName: "Green House Project SAS", taxId: "901.447.678-0", domicile: "Colombia" });
   const [variables, setVariables] = useState({ PARTICIPACION_ALIADO_PORCENTAJE: "10", PLAZO_INICIAL_ANOS: "10", PRORROGA_ANOS: "5", PLAZO_PAGO_DIAS_HABILES: "15", FECHA_CIERRE_LIQUIDACION: "Último día calendario de cada mes", AREA_CEDIDA_M2: "", PUESTOS_PARQUEO: "", PLANO_ANEXO_URL: "", MARCA_COMERCIAL: "EVGreen" });
   const [contractAction, setContractAction] = useState<ContractAction>(null);
   const [decisionNote, setDecisionNote] = useState("");
@@ -113,11 +112,12 @@ export default function AdminContracts() {
   const { data: spaces = [] } = trpc.contracts.listEligibleSpaces.useQuery();
   const { data: contracts = [], isLoading: contractsLoading } = trpc.contracts.listContracts.useQuery();
   const { data: docusign } = trpc.contracts.getDocusignConfig.useQuery();
+  const { data: operatorProfile } = trpc.contracts.getContractOperatorProfile.useQuery();
   const activeTemplates = useMemo(() => templates.filter((item: any) => item.status === "ACTIVE"), [templates]);
   const selectableTemplates = useMemo(() => templates.filter((item: any) => item.status !== "RETIRED"), [templates]);
   const availableSpaces = useMemo(() => spaces.filter((item: any) => item.canCreateContract), [spaces]);
 
-  const invalidate = () => Promise.all([utils.contracts.listTemplates.invalidate(), utils.contracts.listContracts.invalidate(), utils.contracts.listEligibleSpaces.invalidate(), utils.contracts.getDocusignConfig.invalidate()]);
+  const invalidate = () => Promise.all([utils.contracts.listTemplates.invalidate(), utils.contracts.listContracts.invalidate(), utils.contracts.listEligibleSpaces.invalidate(), utils.contracts.getDocusignConfig.invalidate(), utils.contracts.getContractOperatorProfile.invalidate()]);
   const createContract = trpc.contracts.createContract.useMutation({ onSuccess: result => { toast.success(`Contrato ${result.contractNumber} creado y congelado.`); setContractDialog(false); invalidate(); }, onError: error => toast.error(error.message) });
   const previewContract = trpc.contracts.previewContractPdf.useMutation({
     onSuccess: result => {
@@ -154,11 +154,12 @@ export default function AdminContracts() {
     if (!selectedSpaceId || !selectedTemplateId) return toast.error("Selecciona el espacio formalizado y la plantilla activa.");
     if (!selectedSpace?.canCreateContract) return toast.error(selectedSpace?.eligibilityReason || "Este espacio no puede recibir un nuevo contrato.");
     if (selectedTemplate?.status !== "ACTIVE") return toast.error("La emisión exige una plantilla activa y aprobada jurídicamente. Use la vista previa para revisar borradores.");
-    createContract.mutate({ submissionId: Number(selectedSpaceId), templateId: Number(selectedTemplateId), variables, ally, operator });
+    if (!operatorProfile?.isVerified) return toast.error("Confirme primero los datos legales permanentes de Green House Project SAS.");
+    createContract.mutate({ submissionId: Number(selectedSpaceId), templateId: Number(selectedTemplateId), variables, ally });
   };
   const startPreview = () => {
     if (!selectedSpaceId || !selectedTemplateId) return toast.error("Selecciona un espacio y una plantilla para generar la vista previa.");
-    previewContract.mutate({ submissionId: Number(selectedSpaceId), templateId: Number(selectedTemplateId), variables, ally, operator });
+    previewContract.mutate({ submissionId: Number(selectedSpaceId), templateId: Number(selectedTemplateId), variables, ally });
   };
 
   const loadSpaceData = (id: string) => {
@@ -191,7 +192,7 @@ export default function AdminContracts() {
       </section>
 
       <section className="rounded-2xl border border-white/10 bg-slate-900/50 p-5 sm:p-6">
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><h2 className="font-semibold text-white">Dos modalidades, un mismo contrato congelado</h2><p className="mt-1 text-sm text-slate-400">El hash, la versión y las variables no cambian entre la emisión electrónica y la descarga para firma manual.</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setTemplateDialog(true)}><Upload className="mr-2 h-4 w-4" />Cargar plantilla DOCX</Button><DocusignSettings /></div></div>
+        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><h2 className="font-semibold text-white">Dos modalidades, un mismo contrato congelado</h2><p className="mt-1 text-sm text-slate-400">El hash, la versión y las variables no cambian entre la emisión electrónica y la descarga para firma manual.</p></div><div className="flex flex-wrap gap-2"><ContractOperatorProfileSettings /><Button variant="outline" onClick={() => setTemplateDialog(true)}><Upload className="mr-2 h-4 w-4" />Cargar plantilla</Button><DocusignSettings /></div></div>
         <div className="mt-6 grid gap-4 md:grid-cols-2"><div className="rounded-xl border border-violet-400/20 bg-violet-400/5 p-4"><FileSignature className="h-5 w-5 text-violet-300" /><p className="mt-3 font-medium text-white">Firma electrónica DocuSign</p><p className="mt-1 text-sm leading-6 text-slate-400">Envía en secuencia al representante de la EDS y luego a Green House Project SAS. Al finalizar, se almacena el contrato y certificado del proveedor.</p></div><div className="rounded-xl border border-cyan-400/20 bg-cyan-400/5 p-4"><FileOutput className="h-5 w-5 text-cyan-300" /><p className="mt-3 font-medium text-white">PDF para firma manuscrita</p><p className="mt-1 text-sm leading-6 text-slate-400">Descarga el PDF final con bloques de firma. Al retornar firmado, Administración lo carga y verifica sin atribuirle certificación electrónica.</p></div></div>
       </section>
 
@@ -218,10 +219,10 @@ export default function AdminContracts() {
           </section>
           {selectedSpace && <div className={`rounded-xl border p-3 text-sm ${selectedSpace.canCreateContract ? "border-emerald-400/20 bg-emerald-400/5 text-emerald-100" : "border-amber-400/20 bg-amber-400/5 text-amber-100"}`}><p className="font-medium">{selectedSpace.formalizationSource === "DIGITAL_LETTER" ? "Carta firmada digitalmente" : "Formalización manual registrada"} · {formatDate(selectedSpace.formalizedAt)}</p><p className="mt-1 text-xs opacity-80">{selectedSpace.eligibilityReason} · {selectedSpace.address}</p></div>}
           {selectedTemplate?.status === "DRAFT" && <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-3 text-sm text-amber-100">Esta versión permanece en borrador. Puede descargar una vista previa, pero no emitir contratos hasta completar la revisión jurídica y activarla.</div>}
-          <div className="grid min-w-0 gap-5 2xl:grid-cols-2"><PartyFields prefix="EDS" title="Parte 1 · EDS o aliado del sitio" value={ally} onChange={setAlly} /><PartyFields prefix="GHP" title="Parte 2 · Green House Project SAS" value={operator} onChange={setOperator} /></div>
+          <div className="grid min-w-0 gap-5 2xl:grid-cols-2"><PartyFields prefix="EDS" title="Parte 1 · EDS o aliado del sitio" value={ally} onChange={setAlly} /><section className="min-w-0 rounded-2xl border border-emerald-400/20 bg-emerald-400/5 p-4 sm:p-5"><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-semibold text-white">Parte 2 · Green House Project SAS</p><Badge className={operatorProfile?.isVerified ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200" : "border-amber-400/30 bg-amber-400/10 text-amber-200"}>{operatorProfile?.isVerified ? "Perfil confirmado" : "Configuración pendiente"}</Badge></div>{operatorProfile?.profile && <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><div><p className="text-xs text-slate-500">Razón social</p><p className="font-medium text-white">{operatorProfile.profile.legalName}</p></div><div><p className="text-xs text-slate-500">NIT</p><p className="font-medium text-white">{operatorProfile.profile.taxId}</p></div><div><p className="text-xs text-slate-500">Representante</p><p className="font-medium text-white">{operatorProfile.profile.representativeName || "Pendiente"}</p></div><div><p className="text-xs text-slate-500">Documento</p><p className="font-medium text-white">{operatorProfile.profile.representativeDocument || "Pendiente"}</p></div><div className="sm:col-span-2"><p className="text-xs text-slate-500">Dirección de notificaciones</p><p className="font-medium text-white">{operatorProfile.profile.notificationAddress || "Pendiente"}</p></div></div>}<p className="mt-4 text-xs leading-5 text-slate-400">Estos datos se administran una sola vez y el servidor los congela en cada expediente. No pueden reemplazarse desde este formulario.</p></section></div>
           <section className="min-w-0 rounded-2xl border border-white/10 bg-slate-950/50 p-4 sm:p-5"><p className="mb-4 text-sm font-semibold text-white">Condiciones parametrizadas</p><div className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-3">{Object.entries(variables).map(([key, value]) => <div className="min-w-0 space-y-1.5" key={key}><Label className="text-xs leading-tight">{key.replaceAll("_", " ")}</Label><Input value={value} onChange={event => setVariables(previous => ({ ...previous, [key]: event.target.value }))} /></div>)}</div></section>
         </div>
-        <DialogFooter className="flex flex-col-reverse gap-2 border-t border-white/10 bg-[#09130f] px-4 py-4 sm:flex-row sm:justify-end sm:px-6"><Button className="w-full sm:w-auto" variant="outline" onClick={() => setContractDialog(false)}>Cancelar</Button><Button className="w-full sm:w-auto" variant="outline" onClick={startPreview} disabled={previewContract.isPending || !selectedSpace?.canCreateContract}>{previewContract.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Eye className="mr-2 h-4 w-4" />}Descargar vista previa</Button><Button className="w-full sm:w-auto" onClick={startContract} disabled={createContract.isPending || selectedTemplate?.status !== "ACTIVE" || !selectedSpace?.canCreateContract}>{createContract.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Generar contrato congelado</Button></DialogFooter>
+        <DialogFooter className="flex flex-col-reverse gap-2 border-t border-white/10 bg-[#09130f] px-4 py-4 sm:flex-row sm:justify-end sm:px-6"><Button className="w-full sm:w-auto" variant="outline" onClick={() => setContractDialog(false)}>Cancelar</Button><Button className="w-full sm:w-auto" variant="outline" onClick={startPreview} disabled={previewContract.isPending || !selectedSpace?.canCreateContract || !operatorProfile?.isComplete}>{previewContract.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Eye className="mr-2 h-4 w-4" />}Descargar vista previa</Button><Button className="w-full sm:w-auto" onClick={startContract} disabled={createContract.isPending || selectedTemplate?.status !== "ACTIVE" || !selectedSpace?.canCreateContract || !operatorProfile?.isVerified}>{createContract.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Generar contrato congelado</Button></DialogFooter>
       </DialogContent>
     </Dialog>
 
@@ -397,6 +398,10 @@ function TemplateReviewDialog({ templateId, onOpenChange, onSaved }: { templateI
   const sourceFormat = template?.variableSchema && typeof template.variableSchema === "object" && "sourceFormat" in template.variableSchema
     ? String((template.variableSchema as any).sourceFormat || "DOCX")
     : "DOCX";
+  const noteReady = legalReviewNote.trim().length >= 20;
+  const markersReady = Boolean(template?.markerValidation?.valid);
+  const operatorReady = Boolean(template?.operatorProfile?.isVerified);
+  const activationReady = Boolean(isDraft && noteReady && markersReady && operatorReady);
 
   return <Dialog open={Boolean(templateId)} onOpenChange={onOpenChange}>
     <DialogContent className="max-h-[92vh] max-w-4xl overflow-y-auto bg-[#09130f] text-slate-100">
@@ -407,18 +412,62 @@ function TemplateReviewDialog({ templateId, onOpenChange, onSaved }: { templateI
       {isLoading || !template ? <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-emerald-400" /></div> : <div className="space-y-4 py-3">
         <div className="rounded-xl border border-white/10 bg-slate-950/50 p-3 text-xs text-slate-400"><span className="font-semibold text-slate-200">Archivo fuente:</span> {template.sourceFilename} · {sourceFormat === "PDF_ACROFORM" ? "PDF rellenable" : "DOCX"} · SHA-256 {template.contentHash}</div>
         {savedMappings.length > 0 && <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-4"><p className="text-sm font-semibold text-emerald-100">Mapeo guardado · {savedMappings.length} campos</p><div className="mt-3 grid gap-2 sm:grid-cols-2">{savedMappings.map(([rawName, variable]) => <div key={rawName} className="min-w-0 rounded-lg border border-white/10 bg-slate-950/50 p-3 text-xs"><p className="truncate font-mono text-slate-400">{`{{${rawName}}}`}</p><p className="mt-1 truncate font-medium text-white">{String(variable)}</p></div>)}</div></div>}
+        {isDraft && <div className="rounded-xl border border-white/10 bg-slate-950/50 p-4"><p className="text-sm font-semibold text-white">Requisitos para activar</p><div className="mt-3 grid gap-2 text-sm sm:grid-cols-3">{[{ ready: markersReady, label: "Marcadores válidos", detail: template.markerValidation?.message }, { ready: operatorReady, label: "Datos legales GHP", detail: operatorReady ? "Perfil confirmado por Administración." : `Pendientes: ${template.operatorProfile?.missingFields?.join(", ") || "confirmación del perfil"}.` }, { ready: noteReady, label: "Aprobación documentada", detail: noteReady ? "Nota de revisión suficiente." : `Escriba al menos 20 caracteres (${legalReviewNote.trim().length}/20).` }].map(item => <div key={item.label} className={`rounded-lg border p-3 ${item.ready ? "border-emerald-400/20 bg-emerald-400/5" : "border-amber-400/20 bg-amber-400/5"}`}><p className={`font-medium ${item.ready ? "text-emerald-200" : "text-amber-200"}`}>{item.ready ? "Listo" : "Pendiente"} · {item.label}</p><p className="mt-1 text-xs leading-5 text-slate-400">{item.detail}</p></div>)}</div></div>}
         <div><Label>Nota de revisión jurídica y comercial</Label><Textarea value={legalReviewNote} onChange={event => setLegalReviewNote(event.target.value)} placeholder="Indique aprobación, responsable y alcance de los cambios de esta versión." /></div>
         <div><Label>Contenido HTML importado</Label><Textarea rows={16} value={htmlContent} disabled={!isDraft} onChange={event => setHtmlContent(event.target.value)} className="font-mono text-xs leading-5" /><p className="mt-2 text-xs text-slate-500">Use marcadores como <code>{"{{ALIADO_RAZON_SOCIAL}}"}</code>. Solo las versiones en borrador pueden editarse.</p></div>
       </div>}
       <DialogFooter>
         {isDraft && <>
           <Button variant="outline" onClick={() => update.mutate({ id: template.id, htmlContent, legalReviewNote })} disabled={update.isPending}>Guardar borrador</Button>
-          <Button onClick={() => activate.mutate({ id: template.id, legalReviewNote })} disabled={activate.isPending || legalReviewNote.trim().length < 20}>{activate.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Activar para nuevos contratos</Button>
+          <Button onClick={() => activate.mutate({ id: template.id, htmlContent, legalReviewNote })} disabled={activate.isPending || !activationReady} title={activationReady ? "Activar esta versión" : "Complete los tres requisitos indicados arriba"}>{activate.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Activar para nuevos contratos</Button>
         </>}
         <Button variant="ghost" onClick={() => onOpenChange(false)}>Cerrar</Button>
       </DialogFooter>
     </DialogContent>
   </Dialog>;
+}
+
+function ContractOperatorProfileSettings() {
+  const utils = trpc.useUtils();
+  const { data } = trpc.contracts.getContractOperatorProfile.useQuery();
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ ...emptyParty });
+  const [confirmed, setConfirmed] = useState(false);
+  const save = trpc.contracts.saveContractOperatorProfile.useMutation({
+    onSuccess: () => {
+      toast.success("Datos legales de Green House Project SAS confirmados y disponibles para todos los contratos.");
+      utils.contracts.getContractOperatorProfile.invalidate();
+      utils.contracts.getTemplate.invalidate();
+      utils.contracts.listTemplates.invalidate();
+      setConfirmed(false);
+      setOpen(false);
+    },
+    onError: error => toast.error(error.message),
+  });
+  const openDialog = () => {
+    setForm({ ...emptyParty, ...(data?.profile || {}) });
+    setConfirmed(false);
+    setOpen(true);
+  };
+
+  return <>
+    <Button variant="outline" onClick={openDialog} disabled={!data}><ShieldCheck className="mr-2 h-4 w-4" />Datos legales GHP{data?.isVerified ? " · Confirmados" : " · Pendientes"}</Button>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent className="grid max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden bg-[#09130f] p-0 text-slate-100 sm:max-h-[calc(100dvh-2rem)] sm:w-[calc(100vw-2rem)] sm:max-w-3xl">
+        <DialogHeader className="border-b border-white/10 px-4 py-4 pr-12 sm:px-6">
+          <DialogTitle>Perfil legal permanente del operador</DialogTitle>
+          <DialogDescription>Estos datos se precargan desde la configuración central y el servidor los congela en cada contrato emitido.</DialogDescription>
+        </DialogHeader>
+        <div className="min-h-0 space-y-4 overflow-y-auto px-4 py-5 sm:px-6">
+          <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-4 text-sm leading-6 text-amber-100">Confirme el nombre y documento del representante contra el certificado de existencia y representación legal vigente. El sistema no infiere ni corrige apellidos desde plantillas históricas.</div>
+          <PartyFields prefix="GHP" title="Green House Project SAS" value={form} onChange={setForm} />
+          {(data?.missingFields?.length ?? 0) > 0 && <p className="rounded-lg border border-white/10 bg-slate-950/50 p-3 text-sm text-slate-400">Actualmente faltan: {data?.missingFields?.join(", ")}.</p>}
+          <label className="flex items-start gap-3 rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-4 text-sm leading-6 text-emerald-100"><input className="mt-1 h-4 w-4" type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} /><span>Confirmo que estos datos corresponden a la información legal vigente y autorizo su uso para contratos futuros.</span></label>
+        </div>
+        <DialogFooter className="flex flex-col-reverse gap-2 border-t border-white/10 bg-[#09130f] px-4 py-4 sm:flex-row sm:justify-end sm:px-6"><Button className="w-full sm:w-auto" variant="outline" onClick={() => setOpen(false)} disabled={save.isPending}>Cancelar</Button><Button className="w-full sm:w-auto" onClick={() => save.mutate({ profile: form as any, confirmCurrent: true })} disabled={!confirmed || save.isPending}>{save.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Guardar y confirmar</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+  </>;
 }
 
 function DocusignSettings() {

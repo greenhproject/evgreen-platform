@@ -30,6 +30,10 @@ import { buildContractDraft, UnresolvedContractVariablesError } from "./contract
 import { getTemplateDeletionEligibility } from "./template-deletion";
 import { getContractSpaceEligibility } from "./contract-space-eligibility";
 import {
+  getContractOperatorProfileStatus,
+  mergeTemplateVariableSchema,
+} from "./contract-operator-profile";
+import {
   CONTRACT_DOCX_MIME,
   CONTRACT_PDF_MIME,
   analyzeContractTemplateSource,
@@ -71,6 +75,18 @@ const partySchema = z.object({
   phone: z.string().trim().max(50).optional(),
   notificationAddress: z.string().trim().min(5).max(500),
   domicile: z.string().trim().max(160).optional(),
+});
+
+const contractOperatorProfileSchema = z.object({
+  legalName: z.string().trim().min(3).max(255),
+  taxId: z.string().trim().min(3).max(64),
+  representativeName: z.string().trim().min(3).max(255),
+  representativeDocument: z.string().trim().min(3).max(64),
+  representativeTitle: z.string().trim().min(3).max(120),
+  email: z.string().trim().email().max(320),
+  phone: z.string().trim().min(5).max(50),
+  notificationAddress: z.string().trim().min(5).max(500),
+  domicile: z.string().trim().min(2).max(160),
 });
 
 const docusignConfigSchema = z.object({
@@ -151,6 +167,20 @@ async function getContractsDb() {
 /** Solo reintenta errores transitorios de red; no oculta errores de permisos o datos. */
 function withContractDbRetry<T>(context: string, operation: () => Promise<T>): Promise<T> {
   return withRetry(operation, `contracts.${context}`);
+}
+
+async function requireVerifiedContractOperatorProfile() {
+  const status = getContractOperatorProfileStatus(await getPlatformSettings());
+  if (!status.isVerified) {
+    const details = status.missingFields.length
+      ? ` Faltan: ${status.missingFields.join(", ")}.`
+      : " Confirme nuevamente que los datos legales están vigentes.";
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: `Complete y confirme el perfil legal de Green House Project SAS antes de activar o emitir contratos.${details}`,
+    });
+  }
+  return status.profile;
 }
 
 function decodeBase64(base64: string): Buffer {
@@ -383,7 +413,40 @@ export const contractsRouter = trpcRouter({
       const db = (await getDb())!;
       const [template] = await db.select().from(contractTemplates).where(eq(contractTemplates.id, input.id)).limit(1);
       if (!template) throw new TRPCError({ code: "NOT_FOUND", message: "Plantilla no encontrada." });
-      return template;
+      const operatorProfile = getContractOperatorProfileStatus(await getPlatformSettings());
+      let markerValidation = { valid: true, message: "Los marcadores de la plantilla son válidos." };
+      try {
+        requireValidContractTemplateMarkers(template.htmlContent);
+      } catch (error) {
+        markerValidation = { valid: false, message: error instanceof Error ? error.message : "La plantilla contiene marcadores inválidos." };
+      }
+      return { ...template, operatorProfile, markerValidation };
+    }),
+
+    getContractOperatorProfile: legalAdminProcedure.query(async () => {
+      return getContractOperatorProfileStatus(await getPlatformSettings());
+    }),
+
+    saveContractOperatorProfile: legalAdminProcedure.input(z.object({
+      profile: contractOperatorProfileSchema,
+      confirmCurrent: z.literal(true),
+    })).mutation(async ({ input, ctx }: any) => {
+      const at = nowSql();
+      await upsertPlatformSettings({
+        contractOperatorLegalName: input.profile.legalName,
+        contractOperatorTaxId: input.profile.taxId,
+        contractOperatorRepresentativeName: input.profile.representativeName,
+        contractOperatorRepresentativeDocument: input.profile.representativeDocument,
+        contractOperatorRepresentativeTitle: input.profile.representativeTitle,
+        contractOperatorEmail: input.profile.email,
+        contractOperatorPhone: input.profile.phone,
+        contractOperatorNotificationAddress: input.profile.notificationAddress,
+        contractOperatorDomicile: input.profile.domicile,
+        contractOperatorVerifiedAt: at,
+        contractOperatorVerifiedBy: ctx.user.id,
+        updatedBy: ctx.user.id,
+      } as any);
+      return getContractOperatorProfileStatus(await getPlatformSettings());
     }),
 
     analyzeTemplateSource: legalAdminProcedure.input(z.object({ source: templateSourceInputSchema })).mutation(async ({ input }: any) => {
@@ -538,35 +601,55 @@ export const contractsRouter = trpcRouter({
       id: z.number().int().positive(), htmlContent: z.string().trim().min(100).max(900000), legalReviewNote: z.string().trim().max(5000).optional(),
     })).mutation(async ({ input }: any) => {
       const db = (await getDb())!;
-      const [template] = await db.select({ status: contractTemplates.status }).from(contractTemplates).where(eq(contractTemplates.id, input.id)).limit(1);
+      const [template] = await db.select({
+        status: contractTemplates.status,
+        variableSchema: contractTemplates.variableSchema,
+      }).from(contractTemplates).where(eq(contractTemplates.id, input.id)).limit(1);
       if (!template) throw new TRPCError({ code: "NOT_FOUND", message: "Plantilla no encontrada." });
       if (template.status !== "DRAFT") throw new TRPCError({ code: "CONFLICT", message: "Solo se puede editar una plantilla en borrador. Cree una versión nueva para cambiar condiciones futuras." });
       const htmlContent = sanitizeContractHtml(input.htmlContent);
       const variables = requireValidContractTemplateMarkers(htmlContent);
       await db.update(contractTemplates).set({
         htmlContent,
-        variableSchema: { variables, required: variables },
+        variableSchema: {
+          ...mergeTemplateVariableSchema(template.variableSchema, variables),
+          normalizedHtmlHash: sha256(htmlContent),
+        },
         legalReviewNote: input.legalReviewNote || null,
-        contentHash: sha256(htmlContent),
       }).where(eq(contractTemplates.id, input.id));
       return { success: true };
     }),
 
-    activateTemplate: legalAdminProcedure.input(z.object({ id: z.number().int().positive(), legalReviewNote: z.string().trim().min(20).max(5000) })).mutation(async ({ input, ctx }: any) => {
+    activateTemplate: legalAdminProcedure.input(z.object({
+      id: z.number().int().positive(),
+      htmlContent: z.string().trim().min(100).max(900000),
+      legalReviewNote: z.string().trim().min(20).max(5000),
+    })).mutation(async ({ input, ctx }: any) => {
       const db = (await getDb())!;
       const [template] = await db.select().from(contractTemplates).where(eq(contractTemplates.id, input.id)).limit(1);
       if (!template) throw new TRPCError({ code: "NOT_FOUND", message: "Plantilla no encontrada." });
-      if (template.status === "RETIRED") throw new TRPCError({ code: "CONFLICT", message: "Una plantilla retirada no puede reactivarse. Cree una nueva versión aprobada." });
-      const variables = requireValidContractTemplateMarkers(template.htmlContent);
+      if (template.status !== "DRAFT") throw new TRPCError({ code: "CONFLICT", message: "Solo una plantilla en borrador puede activarse. Cree una nueva versión si necesita cambios." });
+      await requireVerifiedContractOperatorProfile();
+      const htmlContent = sanitizeContractHtml(input.htmlContent);
+      const variables = requireValidContractTemplateMarkers(htmlContent);
       const at = nowSql();
-      await db.update(contractTemplates).set({ status: "RETIRED", retiredBy: ctx.user.id, retiredAt: at }).where(and(eq(contractTemplates.name, template.name), eq(contractTemplates.status, "ACTIVE")));
-      await db.update(contractTemplates).set({
-        status: "ACTIVE",
-        variableSchema: { variables, required: variables },
-        legalReviewNote: input.legalReviewNote,
-        approvedBy: ctx.user.id,
-        approvedAt: at,
-      }).where(eq(contractTemplates.id, input.id));
+      await db.transaction(async (tx: any) => {
+        await tx.update(contractTemplates).set({ status: "RETIRED", retiredBy: ctx.user.id, retiredAt: at }).where(and(eq(contractTemplates.name, template.name), eq(contractTemplates.status, "ACTIVE")));
+        const [activationResult]: any = await tx.update(contractTemplates).set({
+          status: "ACTIVE",
+          htmlContent,
+          variableSchema: {
+            ...mergeTemplateVariableSchema(template.variableSchema, variables),
+            normalizedHtmlHash: sha256(htmlContent),
+          },
+          legalReviewNote: input.legalReviewNote,
+          approvedBy: ctx.user.id,
+          approvedAt: at,
+        }).where(and(eq(contractTemplates.id, input.id), eq(contractTemplates.status, "DRAFT")));
+        if (Number(activationResult?.affectedRows || 0) !== 1) {
+          throw new TRPCError({ code: "CONFLICT", message: "La plantilla cambió durante la activación. Actualice el listado e inténtelo de nuevo." });
+        }
+      });
       return { success: true };
     }),
 
@@ -621,7 +704,7 @@ export const contractsRouter = trpcRouter({
 
     previewContractPdf: legalAdminProcedure.input(z.object({
       submissionId: z.number().int().positive(), templateId: z.number().int().positive(), variables: z.record(z.string(), z.string().max(1000)),
-      ally: partySchema, operator: partySchema,
+      ally: partySchema, operator: partySchema.optional(),
     })).mutation(async ({ input }: any) => {
       const db = await getContractsDb();
       const [[space], [template]] = await Promise.all([
@@ -633,6 +716,9 @@ export const contractsRouter = trpcRouter({
       if (!eligibility.isFormalized) throw new TRPCError({ code: "PRECONDITION_FAILED", message: eligibility.eligibilityReason });
       if (!template || template.status === "RETIRED") throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Seleccione una plantilla en borrador o activa." });
       requireValidContractTemplateMarkers(template.htmlContent);
+      const operatorStatus = getContractOperatorProfileStatus(await getPlatformSettings());
+      const operator = operatorStatus.isComplete ? operatorStatus.profile : input.operator;
+      if (!operator) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Complete el perfil legal del operador para generar la vista previa. Faltan: ${operatorStatus.missingFields.join(", ")}.` });
       const number = `EVG-PREV-${new Date().getUTCFullYear()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
       const draft = buildValidatedContractDraft({
         contractNumber: number,
@@ -640,16 +726,16 @@ export const contractsRouter = trpcRouter({
         templateHtml: template.htmlContent,
         variables: input.variables,
         ally: input.ally,
-        operator: input.operator,
+        operator,
         space,
       });
-      const pdfBuffer = await generateFrozenContractPdf({ template, contractNumber: number, contentHash: draft.contentHash, variables: draft.variables, contractHtml: draft.contractHtml, ally: input.ally, operator: input.operator });
+      const pdfBuffer = await generateFrozenContractPdf({ template, contractNumber: number, contentHash: draft.contentHash, variables: draft.variables, contractHtml: draft.contractHtml, ally: input.ally, operator });
       return { success: true, contractNumber: number, contentHash: draft.contentHash, templateVersion: template.version, pdfBase64: pdfBuffer.toString("base64") };
     }),
 
     createContract: legalAdminProcedure.input(z.object({
       submissionId: z.number().int().positive(), templateId: z.number().int().positive(), variables: z.record(z.string(), z.string().max(1000)),
-      ally: partySchema, operator: partySchema, expiresAt: z.string().datetime().optional(),
+      ally: partySchema, operator: partySchema.optional(), expiresAt: z.string().datetime().optional(),
     })).mutation(async ({ input, ctx }: any) => {
       const db = (await getDb())!;
       const [[space], [template], existingContracts] = await Promise.all([
@@ -666,6 +752,7 @@ export const contractsRouter = trpcRouter({
       if (!eligibility.isFormalized) throw new TRPCError({ code: "PRECONDITION_FAILED", message: eligibility.eligibilityReason });
       if (!eligibility.canCreateContract) throw new TRPCError({ code: "CONFLICT", message: eligibility.eligibilityReason });
       if (!template || template.status !== "ACTIVE") throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Seleccione una plantilla contractual activa y aprobada." });
+      const operator = await requireVerifiedContractOperatorProfile();
       const number = contractNumber();
       requireValidContractTemplateMarkers(template.htmlContent);
       const draft = buildValidatedContractDraft({
@@ -674,10 +761,10 @@ export const contractsRouter = trpcRouter({
         templateHtml: template.htmlContent,
         variables: input.variables,
         ally: input.ally,
-        operator: input.operator,
+        operator,
         space,
       });
-      const pdfBuffer = await generateFrozenContractPdf({ template, contractNumber: number, contentHash: draft.contentHash, variables: draft.variables, contractHtml: draft.contractHtml, ally: input.ally, operator: input.operator });
+      const pdfBuffer = await generateFrozenContractPdf({ template, contractNumber: number, contentHash: draft.contentHash, variables: draft.variables, contractHtml: draft.contractHtml, ally: input.ally, operator });
       const pdfUpload = await storagePut(`contracts/drafts/${number}-${draft.contentHash.slice(0, 12)}.pdf`, pdfBuffer, "application/pdf");
       const [result] = await db.insert(siteContracts).values({
         contractNumber: number, submissionId: space.id, templateId: template.id, templateName: template.name, templateVersion: template.version,
@@ -687,7 +774,7 @@ export const contractsRouter = trpcRouter({
       const id = result.insertId;
       await db.insert(siteContractParties).values([
         { contractId: id, role: "ALLY", ...input.ally, signingOrder: 1 },
-        { contractId: id, role: "OPERATOR", ...input.operator, signingOrder: 2 },
+        { contractId: id, role: "OPERATOR", ...operator, signingOrder: 2 },
       ]);
       await recordContractEvent(db, { contractId: id, eventType: "CONTRACT_CREATED", ctx, details: { templateId: template.id, templateVersion: template.version, contentHash: draft.contentHash, variableKeys: Object.keys(draft.variables) } });
       return { success: true, contractId: id, contractNumber: number, pdfUrl: pdfUpload.url, contentHash: draft.contentHash };
