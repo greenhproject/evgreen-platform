@@ -17,19 +17,16 @@ import {
   analyzeContractTemplateMarkers,
   canIssueManualPdf,
   canSendToDocuSign,
-  normalizeContractVariables,
-  renderContractTemplate,
-  unresolvedContractVariables,
 } from "../../shared/site-contracts";
-import { appendContractSignatureBlocks, generateContractPdf, sanitizeContractHtml, sha256 } from "./contract-pdf-service";
+import { generateContractPdf, sanitizeContractHtml, sha256 } from "./contract-pdf-service";
 import { decryptDocusignSecret, encryptDocusignSecret, maskDocusignSecret } from "./docusign-crypto";
 import { buildDocusignConsentUrl, downloadDocusignArtifacts, DocusignSettings, sendDocusignEnvelope, testDocusignConnection, voidDocusignEnvelope } from "./docusign-client";
 import { createManualDownloadExpiry, hashManualDownloadToken } from "./manual-contract-download";
 import { ensureContractDocumentStorage } from "./ensure-contract-document-storage";
 import { ensureInitialContractTemplate } from "./seed-initial-contract-template";
+import { buildContractDraft, UnresolvedContractVariablesError } from "./contract-draft-builder";
 
 const FILE_MAX_BYTES = 10 * 1024 * 1024;
-const CONTRACT_DURATION_YEARS = 10;
 
 const partySchema = z.object({
   legalName: z.string().trim().min(3).max(255),
@@ -148,6 +145,17 @@ export function requireValidContractTemplateMarkers(htmlContent: string): string
     throw new TRPCError({ code: "BAD_REQUEST", message: "La plantilla debe incluir al menos un marcador dinámico con formato {{VARIABLE}}." });
   }
   return analysis.markers;
+}
+
+function buildValidatedContractDraft(input: Parameters<typeof buildContractDraft>[0]) {
+  try {
+    return buildContractDraft(input);
+  } catch (error) {
+    if (error instanceof UnresolvedContractVariablesError) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
+    }
+    throw error;
+  }
 }
 
 function asDocusignSettings(settings: any): DocusignSettings {
@@ -351,6 +359,33 @@ export const contractsRouter = trpcRouter({
       return { ...contract, parties, events };
     }),
 
+    previewContractPdf: legalAdminProcedure.input(z.object({
+      submissionId: z.number().int().positive(), templateId: z.number().int().positive(), variables: z.record(z.string(), z.string().max(1000)),
+      ally: partySchema, operator: partySchema,
+    })).mutation(async ({ input }: any) => {
+      const db = await getContractsDb();
+      const [[space], [template]] = await Promise.all([
+        db.select().from(spaceSubmissions).where(eq(spaceSubmissions.id, input.submissionId)).limit(1),
+        db.select().from(contractTemplates).where(eq(contractTemplates.id, input.templateId)).limit(1),
+      ]);
+      if (!space) throw new TRPCError({ code: "NOT_FOUND", message: "Espacio no encontrado." });
+      if (!space.letterAcceptedAt) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "La vista previa contractual exige una carta de intención aceptada." });
+      if (!template || template.status === "RETIRED") throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Seleccione una plantilla en borrador o activa." });
+      requireValidContractTemplateMarkers(template.htmlContent);
+      const number = `EVG-PREV-${new Date().getUTCFullYear()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
+      const draft = buildValidatedContractDraft({
+        contractNumber: number,
+        templateVersion: template.version,
+        templateHtml: template.htmlContent,
+        variables: input.variables,
+        ally: input.ally,
+        operator: input.operator,
+        space,
+      });
+      const pdfBuffer = await generateContractPdf({ contractHtml: draft.contractHtml, contractNumber: number, contentHash: draft.contentHash });
+      return { success: true, contractNumber: number, contentHash: draft.contentHash, templateVersion: template.version, pdfBase64: pdfBuffer.toString("base64") };
+    }),
+
     createContract: legalAdminProcedure.input(z.object({
       submissionId: z.number().int().positive(), templateId: z.number().int().positive(), variables: z.record(z.string(), z.string().max(1000)),
       ally: partySchema, operator: partySchema, expiresAt: z.string().datetime().optional(),
@@ -364,41 +399,21 @@ export const contractsRouter = trpcRouter({
       if (!space.letterAcceptedAt) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Solo se puede formalizar un contrato después de firmar la carta de intención." });
       if (!template || template.status !== "ACTIVE") throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Seleccione una plantilla contractual activa y aprobada." });
       const number = contractNumber();
-      const variables = normalizeContractVariables({
-        ...input.variables,
-        NUMERO_CONTRATO: number,
-        GHP_RAZON_SOCIAL: input.operator.legalName, GHP_NIT: input.operator.taxId, GHP_REPRESENTANTE: input.operator.representativeName,
-        GHP_DOCUMENTO_REPRESENTANTE: input.operator.representativeDocument, GHP_CARGO_REPRESENTANTE: input.operator.representativeTitle || "Representante legal",
-        GHP_DOMICILIO: input.operator.domicile || "Colombia", GHP_DIRECCION: input.operator.notificationAddress,
-        GHP_CORREO_NOTIFICACIONES: input.operator.email, GHP_TELEFONO: input.operator.phone || "",
-        ALIADO_RAZON_SOCIAL: input.ally.legalName, ALIADO_NIT: input.ally.taxId, ALIADO_REPRESENTANTE: input.ally.representativeName,
-        ALIADO_DOCUMENTO_REPRESENTANTE: input.ally.representativeDocument, ALIADO_CARGO_REPRESENTANTE: input.ally.representativeTitle || "Representante legal",
-        ALIADO_DOMICILIO: input.ally.domicile || space.city, ALIADO_DIRECCION_NOTIFICACIONES: input.ally.notificationAddress,
-        ALIADO_CORREO_NOTIFICACIONES: input.ally.email, ALIADO_TELEFONO: input.ally.phone || "",
-        SITIO_NOMBRE: space.spaceName, SITIO_DIRECCION: space.address, SITIO_CIUDAD: space.city, SITIO_DEPARTAMENTO: space.department || "",
-        SITIO_TIPO: space.spaceType, AREA_CEDIDA_M2: space.availableAreaM2?.toString() || "", PUESTOS_PARQUEO: space.parkingSpots?.toString() || "",
-        PARTICIPACION_ALIADO_PORCENTAJE: input.variables.PARTICIPACION_ALIADO_PORCENTAJE || "10",
-        PLAZO_INICIAL_ANOS: input.variables.PLAZO_INICIAL_ANOS || String(CONTRACT_DURATION_YEARS),
-        PRORROGA_ANOS: input.variables.PRORROGA_ANOS || "5",
-        PLAZO_PAGO_DIAS_HABILES: input.variables.PLAZO_PAGO_DIAS_HABILES || "15",
-        FECHA_CIERRE_LIQUIDACION: input.variables.FECHA_CIERRE_LIQUIDACION || "Último día calendario de cada mes",
-        VERSION_PLANTILLA: template.version,
-        CIUDAD_FIRMA: input.variables.CIUDAD_FIRMA || space.city,
-        FECHA_FIRMA: input.variables.FECHA_FIRMA || "pendiente de firma",
+      requireValidContractTemplateMarkers(template.htmlContent);
+      const draft = buildValidatedContractDraft({
+        contractNumber: number,
+        templateVersion: template.version,
+        templateHtml: template.htmlContent,
+        variables: input.variables,
+        ally: input.ally,
+        operator: input.operator,
+        space,
       });
-      const missing = unresolvedContractVariables(template.htmlContent, variables);
-      if (missing.length) throw new TRPCError({ code: "BAD_REQUEST", message: `Faltan variables obligatorias: ${missing.join(", ")}` });
-      const filledHtml = renderContractTemplate(template.htmlContent, variables);
-      const contractHtml = appendContractSignatureBlocks(filledHtml, {
-        allyName: input.ally.legalName, allyRepresentative: input.ally.representativeName, allyDocument: input.ally.representativeDocument,
-        operatorName: input.operator.legalName, operatorRepresentative: input.operator.representativeName, operatorDocument: input.operator.representativeDocument,
-      });
-      const contentHash = sha256(contractHtml);
-      const pdfBuffer = await generateContractPdf({ contractHtml, contractNumber: number, contentHash });
-      const pdfUpload = await storagePut(`contracts/drafts/${number}-${contentHash.slice(0, 12)}.pdf`, pdfBuffer, "application/pdf");
+      const pdfBuffer = await generateContractPdf({ contractHtml: draft.contractHtml, contractNumber: number, contentHash: draft.contentHash });
+      const pdfUpload = await storagePut(`contracts/drafts/${number}-${draft.contentHash.slice(0, 12)}.pdf`, pdfBuffer, "application/pdf");
       const [result] = await db.insert(siteContracts).values({
         contractNumber: number, submissionId: space.id, templateId: template.id, templateName: template.name, templateVersion: template.version,
-        status: "READY", variablesSnapshot: variables, contractHtml, contentHash, draftPdfUrl: pdfUpload.url, draftPdfKey: pdfUpload.key,
+        status: "READY", variablesSnapshot: draft.variables, contractHtml: draft.contractHtml, contentHash: draft.contentHash, draftPdfUrl: pdfUpload.url, draftPdfKey: pdfUpload.key,
         expiresAt: input.expiresAt ? input.expiresAt.slice(0, 19).replace("T", " ") : null, createdBy: ctx.user.id,
       });
       const id = result.insertId;
@@ -406,8 +421,8 @@ export const contractsRouter = trpcRouter({
         { contractId: id, role: "ALLY", ...input.ally, signingOrder: 1 },
         { contractId: id, role: "OPERATOR", ...input.operator, signingOrder: 2 },
       ]);
-      await recordContractEvent(db, { contractId: id, eventType: "CONTRACT_CREATED", ctx, details: { templateId: template.id, templateVersion: template.version, contentHash, variableKeys: Object.keys(variables) } });
-      return { success: true, contractId: id, contractNumber: number, pdfUrl: pdfUpload.url, contentHash };
+      await recordContractEvent(db, { contractId: id, eventType: "CONTRACT_CREATED", ctx, details: { templateId: template.id, templateVersion: template.version, contentHash: draft.contentHash, variableKeys: Object.keys(draft.variables) } });
+      return { success: true, contractId: id, contractNumber: number, pdfUrl: pdfUpload.url, contentHash: draft.contentHash };
     }),
 
     issueManualPdf: legalAdminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ input, ctx }: any) => {

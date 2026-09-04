@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { BadgeCheck, CheckCircle2, ClipboardCheck, Download, FileCheck2, FileOutput, FileSignature, FileText, History, Landmark, Loader2, Pencil, Plus, Send, Settings2, ShieldCheck, Upload, XCircle } from "lucide-react";
+import { BadgeCheck, CheckCircle2, ClipboardCheck, Download, Eye, FileCheck2, FileOutput, FileSignature, FileText, History, Landmark, Loader2, Pencil, Plus, Send, Settings2, ShieldCheck, Upload, XCircle } from "lucide-react";
 
 type ContractAction = { id: number; type: "manual" | "docusign" | "cancel" | "verify" | "reject" } | null;
 
@@ -40,6 +40,18 @@ function readFileAsBase64(file: File): Promise<string> {
     reader.onload = () => resolve(String(reader.result));
     reader.readAsDataURL(file);
   });
+}
+
+function downloadBase64Pdf(base64: string, fileName: string) {
+  const bytes = Uint8Array.from(window.atob(base64), character => character.charCodeAt(0));
+  const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -87,7 +99,7 @@ export default function AdminContracts() {
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [ally, setAlly] = useState({ ...emptyParty });
   const [operator, setOperator] = useState({ ...emptyParty, legalName: "Green House Project SAS", taxId: "901.447.678-0", domicile: "Colombia" });
-  const [variables, setVariables] = useState({ PARTICIPACION_ALIADO_PORCENTAJE: "10", PLAZO_INICIAL_ANOS: "10", PRORROGA_ANOS: "5", PLAZO_PAGO_DIAS_HABILES: "15", FECHA_CIERRE_LIQUIDACION: "Último día calendario de cada mes" });
+  const [variables, setVariables] = useState({ PARTICIPACION_ALIADO_PORCENTAJE: "10", PLAZO_INICIAL_ANOS: "10", PRORROGA_ANOS: "5", PLAZO_PAGO_DIAS_HABILES: "15", FECHA_CIERRE_LIQUIDACION: "Último día calendario de cada mes", AREA_CEDIDA_M2: "", PUESTOS_PARQUEO: "", PLANO_ANEXO_URL: "", MARCA_COMERCIAL: "EVGreen" });
   const [contractAction, setContractAction] = useState<ContractAction>(null);
   const [decisionNote, setDecisionNote] = useState("");
   const signedPdfInput = useRef<HTMLInputElement>(null);
@@ -98,9 +110,17 @@ export default function AdminContracts() {
   const { data: contracts = [], isLoading: contractsLoading } = trpc.contracts.listContracts.useQuery();
   const { data: docusign } = trpc.contracts.getDocusignConfig.useQuery();
   const activeTemplates = useMemo(() => templates.filter((item: any) => item.status === "ACTIVE"), [templates]);
+  const selectableTemplates = useMemo(() => templates.filter((item: any) => item.status !== "RETIRED"), [templates]);
 
   const invalidate = () => Promise.all([utils.contracts.listTemplates.invalidate(), utils.contracts.listContracts.invalidate(), utils.contracts.listEligibleSpaces.invalidate(), utils.contracts.getDocusignConfig.invalidate()]);
   const createContract = trpc.contracts.createContract.useMutation({ onSuccess: result => { toast.success(`Contrato ${result.contractNumber} creado y congelado.`); setContractDialog(false); invalidate(); }, onError: error => toast.error(error.message) });
+  const previewContract = trpc.contracts.previewContractPdf.useMutation({
+    onSuccess: result => {
+      downloadBase64Pdf(result.pdfBase64, `${result.contractNumber}-v${result.templateVersion}.pdf`);
+      toast.success(`Vista previa v${result.templateVersion} generada sin emitir ni activar el contrato.`);
+    },
+    onError: error => toast.error(error.message),
+  });
   const issueManual = trpc.contracts.issueManualPdf.useMutation({ onSuccess: result => {
     const shareUrl = result.sharePath ? new URL(result.sharePath, window.location.origin).toString() : "";
     if (shareUrl && navigator.clipboard) navigator.clipboard.writeText(shareUrl).then(() => toast.success("PDF emitido y enlace temporal copiado para compartir con la EDS.")).catch(() => toast.success("PDF emitido; copie el enlace desde la lista de contratos."));
@@ -114,15 +134,24 @@ export default function AdminContracts() {
   const uploadManual = trpc.contracts.uploadManualSignedPdf.useMutation({ onSuccess: () => { toast.success("PDF firmado recibido; queda pendiente de verificación administrativa."); setManualUploadContractId(null); invalidate(); }, onError: error => toast.error(error.message) });
 
   const selectedSpace = spaces.find((item: any) => String(item.id) === selectedSpaceId) as any;
+  const selectedTemplate = templates.find((item: any) => String(item.id) === selectedTemplateId) as any;
   const startContract = () => {
     if (!selectedSpaceId || !selectedTemplateId) return toast.error("Selecciona el espacio con carta aceptada y la plantilla activa.");
+    if (selectedTemplate?.status !== "ACTIVE") return toast.error("La emisión exige una plantilla activa y aprobada jurídicamente. Use la vista previa para revisar borradores.");
     createContract.mutate({ submissionId: Number(selectedSpaceId), templateId: Number(selectedTemplateId), variables, ally, operator });
+  };
+  const startPreview = () => {
+    if (!selectedSpaceId || !selectedTemplateId) return toast.error("Selecciona un espacio y una plantilla para generar la vista previa.");
+    previewContract.mutate({ submissionId: Number(selectedSpaceId), templateId: Number(selectedTemplateId), variables, ally, operator });
   };
 
   const loadSpaceData = (id: string) => {
     setSelectedSpaceId(id);
     const space: any = spaces.find((item: any) => String(item.id) === id);
-    if (space) setAlly(previous => ({ ...previous, legalName: space.submitterCompany || previous.legalName, representativeName: space.submitterName || previous.representativeName, representativeDocument: space.submitterDocument || previous.representativeDocument, email: space.submitterEmail || previous.email, phone: space.submitterPhone || previous.phone, notificationAddress: space.address || previous.notificationAddress, domicile: space.city || previous.domicile }));
+    if (space) {
+      setAlly(previous => ({ ...previous, legalName: space.submitterCompany || previous.legalName, representativeName: space.submitterName || previous.representativeName, representativeDocument: space.submitterDocument || previous.representativeDocument, email: space.submitterEmail || previous.email, phone: space.submitterPhone || previous.phone, notificationAddress: space.address || previous.notificationAddress, domicile: space.city || previous.domicile }));
+      setVariables(previous => ({ ...previous, AREA_CEDIDA_M2: space.availableAreaM2?.toString() || previous.AREA_CEDIDA_M2, PUESTOS_PARQUEO: space.parkingSpots?.toString() || previous.PUESTOS_PARQUEO }));
+    }
   };
 
   const onManualFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -160,7 +189,7 @@ export default function AdminContracts() {
 
     <TemplateDialog open={templateDialog} onOpenChange={setTemplateDialog} onCreated={invalidate} />
     <TemplateReviewDialog templateId={templateReviewId} onOpenChange={open => !open && setTemplateReviewId(null)} onSaved={invalidate} />
-    <Dialog open={contractDialog} onOpenChange={setContractDialog}><DialogContent className="max-h-[92vh] max-w-5xl overflow-y-auto bg-[#09130f] text-slate-100"><DialogHeader><DialogTitle>Nuevo contrato de concesión</DialogTitle><DialogDescription>Se congelará una versión aprobada y sus variables antes de habilitar cualquiera de las dos rutas de firma.</DialogDescription></DialogHeader><div className="grid gap-4 py-3 md:grid-cols-2"><div><Label>Espacio con carta aceptada</Label><select className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={selectedSpaceId} onChange={event => loadSpaceData(event.target.value)}><option value="">Seleccionar espacio</option>{spaces.map((space: any) => <option value={space.id} key={space.id}>{space.spaceName} · {space.city} · {space.code}</option>)}</select></div><div><Label>Plantilla activa</Label><select className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={selectedTemplateId} onChange={event => setSelectedTemplateId(event.target.value)}><option value="">Seleccionar plantilla</option>{activeTemplates.map((template: any) => <option value={template.id} key={template.id}>{template.name} · v{template.version}</option>)}</select></div></div>{selectedSpace && <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-3 text-sm text-emerald-100">Carta aceptada: {formatDate(selectedSpace.letterAcceptedAt)} · Sitio: {selectedSpace.address}</div>}<div className="grid gap-4 lg:grid-cols-2"><PartyFields prefix="EDS" title="Parte 1 · EDS o aliado del sitio" value={ally} onChange={setAlly} /><PartyFields prefix="GHP" title="Parte 2 · Green House Project SAS" value={operator} onChange={setOperator} /></div><section className="rounded-2xl border border-white/10 bg-slate-950/50 p-4"><p className="mb-4 text-sm font-semibold text-white">Condiciones parametrizadas</p><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{Object.entries(variables).map(([key, value]) => <div key={key}><Label className="text-xs">{key.replaceAll("_", " ")}</Label><Input value={value} onChange={event => setVariables(previous => ({ ...previous, [key]: event.target.value }))} /></div>)}</div></section><DialogFooter><Button variant="outline" onClick={() => setContractDialog(false)}>Cancelar</Button><Button onClick={startContract} disabled={createContract.isPending}>{createContract.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Generar contrato congelado</Button></DialogFooter></DialogContent></Dialog>
+    <Dialog open={contractDialog} onOpenChange={setContractDialog}><DialogContent className="max-h-[92vh] max-w-5xl overflow-y-auto bg-[#09130f] text-slate-100"><DialogHeader><DialogTitle>Nuevo contrato de concesión</DialogTitle><DialogDescription>Revise cualquier borrador mediante vista previa. Solo una versión activa y aprobada jurídicamente puede congelarse y habilitar las rutas de firma.</DialogDescription></DialogHeader><div className="grid gap-4 py-3 md:grid-cols-2"><div><Label>Espacio con carta aceptada</Label><select className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={selectedSpaceId} onChange={event => loadSpaceData(event.target.value)}><option value="">Seleccionar espacio</option>{spaces.map((space: any) => <option value={space.id} key={space.id}>{space.spaceName} · {space.city} · {space.code}</option>)}</select></div><div><Label>Plantilla para vista previa o emisión</Label><select className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={selectedTemplateId} onChange={event => setSelectedTemplateId(event.target.value)}><option value="">Seleccionar plantilla</option>{selectableTemplates.map((template: any) => <option value={template.id} key={template.id}>{template.name} · v{template.version} · {STATUS_META[template.status]?.label || template.status}</option>)}</select></div></div>{selectedSpace && <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-3 text-sm text-emerald-100">Carta aceptada: {formatDate(selectedSpace.letterAcceptedAt)} · Sitio: {selectedSpace.address}</div>}{selectedTemplate?.status === "DRAFT" && <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-3 text-sm text-amber-100">Esta versión permanece en borrador. Puede descargar una vista previa, pero no emitir contratos hasta completar la revisión jurídica y activarla.</div>}<div className="grid gap-4 lg:grid-cols-2"><PartyFields prefix="EDS" title="Parte 1 · EDS o aliado del sitio" value={ally} onChange={setAlly} /><PartyFields prefix="GHP" title="Parte 2 · Green House Project SAS" value={operator} onChange={setOperator} /></div><section className="rounded-2xl border border-white/10 bg-slate-950/50 p-4"><p className="mb-4 text-sm font-semibold text-white">Condiciones parametrizadas</p><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{Object.entries(variables).map(([key, value]) => <div key={key}><Label className="text-xs">{key.replaceAll("_", " ")}</Label><Input value={value} onChange={event => setVariables(previous => ({ ...previous, [key]: event.target.value }))} /></div>)}</div></section><DialogFooter><Button variant="outline" onClick={() => setContractDialog(false)}>Cancelar</Button><Button variant="outline" onClick={startPreview} disabled={previewContract.isPending}>{previewContract.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Eye className="mr-2 h-4 w-4" />}Descargar vista previa</Button><Button onClick={startContract} disabled={createContract.isPending || selectedTemplate?.status !== "ACTIVE"}>{createContract.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Generar contrato congelado</Button></DialogFooter></DialogContent></Dialog>
 
     <AlertDialog open={Boolean(contractAction)} onOpenChange={open => !open && setContractAction(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{contractAction?.type === "manual" ? "Emitir PDF para firma manuscrita" : contractAction?.type === "docusign" ? "Enviar contrato a DocuSign" : contractAction?.type === "verify" ? "Verificar PDF firmado manualmente" : contractAction?.type === "reject" ? "Rechazar PDF manuscrito" : "Anular contrato"}</AlertDialogTitle><AlertDialogDescription>{contractAction?.type === "manual" ? "El PDF se descargará con la versión, variables y hash ya congelados. Luego podrá cargarse el escaneo firmado." : contractAction?.type === "docusign" ? "Se enviará el mismo PDF congelado primero al representante de la EDS y después al representante de Green House Project SAS." : "Esta decisión se registrará de forma permanente en el expediente contractual."}</AlertDialogDescription></AlertDialogHeader>{["verify", "reject", "cancel"].includes(contractAction?.type || "") && <Textarea value={decisionNote} onChange={event => setDecisionNote(event.target.value)} placeholder="Explique la verificación, rechazo o motivo de anulación (mínimo 10 caracteres)." />}<AlertDialogFooter><AlertDialogCancel>Volver</AlertDialogCancel><AlertDialogAction onClick={() => { if (!contractAction) return; if (["verify", "reject", "cancel"].includes(contractAction.type) && decisionNote.trim().length < 10) return toast.error("Registra una nota de al menos 10 caracteres."); if (contractAction.type === "manual") issueManual.mutate({ id: contractAction.id }); if (contractAction.type === "docusign") sendDocusign.mutate({ id: contractAction.id }); if (contractAction.type === "verify") verifyManual.mutate({ id: contractAction.id, accepted: true, note: decisionNote.trim() }); if (contractAction.type === "reject") verifyManual.mutate({ id: contractAction.id, accepted: false, note: decisionNote.trim() }); if (contractAction.type === "cancel") cancelContract.mutate({ id: contractAction.id, reason: decisionNote.trim() }); }}>Confirmar</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
   </div>;
