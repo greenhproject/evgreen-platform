@@ -4297,5 +4297,5 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Importación contractual multiformato: aceptar DOCX, PDF y enlaces de Google Docs/Drive con validación de tamaño, tipo, acceso, marcadores y versionado seguro.
 - [x] Asistente de mapeo contractual: detectar cada marcador `{{...}}`, sugerir su variable canónica, permitir etiquetarlo manualmente y bloquear el guardado mientras existan campos sin asociar.
 - [x] Vista previa de plantilla: renderizar el documento normalizado con valores de ejemplo antes de guardar la versión DRAFT y mostrar el resumen final de asociaciones.
-- [ ] Activación contractual guiada: explicar y validar dentro de la UI cada requisito pendiente antes de habilitar una plantilla para nuevos contratos.
-- [ ] Perfil legal del operador: almacenar una configuración canónica de Green House Project SAS y precargarla automáticamente al crear contratos, congelando sus valores en cada expediente emitido.
+- [x] Activación contractual guiada: explicar y validar dentro de la UI cada requisito pendiente antes de habilitar una plantilla para nuevos contratos.
+- [x] Perfil legal del operador: almacenar una configuración canónica de Green House Project SAS y precargarla automáticamente al crear contratos, congelando sus valores en cada expediente emitido.
