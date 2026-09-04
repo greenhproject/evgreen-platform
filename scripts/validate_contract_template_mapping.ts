@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import { PDFDocument } from "pdf-lib";
-import { users } from "../drizzle/schema";
+import { eq } from "drizzle-orm";
+import { contractTemplates, users } from "../drizzle/schema";
 import { sdk } from "../server/_core/sdk";
 import { getDb } from "../server/db";
 import { downloadGoogleContractTemplate } from "../server/contracts/template-import-service";
@@ -74,34 +75,65 @@ async function main() {
   });
   if (blockedSave.status !== 412) throw new Error(`El guardado sin la vista previa correspondiente no fue bloqueado: HTTP ${blockedSave.status}.`);
 
-  const googleSource = await downloadGoogleContractTemplate(googleDocsUrl);
-  if (googleSource.origin !== "GOOGLE_DRIVE" || googleSource.contentType !== "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
-    throw new Error("El enlace real de Google Docs no se exportó como DOCX.");
+  let googleDocsExport: Record<string, unknown> | null = null;
+  let pdfAcroForm: Record<string, unknown> | null = null;
+  if (process.env.CONTRACT_SKIP_AUXILIARY !== "1") {
+    const googleSource = await downloadGoogleContractTemplate(googleDocsUrl);
+    if (googleSource.origin !== "GOOGLE_DRIVE" || googleSource.contentType !== "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+      throw new Error("El enlace real de Google Docs no se exportó como DOCX.");
+    }
+    googleDocsExport = { contentType: googleSource.contentType, bytes: googleSource.buffer.length, origin: googleSource.origin };
+
+    const pdf = await PDFDocument.create();
+    const pdfPage = pdf.addPage([420, 300]);
+    const pdfField = pdf.getForm().createTextField("Nit-aliado");
+    pdfField.addToPage(pdfPage, { x: 40, y: 200, width: 220, height: 26 });
+    const pdfBytes = Buffer.from(await pdf.save());
+    const pdfSource = {
+      kind: "UPLOAD" as const,
+      filename: "qa-contrato-rellenable.pdf",
+      contentType: "application/pdf" as const,
+      fileBase64: pdfBytes.toString("base64"),
+    };
+    const pdfAnalysis = await request("contracts.analyzeTemplateSource", token, { source: pdfSource });
+    if (pdfAnalysis.status !== 200 || pdfAnalysis.data.sourceFormat !== "PDF_ACROFORM") {
+      throw new Error(`El análisis PDF falló: HTTP ${pdfAnalysis.status} ${pdfAnalysis.message || ""}`);
+    }
+    const pdfMappings = { "Nit-aliado": "ALIADO_NIT" };
+    const pdfPreview = await request("contracts.previewTemplateMapping", token, {
+      source: pdfSource,
+      expectedSourceHash: pdfAnalysis.data.sourceHash,
+      mappings: pdfMappings,
+    });
+    if (pdfPreview.status !== 200 || Buffer.from(pdfPreview.data.previewPdfBase64, "base64").subarray(0, 4).toString() !== "%PDF") {
+      throw new Error(`La vista previa PDF falló: HTTP ${pdfPreview.status} ${pdfPreview.message || ""}`);
+    }
+    pdfAcroForm = { markers: pdfAnalysis.data.markers.map((marker: any) => marker.rawName), previewBytes: Buffer.from(pdfPreview.data.previewPdfBase64, "base64").length };
   }
 
-  const pdf = await PDFDocument.create();
-  const pdfPage = pdf.addPage([420, 300]);
-  const pdfField = pdf.getForm().createTextField("Nit-aliado");
-  pdfField.addToPage(pdfPage, { x: 40, y: 200, width: 220, height: 26 });
-  const pdfBytes = Buffer.from(await pdf.save());
-  const pdfSource = {
-    kind: "UPLOAD" as const,
-    filename: "qa-contrato-rellenable.pdf",
-    contentType: "application/pdf" as const,
-    fileBase64: pdfBytes.toString("base64"),
-  };
-  const pdfAnalysis = await request("contracts.analyzeTemplateSource", token, { source: pdfSource });
-  if (pdfAnalysis.status !== 200 || pdfAnalysis.data.sourceFormat !== "PDF_ACROFORM") {
-    throw new Error(`El análisis PDF falló: HTTP ${pdfAnalysis.status} ${pdfAnalysis.message || ""}`);
-  }
-  const pdfMappings = { "Nit-aliado": "ALIADO_NIT" };
-  const pdfPreview = await request("contracts.previewTemplateMapping", token, {
-    source: pdfSource,
-    expectedSourceHash: pdfAnalysis.data.sourceHash,
-    mappings: pdfMappings,
-  });
-  if (pdfPreview.status !== 200 || Buffer.from(pdfPreview.data.previewPdfBase64, "base64").subarray(0, 4).toString() !== "%PDF") {
-    throw new Error(`La vista previa PDF falló: HTTP ${pdfPreview.status} ${pdfPreview.message || ""}`);
+  let savedTemplate: Record<string, unknown> | null = null;
+  if (process.env.CONTRACT_SAVE_DRAFT === "1") {
+    const saved = await request("contracts.createTemplateFromMappedSource", token, {
+      name: process.env.CONTRACT_TEMPLATE_NAME || "Contrato de concesión de sitio EDS",
+      version: process.env.CONTRACT_TEMPLATE_VERSION || "3.0",
+      source,
+      expectedSourceHash: analysis.data.sourceHash,
+      previewFingerprint: preview.data.fingerprint,
+      mappings,
+    });
+    if (saved.status !== 200) throw new Error(`El guardado DRAFT falló: HTTP ${saved.status} ${saved.message || ""}`);
+    const [persisted] = await db.select({
+      id: contractTemplates.id,
+      name: contractTemplates.name,
+      version: contractTemplates.version,
+      status: contractTemplates.status,
+      contentHash: contractTemplates.contentHash,
+      variableSchema: contractTemplates.variableSchema,
+    }).from(contractTemplates).where(eq(contractTemplates.id, Number(saved.data.templateId))).limit(1);
+    if (!persisted || persisted.status !== "DRAFT" || persisted.contentHash !== analysis.data.sourceHash) {
+      throw new Error("La plantilla guardada no conserva el estado DRAFT o el hash esperado.");
+    }
+    savedTemplate = persisted;
   }
 
   console.log(JSON.stringify({
@@ -115,9 +147,10 @@ async function main() {
     previewFingerprint: preview.data.fingerprint,
     previewPdf: { path: previewPdfPath, bytes: previewPdf.length },
     invalidPreviewSaveStatus: blockedSave.status,
-    googleDocsExport: { contentType: googleSource.contentType, bytes: googleSource.buffer.length, origin: googleSource.origin },
-    pdfAcroForm: { markers: pdfAnalysis.data.markers.map((marker: any) => marker.rawName), previewBytes: Buffer.from(pdfPreview.data.previewPdfBase64, "base64").length },
-    recordsCreated: 0,
+    googleDocsExport,
+    pdfAcroForm,
+    recordsCreated: savedTemplate ? 1 : 0,
+    savedTemplate,
   }, null, 2));
 }
 

@@ -4293,7 +4293,7 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Limpieza de plantillas contractuales: permitir que solo Admin elimine plantillas DRAFT sin contratos asociados, con confirmación explícita y bloqueo de versiones activas, retiradas o utilizadas.
 - [x] Cartas aceptadas en contratos: corregir la elegibilidad para mostrar todas las cartas firmadas/formalizadas que aún no tienen contrato, con diagnóstico visible de exclusiones.
 - [x] UX contractual responsive: rediseñar el modal de nuevo contrato para móvil, tablet y escritorio, evitando campos recortados, selectores desbordados y acciones inaccesibles.
-- [ ] Importación contractual Word: diagnosticar y corregir marcadores fragmentados o mal escritos en el DOCX v3.0 adjunto, mostrando ubicación y sugerencia de corrección antes de guardar.
-- [ ] Importación contractual multiformato: aceptar DOCX, PDF y enlaces de Google Docs/Drive con validación de tamaño, tipo, acceso, marcadores y versionado seguro.
-- [ ] Asistente de mapeo contractual: detectar cada marcador `{{...}}`, sugerir su variable canónica, permitir etiquetarlo manualmente y bloquear el guardado mientras existan campos sin asociar.
-- [ ] Vista previa de plantilla: renderizar el documento normalizado con valores de ejemplo antes de guardar la versión DRAFT y mostrar el resumen final de asociaciones.
+- [x] Importación contractual Word: diagnosticar y corregir marcadores fragmentados o mal escritos en el DOCX v3.0 adjunto, mostrando ubicación y sugerencia de corrección antes de guardar.
+- [x] Importación contractual multiformato: aceptar DOCX, PDF y enlaces de Google Docs/Drive con validación de tamaño, tipo, acceso, marcadores y versionado seguro.
+- [x] Asistente de mapeo contractual: detectar cada marcador `{{...}}`, sugerir su variable canónica, permitir etiquetarlo manualmente y bloquear el guardado mientras existan campos sin asociar.
+- [x] Vista previa de plantilla: renderizar el documento normalizado con valores de ejemplo antes de guardar la versión DRAFT y mostrar el resumen final de asociaciones.
