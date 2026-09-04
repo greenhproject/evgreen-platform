@@ -26,6 +26,7 @@ import { decryptDocusignSecret, encryptDocusignSecret, maskDocusignSecret } from
 import { buildDocusignConsentUrl, downloadDocusignArtifacts, DocusignSettings, sendDocusignEnvelope, testDocusignConnection, voidDocusignEnvelope } from "./docusign-client";
 import { createManualDownloadExpiry, hashManualDownloadToken } from "./manual-contract-download";
 import { ensureContractDocumentStorage } from "./ensure-contract-document-storage";
+import { ensureInitialContractTemplate } from "./seed-initial-contract-template";
 
 const FILE_MAX_BYTES = 10 * 1024 * 1024;
 const CONTRACT_DURATION_YEARS = 10;
@@ -106,6 +107,7 @@ async function getContractsDb() {
   // Cubre despliegues donde la conexión de inicio todavía no estaba disponible
   // cuando se registró el servidor. La rutina es idempotente por instancia.
   await ensureContractDocumentStorage();
+  await ensureInitialContractTemplate();
   const db = await getDb();
   if (!db) {
     throw new TRPCError({
