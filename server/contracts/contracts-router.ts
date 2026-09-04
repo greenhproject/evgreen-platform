@@ -14,6 +14,8 @@ import {
 import { getDb, getPlatformSettings, upsertPlatformSettings, withRetry } from "../db";
 import { storageGet, storagePut } from "../storage";
 import {
+  CONTRACT_VARIABLE_CATALOG,
+  DEFAULT_CONTRACT_VARIABLES,
   analyzeContractTemplateMarkers,
   canIssueManualPdf,
   canSendToDocuSign,
@@ -27,8 +29,37 @@ import { ensureInitialContractTemplate } from "./seed-initial-contract-template"
 import { buildContractDraft, UnresolvedContractVariablesError } from "./contract-draft-builder";
 import { getTemplateDeletionEligibility } from "./template-deletion";
 import { getContractSpaceEligibility } from "./contract-space-eligibility";
+import {
+  CONTRACT_DOCX_MIME,
+  CONTRACT_PDF_MIME,
+  analyzeContractTemplateSource,
+  buildMappedContractPdf,
+  buildContractTemplateMappingPreview,
+  decodeContractTemplateUpload,
+  downloadGoogleContractTemplate,
+  mappingFingerprint,
+  type ContractTemplateSource,
+} from "./template-import-service";
 
 const FILE_MAX_BYTES = 10 * 1024 * 1024;
+
+const templateSourceInputSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("UPLOAD"),
+    filename: z.string().trim().min(1).max(255),
+    contentType: z.enum([CONTRACT_DOCX_MIME, CONTRACT_PDF_MIME]),
+    fileBase64: z.string().min(1),
+  }),
+  z.object({
+    kind: z.literal("GOOGLE_DRIVE"),
+    sourceUrl: z.string().trim().url().max(1000),
+  }),
+]);
+
+const markerMappingsSchema = z.record(
+  z.string().trim().min(1).max(255),
+  z.enum(DEFAULT_CONTRACT_VARIABLES),
+);
 
 const partySchema = z.object({
   legalName: z.string().trim().min(3).max(255),
@@ -127,6 +158,79 @@ function decodeBase64(base64: string): Buffer {
   const buffer = Buffer.from(normalized, "base64");
   if (!buffer.length || buffer.length > FILE_MAX_BYTES) throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: "El archivo debe tener un tamaño entre 1 byte y 10 MB." });
   return buffer;
+}
+
+async function resolveTemplateSource(input: z.infer<typeof templateSourceInputSchema>): Promise<ContractTemplateSource> {
+  try {
+    return input.kind === "GOOGLE_DRIVE"
+      ? await downloadGoogleContractTemplate(input.sourceUrl)
+      : decodeContractTemplateUpload(input);
+  } catch (error) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "No fue posible leer la fuente de la plantilla." });
+  }
+}
+
+async function analyzeResolvedTemplateSource(source: ContractTemplateSource) {
+  try {
+    return await analyzeContractTemplateSource(source);
+  } catch (error) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "No fue posible analizar la plantilla." });
+  }
+}
+
+async function previewResolvedTemplateMapping(source: ContractTemplateSource, mappings: Record<string, string>) {
+  const analysis = await analyzeResolvedTemplateSource(source);
+  try {
+    return { analysis, preview: await buildContractTemplateMappingPreview(source, analysis, mappings) };
+  } catch (error) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "No fue posible validar el mapeo." });
+  }
+}
+
+function mappedPdfMetadata(template: any): { sourceFormat: string | null; mappings: Record<string, string> } {
+  const schema = template?.variableSchema && typeof template.variableSchema === "object" ? template.variableSchema : {};
+  return {
+    sourceFormat: typeof schema.sourceFormat === "string" ? schema.sourceFormat : null,
+    mappings: schema.mappings && typeof schema.mappings === "object" ? schema.mappings : {},
+  };
+}
+
+async function generateFrozenContractPdf(input: {
+  template: any;
+  contractNumber: string;
+  contentHash: string;
+  variables: Record<string, string>;
+  contractHtml: string;
+  ally: z.infer<typeof partySchema>;
+  operator: z.infer<typeof partySchema>;
+}): Promise<Buffer> {
+  const metadata = mappedPdfMetadata(input.template);
+  if (metadata.sourceFormat !== "PDF_ACROFORM") {
+    return generateContractPdf({ contractHtml: input.contractHtml, contractNumber: input.contractNumber, contentHash: input.contentHash });
+  }
+  if (!input.template.sourceFileKey || !Object.keys(metadata.mappings).length) {
+    throw new TRPCError({ code: "PRECONDITION_FAILED", message: "La plantilla PDF no conserva su archivo fuente o el mapeo validado." });
+  }
+  const { url } = await storageGet(input.template.sourceFileKey);
+  const response = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+  if (!response.ok) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "No fue posible recuperar la plantilla PDF versionada." });
+  const sourcePdf = Buffer.from(await response.arrayBuffer());
+  if (sha256(sourcePdf) !== input.template.contentHash) {
+    throw new TRPCError({ code: "CONFLICT", message: "La plantilla PDF almacenada no coincide con su hash de integridad." });
+  }
+  return buildMappedContractPdf({
+    sourcePdf,
+    mappings: metadata.mappings,
+    values: input.variables,
+    contractNumber: input.contractNumber,
+    contentHash: input.contentHash,
+    allyName: input.ally.legalName,
+    allyRepresentative: input.ally.representativeName,
+    allyDocument: input.ally.representativeDocument,
+    operatorName: input.operator.legalName,
+    operatorRepresentative: input.operator.representativeName,
+    operatorDocument: input.operator.representativeDocument,
+  });
 }
 
 export function requireValidContractTemplateMarkers(htmlContent: string): string[] {
@@ -280,6 +384,93 @@ export const contractsRouter = trpcRouter({
       const [template] = await db.select().from(contractTemplates).where(eq(contractTemplates.id, input.id)).limit(1);
       if (!template) throw new TRPCError({ code: "NOT_FOUND", message: "Plantilla no encontrada." });
       return template;
+    }),
+
+    analyzeTemplateSource: legalAdminProcedure.input(z.object({ source: templateSourceInputSchema })).mutation(async ({ input }: any) => {
+      const source = await resolveTemplateSource(input.source);
+      const analysis = await analyzeResolvedTemplateSource(source);
+      return {
+        filename: source.filename,
+        sourceOrigin: source.origin,
+        sourceFormat: analysis.sourceFormat,
+        contentType: source.contentType,
+        sourceHash: analysis.sourceHash,
+        pageCount: analysis.pageCount,
+        markers: analysis.markers,
+        warnings: analysis.warnings,
+        catalog: CONTRACT_VARIABLE_CATALOG,
+      };
+    }),
+
+    previewTemplateMapping: legalAdminProcedure.input(z.object({
+      source: templateSourceInputSchema,
+      expectedSourceHash: z.string().length(64),
+      mappings: markerMappingsSchema,
+    })).mutation(async ({ input }: any) => {
+      const source = await resolveTemplateSource(input.source);
+      const { analysis, preview } = await previewResolvedTemplateMapping(source, input.mappings);
+      if (analysis.sourceHash !== input.expectedSourceHash) {
+        throw new TRPCError({ code: "CONFLICT", message: "La fuente cambió después del análisis. Analícela nuevamente antes de guardar." });
+      }
+      return {
+        sourceFormat: analysis.sourceFormat,
+        variables: preview.variables,
+        previewHtml: preview.previewHtml,
+        previewPdfBase64: preview.previewPdfBase64,
+        fingerprint: mappingFingerprint(analysis.sourceHash, input.mappings),
+      };
+    }),
+
+    createTemplateFromMappedSource: legalAdminProcedure.input(z.object({
+      name: z.string().trim().min(3).max(255),
+      version: z.string().trim().min(1).max(64),
+      source: templateSourceInputSchema,
+      expectedSourceHash: z.string().length(64),
+      previewFingerprint: z.string().length(64),
+      mappings: markerMappingsSchema,
+    })).mutation(async ({ input, ctx }: any) => {
+      const source = await resolveTemplateSource(input.source);
+      const { analysis, preview } = await previewResolvedTemplateMapping(source, input.mappings);
+      if (analysis.sourceHash !== input.expectedSourceHash) {
+        throw new TRPCError({ code: "CONFLICT", message: "La fuente cambió después del análisis. Analícela nuevamente." });
+      }
+      const fingerprint = mappingFingerprint(analysis.sourceHash, input.mappings);
+      if (fingerprint !== input.previewFingerprint) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Revise nuevamente la vista previa después de cambiar el mapeo." });
+      }
+      const htmlContent = preview.normalizedHtml
+        ? sanitizeContractHtml(preview.normalizedHtml).trim()
+        : `<section data-contract-template-format="PDF_ACROFORM">${preview.variables.map(variable => `<span>{{${variable}}}</span>`).join("")}</section>`;
+      requireValidContractTemplateMarkers(htmlContent);
+      const db = await getContractsDb();
+      const [duplicate] = await db.select({ id: contractTemplates.id, name: contractTemplates.name, version: contractTemplates.version })
+        .from(contractTemplates).where(eq(contractTemplates.contentHash, analysis.sourceHash)).limit(1);
+      if (duplicate) {
+        throw new TRPCError({ code: "CONFLICT", message: `Este mismo documento ya está registrado como ${duplicate.name} v${duplicate.version}. Revise esa versión en lugar de cargar un duplicado.` });
+      }
+      const key = `contracts/templates/${crypto.randomBytes(10).toString("hex")}-${safeFilename(source.filename)}`;
+      const uploaded = await storagePut(key, source.buffer, source.contentType);
+      const [result] = await withContractDbRetry("createTemplateFromMappedSource", () => db.insert(contractTemplates).values({
+        name: input.name,
+        version: input.version,
+        sourceFilename: source.filename,
+        sourceMimeType: source.contentType,
+        sourceFileUrl: uploaded.url,
+        sourceFileKey: uploaded.key,
+        htmlContent,
+        variableSchema: {
+          variables: preview.variables,
+          required: preview.variables,
+          sourceFormat: analysis.sourceFormat,
+          sourceOrigin: source.origin,
+          sourceUrl: source.sourceUrl || null,
+          mappings: input.mappings,
+          mappingFingerprint: fingerprint,
+        },
+        contentHash: analysis.sourceHash,
+        createdBy: ctx.user.id,
+      }));
+      return { success: true, templateId: result.insertId, sourceFormat: analysis.sourceFormat, variables: preview.variables, conversionWarnings: analysis.warnings };
     }),
 
     createTemplateFromDocx: legalAdminProcedure.input(z.object({
@@ -452,7 +643,7 @@ export const contractsRouter = trpcRouter({
         operator: input.operator,
         space,
       });
-      const pdfBuffer = await generateContractPdf({ contractHtml: draft.contractHtml, contractNumber: number, contentHash: draft.contentHash });
+      const pdfBuffer = await generateFrozenContractPdf({ template, contractNumber: number, contentHash: draft.contentHash, variables: draft.variables, contractHtml: draft.contractHtml, ally: input.ally, operator: input.operator });
       return { success: true, contractNumber: number, contentHash: draft.contentHash, templateVersion: template.version, pdfBase64: pdfBuffer.toString("base64") };
     }),
 
@@ -486,7 +677,7 @@ export const contractsRouter = trpcRouter({
         operator: input.operator,
         space,
       });
-      const pdfBuffer = await generateContractPdf({ contractHtml: draft.contractHtml, contractNumber: number, contentHash: draft.contentHash });
+      const pdfBuffer = await generateFrozenContractPdf({ template, contractNumber: number, contentHash: draft.contentHash, variables: draft.variables, contractHtml: draft.contractHtml, ally: input.ally, operator: input.operator });
       const pdfUpload = await storagePut(`contracts/drafts/${number}-${draft.contentHash.slice(0, 12)}.pdf`, pdfBuffer, "application/pdf");
       const [result] = await db.insert(siteContracts).values({
         contractNumber: number, submissionId: space.id, templateId: template.id, templateName: template.name, templateVersion: template.version,

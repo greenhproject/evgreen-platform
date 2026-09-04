@@ -27,4 +27,22 @@ describe("formulario contractual responsive", () => {
     expect(source).toContain("disabled={!space.canCreateContract}");
     expect(source).toContain("selectedSpace?.eligibilityReason");
   });
+
+  it("presenta el asistente de importación como flujo responsive de fuente, mapeo y vista previa", () => {
+    expect(source).toContain("Importar y mapear plantilla contractual");
+    expect(source).toContain('label: "Fuente"');
+    expect(source).toContain('label: "Mapeo"');
+    expect(source).toContain('label: "Vista previa"');
+    expect(source).toContain("max-w-[calc(100vw-1rem)]");
+    expect(source).toContain("xl:max-w-6xl");
+    expect(source).toContain("overflow-y-auto overflow-x-hidden");
+  });
+
+  it("bloquea el guardado hasta mapear y previsualizar todos los marcadores", () => {
+    expect(source).toContain("Asocie los ${pending.length} campos pendientes");
+    expect(source).toContain("Genere y revise la vista previa antes de guardar");
+    expect(source).toContain("previewFingerprint: preview.fingerprint");
+    expect(source).toContain("Guardar como borrador");
+    expect(source).toContain("mappedCount !== analysis?.markers.length");
+  });
 });
