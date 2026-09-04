@@ -25,6 +25,7 @@ import { createManualDownloadExpiry, hashManualDownloadToken } from "./manual-co
 import { ensureContractDocumentStorage } from "./ensure-contract-document-storage";
 import { ensureInitialContractTemplate } from "./seed-initial-contract-template";
 import { buildContractDraft, UnresolvedContractVariablesError } from "./contract-draft-builder";
+import { getTemplateDeletionEligibility } from "./template-deletion";
 
 const FILE_MAX_BYTES = 10 * 1024 * 1024;
 
@@ -255,11 +256,22 @@ export const contractsRouter = trpcRouter({
 
     listTemplates: legalAdminProcedure.query(async () => {
       const db = await getContractsDb();
-      return withContractDbRetry("listTemplates", () => db.select({
+      const [templates, contractReferences] = await withContractDbRetry("listTemplates", () => Promise.all([
+        db.select({
           id: contractTemplates.id, name: contractTemplates.name, version: contractTemplates.version, status: contractTemplates.status,
           sourceFilename: contractTemplates.sourceFilename, contentHash: contractTemplates.contentHash, legalReviewNote: contractTemplates.legalReviewNote,
           approvedAt: contractTemplates.approvedAt, createdAt: contractTemplates.createdAt, updatedAt: contractTemplates.updatedAt,
-        }).from(contractTemplates).orderBy(desc(contractTemplates.createdAt)));
+        }).from(contractTemplates).orderBy(desc(contractTemplates.createdAt)),
+        db.select({ templateId: siteContracts.templateId }).from(siteContracts),
+      ]));
+      const contractCounts = contractReferences.reduce((counts, reference) => {
+        counts.set(reference.templateId, (counts.get(reference.templateId) || 0) + 1);
+        return counts;
+      }, new Map<number, number>());
+      return templates.map(template => {
+        const contractCount = contractCounts.get(template.id) || 0;
+        return { ...template, contractCount, ...getTemplateDeletionEligibility(template.status, contractCount) };
+      });
     }),
 
     getTemplate: legalAdminProcedure.input(z.object({ id: z.number().int().positive() })).query(async ({ input }: any) => {
@@ -280,15 +292,54 @@ export const contractsRouter = trpcRouter({
       if (!htmlContent) throw new TRPCError({ code: "BAD_REQUEST", message: "No fue posible extraer contenido de la plantilla DOCX." });
       const variables = requireValidContractTemplateMarkers(htmlContent);
       const sourceHash = sha256(source);
+      const db = await getContractsDb();
+      const [duplicate] = await db.select({ id: contractTemplates.id, name: contractTemplates.name, version: contractTemplates.version })
+        .from(contractTemplates)
+        .where(eq(contractTemplates.contentHash, sourceHash))
+        .limit(1);
+      if (duplicate) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Este mismo documento ya está registrado como ${duplicate.name} v${duplicate.version}. Revise esa versión en lugar de cargar un duplicado.`,
+        });
+      }
       const key = `contracts/templates/${crypto.randomBytes(10).toString("hex")}-${safeFilename(input.filename)}`;
       const uploaded = await storagePut(key, source, input.contentType);
-      const db = await getContractsDb();
       const [result] = await withContractDbRetry("createTemplateFromDocx", () => db.insert(contractTemplates).values({
         name: input.name, version: input.version, sourceFilename: input.filename, sourceMimeType: input.contentType,
         sourceFileUrl: uploaded.url, sourceFileKey: uploaded.key, htmlContent,
         variableSchema: { variables, required: variables }, contentHash: sourceHash, createdBy: ctx.user.id,
       }));
       return { success: true, templateId: result.insertId, conversionWarnings: converted.messages.map(message => message.message) };
+    }),
+
+    deleteDraftTemplate: legalAdminProcedure.input(z.object({
+      id: z.number().int().positive(),
+      confirmVersion: z.string().trim().min(1).max(64),
+    })).mutation(async ({ input }: any) => {
+      const db = await getContractsDb();
+      const [template] = await db.select({
+        id: contractTemplates.id,
+        version: contractTemplates.version,
+        status: contractTemplates.status,
+      }).from(contractTemplates).where(eq(contractTemplates.id, input.id)).limit(1);
+      if (!template) throw new TRPCError({ code: "NOT_FOUND", message: "Plantilla no encontrada." });
+      if (template.version !== input.confirmVersion) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "La versión de confirmación no coincide con la plantilla seleccionada." });
+      }
+      const references = await db.select({ id: siteContracts.id })
+        .from(siteContracts)
+        .where(eq(siteContracts.templateId, input.id));
+      const eligibility = getTemplateDeletionEligibility(template.status, references.length);
+      if (!eligibility.canDelete) {
+        throw new TRPCError({ code: "CONFLICT", message: eligibility.deletionBlockReason });
+      }
+      const [deletionResult]: any = await withContractDbRetry("deleteDraftTemplate", () => db.delete(contractTemplates)
+        .where(and(eq(contractTemplates.id, input.id), eq(contractTemplates.status, "DRAFT"))));
+      if (Number(deletionResult?.affectedRows || 0) !== 1) {
+        throw new TRPCError({ code: "CONFLICT", message: "La plantilla cambió mientras se procesaba la eliminación. Actualice el listado e inténtelo nuevamente." });
+      }
+      return { success: true, deletedTemplateId: input.id };
     }),
 
     updateDraftTemplate: legalAdminProcedure.input(z.object({

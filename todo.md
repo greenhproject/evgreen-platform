@@ -4290,3 +4290,4 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [ ] Contratos de concesión: implementar firma electrónica móvil con consentimiento explícito, captura de evidencia y enlace único revocable.
 - [ ] Contratos de concesión: almacenar de forma permanente el contrato final, evidencias y bitácora de acceso, firma, rechazo, expiración y reenvío.
 - [ ] Contratos de concesión: validar autorización, trazabilidad, generación y experiencia móvil antes de publicar el flujo.
+- [x] Limpieza de plantillas contractuales: permitir que solo Admin elimine plantillas DRAFT sin contratos asociados, con confirmación explícita y bloqueo de versiones activas, retiradas o utilizadas.
