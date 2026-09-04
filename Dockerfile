@@ -73,8 +73,15 @@ RUN NODE_ENV=production NODE_OPTIONS='--max-old-space-size=2048' pnpm build
 # --- Etapa 2: Producción ---
 FROM node:22-slim AS production
 
-# Instalar curl para healthcheck y dependencias nativas
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+# Instalar curl para healthcheck y Chromium con todas sus librerías nativas.
+# El generador contractual usa esta ruta estable en vez del binario temporal
+# de @sparticuz/chromium, que no incluye libnspr4 en el runtime de Railway.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    chromium \
+    curl \
+    fonts-liberation \
+    && rm -rf /var/lib/apt/lists/*
 
 # Instalar pnpm
 RUN corepack enable && corepack prepare pnpm@10.4.1 --activate
@@ -99,7 +106,9 @@ COPY drizzle.config.ts ./
 COPY shared/ ./shared/
 
 # Variables de entorno por defecto
-ENV NODE_ENV=production
+ENV NODE_ENV=production \
+    PUPPETEER_SKIP_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 # Puerto 8080 - Railway inyecta PORT=8080 en runtime
 # El servidor usa process.env.PORT para escuchar
 ENV PORT=8080

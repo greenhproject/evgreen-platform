@@ -1,6 +1,48 @@
 import { createHash } from "crypto";
 import chromium from "@sparticuz/chromium";
-import puppeteer from "puppeteer-core";
+import puppeteer, { type Browser } from "puppeteer-core";
+
+let sharedBrowserPromise: Promise<Browser> | null = null;
+let pdfQueue: Promise<void> = Promise.resolve();
+
+export async function resolveContractPdfExecutablePath(): Promise<string> {
+  return process.env.PUPPETEER_EXECUTABLE_PATH || chromium.executablePath();
+}
+
+export function contractPdfChromiumArgs(): string[] {
+  return Array.from(new Set([
+    ...chromium.args,
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-dev-shm-usage",
+  ]));
+}
+
+async function getContractPdfBrowser(): Promise<Browser> {
+  if (!sharedBrowserPromise) {
+    sharedBrowserPromise = puppeteer.launch({
+      args: contractPdfChromiumArgs(),
+      defaultViewport: { width: 1280, height: 720 },
+      executablePath: await resolveContractPdfExecutablePath(),
+      headless: true,
+    }).then(browser => {
+      browser.on("disconnected", () => {
+        sharedBrowserPromise = null;
+      });
+      return browser;
+    }).catch(error => {
+      sharedBrowserPromise = null;
+      throw error;
+    });
+  }
+  return sharedBrowserPromise;
+}
+
+function serializePdfGeneration<T>(operation: () => Promise<T>): Promise<T> {
+  const result = pdfQueue.then(operation, operation);
+  pdfQueue = result.then(() => undefined, () => undefined);
+  return result;
+}
 
 export function sanitizeContractHtml(input: string): string {
   return input
@@ -75,20 +117,17 @@ export function buildContractPdfHtml(contractHtml: string, contractNumber: strin
 }
 
 export async function generateContractPdf(input: { contractHtml: string; contractNumber: string; contentHash: string }): Promise<Buffer> {
-  const browser = await puppeteer.launch({
-    args: chromium.args,
-    defaultViewport: { width: 1280, height: 720 },
-    executablePath: await chromium.executablePath(),
-    headless: true,
-  });
-  try {
+  return serializePdfGeneration(async () => {
+    const browser = await getContractPdfBrowser();
     const page = await browser.newPage();
-    await page.setContent(buildContractPdfHtml(input.contractHtml, input.contractNumber, input.contentHash), { waitUntil: "load" });
-    const pdf = await page.pdf({ format: "A4", printBackground: true, preferCSSPageSize: true });
-    return Buffer.from(pdf);
-  } finally {
-    await browser.close();
-  }
+    try {
+      await page.setContent(buildContractPdfHtml(input.contractHtml, input.contractNumber, input.contentHash), { waitUntil: "load" });
+      const pdf = await page.pdf({ format: "A4", printBackground: true, preferCSSPageSize: true });
+      return Buffer.from(pdf);
+    } finally {
+      await page.close();
+    }
+  });
 }
 
 export function sha256(value: Buffer | string): string {
