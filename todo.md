@@ -4277,16 +4277,16 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [ ] QA incidente contratos: iniciar sesión nuevamente en evgreen.lat y validar la carga real de una plantilla DOCX como Administración.
 - [x] Incidente plantillas: corregir el rechazo SQL al importar una plantilla DOCX completa, sin truncar contenido HTML ni variables contractuales.
 - [ ] QA incidente plantillas: repetir la importación real de la plantilla DOCX completa desde Administración y confirmar que la versión aparece disponible.
-- [ ] Incidente plantillas producción: identificar y corregir la discrepancia de esquema que mantiene fallando la inserción completa en evgreen.lat.
+- [x] Incidente plantillas producción: identificar y corregir la discrepancia de esquema que mantiene fallando la inserción completa en evgreen.lat.
 - [x] Incidente listado contractual: resolver el error 500 al consultar plantillas y contratos después del despliegue productivo.
-- [ ] Incidente bootstrap contractual: revalidar y crear el esquema idempotente también al atender la primera consulta administrativa, no solo al arrancar el servicio.
-- [ ] QA listado contractual: comprobar en evgreen.lat que las listas de plantillas y contratos cargan tras un reintento transitorio de base de datos.
-- [ ] Validación contractual real: reproducir lista e importación con la plantilla DOCX aportada por el usuario antes de declarar resuelto el incidente.
-- [ ] Plantilla contractual inicial: cargar directamente el DOCX aportado por el usuario, con sus variables mapeadas, para que esté disponible en producción sin reimportación manual.
-- [ ] Estrategia de plantilla dinámica: crear una versión DOCX contractual con marcadores explícitos `{{VARIABLE}}`, validar marcadores permitidos y rechazar campos desconocidos antes de emisión.
-- [ ] Compatibilidad contractual: alinear `contract_template_status` y `site_contract_status` entre Drizzle, migraciones y la base productiva para eliminar los errores 500 de listado e inserción.
-- [ ] QA contractual seguro: permitir generar una vista previa PDF desde una plantilla DRAFT para validar marcadores y diseño en producción sin activarla ni emitir un contrato legal.
-- [ ] Fix PDF producción: instalar un Chromium compatible con sus librerías nativas en Railway y usar su ruta explícita para eliminar el 500 por `libnspr4.so` ausente.
+- [x] Incidente bootstrap contractual: revalidar y crear el esquema idempotente también al atender la primera consulta administrativa, no solo al arrancar el servicio.
+- [x] QA listado contractual: comprobar en evgreen.lat que las listas de plantillas y contratos cargan tras un reintento transitorio de base de datos.
+- [x] Validación contractual real: reproducir lista e importación con la plantilla DOCX aportada por el usuario antes de declarar resuelto el incidente.
+- [x] Plantilla contractual inicial: cargar directamente el DOCX aportado por el usuario, con sus variables mapeadas, para que esté disponible en producción sin reimportación manual.
+- [x] Estrategia de plantilla dinámica: crear una versión DOCX contractual con marcadores explícitos `{{VARIABLE}}`, validar marcadores permitidos y rechazar campos desconocidos antes de emisión.
+- [x] Compatibilidad contractual: alinear `contract_template_status` y `site_contract_status` entre Drizzle, migraciones y la base productiva para eliminar los errores 500 de listado e inserción.
+- [x] QA contractual seguro: permitir generar una vista previa PDF desde una plantilla DRAFT para validar marcadores y diseño en producción sin activarla ni emitir un contrato legal.
+- [x] Fix PDF producción: instalar un Chromium compatible con sus librerías nativas en Railway y usar su ruta explícita para eliminar el 500 por `libnspr4.so` ausente.
 - [ ] Contratos de concesión: implementar firma electrónica móvil con consentimiento explícito, captura de evidencia y enlace único revocable.
 - [ ] Contratos de concesión: almacenar de forma permanente el contrato final, evidencias y bitácora de acceso, firma, rechazo, expiración y reenvío.
 - [ ] Contratos de concesión: validar autorización, trazabilidad, generación y experiencia móvil antes de publicar el flujo.
