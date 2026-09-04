@@ -87,7 +87,7 @@ export default function AdminContracts() {
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [ally, setAlly] = useState({ ...emptyParty });
   const [operator, setOperator] = useState({ ...emptyParty, legalName: "Green House Project SAS", taxId: "901.447.678-0", domicile: "Colombia" });
-  const [variables, setVariables] = useState({ PARTICIPACION_ALIADO_PORCENTAJE: "10", PLAZO_INICIAL_ANOS: "10", PRORROGA_ANOS: "5", PLAZO_PAGO_DIAS_HABILES: "10", FECHA_CIERRE_LIQUIDACION: "Último día calendario de cada mes" });
+  const [variables, setVariables] = useState({ PARTICIPACION_ALIADO_PORCENTAJE: "10", PLAZO_INICIAL_ANOS: "10", PRORROGA_ANOS: "5", PLAZO_PAGO_DIAS_HABILES: "15", FECHA_CIERRE_LIQUIDACION: "Último día calendario de cada mes" });
   const [contractAction, setContractAction] = useState<ContractAction>(null);
   const [decisionNote, setDecisionNote] = useState("");
   const signedPdfInput = useRef<HTMLInputElement>(null);

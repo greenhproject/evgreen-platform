@@ -19,8 +19,7 @@ export function appendContractSignatureBlocks(contractHtml: string, params: {
   operatorRepresentative: string;
   operatorDocument: string;
 }): string {
-  return `${sanitizeContractHtml(contractHtml)}
-    <section class="signature-section" aria-label="Bloques de firma">
+  const signatureBlocks = `<section class="signature-section" aria-label="Bloques de firma">
       <p class="signature-heading">FIRMAS</p>
       <p class="signature-intro">Las partes declaran que han leído y aceptado el contenido íntegro del presente contrato.</p>
       <div class="signature-grid">
@@ -42,6 +41,11 @@ export function appendContractSignatureBlocks(contractHtml: string, params: {
         </section>
       </div>
     </section>`;
+  const safeHtml = sanitizeContractHtml(contractHtml);
+  const anchorPattern = /<p[^>]*>\s*EVG_SIGNATURE_BLOCK_HERE\s*<\/p>/i;
+  return anchorPattern.test(safeHtml)
+    ? safeHtml.replace(anchorPattern, signatureBlocks)
+    : `${safeHtml}${signatureBlocks}`;
 }
 
 export function buildContractPdfHtml(contractHtml: string, contractNumber: string, contentHash: string): string {
@@ -66,7 +70,7 @@ export function buildContractPdfHtml(contractHtml: string, contractNumber: strin
       .signature-card p { font-size:9pt; text-align:left; margin-bottom:4px; }
       .signature-line { border-bottom:1px solid #213c30; height:72px; margin:10px 0 10px; position:relative; }
       .docusign-anchor { color:transparent; font-size:1px; user-select:none; }
-      footer { position:fixed; bottom:-12mm; left:0; right:0; color:#66756d; font-size:7.5pt; border-top:1px solid #d7e1db; padding-top:4px; }
+      footer { margin-top:24px; break-inside:avoid; color:#66756d; font-size:7.5pt; border-top:1px solid #d7e1db; padding-top:4px; }
     </style></head><body>${contractHtml}<footer>Contrato ${escapeHtml(contractNumber)} · Integridad SHA-256: ${escapeHtml(contentHash)} · Green House Project SAS</footer></body></html>`;
 }
 

@@ -14,7 +14,7 @@ import {
 import { getDb, getPlatformSettings, upsertPlatformSettings, withRetry } from "../db";
 import { storageGet, storagePut } from "../storage";
 import {
-  DEFAULT_CONTRACT_VARIABLES,
+  analyzeContractTemplateMarkers,
   canIssueManualPdf,
   canSendToDocuSign,
   normalizeContractVariables,
@@ -128,6 +128,26 @@ function decodeBase64(base64: string): Buffer {
   const buffer = Buffer.from(normalized, "base64");
   if (!buffer.length || buffer.length > FILE_MAX_BYTES) throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: "El archivo debe tener un tamaño entre 1 byte y 10 MB." });
   return buffer;
+}
+
+export function requireValidContractTemplateMarkers(htmlContent: string): string[] {
+  const analysis = analyzeContractTemplateMarkers(htmlContent);
+  if (analysis.malformedMarkers.length) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `La plantilla contiene marcadores mal formados: ${analysis.malformedMarkers.join(", ")}. Use el formato {{VARIABLE}}.`,
+    });
+  }
+  if (analysis.unknownMarkers.length) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `La plantilla contiene variables no permitidas: ${analysis.unknownMarkers.join(", ")}. Regístrelas primero en el catálogo contractual.`,
+    });
+  }
+  if (!analysis.markers.length) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "La plantilla debe incluir al menos un marcador dinámico con formato {{VARIABLE}}." });
+  }
+  return analysis.markers;
 }
 
 function asDocusignSettings(settings: any): DocusignSettings {
@@ -250,10 +270,10 @@ export const contractsRouter = trpcRouter({
       const converted = await mammoth.convertToHtml({ buffer: source });
       const htmlContent = sanitizeContractHtml(converted.value).trim();
       if (!htmlContent) throw new TRPCError({ code: "BAD_REQUEST", message: "No fue posible extraer contenido de la plantilla DOCX." });
+      const variables = requireValidContractTemplateMarkers(htmlContent);
       const sourceHash = sha256(source);
       const key = `contracts/templates/${crypto.randomBytes(10).toString("hex")}-${safeFilename(input.filename)}`;
       const uploaded = await storagePut(key, source, input.contentType);
-      const variables = Array.from(new Set([...DEFAULT_CONTRACT_VARIABLES, ...Array.from(htmlContent.matchAll(/{{\s*([A-Z0-9_]+)\s*}}/g)).map(match => match[1]) ]));
       const db = await getContractsDb();
       const [result] = await withContractDbRetry("createTemplateFromDocx", () => db.insert(contractTemplates).values({
         name: input.name, version: input.version, sourceFilename: input.filename, sourceMimeType: input.contentType,
@@ -271,7 +291,13 @@ export const contractsRouter = trpcRouter({
       if (!template) throw new TRPCError({ code: "NOT_FOUND", message: "Plantilla no encontrada." });
       if (template.status !== "DRAFT") throw new TRPCError({ code: "CONFLICT", message: "Solo se puede editar una plantilla en borrador. Cree una versión nueva para cambiar condiciones futuras." });
       const htmlContent = sanitizeContractHtml(input.htmlContent);
-      await db.update(contractTemplates).set({ htmlContent, legalReviewNote: input.legalReviewNote || null, contentHash: sha256(htmlContent) }).where(eq(contractTemplates.id, input.id));
+      const variables = requireValidContractTemplateMarkers(htmlContent);
+      await db.update(contractTemplates).set({
+        htmlContent,
+        variableSchema: { variables, required: variables },
+        legalReviewNote: input.legalReviewNote || null,
+        contentHash: sha256(htmlContent),
+      }).where(eq(contractTemplates.id, input.id));
       return { success: true };
     }),
 
@@ -280,9 +306,16 @@ export const contractsRouter = trpcRouter({
       const [template] = await db.select().from(contractTemplates).where(eq(contractTemplates.id, input.id)).limit(1);
       if (!template) throw new TRPCError({ code: "NOT_FOUND", message: "Plantilla no encontrada." });
       if (template.status === "RETIRED") throw new TRPCError({ code: "CONFLICT", message: "Una plantilla retirada no puede reactivarse. Cree una nueva versión aprobada." });
+      const variables = requireValidContractTemplateMarkers(template.htmlContent);
       const at = nowSql();
       await db.update(contractTemplates).set({ status: "RETIRED", retiredBy: ctx.user.id, retiredAt: at }).where(and(eq(contractTemplates.name, template.name), eq(contractTemplates.status, "ACTIVE")));
-      await db.update(contractTemplates).set({ status: "ACTIVE", legalReviewNote: input.legalReviewNote, approvedBy: ctx.user.id, approvedAt: at }).where(eq(contractTemplates.id, input.id));
+      await db.update(contractTemplates).set({
+        status: "ACTIVE",
+        variableSchema: { variables, required: variables },
+        legalReviewNote: input.legalReviewNote,
+        approvedBy: ctx.user.id,
+        approvedAt: at,
+      }).where(eq(contractTemplates.id, input.id));
       return { success: true };
     }),
 
@@ -335,14 +368,23 @@ export const contractsRouter = trpcRouter({
         ...input.variables,
         NUMERO_CONTRATO: number,
         GHP_RAZON_SOCIAL: input.operator.legalName, GHP_NIT: input.operator.taxId, GHP_REPRESENTANTE: input.operator.representativeName,
-        GHP_DOCUMENTO_REPRESENTANTE: input.operator.representativeDocument, GHP_DIRECCION: input.operator.notificationAddress,
+        GHP_DOCUMENTO_REPRESENTANTE: input.operator.representativeDocument, GHP_CARGO_REPRESENTANTE: input.operator.representativeTitle || "Representante legal",
+        GHP_DOMICILIO: input.operator.domicile || "Colombia", GHP_DIRECCION: input.operator.notificationAddress,
         GHP_CORREO_NOTIFICACIONES: input.operator.email, GHP_TELEFONO: input.operator.phone || "",
         ALIADO_RAZON_SOCIAL: input.ally.legalName, ALIADO_NIT: input.ally.taxId, ALIADO_REPRESENTANTE: input.ally.representativeName,
-        ALIADO_DOCUMENTO_REPRESENTANTE: input.ally.representativeDocument, ALIADO_DIRECCION_NOTIFICACIONES: input.ally.notificationAddress,
+        ALIADO_DOCUMENTO_REPRESENTANTE: input.ally.representativeDocument, ALIADO_CARGO_REPRESENTANTE: input.ally.representativeTitle || "Representante legal",
+        ALIADO_DOMICILIO: input.ally.domicile || space.city, ALIADO_DIRECCION_NOTIFICACIONES: input.ally.notificationAddress,
         ALIADO_CORREO_NOTIFICACIONES: input.ally.email, ALIADO_TELEFONO: input.ally.phone || "",
         SITIO_NOMBRE: space.spaceName, SITIO_DIRECCION: space.address, SITIO_CIUDAD: space.city, SITIO_DEPARTAMENTO: space.department || "",
         SITIO_TIPO: space.spaceType, AREA_CEDIDA_M2: space.availableAreaM2?.toString() || "", PUESTOS_PARQUEO: space.parkingSpots?.toString() || "",
-        PLAZO_INICIAL_ANOS: String(CONTRACT_DURATION_YEARS),
+        PARTICIPACION_ALIADO_PORCENTAJE: input.variables.PARTICIPACION_ALIADO_PORCENTAJE || "10",
+        PLAZO_INICIAL_ANOS: input.variables.PLAZO_INICIAL_ANOS || String(CONTRACT_DURATION_YEARS),
+        PRORROGA_ANOS: input.variables.PRORROGA_ANOS || "5",
+        PLAZO_PAGO_DIAS_HABILES: input.variables.PLAZO_PAGO_DIAS_HABILES || "15",
+        FECHA_CIERRE_LIQUIDACION: input.variables.FECHA_CIERRE_LIQUIDACION || "Último día calendario de cada mes",
+        VERSION_PLANTILLA: template.version,
+        CIUDAD_FIRMA: input.variables.CIUDAD_FIRMA || space.city,
+        FECHA_FIRMA: input.variables.FECHA_FIRMA || "pendiente de firma",
       });
       const missing = unresolvedContractVariables(template.htmlContent, variables);
       if (missing.length) throw new TRPCError({ code: "BAD_REQUEST", message: `Faltan variables obligatorias: ${missing.join(", ")}` });

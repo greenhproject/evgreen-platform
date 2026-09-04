@@ -2,14 +2,14 @@ import crypto from "node:crypto";
 import mammoth from "mammoth";
 import { and, eq, sql } from "drizzle-orm";
 import { contractTemplates } from "../../drizzle/schema";
-import { DEFAULT_CONTRACT_VARIABLES } from "../../shared/site-contracts";
+import { analyzeContractTemplateMarkers } from "../../shared/site-contracts";
 import { getDb } from "../db";
 
 const TEMPLATE_NAME = "Contrato de alianza comercial para cesión de sitio";
-const TEMPLATE_VERSION = "2.0";
-const TEMPLATE_FILENAME = "Contrato_Aliado_Comercial_EVGreen_V2.docx";
-const TEMPLATE_KEY = "contracts/templates/614d117b1074f6f11d6b-Contrato_Aliado_Comercial_EVGreen_V2.docx";
-const TEMPLATE_URL = "https://d2xsxph8kpxj0f.cloudfront.net/310519663169336317/UcUrociZeo4QVAHHN9vAuZ/contracts/templates/614d117b1074f6f11d6b-Contrato_Aliado_Comercial_EVGreen_V2.docx";
+const TEMPLATE_VERSION = "2.3-dinamica";
+const TEMPLATE_FILENAME = "Contrato_Aliado_EVGreen_V2_PLANTILLA_DINAMICA.docx";
+const TEMPLATE_KEY = "contracts/templates/d616463e0134a605a170-Contrato_Aliado_EVGreen_V2_PLANTILLA_DINAMICA.docx";
+const TEMPLATE_URL = "https://d2xsxph8kpxj0f.cloudfront.net/310519663169336317/UcUrociZeo4QVAHHN9vAuZ/contracts/templates/d616463e0134a605a170-Contrato_Aliado_EVGreen_V2_PLANTILLA_DINAMICA.docx";
 
 let seedPromise: Promise<boolean> | null = null;
 let seedChecked = false;
@@ -57,6 +57,14 @@ export async function ensureInitialContractTemplate(): Promise<boolean> {
     const converted = await mammoth.convertToHtml({ buffer: source });
     const htmlContent = sanitizeContractHtml(converted.value);
     if (!htmlContent) throw new Error("La plantilla inicial no produjo contenido contractual.");
+    const markerAnalysis = analyzeContractTemplateMarkers(htmlContent);
+    if (markerAnalysis.malformedMarkers.length) {
+      throw new Error(`La plantilla inicial contiene marcadores mal formados: ${markerAnalysis.malformedMarkers.join(", ")}`);
+    }
+    if (markerAnalysis.unknownMarkers.length) {
+      throw new Error(`La plantilla inicial contiene marcadores no permitidos: ${markerAnalysis.unknownMarkers.join(", ")}`);
+    }
+    if (!markerAnalysis.markers.length) throw new Error("La plantilla inicial no contiene marcadores {{VARIABLE}}.");
 
     const admins = rowsFrom(await db.execute(sql`SELECT id FROM users WHERE role = 'admin' ORDER BY id ASC LIMIT 1`));
     const createdBy = admins[0]?.id;
@@ -71,9 +79,9 @@ export async function ensureInitialContractTemplate(): Promise<boolean> {
       sourceFileUrl: TEMPLATE_URL,
       sourceFileKey: TEMPLATE_KEY,
       htmlContent,
-      variableSchema: { variables: [...DEFAULT_CONTRACT_VARIABLES], required: [...DEFAULT_CONTRACT_VARIABLES], source: TEMPLATE_FILENAME },
+      variableSchema: { variables: markerAnalysis.markers, required: markerAnalysis.markers, source: TEMPLATE_FILENAME },
       contentHash: sha256(source),
-      legalReviewNote: "Plantilla inicial cargada desde el DOCX suministrado. Las variables de partes, sitio, plazo, participación y firma están catalogadas. Requiere aprobación jurídica antes de activarse.",
+      legalReviewNote: "Plantilla dinámica generada desde el DOCX suministrado. Los campos de partes, sitio, condiciones comerciales, plazo y firma usan marcadores {{VARIABLE}}. Requiere aprobación jurídica antes de activarse.",
       createdBy,
     });
 

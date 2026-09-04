@@ -4,20 +4,10 @@ import path from "node:path";
 import mammoth from "mammoth";
 import mysql from "mysql2/promise";
 
-const sourcePath = process.env.CONTRACT_TEMPLATE_FILE || "/home/ubuntu/upload/Contrato_Aliado_Comercial_EVGreen_V2.docx";
+const sourcePath = process.env.CONTRACT_TEMPLATE_FILE || "/home/ubuntu/green-ev-platform/docs/Contrato_Aliado_EVGreen_V2_PLANTILLA_DINAMICA.docx";
 const templateName = "Contrato de alianza comercial para cesión de sitio";
-const templateVersion = "2.0";
+const templateVersion = process.env.CONTRACT_TEMPLATE_VERSION || "2.3-dinamica";
 const createdBy = Number(process.env.CONTRACT_TEMPLATE_CREATED_BY || "1");
-
-const variables = [
-  "GHP_RAZON_SOCIAL", "GHP_NIT", "GHP_REPRESENTANTE", "GHP_DOCUMENTO_REPRESENTANTE", "GHP_CARGO_REPRESENTANTE",
-  "GHP_DOMICILIO", "GHP_DIRECCION", "GHP_CORREO_NOTIFICACIONES", "GHP_TELEFONO", "MARCA_COMERCIAL",
-  "ALIADO_RAZON_SOCIAL", "ALIADO_NIT", "ALIADO_REPRESENTANTE", "ALIADO_DOCUMENTO_REPRESENTANTE", "ALIADO_CALIDAD_TENENCIA",
-  "ALIADO_DOMICILIO", "ALIADO_DIRECCION_NOTIFICACIONES", "ALIADO_CORREO_NOTIFICACIONES", "ALIADO_TELEFONO", "AUTORIZACION_PROPIETARIO_URL",
-  "SITIO_NOMBRE", "SITIO_DIRECCION", "SITIO_CIUDAD", "SITIO_DEPARTAMENTO", "SITIO_TIPO", "AREA_CEDIDA_M2", "PUESTOS_PARQUEO", "PLANO_ANEXO_URL",
-  "PARTICIPACION_ALIADO_PORCENTAJE", "PLAZO_INICIAL_ANOS", "PRORROGA_ANOS", "PLAZO_PAGO_DIAS_HABILES", "FECHA_CIERRE_LIQUIDACION",
-  "VERSION_PLANTILLA", "HASH_DOCUMENTO", "FECHA_ENVIO", "FECHA_EXPIRACION", "FIRMANTE_EDS", "FIRMANTE_GHP",
-];
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
@@ -48,11 +38,26 @@ function sanitize(html) {
     .trim();
 }
 
+async function loadAllowedContractVariables() {
+  const sharedSource = await readFile(new URL("../shared/site-contracts.ts", import.meta.url), "utf8");
+  const catalog = sharedSource.match(/export const DEFAULT_CONTRACT_VARIABLES = \[([\s\S]*?)\] as const;/)?.[1];
+  if (!catalog) throw new Error("No fue posible leer el catálogo contractual compartido.");
+  return new Set(Array.from(catalog.matchAll(/"([A-Z0-9_]+)"/g), match => match[1]));
+}
+
 async function main() {
   const source = await readFile(sourcePath);
   const converted = await mammoth.convertToHtml({ buffer: source });
   const htmlContent = sanitize(converted.value);
   if (!htmlContent) throw new Error("La conversión del DOCX no produjo contenido contractual.");
+  const markerTokens = Array.from(htmlContent.matchAll(/{{\s*([^{}]*?)\s*}}/g), match => match[1].trim());
+  const malformedMarkers = [...new Set(markerTokens.filter(marker => !/^[A-Za-z0-9_]+$/.test(marker)))];
+  if (malformedMarkers.length) throw new Error(`La plantilla contiene marcadores mal formados: ${malformedMarkers.join(", ")}`);
+  const variables = [...new Set(markerTokens.map(marker => marker.toUpperCase()))].sort();
+  if (variables.length === 0) throw new Error("La plantilla dinámica no contiene marcadores {{VARIABLE}}.");
+  const allowedVariables = await loadAllowedContractVariables();
+  const unknownMarkers = variables.filter(marker => !allowedVariables.has(marker));
+  if (unknownMarkers.length) throw new Error(`La plantilla contiene marcadores no permitidos: ${unknownMarkers.join(", ")}`);
 
   const sourceHash = sha256(source);
   const sourceFileKey = `contracts/templates/${sourceHash.slice(0, 20)}-${path.basename(sourcePath).replace(/[^a-zA-Z0-9._-]/g, "_")}`;
@@ -61,21 +66,17 @@ async function main() {
   const variableSchema = JSON.stringify({
     variables,
     required: variables,
-    source: "Contrato_Aliado_Comercial_EVGreen_V2.docx",
+    source: path.basename(sourcePath),
     mappedAt: new Date().toISOString(),
   });
-  const reviewNote = "Plantilla inicial cargada desde el DOCX suministrado. Variables de partes, sitio, plazo, participación y firma catalogadas. Requiere aprobación jurídica antes de activarse para emisión.";
+  const reviewNote = "Plantilla dinámica generada a partir del DOCX suministrado. Los campos de partes, sitio y firma están marcados con {{VARIABLE}}. Requiere aprobación jurídica antes de activarse para emisión.";
 
   try {
     await pool.execute(
       `INSERT INTO contract_templates
         (name, version, status, source_filename, source_mime_type, source_file_url, source_file_key, html_content, variable_schema, content_hash, legal_review_note, created_by)
        VALUES (?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE
-         source_filename = VALUES(source_filename), source_mime_type = VALUES(source_mime_type),
-         source_file_url = VALUES(source_file_url), source_file_key = VALUES(source_file_key),
-         html_content = VALUES(html_content), variable_schema = VALUES(variable_schema), content_hash = VALUES(content_hash),
-         legal_review_note = VALUES(legal_review_note), updated_at = CURRENT_TIMESTAMP`,
+       ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)`,
       [templateName, templateVersion, path.basename(sourcePath), "application/vnd.openxmlformats-officedocument.wordprocessingml.document", uploaded.url, sourceFileKey, htmlContent, variableSchema, sourceHash, reviewNote, createdBy],
     );
     const [rows] = await pool.execute(
