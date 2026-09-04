@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_CONTRACT_VARIABLES,
+  CONTRACT_VARIABLE_CATALOG,
   analyzeContractTemplateMarkers,
+  detectContractTemplateMarkers,
   extractContractTemplateMarkers,
+  normalizeContractTemplateMarkerMappings,
   renderContractTemplate,
   unresolvedContractVariables,
 } from "../shared/site-contracts";
@@ -38,5 +41,37 @@ describe("marcadores de la plantilla contractual dinámica", () => {
     const values = { ALIADO_RAZON_SOCIAL: "EDS & Aliado" };
     expect(unresolvedContractVariables(html, values)).toEqual(["GHP_NIT"]);
     expect(renderContractTemplate(html, values)).toContain("EDS &amp; Aliado");
+  });
+
+  it("sugiere automáticamente los ocho alias usados por la plantilla v3.0 real", () => {
+    const html = "{{Aliado}} {{Nit-aliado}} {{Rep_legal_aliado}} {{Cedula_rep_legal_aliado}} {{Domicilio_aliado}} {{Correo_aliado}} {{Tel_aliado}} {{Dir_aliado}}";
+    expect(detectContractTemplateMarkers(html).map(marker => [marker.rawName, marker.suggestedVariable])).toEqual([
+      ["Aliado", "ALIADO_RAZON_SOCIAL"],
+      ["Nit-aliado", "ALIADO_NIT"],
+      ["Rep_legal_aliado", "ALIADO_REPRESENTANTE"],
+      ["Cedula_rep_legal_aliado", "ALIADO_DOCUMENTO_REPRESENTANTE"],
+      ["Domicilio_aliado", "ALIADO_DOMICILIO"],
+      ["Correo_aliado", "ALIADO_CORREO_NOTIFICACIONES"],
+      ["Tel_aliado", "ALIADO_TELEFONO"],
+      ["Dir_aliado", "ALIADO_DIRECCION_NOTIFICACIONES"],
+    ]);
+  });
+
+  it("normaliza el documento solo cuando todos los marcadores fueron asociados", () => {
+    const result = normalizeContractTemplateMarkerMappings("<p>{{Aliado}} · {{Nit-aliado}}</p>", {
+      Aliado: "ALIADO_RAZON_SOCIAL",
+      "Nit-aliado": "ALIADO_NIT",
+    });
+    expect(result.htmlContent).toBe("<p>{{ALIADO_RAZON_SOCIAL}} · {{ALIADO_NIT}}</p>");
+    expect(result.variables).toEqual(["ALIADO_RAZON_SOCIAL", "ALIADO_NIT"]);
+    expect(() => normalizeContractTemplateMarkerMappings("{{Aliado}} {{Nit-aliado}}", { Aliado: "ALIADO_RAZON_SOCIAL" })).toThrow("Nit-aliado");
+  });
+
+  it("expone etiquetas y valores de ejemplo para construir el asistente visual", () => {
+    expect(CONTRACT_VARIABLE_CATALOG.find(item => item.name === "ALIADO_NIT")).toEqual({
+      name: "ALIADO_NIT",
+      label: "NIT del aliado",
+      sampleValue: "900.123.456-7",
+    });
   });
 });

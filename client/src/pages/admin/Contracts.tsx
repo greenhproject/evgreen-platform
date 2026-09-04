@@ -8,7 +8,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { BadgeCheck, CheckCircle2, ClipboardCheck, Download, Eye, FileCheck2, FileOutput, FileSignature, FileText, History, Landmark, Loader2, Pencil, Plus, Send, Settings2, ShieldCheck, Trash2, Upload, XCircle } from "lucide-react";
+import { ArrowLeft, BadgeCheck, CheckCircle2, ClipboardCheck, Download, Eye, FileCheck2, FileOutput, FileSearch, FileSignature, FileText, History, Landmark, Link2, Loader2, Pencil, Plus, Send, Settings2, ShieldCheck, Tags, Trash2, Upload, XCircle } from "lucide-react";
+import type { ContractVariableName } from "@shared/site-contracts";
 
 type ContractAction = { id: number; type: "manual" | "docusign" | "cancel" | "verify" | "reject" } | null;
 
@@ -246,9 +247,127 @@ function TemplateDialog({ open, onOpenChange, onCreated }: { open: boolean; onOp
   const [name, setName] = useState("Contrato de concesión de sitio");
   const [version, setVersion] = useState("1.0");
   const [file, setFile] = useState<File | null>(null);
-  const create = trpc.contracts.createTemplateFromDocx.useMutation({ onSuccess: (result) => { toast.success(`Plantilla creada${result.conversionWarnings.length ? " con advertencias de formato" : ""}. Revísela y actívela después de aprobación jurídica.`); onCreated(); onOpenChange(false); }, onError: error => toast.error(error.message) });
-  const submit = async () => { if (!file) return toast.error("Selecciona la plantilla DOCX revisada por Legal."); if (file.size > 10 * 1024 * 1024) return toast.error("La plantilla no puede superar 10 MB."); try { create.mutate({ name, version, filename: file.name, contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", fileBase64: await readFileAsBase64(file) }); } catch (error: any) { toast.error(error.message); } };
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="bg-[#09130f] text-slate-100"><DialogHeader><DialogTitle>Importar plantilla DOCX</DialogTitle><DialogDescription>Importe únicamente una versión aprobada jurídicamente. Después podrá revisar su conversión y activarla para contratos futuros.</DialogDescription></DialogHeader><div className="space-y-4 py-3"><div><Label>Nombre de la plantilla</Label><Input value={name} onChange={event => setName(event.target.value)} /></div><div><Label>Versión jurídica</Label><Input value={version} onChange={event => setVersion(event.target.value)} placeholder="Ej. 1.1" /></div><div><Label>Archivo DOCX</Label><Input type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={event => setFile(event.target.files?.[0] || null)} /><p className="mt-2 text-xs text-slate-500">Máximo 10 MB. El original se conserva en el expediente y se convierte a un borrador revisable.</p></div></div><DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button><Button onClick={submit} disabled={create.isPending}>{create.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Importar</Button></DialogFooter></DialogContent></Dialog>;
+  const [sourceMode, setSourceMode] = useState<"UPLOAD" | "GOOGLE_DRIVE">("UPLOAD");
+  const [googleUrl, setGoogleUrl] = useState("");
+  const [analysis, setAnalysis] = useState<any | null>(null);
+  const [mappings, setMappings] = useState<Record<string, string>>({});
+  const [preview, setPreview] = useState<any | null>(null);
+  const [step, setStep] = useState<1 | 2 | 3>(1);
+
+  const resetAnalysis = () => {
+    setAnalysis(null);
+    setMappings({});
+    setPreview(null);
+    setStep(1);
+  };
+  const close = () => {
+    resetAnalysis();
+    setFile(null);
+    setGoogleUrl("");
+    onOpenChange(false);
+  };
+  const buildSource = async () => {
+    if (sourceMode === "GOOGLE_DRIVE") {
+      if (!googleUrl.trim()) throw new Error("Pegue un enlace de Google Docs o Drive con acceso de lectura.");
+      return { kind: "GOOGLE_DRIVE" as const, sourceUrl: googleUrl.trim() };
+    }
+    if (!file) throw new Error("Seleccione un archivo DOCX o PDF.");
+    if (file.size > 10 * 1024 * 1024) throw new Error("La plantilla no puede superar 10 MB.");
+    const lowerName = file.name.toLowerCase();
+    if (!lowerName.endsWith(".docx") && !lowerName.endsWith(".pdf")) throw new Error("Seleccione un archivo DOCX o PDF.");
+    return {
+      kind: "UPLOAD" as const,
+      filename: file.name,
+      contentType: lowerName.endsWith(".pdf") ? "application/pdf" as const : "application/vnd.openxmlformats-officedocument.wordprocessingml.document" as const,
+      fileBase64: await readFileAsBase64(file),
+    };
+  };
+
+  const analyze = trpc.contracts.analyzeTemplateSource.useMutation({
+    onSuccess: result => {
+      setAnalysis(result);
+      setMappings(Object.fromEntries(result.markers.map((marker: any) => [marker.rawName, marker.suggestedVariable || ""])));
+      setPreview(null);
+      setStep(2);
+      toast.success(`${result.markers.length} campos dinámicos detectados. Revise cada asociación.`);
+    },
+    onError: error => toast.error(error.message),
+  });
+  const previewMapping = trpc.contracts.previewTemplateMapping.useMutation({
+    onSuccess: result => {
+      setPreview(result);
+      setStep(3);
+      toast.success("Mapeo validado. Revise visualmente el documento antes de guardarlo.");
+    },
+    onError: error => toast.error(error.message),
+  });
+  const create = trpc.contracts.createTemplateFromMappedSource.useMutation({
+    onSuccess: result => {
+      toast.success(`Plantilla ${result.sourceFormat === "PDF_ACROFORM" ? "PDF rellenable" : "DOCX"} guardada como borrador. Requiere aprobación jurídica antes de activarse.`);
+      onCreated();
+      close();
+    },
+    onError: error => toast.error(error.message),
+  });
+
+  const startAnalysis = async () => {
+    try { analyze.mutate({ source: await buildSource() }); } catch (error: any) { toast.error(error.message); }
+  };
+  const startPreview = async () => {
+    if (!analysis) return;
+    const pending = analysis.markers.filter((marker: any) => !mappings[marker.rawName]);
+    if (pending.length) return toast.error(`Asocie los ${pending.length} campos pendientes antes de continuar.`);
+    const completedMappings = mappings as Record<string, ContractVariableName>;
+    try { previewMapping.mutate({ source: await buildSource(), expectedSourceHash: analysis.sourceHash, mappings: completedMappings }); } catch (error: any) { toast.error(error.message); }
+  };
+  const saveTemplate = async () => {
+    if (!analysis || !preview) return toast.error("Genere y revise la vista previa antes de guardar.");
+    if (name.trim().length < 3 || !version.trim()) return toast.error("Complete el nombre y la versión jurídica.");
+    const completedMappings = mappings as Record<string, ContractVariableName>;
+    try {
+      create.mutate({ name, version, source: await buildSource(), expectedSourceHash: analysis.sourceHash, previewFingerprint: preview.fingerprint, mappings: completedMappings });
+    } catch (error: any) { toast.error(error.message); }
+  };
+  const setMapping = (rawName: string, variable: string) => {
+    setMappings(previous => ({ ...previous, [rawName]: variable }));
+    setPreview(null);
+    setStep(2);
+  };
+  const mappedCount = analysis?.markers.filter((marker: any) => mappings[marker.rawName]).length || 0;
+
+  return <Dialog open={open} onOpenChange={nextOpen => nextOpen ? onOpenChange(true) : close()}>
+    <DialogContent className="grid max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden bg-[#09130f] p-0 text-slate-100 sm:max-h-[calc(100dvh-2rem)] sm:w-[calc(100vw-2rem)] sm:max-w-[calc(100vw-2rem)] xl:max-w-6xl">
+      <DialogHeader className="border-b border-white/10 px-4 py-4 pr-12 sm:px-6">
+        <DialogTitle>Importar y mapear plantilla contractual</DialogTitle>
+        <DialogDescription>Analice la fuente, asocie cada marcador con un dato de EVGreen y valide visualmente antes de guardar el borrador.</DialogDescription>
+        <div className="grid grid-cols-3 gap-2 pt-3 text-xs">
+          {[{ id: 1, label: "Fuente", icon: FileSearch }, { id: 2, label: "Mapeo", icon: Tags }, { id: 3, label: "Vista previa", icon: Eye }].map(item => <div key={item.id} className={`flex items-center justify-center gap-1.5 rounded-lg border px-2 py-2 ${step === item.id ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-200" : step > item.id ? "border-white/10 bg-white/5 text-slate-300" : "border-white/5 text-slate-600"}`}><item.icon className="h-3.5 w-3.5" />{item.label}</div>)}
+        </div>
+      </DialogHeader>
+
+      <div className="min-h-0 overflow-y-auto overflow-x-hidden px-4 py-5 sm:px-6">
+        {step === 1 && <div className="mx-auto max-w-3xl space-y-5">
+          <div className="grid gap-4 md:grid-cols-2"><div className="space-y-1.5"><Label>Nombre de la plantilla</Label><Input value={name} onChange={event => setName(event.target.value)} /></div><div className="space-y-1.5"><Label>Versión jurídica</Label><Input value={version} onChange={event => setVersion(event.target.value)} placeholder="Ej. 3.0" /></div></div>
+          <div className="grid gap-3 sm:grid-cols-2"><Button variant={sourceMode === "UPLOAD" ? "default" : "outline"} onClick={() => { setSourceMode("UPLOAD"); resetAnalysis(); }}><Upload className="mr-2 h-4 w-4" />Archivo DOCX o PDF</Button><Button variant={sourceMode === "GOOGLE_DRIVE" ? "default" : "outline"} onClick={() => { setSourceMode("GOOGLE_DRIVE"); resetAnalysis(); }}><Link2 className="mr-2 h-4 w-4" />Google Docs o Drive</Button></div>
+          {sourceMode === "UPLOAD" ? <div className="rounded-2xl border border-dashed border-white/15 bg-slate-950/50 p-5"><Label>Archivo contractual</Label><Input className="mt-2" type="file" accept=".docx,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf" onChange={event => { setFile(event.target.files?.[0] || null); resetAnalysis(); }} /><p className="mt-3 text-xs leading-5 text-slate-500">DOCX detecta cualquier texto entre doble llave. PDF solo funciona como plantilla dinámica cuando contiene campos rellenables AcroForm; un PDF plano se carga posteriormente como documento firmado manualmente.</p></div> : <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-5"><Label>Enlace compartido</Label><Input className="mt-2" type="url" value={googleUrl} onChange={event => { setGoogleUrl(event.target.value); resetAnalysis(); }} placeholder="https://docs.google.com/document/d/.../edit" /><p className="mt-3 text-xs leading-5 text-slate-500">El enlace debe permitir lectura. Google Docs se exporta de forma segura a DOCX; Drive puede contener DOCX o PDF rellenable. No se solicitan credenciales de Google.</p></div>}
+          <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-4 text-sm leading-6 text-emerald-100"><strong>El análisis no guarda nada.</strong> Primero detecta los marcadores, propone etiquetas y calcula el hash del archivo.</div>
+        </div>}
+
+        {step === 2 && analysis && <div className="space-y-5">
+          <div className="flex flex-col gap-3 rounded-xl border border-white/10 bg-slate-950/50 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-medium text-white">{analysis.filename}</p><p className="mt-1 text-xs text-slate-500">{analysis.sourceFormat === "PDF_ACROFORM" ? `PDF rellenable · ${analysis.pageCount} páginas` : "Documento Word"} · SHA-256 {analysis.sourceHash.slice(0, 16)}…</p></div><Badge className="w-fit border-emerald-400/30 bg-emerald-400/10 text-emerald-200">{mappedCount}/{analysis.markers.length} asociados</Badge></div>
+          <div className="grid gap-4 lg:grid-cols-2">{analysis.markers.map((marker: any) => <div key={marker.rawName} className={`min-w-0 rounded-xl border p-4 ${mappings[marker.rawName] ? "border-emerald-400/20 bg-emerald-400/5" : "border-amber-400/30 bg-amber-400/5"}`}><div className="mb-3 flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate font-mono text-sm text-white">{`{{${marker.rawName}}}`}</p><p className="mt-1 text-xs text-slate-500">{marker.occurrences} aparición{marker.occurrences === 1 ? "" : "es"}{marker.suggestedVariable ? " · sugerencia automática" : " · requiere asociación"}</p></div>{mappings[marker.rawName] && <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-400" />}</div><Label>Dato dinámico asociado</Label><select className="mt-1 h-11 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm" value={mappings[marker.rawName] || ""} onChange={event => setMapping(marker.rawName, event.target.value)}><option value="">Seleccionar etiqueta…</option>{analysis.catalog.map((variable: any) => <option key={variable.name} value={variable.name}>{variable.label} · {variable.name}</option>)}</select>{mappings[marker.rawName] && <p className="mt-2 text-xs text-emerald-200/70">Ejemplo: {analysis.catalog.find((variable: any) => variable.name === mappings[marker.rawName])?.sampleValue}</p>}</div>)}</div>
+          {analysis.warnings.length > 0 && <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-4 text-xs leading-5 text-amber-100">Advertencias de conversión: {analysis.warnings.join(" · ")}</div>}
+        </div>}
+
+        {step === 3 && analysis && preview && <div className="grid min-h-[520px] gap-5 xl:grid-cols-[340px_minmax(0,1fr)]"><aside className="space-y-4"><div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-4"><p className="font-medium text-emerald-100">Mapeo completo y validado</p><p className="mt-2 text-xs leading-5 text-emerald-100/70">{preview.variables.length} variables canónicas. Si cambia una asociación deberá generar nuevamente la vista previa.</p></div><div className="max-h-[410px] space-y-2 overflow-y-auto pr-1">{analysis.markers.map((marker: any) => { const variable = analysis.catalog.find((item: any) => item.name === mappings[marker.rawName]); return <div key={marker.rawName} className="rounded-lg border border-white/10 bg-slate-950/50 p-3 text-xs"><p className="font-mono text-slate-400">{`{{${marker.rawName}}}`}</p><p className="mt-1 font-medium text-white">{variable?.label}</p><p className="mt-1 text-emerald-300">{variable?.sampleValue}</p></div>; })}</div></aside><section className="min-h-[520px] overflow-hidden rounded-xl border border-white/10 bg-white">{preview.previewHtml ? <iframe title="Vista previa de la plantilla" className="h-[70vh] min-h-[520px] w-full bg-white" srcDoc={`<!doctype html><html><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#111;padding:32px;line-height:1.45}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:6px}img{max-width:100%}</style></head><body>${preview.previewHtml}</body></html>`} /> : <object aria-label="Vista previa PDF rellenable" className="h-[70vh] min-h-[520px] w-full" data={`data:application/pdf;base64,${preview.previewPdfBase64}`} type="application/pdf"><p className="p-6 text-slate-900">El navegador no puede mostrar el PDF incrustado.</p></object>}</section></div>}
+      </div>
+
+      <DialogFooter className="flex flex-col-reverse gap-2 border-t border-white/10 bg-[#09130f] px-4 py-4 sm:flex-row sm:justify-between sm:px-6">
+        <div>{step > 1 && <Button className="w-full sm:w-auto" variant="ghost" onClick={() => { setPreview(null); setStep(step === 3 ? 2 : 1); }}><ArrowLeft className="mr-2 h-4 w-4" />Volver</Button>}</div>
+        <div className="flex flex-col-reverse gap-2 sm:flex-row"><Button className="w-full sm:w-auto" variant="outline" onClick={close}>Cancelar</Button>{step === 1 && <Button className="w-full sm:w-auto" onClick={startAnalysis} disabled={analyze.isPending}>{analyze.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Analizar fuente</Button>}{step === 2 && <Button className="w-full sm:w-auto" onClick={startPreview} disabled={previewMapping.isPending || mappedCount !== analysis?.markers.length}>{previewMapping.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Validar y previsualizar</Button>}{step === 3 && <Button className="w-full sm:w-auto" onClick={saveTemplate} disabled={create.isPending}>{create.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Guardar como borrador</Button>}</div>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>;
 }
 
 function TemplateReviewDialog({ templateId, onOpenChange, onSaved }: { templateId: number | null; onOpenChange: (open: boolean) => void; onSaved: () => void }) {
@@ -272,6 +391,12 @@ function TemplateReviewDialog({ templateId, onOpenChange, onSaved }: { templateI
     onError: error => toast.error(error.message),
   });
   const isDraft = template?.status === "DRAFT";
+  const savedMappings = template?.variableSchema && typeof template.variableSchema === "object" && "mappings" in template.variableSchema
+    ? Object.entries((template.variableSchema as any).mappings || {})
+    : [];
+  const sourceFormat = template?.variableSchema && typeof template.variableSchema === "object" && "sourceFormat" in template.variableSchema
+    ? String((template.variableSchema as any).sourceFormat || "DOCX")
+    : "DOCX";
 
   return <Dialog open={Boolean(templateId)} onOpenChange={onOpenChange}>
     <DialogContent className="max-h-[92vh] max-w-4xl overflow-y-auto bg-[#09130f] text-slate-100">
@@ -280,7 +405,8 @@ function TemplateReviewDialog({ templateId, onOpenChange, onSaved }: { templateI
         <DialogDescription>Revise las variables y el contenido antes de activar esta versión. La activación retira la versión anterior solo para nuevos contratos; los expedientes existentes permanecen inmutables.</DialogDescription>
       </DialogHeader>
       {isLoading || !template ? <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-emerald-400" /></div> : <div className="space-y-4 py-3">
-        <div className="rounded-xl border border-white/10 bg-slate-950/50 p-3 text-xs text-slate-400"><span className="font-semibold text-slate-200">Archivo fuente:</span> {template.sourceFilename} · SHA-256 {template.contentHash}</div>
+        <div className="rounded-xl border border-white/10 bg-slate-950/50 p-3 text-xs text-slate-400"><span className="font-semibold text-slate-200">Archivo fuente:</span> {template.sourceFilename} · {sourceFormat === "PDF_ACROFORM" ? "PDF rellenable" : "DOCX"} · SHA-256 {template.contentHash}</div>
+        {savedMappings.length > 0 && <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-4"><p className="text-sm font-semibold text-emerald-100">Mapeo guardado · {savedMappings.length} campos</p><div className="mt-3 grid gap-2 sm:grid-cols-2">{savedMappings.map(([rawName, variable]) => <div key={rawName} className="min-w-0 rounded-lg border border-white/10 bg-slate-950/50 p-3 text-xs"><p className="truncate font-mono text-slate-400">{`{{${rawName}}}`}</p><p className="mt-1 truncate font-medium text-white">{String(variable)}</p></div>)}</div></div>}
         <div><Label>Nota de revisión jurídica y comercial</Label><Textarea value={legalReviewNote} onChange={event => setLegalReviewNote(event.target.value)} placeholder="Indique aprobación, responsable y alcance de los cambios de esta versión." /></div>
         <div><Label>Contenido HTML importado</Label><Textarea rows={16} value={htmlContent} disabled={!isDraft} onChange={event => setHtmlContent(event.target.value)} className="font-mono text-xs leading-5" /><p className="mt-2 text-xs text-slate-500">Use marcadores como <code>{"{{ALIADO_RAZON_SOCIAL}}"}</code>. Solo las versiones en borrador pueden editarse.</p></div>
       </div>}

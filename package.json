@@ -89,6 +89,7 @@
     "node-cron": "^4.6.0",
     "ocpp-rpc": "^2.2.1",
     "openid-client": "5.7.1",
+    "pdf-lib": "^1.17.1",
     "puppeteer-core": "^25.3.0",
     "qrcode": "^1.5.4",
     "qrcode.react": "^4.2.0",
