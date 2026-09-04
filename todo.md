@@ -4285,6 +4285,7 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [ ] Plantilla contractual inicial: cargar directamente el DOCX aportado por el usuario, con sus variables mapeadas, para que esté disponible en producción sin reimportación manual.
 - [ ] Estrategia de plantilla dinámica: crear una versión DOCX contractual con marcadores explícitos `{{VARIABLE}}`, validar marcadores permitidos y rechazar campos desconocidos antes de emisión.
 - [ ] Compatibilidad contractual: alinear `contract_template_status` y `site_contract_status` entre Drizzle, migraciones y la base productiva para eliminar los errores 500 de listado e inserción.
+- [ ] QA contractual seguro: permitir generar una vista previa PDF desde una plantilla DRAFT para validar marcadores y diseño en producción sin activarla ni emitir un contrato legal.
 - [ ] Contratos de concesión: implementar firma electrónica móvil con consentimiento explícito, captura de evidencia y enlace único revocable.
 - [ ] Contratos de concesión: almacenar de forma permanente el contrato final, evidencias y bitácora de acceso, firma, rechazo, expiración y reenvío.
 - [ ] Contratos de concesión: validar autorización, trazabilidad, generación y experiencia móvil antes de publicar el flujo.
