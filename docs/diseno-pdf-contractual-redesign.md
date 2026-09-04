@@ -121,3 +121,17 @@ La versión final se regeneró desde el endpoint contractual real con la plantil
 | Firmas | Un único bloque final de firmas, sin duplicación heredada |
 
 Durante el proceso se detectó y corrigió una regresión transitoria que recortaba el cuerpo legal al buscar firmas heredadas. La versión final usa una detección restringida al último cuarto del documento y cuenta con una prueba específica que impide confundir la identificación inicial de las partes con el bloque final de firmas.
+
+## Verificación visual del PDF en producción
+
+Después del despliegue del commit `36e60a1e`, se generó el archivo `contrato-evgreen-corporativo-produccion.pdf` directamente desde `app.evgreen.lat` con la plantilla activa `3.0` y una carta firmada real.
+
+| Área revisada | Evidencia observada en producción | Estado |
+|---|---|---|
+| Portada | El PDF productivo mantiene portada completa, lenguaje visual corporativo EVGreen y presentación superior al documento base de texto puro. | Aprobado |
+| Páginas interiores | Encabezado superior con logo EVGreen, línea institucional y tipografía de lectura consistente. | Aprobado |
+| Cierre legal | Las páginas 16 y 17 muestran las cláusulas finales con pie de integridad limpio y numeración correcta. | Aprobado |
+| Firmas | La página 18 contiene un único bloque final de firmas, con nombres, documentos y representación visibles sin duplicación heredada. | Aprobado |
+| Hojas en blanco | El documento termina en la página 18 y no deja hoja vacía adicional. | Aprobado |
+
+La evidencia productiva también confirmó que la regeneración del PDF no crea expedientes adicionales: el contador permaneció en `1 -> 1`. El peso final observado en producción fue **1.539.638 bytes** para la carta digital y **1.556.615 bytes** para la formalización manual completada, manteniendo el mismo flujo contractual inmutable.

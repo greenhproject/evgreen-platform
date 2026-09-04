@@ -4300,6 +4300,6 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Activación contractual guiada: explicar y validar dentro de la UI cada requisito pendiente antes de habilitar una plantilla para nuevos contratos.
 - [x] Perfil legal del operador: almacenar una configuración canónica de Green House Project SAS y precargarla automáticamente al crear contratos, congelando sus valores en cada expediente emitido.
 - [x] Datos del aliado en contratos: precargar el documento del representante desde la carta/espacio, validar todos los campos antes de vista previa o emisión y reemplazar errores Zod crudos por mensajes claros con foco en el campo faltante.
-- [ ] Diseño PDF contractual: crear una portada EVGreen de página completa, jerarquía editorial moderna, encabezados, pies, numeración y bloques de firma presentables sin alterar el contenido legal.
-- [ ] Identidad visual contractual: integrar estratégicamente los logos oficiales EVGreen blanco/negro y Green House Project SAS, preservando transparencia, proporciones y alta resolución.
-- [ ] QA PDF corporativo: verificar visualmente portada, páginas interiores, tablas, anexos, firmas, paginación y ausencia de hojas en blanco en el PDF real antes de publicar.
+- [x] Diseño PDF contractual: crear una portada EVGreen de página completa, jerarquía editorial moderna, encabezados, pies, numeración y bloques de firma presentables sin alterar el contenido legal.
+- [x] Identidad visual contractual: integrar estratégicamente los logos oficiales EVGreen blanco/negro y Green House Project SAS, preservando transparencia, proporciones y alta resolución.
+- [x] QA PDF corporativo: verificar visualmente portada, páginas interiores, tablas, anexos, firmas, paginación y ausencia de hojas en blanco en el PDF real antes de publicar.
