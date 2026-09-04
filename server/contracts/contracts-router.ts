@@ -33,6 +33,7 @@ import {
   getContractOperatorProfileStatus,
   mergeTemplateVariableSchema,
 } from "./contract-operator-profile";
+import { getContractAllyPrefill, requireValidContractAlly } from "./contract-ally-profile";
 import {
   CONTRACT_DOCX_MIME,
   CONTRACT_PDF_MIME,
@@ -75,6 +76,18 @@ const partySchema = z.object({
   phone: z.string().trim().max(50).optional(),
   notificationAddress: z.string().trim().min(5).max(500),
   domicile: z.string().trim().max(160).optional(),
+});
+
+const partyInputSchema = z.object({
+  legalName: z.string().max(255),
+  taxId: z.string().max(64),
+  representativeName: z.string().max(255),
+  representativeDocument: z.string().max(64),
+  representativeTitle: z.string().max(120).optional(),
+  email: z.string().max(320),
+  phone: z.string().max(50).optional(),
+  notificationAddress: z.string().max(500),
+  domicile: z.string().max(160).optional(),
 });
 
 const contractOperatorProfileSchema = z.object({
@@ -659,7 +672,8 @@ export const contractsRouter = trpcRouter({
         db.select({
           id: spaceSubmissions.id, code: spaceSubmissions.code, spaceName: spaceSubmissions.spaceName, spaceStatus: spaceSubmissions.spaceStatus,
           submitterName: spaceSubmissions.submitterName, submitterCompany: spaceSubmissions.submitterCompany, submitterEmail: spaceSubmissions.submitterEmail,
-          submitterPhone: spaceSubmissions.submitterPhone, submitterDocument: spaceSubmissions.submitterDocument, address: spaceSubmissions.address,
+          submitterPhone: spaceSubmissions.submitterPhone, submitterDocument: spaceSubmissions.submitterDocument,
+          letterSignerName: spaceSubmissions.letterSignerName, letterSignerDocument: spaceSubmissions.letterSignerDocument, address: spaceSubmissions.address,
           city: spaceSubmissions.city, department: spaceSubmissions.department, country: spaceSubmissions.country, availableAreaM2: spaceSubmissions.availableAreaM2,
           parkingSpots: spaceSubmissions.parkingSpots, letterAcceptedAt: spaceSubmissions.letterAcceptedAt,
           manualFormalizedAt: spaceSubmissions.manualFormalizedAt,
@@ -677,7 +691,7 @@ export const contractsRouter = trpcRouter({
         if (!contractBySubmission.has(contract.submissionId)) contractBySubmission.set(contract.submissionId, contract);
       });
       return formalizedSpaces
-        .map(space => ({ ...space, ...getContractSpaceEligibility(space, contractBySubmission.get(space.id) || null) }))
+        .map(space => ({ ...space, allyPrefill: getContractAllyPrefill(space), ...getContractSpaceEligibility(space, contractBySubmission.get(space.id) || null) }))
         .sort((left, right) => new Date(right.formalizedAt || 0).getTime() - new Date(left.formalizedAt || 0).getTime());
     }),
 
@@ -704,7 +718,7 @@ export const contractsRouter = trpcRouter({
 
     previewContractPdf: legalAdminProcedure.input(z.object({
       submissionId: z.number().int().positive(), templateId: z.number().int().positive(), variables: z.record(z.string(), z.string().max(1000)),
-      ally: partySchema, operator: partySchema.optional(),
+      ally: partyInputSchema, operator: partySchema.optional(),
     })).mutation(async ({ input }: any) => {
       const db = await getContractsDb();
       const [[space], [template]] = await Promise.all([
@@ -716,6 +730,7 @@ export const contractsRouter = trpcRouter({
       if (!eligibility.isFormalized) throw new TRPCError({ code: "PRECONDITION_FAILED", message: eligibility.eligibilityReason });
       if (!template || template.status === "RETIRED") throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Seleccione una plantilla en borrador o activa." });
       requireValidContractTemplateMarkers(template.htmlContent);
+      const ally = requireValidContractAlly(input.ally, space);
       const operatorStatus = getContractOperatorProfileStatus(await getPlatformSettings());
       const operator = operatorStatus.isComplete ? operatorStatus.profile : input.operator;
       if (!operator) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Complete el perfil legal del operador para generar la vista previa. Faltan: ${operatorStatus.missingFields.join(", ")}.` });
@@ -725,17 +740,17 @@ export const contractsRouter = trpcRouter({
         templateVersion: template.version,
         templateHtml: template.htmlContent,
         variables: input.variables,
-        ally: input.ally,
+        ally,
         operator,
         space,
       });
-      const pdfBuffer = await generateFrozenContractPdf({ template, contractNumber: number, contentHash: draft.contentHash, variables: draft.variables, contractHtml: draft.contractHtml, ally: input.ally, operator });
+      const pdfBuffer = await generateFrozenContractPdf({ template, contractNumber: number, contentHash: draft.contentHash, variables: draft.variables, contractHtml: draft.contractHtml, ally, operator });
       return { success: true, contractNumber: number, contentHash: draft.contentHash, templateVersion: template.version, pdfBase64: pdfBuffer.toString("base64") };
     }),
 
     createContract: legalAdminProcedure.input(z.object({
       submissionId: z.number().int().positive(), templateId: z.number().int().positive(), variables: z.record(z.string(), z.string().max(1000)),
-      ally: partySchema, operator: partySchema.optional(), expiresAt: z.string().datetime().optional(),
+      ally: partyInputSchema, operator: partySchema.optional(), expiresAt: z.string().datetime().optional(),
     })).mutation(async ({ input, ctx }: any) => {
       const db = (await getDb())!;
       const [[space], [template], existingContracts] = await Promise.all([
@@ -753,6 +768,7 @@ export const contractsRouter = trpcRouter({
       if (!eligibility.canCreateContract) throw new TRPCError({ code: "CONFLICT", message: eligibility.eligibilityReason });
       if (!template || template.status !== "ACTIVE") throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Seleccione una plantilla contractual activa y aprobada." });
       const operator = await requireVerifiedContractOperatorProfile();
+      const ally = requireValidContractAlly(input.ally, space);
       const number = contractNumber();
       requireValidContractTemplateMarkers(template.htmlContent);
       const draft = buildValidatedContractDraft({
@@ -760,11 +776,11 @@ export const contractsRouter = trpcRouter({
         templateVersion: template.version,
         templateHtml: template.htmlContent,
         variables: input.variables,
-        ally: input.ally,
+        ally,
         operator,
         space,
       });
-      const pdfBuffer = await generateFrozenContractPdf({ template, contractNumber: number, contentHash: draft.contentHash, variables: draft.variables, contractHtml: draft.contractHtml, ally: input.ally, operator });
+      const pdfBuffer = await generateFrozenContractPdf({ template, contractNumber: number, contentHash: draft.contentHash, variables: draft.variables, contractHtml: draft.contractHtml, ally, operator });
       const pdfUpload = await storagePut(`contracts/drafts/${number}-${draft.contentHash.slice(0, 12)}.pdf`, pdfBuffer, "application/pdf");
       const [result] = await db.insert(siteContracts).values({
         contractNumber: number, submissionId: space.id, templateId: template.id, templateName: template.name, templateVersion: template.version,
@@ -773,7 +789,7 @@ export const contractsRouter = trpcRouter({
       });
       const id = result.insertId;
       await db.insert(siteContractParties).values([
-        { contractId: id, role: "ALLY", ...input.ally, signingOrder: 1 },
+        { contractId: id, role: "ALLY", ...ally, signingOrder: 1 },
         { contractId: id, role: "OPERATOR", ...operator, signingOrder: 2 },
       ]);
       await recordContractEvent(db, { contractId: id, eventType: "CONTRACT_CREATED", ctx, details: { templateId: template.id, templateVersion: template.version, contentHash: draft.contentHash, variableKeys: Object.keys(draft.variables) } });

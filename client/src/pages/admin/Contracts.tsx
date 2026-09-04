@@ -10,6 +10,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { toast } from "sonner";
 import { ArrowLeft, BadgeCheck, CheckCircle2, ClipboardCheck, Download, Eye, FileCheck2, FileOutput, FileSearch, FileSignature, FileText, History, Landmark, Link2, Loader2, Pencil, Plus, Send, Settings2, ShieldCheck, Tags, Trash2, Upload, XCircle } from "lucide-react";
 import type { ContractVariableName } from "@shared/site-contracts";
+import { CONTRACT_PARTY_FIELD_LABELS, EMPTY_CONTRACT_PARTY, contractPartyValidationMessage, validateContractParty, type ContractPartyData, type ContractPartyField } from "@shared/contract-parties";
 
 type ContractAction = { id: number; type: "manual" | "docusign" | "cancel" | "verify" | "reject" } | null;
 
@@ -71,26 +72,42 @@ function SectionTitle({ eyebrow, title, description, action }: { eyebrow: string
   </div>;
 }
 
-function PartyFields({ prefix, title, value, onChange }: { prefix: string; title: string; value: any; onChange: (next: any) => void }) {
-  const set = (key: string, next: string) => onChange({ ...value, [key]: next });
+function PartyFields({ prefix, title, value, onChange, errors = {} }: { prefix: string; title: string; value: ContractPartyData; onChange: (next: ContractPartyData) => void; errors?: Partial<Record<ContractPartyField, string>> }) {
+  const set = (key: ContractPartyField, next: string) => onChange({ ...value, [key]: next });
   const fieldClass = "min-w-0 space-y-1.5";
+  const fieldId = (key: ContractPartyField) => `contract-${prefix.toLowerCase()}-${key}`;
+  const inputProps = (key: ContractPartyField) => ({ id: fieldId(key), "data-contract-field": key, "aria-invalid": Boolean(errors[key]), "aria-describedby": errors[key] ? `${fieldId(key)}-error` : undefined, className: errors[key] ? "border-red-400/70 focus-visible:ring-red-400" : undefined });
+  const error = (key: ContractPartyField) => errors[key] ? <p id={`${fieldId(key)}-error`} className="text-xs leading-5 text-red-300">{errors[key]}</p> : null;
   return <section className="min-w-0 rounded-2xl border border-white/10 bg-slate-950/50 p-4 sm:p-5">
     <p className="mb-4 text-sm font-semibold text-white">{title}</p>
     <div className="grid min-w-0 gap-4 md:grid-cols-2">
-      <div className={`${fieldClass} md:col-span-2`}><Label>Razón social</Label><Input value={value.legalName} onChange={event => set("legalName", event.target.value)} placeholder={`${prefix} razón social`} /></div>
-      <div className={fieldClass}><Label>NIT</Label><Input value={value.taxId} onChange={event => set("taxId", event.target.value)} placeholder="900.000.000-0" /></div>
-      <div className={fieldClass}><Label>Correo para firma</Label><Input type="email" value={value.email} onChange={event => set("email", event.target.value)} placeholder="correo@empresa.com" /></div>
-      <div className={fieldClass}><Label>Representante autorizado</Label><Input value={value.representativeName} onChange={event => set("representativeName", event.target.value)} /></div>
-      <div className={fieldClass}><Label>Documento del representante</Label><Input value={value.representativeDocument} onChange={event => set("representativeDocument", event.target.value)} /></div>
-      <div className={fieldClass}><Label>Cargo</Label><Input value={value.representativeTitle} onChange={event => set("representativeTitle", event.target.value)} placeholder="Representante legal" /></div>
-      <div className={fieldClass}><Label>Teléfono</Label><Input value={value.phone} onChange={event => set("phone", event.target.value)} /></div>
-      <div className={`${fieldClass} md:col-span-2`}><Label>Dirección de notificaciones</Label><Input value={value.notificationAddress} onChange={event => set("notificationAddress", event.target.value)} /></div>
-      <div className={`${fieldClass} md:col-span-2`}><Label>Domicilio</Label><Input value={value.domicile} onChange={event => set("domicile", event.target.value)} placeholder="Ciudad, Colombia" /></div>
+      <div className={`${fieldClass} md:col-span-2`}><Label htmlFor={fieldId("legalName")}>Razón social</Label><Input {...inputProps("legalName")} value={value.legalName} onChange={event => set("legalName", event.target.value)} placeholder={`${prefix} razón social`} />{error("legalName")}</div>
+      <div className={fieldClass}><Label htmlFor={fieldId("taxId")}>NIT</Label><Input {...inputProps("taxId")} value={value.taxId} onChange={event => set("taxId", event.target.value)} placeholder="900.000.000-0" />{error("taxId")}</div>
+      <div className={fieldClass}><Label htmlFor={fieldId("email")}>Correo para firma</Label><Input {...inputProps("email")} type="email" value={value.email} onChange={event => set("email", event.target.value)} placeholder="correo@empresa.com" />{error("email")}</div>
+      <div className={fieldClass}><Label htmlFor={fieldId("representativeName")}>Representante autorizado</Label><Input {...inputProps("representativeName")} value={value.representativeName} onChange={event => set("representativeName", event.target.value)} />{error("representativeName")}</div>
+      <div className={fieldClass}><Label htmlFor={fieldId("representativeDocument")}>Documento del representante</Label><Input {...inputProps("representativeDocument")} value={value.representativeDocument} onChange={event => set("representativeDocument", event.target.value)} inputMode="numeric" />{error("representativeDocument")}</div>
+      <div className={fieldClass}><Label htmlFor={fieldId("representativeTitle")}>Cargo</Label><Input {...inputProps("representativeTitle")} value={value.representativeTitle} onChange={event => set("representativeTitle", event.target.value)} placeholder="Representante legal" />{error("representativeTitle")}</div>
+      <div className={fieldClass}><Label htmlFor={fieldId("phone")}>Teléfono</Label><Input {...inputProps("phone")} value={value.phone} onChange={event => set("phone", event.target.value)} />{error("phone")}</div>
+      <div className={`${fieldClass} md:col-span-2`}><Label htmlFor={fieldId("notificationAddress")}>Dirección de notificaciones</Label><Input {...inputProps("notificationAddress")} value={value.notificationAddress} onChange={event => set("notificationAddress", event.target.value)} />{error("notificationAddress")}</div>
+      <div className={`${fieldClass} md:col-span-2`}><Label htmlFor={fieldId("domicile")}>Domicilio</Label><Input {...inputProps("domicile")} value={value.domicile} onChange={event => set("domicile", event.target.value)} placeholder="Ciudad, Colombia" />{error("domicile")}</div>
     </div>
   </section>;
 }
 
-const emptyParty = { legalName: "", taxId: "", representativeName: "", representativeDocument: "", representativeTitle: "Representante legal", email: "", phone: "", notificationAddress: "", domicile: "" };
+const emptyParty = { ...EMPTY_CONTRACT_PARTY };
+
+function readableContractError(message: string): string {
+  try {
+    const issues = JSON.parse(message);
+    if (Array.isArray(issues)) {
+      const fields = issues.map(issue => issue?.path?.[0] === "ally" ? issue?.path?.[1] as ContractPartyField : null).filter(Boolean) as ContractPartyField[];
+      if (fields.length) return `Complete los datos obligatorios del aliado: ${[...new Set(fields)].map(field => CONTRACT_PARTY_FIELD_LABELS[field] || field).join(", ")}.`;
+    }
+  } catch {
+    // Los mensajes de negocio del servidor ya son legibles.
+  }
+  return message;
+}
 
 export default function AdminContracts() {
   const utils = trpc.useUtils();
@@ -102,6 +119,7 @@ export default function AdminContracts() {
   const [selectedSpaceId, setSelectedSpaceId] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [ally, setAlly] = useState({ ...emptyParty });
+  const [allyErrors, setAllyErrors] = useState<Partial<Record<ContractPartyField, string>>>({});
   const [variables, setVariables] = useState({ PARTICIPACION_ALIADO_PORCENTAJE: "10", PLAZO_INICIAL_ANOS: "10", PRORROGA_ANOS: "5", PLAZO_PAGO_DIAS_HABILES: "15", FECHA_CIERRE_LIQUIDACION: "Último día calendario de cada mes", AREA_CEDIDA_M2: "", PUESTOS_PARQUEO: "", PLANO_ANEXO_URL: "", MARCA_COMERCIAL: "EVGreen" });
   const [contractAction, setContractAction] = useState<ContractAction>(null);
   const [decisionNote, setDecisionNote] = useState("");
@@ -118,13 +136,13 @@ export default function AdminContracts() {
   const availableSpaces = useMemo(() => spaces.filter((item: any) => item.canCreateContract), [spaces]);
 
   const invalidate = () => Promise.all([utils.contracts.listTemplates.invalidate(), utils.contracts.listContracts.invalidate(), utils.contracts.listEligibleSpaces.invalidate(), utils.contracts.getDocusignConfig.invalidate(), utils.contracts.getContractOperatorProfile.invalidate()]);
-  const createContract = trpc.contracts.createContract.useMutation({ onSuccess: result => { toast.success(`Contrato ${result.contractNumber} creado y congelado.`); setContractDialog(false); invalidate(); }, onError: error => toast.error(error.message) });
+  const createContract = trpc.contracts.createContract.useMutation({ onSuccess: result => { toast.success(`Contrato ${result.contractNumber} creado y congelado.`); setContractDialog(false); invalidate(); }, onError: error => toast.error(readableContractError(error.message)) });
   const previewContract = trpc.contracts.previewContractPdf.useMutation({
     onSuccess: result => {
       downloadBase64Pdf(result.pdfBase64, `${result.contractNumber}-v${result.templateVersion}.pdf`);
       toast.success(`Vista previa v${result.templateVersion} generada sin emitir ni activar el contrato.`);
     },
-    onError: error => toast.error(error.message),
+    onError: error => toast.error(readableContractError(error.message)),
   });
   const deleteTemplate = trpc.contracts.deleteDraftTemplate.useMutation({
     onSuccess: () => {
@@ -150,23 +168,40 @@ export default function AdminContracts() {
 
   const selectedSpace = spaces.find((item: any) => String(item.id) === selectedSpaceId) as any;
   const selectedTemplate = templates.find((item: any) => String(item.id) === selectedTemplateId) as any;
+  const validatedAlly = () => {
+    const validation = validateContractParty(ally);
+    setAllyErrors(validation.fieldErrors);
+    if (!validation.valid) {
+      const firstField = validation.invalidFields[0];
+      window.setTimeout(() => document.querySelector<HTMLInputElement>(`[data-contract-field="${firstField}"]`)?.focus(), 0);
+      toast.error(contractPartyValidationMessage(ally) || "Complete los datos obligatorios del aliado.");
+      return null;
+    }
+    setAlly(validation.data);
+    return validation.data;
+  };
   const startContract = () => {
     if (!selectedSpaceId || !selectedTemplateId) return toast.error("Selecciona el espacio formalizado y la plantilla activa.");
     if (!selectedSpace?.canCreateContract) return toast.error(selectedSpace?.eligibilityReason || "Este espacio no puede recibir un nuevo contrato.");
     if (selectedTemplate?.status !== "ACTIVE") return toast.error("La emisión exige una plantilla activa y aprobada jurídicamente. Use la vista previa para revisar borradores.");
     if (!operatorProfile?.isVerified) return toast.error("Confirme primero los datos legales permanentes de Green House Project SAS.");
-    createContract.mutate({ submissionId: Number(selectedSpaceId), templateId: Number(selectedTemplateId), variables, ally });
+    const validAlly = validatedAlly();
+    if (!validAlly) return;
+    createContract.mutate({ submissionId: Number(selectedSpaceId), templateId: Number(selectedTemplateId), variables, ally: validAlly });
   };
   const startPreview = () => {
     if (!selectedSpaceId || !selectedTemplateId) return toast.error("Selecciona un espacio y una plantilla para generar la vista previa.");
-    previewContract.mutate({ submissionId: Number(selectedSpaceId), templateId: Number(selectedTemplateId), variables, ally });
+    const validAlly = validatedAlly();
+    if (!validAlly) return;
+    previewContract.mutate({ submissionId: Number(selectedSpaceId), templateId: Number(selectedTemplateId), variables, ally: validAlly });
   };
 
   const loadSpaceData = (id: string) => {
     setSelectedSpaceId(id);
     const space: any = spaces.find((item: any) => String(item.id) === id);
     if (space) {
-      setAlly(previous => ({ ...previous, legalName: space.submitterCompany || previous.legalName, representativeName: space.submitterName || previous.representativeName, representativeDocument: space.submitterDocument || previous.representativeDocument, email: space.submitterEmail || previous.email, phone: space.submitterPhone || previous.phone, notificationAddress: space.address || previous.notificationAddress, domicile: space.city || previous.domicile }));
+      setAlly({ ...emptyParty, ...(space.allyPrefill || {}), legalName: space.allyPrefill?.legalName || space.submitterCompany || "", representativeName: space.letterSignerName || space.submitterName || "", representativeDocument: space.letterSignerDocument || space.submitterDocument || "" });
+      setAllyErrors({});
       setVariables(previous => ({ ...previous, AREA_CEDIDA_M2: space.availableAreaM2?.toString() || previous.AREA_CEDIDA_M2, PUESTOS_PARQUEO: space.parkingSpots?.toString() || previous.PUESTOS_PARQUEO }));
     }
   };
@@ -217,9 +252,10 @@ export default function AdminContracts() {
             <div className="min-w-0 space-y-1.5"><Label>Espacio con carta firmada o formalización registrada</Label><select className="h-11 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm" value={selectedSpaceId} onChange={event => loadSpaceData(event.target.value)}><option value="">Seleccionar espacio</option>{spaces.map((space: any) => <option value={space.id} key={space.id} disabled={!space.canCreateContract}>{space.spaceName} · {space.city} · {space.code}{space.canCreateContract ? "" : ` · ${space.eligibilityReason}`}</option>)}</select><p className="text-xs leading-5 text-slate-500">Se muestran firmas digitales y formalizaciones manuales. Un expediente vigente aparece protegido.</p></div>
             <div className="min-w-0 space-y-1.5"><Label>Plantilla para vista previa o emisión</Label><select className="h-11 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm" value={selectedTemplateId} onChange={event => setSelectedTemplateId(event.target.value)}><option value="">Seleccionar plantilla</option>{selectableTemplates.map((template: any) => <option value={template.id} key={template.id}>{template.name} · v{template.version} · {STATUS_META[template.status]?.label || template.status}</option>)}</select></div>
           </section>
-          {selectedSpace && <div className={`rounded-xl border p-3 text-sm ${selectedSpace.canCreateContract ? "border-emerald-400/20 bg-emerald-400/5 text-emerald-100" : "border-amber-400/20 bg-amber-400/5 text-amber-100"}`}><p className="font-medium">{selectedSpace.formalizationSource === "DIGITAL_LETTER" ? "Carta firmada digitalmente" : "Formalización manual registrada"} · {formatDate(selectedSpace.formalizedAt)}</p><p className="mt-1 text-xs opacity-80">{selectedSpace.eligibilityReason} · {selectedSpace.address}</p></div>}
+          {selectedSpace && <div className={`rounded-xl border p-3 text-sm ${selectedSpace.canCreateContract ? "border-emerald-400/20 bg-emerald-400/5 text-emerald-100" : "border-amber-400/20 bg-amber-400/5 text-amber-100"}`}><p className="font-medium">{selectedSpace.formalizationSource === "DIGITAL_LETTER" ? "Carta firmada digitalmente" : "Formalización manual registrada"} · {formatDate(selectedSpace.formalizedAt)}</p><p className="mt-1 text-xs opacity-80">{selectedSpace.eligibilityReason} · {selectedSpace.address}</p><p className="mt-2 text-xs font-medium">{selectedSpace.letterSignerDocument ? "Nombre y documento del firmante precargados desde la constancia digital." : "Esta formalización no conserva documento del firmante; complete y verifique ese dato antes de generar el contrato."}</p></div>}
           {selectedTemplate?.status === "DRAFT" && <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-3 text-sm text-amber-100">Esta versión permanece en borrador. Puede descargar una vista previa, pero no emitir contratos hasta completar la revisión jurídica y activarla.</div>}
-          <div className="grid min-w-0 gap-5 2xl:grid-cols-2"><PartyFields prefix="EDS" title="Parte 1 · EDS o aliado del sitio" value={ally} onChange={setAlly} /><section className="min-w-0 rounded-2xl border border-emerald-400/20 bg-emerald-400/5 p-4 sm:p-5"><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-semibold text-white">Parte 2 · Green House Project SAS</p><Badge className={operatorProfile?.isVerified ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200" : "border-amber-400/30 bg-amber-400/10 text-amber-200"}>{operatorProfile?.isVerified ? "Perfil confirmado" : "Configuración pendiente"}</Badge></div>{operatorProfile?.profile && <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><div><p className="text-xs text-slate-500">Razón social</p><p className="font-medium text-white">{operatorProfile.profile.legalName}</p></div><div><p className="text-xs text-slate-500">NIT</p><p className="font-medium text-white">{operatorProfile.profile.taxId}</p></div><div><p className="text-xs text-slate-500">Representante</p><p className="font-medium text-white">{operatorProfile.profile.representativeName || "Pendiente"}</p></div><div><p className="text-xs text-slate-500">Documento</p><p className="font-medium text-white">{operatorProfile.profile.representativeDocument || "Pendiente"}</p></div><div className="sm:col-span-2"><p className="text-xs text-slate-500">Dirección de notificaciones</p><p className="font-medium text-white">{operatorProfile.profile.notificationAddress || "Pendiente"}</p></div></div>}<p className="mt-4 text-xs leading-5 text-slate-400">Estos datos se administran una sola vez y el servidor los congela en cada expediente. No pueden reemplazarse desde este formulario.</p></section></div>
+          {Object.keys(allyErrors).length > 0 && <div role="alert" className="rounded-xl border border-red-400/30 bg-red-400/10 p-4 text-sm text-red-100"><p className="font-semibold">Complete los datos del aliado antes de continuar</p><ul className="mt-2 list-disc space-y-1 pl-5 text-xs">{Object.values(allyErrors).map(message => <li key={message}>{message}</li>)}</ul></div>}
+          <div className="grid min-w-0 gap-5 2xl:grid-cols-2"><PartyFields prefix="EDS" title="Parte 1 · EDS o aliado del sitio" value={ally} errors={allyErrors} onChange={next => { setAlly(next); setAllyErrors(validateContractParty(next).fieldErrors); }} /><section className="min-w-0 rounded-2xl border border-emerald-400/20 bg-emerald-400/5 p-4 sm:p-5"><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-semibold text-white">Parte 2 · Green House Project SAS</p><Badge className={operatorProfile?.isVerified ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200" : "border-amber-400/30 bg-amber-400/10 text-amber-200"}>{operatorProfile?.isVerified ? "Perfil confirmado" : "Configuración pendiente"}</Badge></div>{operatorProfile?.profile && <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><div><p className="text-xs text-slate-500">Razón social</p><p className="font-medium text-white">{operatorProfile.profile.legalName}</p></div><div><p className="text-xs text-slate-500">NIT</p><p className="font-medium text-white">{operatorProfile.profile.taxId}</p></div><div><p className="text-xs text-slate-500">Representante</p><p className="font-medium text-white">{operatorProfile.profile.representativeName || "Pendiente"}</p></div><div><p className="text-xs text-slate-500">Documento</p><p className="font-medium text-white">{operatorProfile.profile.representativeDocument || "Pendiente"}</p></div><div className="sm:col-span-2"><p className="text-xs text-slate-500">Dirección de notificaciones</p><p className="font-medium text-white">{operatorProfile.profile.notificationAddress || "Pendiente"}</p></div></div>}<p className="mt-4 text-xs leading-5 text-slate-400">Estos datos se administran una sola vez y el servidor los congela en cada expediente. No pueden reemplazarse desde este formulario.</p></section></div>
           <section className="min-w-0 rounded-2xl border border-white/10 bg-slate-950/50 p-4 sm:p-5"><p className="mb-4 text-sm font-semibold text-white">Condiciones parametrizadas</p><div className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-3">{Object.entries(variables).map(([key, value]) => <div className="min-w-0 space-y-1.5" key={key}><Label className="text-xs leading-tight">{key.replaceAll("_", " ")}</Label><Input value={value} onChange={event => setVariables(previous => ({ ...previous, [key]: event.target.value }))} /></div>)}</div></section>
         </div>
         <DialogFooter className="flex flex-col-reverse gap-2 border-t border-white/10 bg-[#09130f] px-4 py-4 sm:flex-row sm:justify-end sm:px-6"><Button className="w-full sm:w-auto" variant="outline" onClick={() => setContractDialog(false)}>Cancelar</Button><Button className="w-full sm:w-auto" variant="outline" onClick={startPreview} disabled={previewContract.isPending || !selectedSpace?.canCreateContract || !operatorProfile?.isComplete}>{previewContract.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Eye className="mr-2 h-4 w-4" />}Descargar vista previa</Button><Button className="w-full sm:w-auto" onClick={startContract} disabled={createContract.isPending || selectedTemplate?.status !== "ACTIVE" || !selectedSpace?.canCreateContract || !operatorProfile?.isVerified}>{createContract.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Generar contrato congelado</Button></DialogFooter>

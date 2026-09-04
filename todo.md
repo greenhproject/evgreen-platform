@@ -4299,3 +4299,4 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Vista previa de plantilla: renderizar el documento normalizado con valores de ejemplo antes de guardar la versión DRAFT y mostrar el resumen final de asociaciones.
 - [x] Activación contractual guiada: explicar y validar dentro de la UI cada requisito pendiente antes de habilitar una plantilla para nuevos contratos.
 - [x] Perfil legal del operador: almacenar una configuración canónica de Green House Project SAS y precargarla automáticamente al crear contratos, congelando sus valores en cada expediente emitido.
+- [ ] Datos del aliado en contratos: precargar el documento del representante desde la carta/espacio, validar todos los campos antes de vista previa o emisión y reemplazar errores Zod crudos por mensajes claros con foco en el campo faltante.
