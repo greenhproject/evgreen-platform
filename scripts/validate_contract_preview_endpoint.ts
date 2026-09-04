@@ -7,6 +7,8 @@ import { getDb } from "../server/db";
 
 const baseUrl = process.env.CONTRACT_BASE_URL || "http://127.0.0.1:3000";
 const outputPath = process.env.CONTRACT_PREVIEW_OUTPUT || "/home/ubuntu/contract-template-validation/preview-contract-endpoint.pdf";
+const targetTemplateId = process.env.CONTRACT_TEMPLATE_ID ? Number(process.env.CONTRACT_TEMPLATE_ID) : null;
+const targetTemplateVersion = process.env.CONTRACT_TEMPLATE_VERSION || "2.3-dinamica";
 
 async function request(pathname: string, token: string, input?: unknown) {
   const response = await fetch(`${baseUrl}/api/trpc/${pathname}`, {
@@ -41,9 +43,11 @@ async function main() {
     request("contracts.listEligibleSpaces", token),
     request("contracts.listContracts", token),
   ]);
-  const template = templates.find((item: any) => item.version === "2.3-dinamica" && item.status === "DRAFT");
+  const template = templates.find((item: any) => (
+    targetTemplateId ? Number(item.id) === targetTemplateId : item.version === targetTemplateVersion
+  ) && item.status === "DRAFT");
   const space = spaces[0];
-  if (!template) throw new Error("La plantilla v2.3-dinamica DRAFT no está disponible en el endpoint.");
+  if (!template) throw new Error(`La plantilla ${targetTemplateId ? `id=${targetTemplateId}` : `v${targetTemplateVersion}`} DRAFT no está disponible en el endpoint.`);
   if (!space) throw new Error("No existe un espacio con carta aceptada para la vista previa.");
 
   const allyName = space.submitterCompany || "EDS de validación S.A.S.";
