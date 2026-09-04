@@ -1274,10 +1274,22 @@ export const platformSettings = mysqlTable("platform_settings", {
 	docusignConsentRedirectUri: varchar("docusign_consent_redirect_uri", { length: 500 }),
 	docusignPrivateKeyEncrypted: text("docusign_private_key_encrypted"),
 	docusignWebhookSecretEncrypted: text("docusign_webhook_secret_encrypted"),
-	docusignLastTestAt: timestamp("docusign_last_test_at", { mode: 'string' }),
-	docusignLastTestStatus: mysqlEnum("docusign_last_test_status", ['NEVER', 'SUCCESS', 'FAILED']).default('NEVER').notNull(),
-	docusignLastTestMessage: text("docusign_last_test_message"),
-});
+		docusignLastTestAt: timestamp("docusign_last_test_at", { mode: 'string' }),
+		docusignLastTestStatus: mysqlEnum("docusign_last_test_status", ['NEVER', 'SUCCESS', 'FAILED']).default('NEVER').notNull(),
+		docusignLastTestMessage: text("docusign_last_test_message"),
+		// Perfil legal canónico usado para precargar y congelar contratos de concesión.
+		contractOperatorLegalName: varchar("contract_operator_legal_name", { length: 255 }).default('Green House Project SAS'),
+		contractOperatorTaxId: varchar("contract_operator_tax_id", { length: 64 }).default('901.447.678-0'),
+		contractOperatorRepresentativeName: varchar("contract_operator_representative_name", { length: 255 }),
+		contractOperatorRepresentativeDocument: varchar("contract_operator_representative_document", { length: 64 }),
+		contractOperatorRepresentativeTitle: varchar("contract_operator_representative_title", { length: 120 }).default('Representante legal'),
+		contractOperatorEmail: varchar("contract_operator_email", { length: 320 }),
+		contractOperatorPhone: varchar("contract_operator_phone", { length: 50 }),
+		contractOperatorNotificationAddress: varchar("contract_operator_notification_address", { length: 500 }),
+		contractOperatorDomicile: varchar("contract_operator_domicile", { length: 160 }).default('Colombia'),
+		contractOperatorVerifiedAt: timestamp("contract_operator_verified_at", { mode: 'string' }),
+		contractOperatorVerifiedBy: int("contract_operator_verified_by"),
+	});
 
 export const priceHistory = mysqlTable("price_history", {
 	id: int().autoincrement().notNull(),
