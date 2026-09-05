@@ -2026,6 +2026,8 @@ export const transactions = mysqlTable("transactions", {
 	manualSoc: int(),
 	manualSocEnd: int(),
 	manualBatteryCapacityKwh: decimal({ precision: 6, scale: 2 }),
+	manualSocCalibrationKwh: decimal({ precision: 10, scale: 4 }),
+	manualSocCalibratedAt: timestamp({ mode: 'string' }),
 	chargeMode: varchar({ length: 20 }).default('full_charge'),
 	targetValue: decimal({ precision: 12, scale: 2 }).default('0'),
 	appliedPricePerKwh: decimal({ precision: 10, scale: 2 }),

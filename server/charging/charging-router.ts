@@ -18,6 +18,7 @@ import { v4 as uuidv4 } from "uuid";
 import * as simulator from "./charging-simulator";
 import { sendUserPush } from "../push/unified-push";
 import { dispatchOrganizationWebhookEvent } from "../api/webhook-dispatcher";
+import { calculateSocEstimation, getManualSocAvailability } from "./soc-estimation";
 
 // Helper: buscar conexión por stationId en dualCSMS primero, luego fallback a legacy
 // Si ocppIdentity se provee, también busca en dualCSMS por identidad cuando stationId=null
@@ -109,6 +110,8 @@ const activeChargeSessions = new Map<number, {
   // SoC manual ingresado por el usuario (cuando el cargador no lo reporta)
   manualSoc: number | null;
   manualBatteryCapacityKwh: number | null;
+  manualSocCalibrationKwh?: number | null;
+  manualSocCalibratedAt?: Date | null;
   // Detección de batería llena por caída de potencia
   lowPowerSince: Date | null; // Timestamp desde cuando la potencia está < umbral
   chargeCompleteDetected: boolean; // Si se detectó que la batería está llena
@@ -1212,6 +1215,8 @@ export const chargingRouter = router({
       // ============================================================
       let manualSoc = activeSessionInfo?.manualSoc ?? null;
       let manualBatteryCapacity = activeSessionInfo?.manualBatteryCapacityKwh ?? null;
+      let manualSocCalibrationKwh = activeSessionInfo?.manualSocCalibrationKwh ?? null;
+      let manualSocCalibratedAt = activeSessionInfo?.manualSocCalibratedAt ?? null;
       
       // Si no hay manualSoc en memoria, intentar restaurar desde la DB (transacción activa)
       if (manualSoc === null && activeTransaction.manualSoc !== null && activeTransaction.manualSoc !== undefined) {
@@ -1229,6 +1234,20 @@ export const chargingRouter = router({
           activeSessionInfo.manualBatteryCapacityKwh = manualBatteryCapacity;
         }
         console.log(`[getActiveSession] Restored manualBatteryCapacity=${manualBatteryCapacity}kWh from DB for transaction ${activeTransaction.id}`);
+      }
+
+      if (manualSocCalibrationKwh === null && activeTransaction.manualSocCalibrationKwh !== null && activeTransaction.manualSocCalibrationKwh !== undefined) {
+        manualSocCalibrationKwh = parseFloat(String(activeTransaction.manualSocCalibrationKwh));
+        if (activeSessionInfo) {
+          activeSessionInfo.manualSocCalibrationKwh = manualSocCalibrationKwh;
+        }
+      }
+
+      if (manualSocCalibratedAt === null && activeTransaction.manualSocCalibratedAt) {
+        manualSocCalibratedAt = new Date(activeTransaction.manualSocCalibratedAt);
+        if (activeSessionInfo) {
+          activeSessionInfo.manualSocCalibratedAt = manualSocCalibratedAt;
+        }
       }
       
       // Si no hay capacidad de batería en la sesión ni en DB, intentar cargar del vehículo del usuario
@@ -1251,17 +1270,15 @@ export const chargingRouter = router({
       if (manualBatteryCapacity === null) manualBatteryCapacity = 60;
       
       const hasManualSoc = manualSoc !== null;
-      
-      // Calcular SoC estimado basado en manualSoc + kWh consumidos
-      let estimatedSoc: number | null = null;
-      if (soc !== null) {
-        // SoC real del cargador - prioridad máxima
-        estimatedSoc = soc;
-      } else if (hasManualSoc) {
-        // SoC manual del usuario + kWh consumidos para estimar SoC actual
-        const kwhToSocPercent = (currentKwh / manualBatteryCapacity) * 100;
-        estimatedSoc = Math.min(100, Math.round(manualSoc! + kwhToSocPercent));
-      }
+
+      const socEstimation = calculateSocEstimation({
+        chargerSoc: soc,
+        manualSoc,
+        batteryCapacityKwh: manualBatteryCapacity,
+        currentEnergyKwh: currentKwh,
+        calibrationEnergyKwh: manualSocCalibrationKwh,
+      });
+      const estimatedSoc = socEstimation.soc;
       
       // Estimar tiempo restante basado en la potencia actual
       // Restaurar chargeMode y targetValue: priorizar memoria, luego BD
@@ -1273,15 +1290,15 @@ export const chargingRouter = router({
       
       // Calcular kWh estimados según modo de carga
       const batteryCapacity = manualBatteryCapacity;
-      const startSocValue = estimatedSoc !== null ? manualSoc ?? estimatedSoc : 20;
+      const currentSocValue = estimatedSoc ?? 20;
       let estimatedTotalKwh = 0;
       if (chargeMode === "fixed_amount" && targetValue > 0) {
         estimatedTotalKwh = targetValue / pricePerKwh;
       } else if (chargeMode === "percentage" && targetValue > 0) {
-        estimatedTotalKwh = ((targetValue - startSocValue) / 100) * batteryCapacity;
+        estimatedTotalKwh = currentKwh + (Math.max(0, targetValue - currentSocValue) / 100) * batteryCapacity;
       } else {
         // full_charge: estimar según batería
-        estimatedTotalKwh = ((100 - startSocValue) / 100) * batteryCapacity;
+        estimatedTotalKwh = currentKwh + (Math.max(0, 100 - currentSocValue) / 100) * batteryCapacity;
       }
       estimatedTotalKwh = Math.max(estimatedTotalKwh, currentKwh * 1.1); // Al menos 10% más que lo actual
       
@@ -1314,7 +1331,9 @@ export const chargingRouter = router({
       // 4) SoC manual puro (sin corrección)
       // ============================================================
       const chargeCompleteDetected = activeSessionInfo?.chargeCompleteDetected || false;
-      const energyBasedSoc = activeSessionInfo?.energyBasedSoc ?? null;
+      const energyBasedSoc = socEstimation.source === "manual" ? socEstimation.soc : null;
+      const chargeType = evse?.chargeType ?? null;
+      const manualSocAvailability = getManualSocAvailability({ chargeType, chargerSoc: soc });
       
       let displaySoc: number | null;
       let socSource: string;
@@ -1365,6 +1384,12 @@ export const chargingRouter = router({
         socSource, // "charger" | "manual" | "none"
         manualSoc: manualSoc, // SoC original ingresado por el usuario
         manualBatteryCapacityKwh: manualBatteryCapacity,
+        chargeType,
+        manualSocAvailable: manualSocAvailability.allowed,
+        manualSocUnavailableReason: manualSocAvailability.reason,
+        manualSocCalibrationKwh,
+        manualSocCalibratedAt,
+        energySinceCalibrationKwh: socEstimation.energySinceCalibrationKwh,
         voltage: voltage,
         currentAmp: currentAmp,
         progress,
@@ -1410,26 +1435,62 @@ export const chargingRouter = router({
           message: "No hay una sesión de carga activa",
         });
       }
-      
+
       let session = getActiveSessionById(activeTransaction.id);
+      const evse = await db.getEvseById(activeTransaction.evseId);
+      const lastMeterValue = await db.getLastMeterValue(activeTransaction.id);
+      const chargerSoc = session?.soc ?? lastMeterValue?.soc ?? null;
+      const manualSocAvailability = getManualSocAvailability({
+        chargeType: evse?.chargeType,
+        chargerSoc,
+      });
+
+      if (!manualSocAvailability.allowed) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: manualSocAvailability.reason ?? "El SOC manual no está disponible para esta sesión.",
+        });
+      }
+
+      const meterStartKwh = activeTransaction.meterStart
+        ? parseFloat(String(activeTransaction.meterStart)) / 1000
+        : 0;
+      const lastMeterEnergyKwh = lastMeterValue?.energyKwh
+        ? Math.max(0, parseFloat(String(lastMeterValue.energyKwh)) - meterStartKwh)
+        : 0;
+      const persistedEnergyKwh = activeTransaction.kwhConsumed
+        ? Math.max(0, parseFloat(String(activeTransaction.kwhConsumed)))
+        : 0;
+      const currentKwh = session?.currentKwh ?? Math.max(lastMeterEnergyKwh, persistedEnergyKwh);
+
+      let batteryCapacityKwh = input.batteryCapacityKwh
+        ?? session?.manualBatteryCapacityKwh
+        ?? (activeTransaction.manualBatteryCapacityKwh
+          ? parseFloat(String(activeTransaction.manualBatteryCapacityKwh))
+          : null);
+
+      if (!batteryCapacityKwh) {
+        const defaultVehicle = await db.getDefaultVehicle(ctx.user.id);
+        batteryCapacityKwh = defaultVehicle?.batteryCapacityKwh
+          ? parseFloat(String(defaultVehicle.batteryCapacityKwh))
+          : 60;
+      }
+
+      const calibratedAt = new Date();
+
       if (!session) {
-        // Si no hay sesión en memoria, crear una básica con el SoC manual
-        // Esto ocurre cuando el cargador inició la transacción por OCPP sin pasar por startCharge del frontend
         console.log(`[setManualSoc] No active session in memory for transaction ${activeTransaction.id}, creating one now`);
-        // Priorizar precio dinámico guardado en la transacción, luego precio base
         const effectivePrice = await db.getEffectiveStationPrice(activeTransaction.stationId);
-        const pricePerKwh = activeTransaction.appliedPricePerKwh 
-          ? parseFloat(String(activeTransaction.appliedPricePerKwh)) 
+        const pricePerKwh = activeTransaction.appliedPricePerKwh
+          ? parseFloat(String(activeTransaction.appliedPricePerKwh))
           : (effectivePrice?.pricePerKwh || 1800);
         const startTime = new Date(activeTransaction.startTime);
-        const currentKwh = activeTransaction.kwhConsumed ? parseFloat(activeTransaction.kwhConsumed) : 0;
         const currentCost = activeTransaction.totalCost ? parseFloat(activeTransaction.totalCost) : 0;
-        
-        // Restaurar chargeMode y targetValue desde la BD (NO hardcodear full_charge)
+
         const restoredChargeMode = (activeTransaction.chargeMode as "fixed_amount" | "percentage" | "full_charge") || "full_charge";
         const restoredTargetValue = activeTransaction.targetValue ? parseFloat(String(activeTransaction.targetValue)) : (restoredChargeMode === "full_charge" ? 100 : 0);
         console.log(`[setManualSoc] Restoring session from DB: chargeMode=${restoredChargeMode}, targetValue=${restoredTargetValue}`);
-        
+
         setActiveSession(activeTransaction.id, {
           transactionId: activeTransaction.id,
           userId: ctx.user.id,
@@ -1449,35 +1510,40 @@ export const chargingRouter = router({
           powerHistory: [],
           socTargetNotified: false,
           manualSoc: input.soc,
-          manualBatteryCapacityKwh: input.batteryCapacityKwh || 60,
+          manualBatteryCapacityKwh: batteryCapacityKwh,
+          manualSocCalibrationKwh: currentKwh,
+          manualSocCalibratedAt: calibratedAt,
           lowPowerSince: null,
           chargeCompleteDetected: false,
           chargeCompleteNotified: false,
           autoStopSent: false,
-          energyBasedSoc: null,
+          energyBasedSoc: input.soc,
         });
         session = getActiveSessionById(activeTransaction.id);
       } else {
         session.manualSoc = input.soc;
-        if (input.batteryCapacityKwh) {
-          session.manualBatteryCapacityKwh = input.batteryCapacityKwh;
-        }
+        session.manualBatteryCapacityKwh = batteryCapacityKwh;
+        session.manualSocCalibrationKwh = currentKwh;
+        session.manualSocCalibratedAt = calibratedAt;
+        session.energyBasedSoc = input.soc;
       }
-      
-      // Persistir en la base de datos para que sobreviva recargas de la app
-      try {
-        await db.updateTransaction(activeTransaction.id, {
-          manualSoc: input.soc,
-          manualBatteryCapacityKwh: (input.batteryCapacityKwh || 60).toFixed(2),
-        });
-        console.log(`[setManualSoc] Persisted to DB: transaction ${activeTransaction.id}, SoC=${input.soc}%, capacity=${input.batteryCapacityKwh || 60}kWh`);
-      } catch (e) {
-        console.error(`[setManualSoc] Error persisting to DB:`, e);
-      }
-      
-      console.log(`[setManualSoc] User ${ctx.user.id} set manual SoC=${input.soc}%, batteryCapacity=${input.batteryCapacityKwh || 'default'}kWh for transaction ${activeTransaction.id}`);
-      
-      return { success: true, soc: input.soc };
+
+      await db.updateTransaction(activeTransaction.id, {
+        manualSoc: input.soc,
+        manualBatteryCapacityKwh: batteryCapacityKwh.toFixed(2),
+        manualSocCalibrationKwh: currentKwh.toFixed(4),
+        manualSocCalibratedAt: calibratedAt.toISOString().slice(0, 19).replace("T", " "),
+      });
+
+      console.log(`[setManualSoc] User ${ctx.user.id} recalibrated transaction ${activeTransaction.id} to ${input.soc}% at ${currentKwh.toFixed(4)} kWh`);
+
+      return {
+        success: true,
+        soc: input.soc,
+        batteryCapacityKwh,
+        calibrationEnergyKwh: currentKwh,
+        calibratedAt,
+      };
     }),
 
   /**
@@ -1903,14 +1969,14 @@ export function updateActiveSessionMeterData(transactionId: number, data: {
     }
   }
   
-  // ============================================================
-  // CÁLCULO DE SoC BASADO EN ENERGÍA REAL DEL OCPP
-  // Independiente del SoC manual - usa kWh reales / capacidad batería
-  // ============================================================
-  if (session.manualSoc !== null && session.manualBatteryCapacityKwh && session.manualBatteryCapacityKwh > 0) {
-    const kwhToSocPercent = (session.currentKwh / session.manualBatteryCapacityKwh) * 100;
-    session.energyBasedSoc = Math.min(100, Math.round(session.manualSoc + kwhToSocPercent));
-  }
+  const socEstimation = calculateSocEstimation({
+    chargerSoc: session.soc,
+    manualSoc: session.manualSoc,
+    batteryCapacityKwh: session.manualBatteryCapacityKwh,
+    currentEnergyKwh: session.currentKwh,
+    calibrationEnergyKwh: session.manualSocCalibrationKwh,
+  });
+  session.energyBasedSoc = socEstimation.source === "manual" ? socEstimation.soc : null;
   
   // ============================================================
   // DETECCIÓN DE BATERÍA LLENA POR CAÍDA DE POTENCIA
@@ -2265,9 +2331,20 @@ async function completeTransactionLocally(transactionId: number, transaction: an
       const batteryCapKwh = transaction.manualBatteryCapacityKwh
         ? parseFloat(transaction.manualBatteryCapacityKwh)
         : activeSession?.manualBatteryCapacityKwh ?? null;
+      const calibrationEnergyKwh = transaction.manualSocCalibrationKwh !== null
+        && transaction.manualSocCalibrationKwh !== undefined
+        ? parseFloat(String(transaction.manualSocCalibrationKwh))
+        : activeSession?.manualSocCalibrationKwh ?? null;
 
       if (manualSocValue !== null && batteryCapKwh && batteryCapKwh > 0 && energyDelivered > 0) {
-        const calculatedSocEnd = Math.min(100, Math.round(manualSocValue + (energyDelivered / batteryCapKwh) * 100));
+        const manualSocEndEstimation = calculateSocEstimation({
+          chargerSoc: null,
+          manualSoc: manualSocValue,
+          batteryCapacityKwh: batteryCapKwh,
+          currentEnergyKwh: energyDelivered,
+          calibrationEnergyKwh,
+        });
+        const calculatedSocEnd = manualSocEndEstimation.soc ?? manualSocValue;
         const chargerSocEnd = activeSession?.soc ?? null;
         let estimatedErrorKwh: number | null = null;
         let estimatedErrorSocPct: number | null = null;

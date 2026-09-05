@@ -10,6 +10,7 @@ import {
   getActiveSessionById,
   removeActiveSession,
 } from "./charging-router";
+import { calculateSocEstimation } from "./soc-estimation";
 
 describe("Manual SoC Functionality", () => {
   const testTransactionId = 88888;
@@ -95,40 +96,124 @@ describe("Manual SoC Functionality", () => {
       expect(session?.currentKwh).toBe(5.5);
       expect(session?.currentCost).toBe(9900);
     });
-  });
 
-  describe("SoC estimation from manual input", () => {
-    it("should estimate SoC based on manualSoc + kWh consumed", () => {
-      const manualSoc = 30; // 30% al inicio
-      const batteryCapacity = 60; // 60 kWh
-      const kwhConsumed = 12; // 12 kWh cargados
+    it("should keep a late calibration absolute and add only subsequent MeterValues", async () => {
+      const { updateActiveSessionMeterData } = await import("./charging-router");
 
-      const kwhToSocPercent = (kwhConsumed / batteryCapacity) * 100;
-      const estimatedSoc = Math.min(100, Math.round(manualSoc + kwhToSocPercent));
+      setActiveSession(testTransactionId, {
+        transactionId: testTransactionId,
+        userId: 1,
+        stationId: 1,
+        connectorId: 1,
+        chargeMode: "percentage",
+        targetValue: 80,
+        startTime: new Date(),
+        currentKwh: 12,
+        currentCost: 21600,
+        pricePerKwh: 1800,
+        soc: null,
+        currentPower: 7,
+        voltage: 220,
+        current: 32,
+        lastMeterUpdate: new Date(),
+        powerHistory: [],
+        socTargetNotified: false,
+        manualSoc: 35,
+        manualBatteryCapacityKwh: 60,
+        manualSocCalibrationKwh: 12,
+        manualSocCalibratedAt: new Date(),
+      });
 
-      expect(estimatedSoc).toBe(50); // 30% + 20% = 50%
+      updateActiveSessionMeterData(testTransactionId, { currentKwh: 12, currentPower: 7 });
+      expect(getActiveSessionById(testTransactionId)?.energyBasedSoc).toBe(35);
+
+      updateActiveSessionMeterData(testTransactionId, { currentKwh: 15, currentPower: 7 });
+      expect(getActiveSessionById(testTransactionId)?.energyBasedSoc).toBe(40);
     });
 
-    it("should cap estimated SoC at 100%", () => {
-      const manualSoc = 90;
-      const batteryCapacity = 40;
-      const kwhConsumed = 10; // 25% de 40kWh
+    it("should keep OCPP SOC separate and authoritative over a prior manual calibration", async () => {
+      const { updateActiveSessionMeterData } = await import("./charging-router");
+      setActiveSession(testTransactionId, {
+        transactionId: testTransactionId,
+        userId: 1,
+        stationId: 1,
+        connectorId: 1,
+        chargeMode: "percentage",
+        targetValue: 80,
+        startTime: new Date(),
+        currentKwh: 12,
+        currentCost: 21600,
+        pricePerKwh: 1800,
+        soc: null,
+        currentPower: 7,
+        voltage: 220,
+        current: 32,
+        lastMeterUpdate: new Date(),
+        powerHistory: [],
+        socTargetNotified: false,
+        manualSoc: 35,
+        manualBatteryCapacityKwh: 60,
+        manualSocCalibrationKwh: 12,
+        manualSocCalibratedAt: new Date(),
+      });
 
-      const kwhToSocPercent = (kwhConsumed / batteryCapacity) * 100;
-      const estimatedSoc = Math.min(100, Math.round(manualSoc + kwhToSocPercent));
+      updateActiveSessionMeterData(testTransactionId, { currentKwh: 30, soc: 76, currentPower: 40 });
 
-      expect(estimatedSoc).toBe(100); // 90% + 25% = 115% → capped at 100%
+      const updated = getActiveSessionById(testTransactionId);
+      expect(updated?.soc).toBe(76);
+      expect(updated?.energyBasedSoc).toBeNull();
+    });
+  });
+
+  describe("SoC estimation from an absolute manual calibration", () => {
+    it("should keep a late 35% calibration at exactly 35%", () => {
+      const result = calculateSocEstimation({
+        chargerSoc: null,
+        manualSoc: 35,
+        batteryCapacityKwh: 60,
+        currentEnergyKwh: 12,
+        calibrationEnergyKwh: 12,
+      });
+
+      expect(result.soc).toBe(35);
+      expect(result.energySinceCalibrationKwh).toBe(0);
+    });
+
+    it("should add only the energy delivered after calibration", () => {
+      const result = calculateSocEstimation({
+        chargerSoc: null,
+        manualSoc: 35,
+        batteryCapacityKwh: 60,
+        currentEnergyKwh: 15,
+        calibrationEnergyKwh: 12,
+      });
+
+      expect(result.soc).toBe(40);
+      expect(result.energySinceCalibrationKwh).toBe(3);
+    });
+
+    it("should cap the post-calibration estimate at 100%", () => {
+      const result = calculateSocEstimation({
+        chargerSoc: null,
+        manualSoc: 90,
+        batteryCapacityKwh: 40,
+        currentEnergyKwh: 20,
+        calibrationEnergyKwh: 10,
+      });
+
+      expect(result.soc).toBe(100);
     });
 
     it("should handle small battery capacity correctly", () => {
-      const manualSoc = 20;
-      const batteryCapacity = 24; // Small EV battery
-      const kwhConsumed = 4.8; // 20% of 24kWh
+      const result = calculateSocEstimation({
+        chargerSoc: null,
+        manualSoc: 20,
+        batteryCapacityKwh: 24,
+        currentEnergyKwh: 8.8,
+        calibrationEnergyKwh: 4,
+      });
 
-      const kwhToSocPercent = (kwhConsumed / batteryCapacity) * 100;
-      const estimatedSoc = Math.min(100, Math.round(manualSoc + kwhToSocPercent));
-
-      expect(estimatedSoc).toBe(40); // 20% + 20% = 40%
+      expect(result.soc).toBe(40);
     });
   });
 
