@@ -4306,3 +4306,5 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [ ] Tarjeta social EVGreen: crear una imagen Open Graph de alta calidad y formato 1200×630 para compartir app.evgreen.lat en WhatsApp y redes sociales.
 - [ ] Metadatos sociales: configurar `og:image`, `og:title`, `og:description`, URL canónica y Twitter Card con activos públicos rastreables por Meta.
 - [ ] QA WhatsApp/Open Graph: verificar desde producción que la página y la imagen responden públicamente, tienen dimensiones correctas y no requieren autenticación.
+- [x] Presentación modelo de inversión: reemplazar todas las imágenes genéricas de estaciones por los renders oficiales EVGreen diurno y nocturno aportados por el usuario, conservando contenido y diseño.
+- [x] QA presentación con renders: revisar diapositiva por diapositiva continuidad visual, fidelidad de la infraestructura, texto y ausencia de duplicaciones antes de presentar la versión corregida.
