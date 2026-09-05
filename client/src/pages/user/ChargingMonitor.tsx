@@ -42,6 +42,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { useNotificationSound } from "@/hooks/useNotificationSound";
+import { hasAuthoritativeSoc } from "@/lib/charging-soc";
 import { PowerChart } from "@/components/PowerChart";
 import {
   AlertDialog,
@@ -227,8 +228,8 @@ export default function ChargingMonitor() {
   
   // Mutation para enviar SoC manual
   const setManualSocMutation = trpc.charging.setManualSoc.useMutation({
-    onSuccess: () => {
-      toast.success("SoC actualizado correctamente");
+    onSuccess: (data) => {
+      toast.success(`SOC recalibrado a ${data.soc}%. La energía cargada antes de este ajuste no se sumará nuevamente.`);
       setShowSocInput(false);
       refetch();
     },
@@ -365,13 +366,16 @@ export default function ChargingMonitor() {
     
     // Calcular progreso actual dentro del effect
     const realSocVal = (session as any).soc;
+    const socSourceVal = (session as any).socSource as string | undefined;
     const isSimVal = (session as any).isSimulation;
     const simProgressVal = (session as any).progress;
     const startBatteryVal = session.startPercentage || 20;
     let currentProgress = 0;
+    let canUseSocForStop = false;
     
-    if (realSocVal !== null && realSocVal !== undefined) {
+    if (hasAuthoritativeSoc(realSocVal, socSourceVal)) {
       currentProgress = realSocVal;
+      canUseSocForStop = true;
     } else if (isSimVal && typeof simProgressVal === 'number') {
       if (currentChargeMode === "percentage") {
         const targetBat = session.targetPercentage || 100;
@@ -381,21 +385,19 @@ export default function ChargingMonitor() {
       } else {
         currentProgress = simProgressVal;
       }
-    } else {
-      const kwhDel = session.currentKwh || 0;
-      currentProgress = startBatteryVal + (kwhDel / 60) * 100;
+      canUseSocForStop = true;
     }
     currentProgress = Math.min(100, Math.max(0, currentProgress));
     
     // REGLA: lo que ocurra primero detiene la carga
     // 1. Verificar si la batería llegó al 100% (aplica a TODOS los modos)
-    if (currentProgress >= 100 && currentProgress > 0) {
+    if (canUseSocForStop && currentProgress >= 100 && currentProgress > 0) {
       shouldAutoStop = true;
       reason = `🔋 ¡Batería al 100%! Carga completa.`;
     }
     
     // 2. Verificar por porcentaje objetivo (solo modo percentage)
-    if (!shouldAutoStop && currentChargeMode === "percentage") {
+    if (!shouldAutoStop && canUseSocForStop && currentChargeMode === "percentage") {
       const targetPct = session.targetPercentage || 100;
       if (currentProgress >= targetPct && currentProgress > 0) {
         shouldAutoStop = true;
@@ -462,11 +464,14 @@ export default function ChargingMonitor() {
   const chargeCompleteDetected = (session as any).chargeCompleteDetected as boolean | undefined;
   const energyBasedSoc = (session as any).energyBasedSoc as number | null;
   const lowPowerMinutes = (session as any).lowPowerMinutes as number | null;
+  const manualSocAvailable = (session as any).manualSocAvailable !== false;
+  const manualSocUnavailableReason = (session as any).manualSocUnavailableReason as string | null | undefined;
+  const energySinceCalibrationKwh = Number((session as any).energySinceCalibrationKwh || 0);
+  const manualSocCalibratedAt = (session as any).manualSocCalibratedAt as string | Date | null | undefined;
   
   let progressPercentage = 0;
   
-  // El servidor ya calcula el SoC inteligente con prioridades:
-  // 1) SoC real del cargador, 2) Batería llena por potencia, 3) Energía real + manual, 4) Manual puro
+  // El servidor es la única fuente de verdad para SOC real o estimado.
   if (realSoc !== null && realSoc !== undefined) {
     progressPercentage = realSoc;
   } else if (isSimulation && typeof simulationProgress === 'number') {
@@ -488,12 +493,8 @@ export default function ChargingMonitor() {
       progressPercentage = simulationProgress;
     }
   } else {
-    // Sin SoC real y sin simulación: estimar basado en kWh
-    const startBattery = session.startPercentage || 20;
-    const batteryCapacity = serverBatteryCapacity || 60;
-    const kwhDelivered = session.currentKwh || 0;
-    const percentAdded = (kwhDelivered / batteryCapacity) * 100;
-    progressPercentage = startBattery + percentAdded;
+    // Sin SOC autoritativo: no inventar un porcentaje local que pueda disparar un auto-stop.
+    progressPercentage = 0;
   }
   
   // Asegurar rango válido
@@ -621,50 +622,63 @@ export default function ChargingMonitor() {
           </Badge>
         </div>
       ) : socSource === "manual" ? (
-        <div className="flex justify-center mt-1 gap-2">
-          <Badge variant="outline" className="text-xs text-blue-600 border-blue-300">
-            <BatteryCharging className="w-3 h-3 mr-1" />
-            SoC manual: {serverManualSoc}% • Batería: {serverBatteryCapacity} kWh
-          </Badge>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-5 px-1 text-xs text-blue-600"
-            onClick={() => {
-              setManualSocInput(String(serverManualSoc || ""));
-              setManualCapacityInput(String(serverBatteryCapacity || 60));
-              setShowSocInput(true);
-            }}
-          >
-            <Edit3 className="w-3 h-3" />
-          </Button>
+        <div className="mx-4 mt-2 flex flex-col items-center gap-1.5 text-center">
+          <div className="flex max-w-full items-center gap-1.5">
+            <Badge variant="outline" className="max-w-full whitespace-normal text-xs text-blue-600 border-blue-300">
+              <BatteryCharging className="w-3 h-3 mr-1 shrink-0" />
+              SOC estimado desde calibración: {serverManualSoc}% • {serverBatteryCapacity} kWh
+            </Badge>
+            {manualSocAvailable && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 shrink-0 p-0 text-blue-600"
+                aria-label="Recalibrar SOC actual"
+                onClick={() => {
+                  setManualSocInput(String(serverManualSoc || ""));
+                  setManualCapacityInput(String(serverBatteryCapacity || 60));
+                  setShowSocInput(true);
+                }}
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+              </Button>
+            )}
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            {energySinceCalibrationKwh.toFixed(2)} kWh añadidos desde la última calibración
+            {manualSocCalibratedAt ? ` • ${new Date(manualSocCalibratedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}
+          </p>
         </div>
       ) : (
         <div className="flex justify-center mt-1">
-          {hasRealData || !isSimulation ? (
+          {manualSocAvailable && (hasRealData || !isSimulation) ? (
             <Badge 
               variant="outline" 
               className="text-xs text-amber-600 border-amber-300 cursor-pointer hover:bg-amber-50 dark:hover:bg-amber-900/20"
               onClick={() => setShowSocInput(true)}
             >
               <Edit3 className="w-3 h-3 mr-1" />
-              Ingresar % batería manualmente
+              Calibrar SOC actual
             </Badge>
+          ) : manualSocUnavailableReason ? (
+            <div className="mx-4 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-center text-xs text-muted-foreground">
+              {manualSocUnavailableReason}
+            </div>
           ) : null}
         </div>
       )}
       
       {/* Formulario de SoC manual */}
-      {showSocInput && (
+      {showSocInput && manualSocAvailable && (
         <div className="px-4 mt-3">
           <Card className="border-blue-500/30 bg-blue-500/5">
             <CardContent className="p-4">
               <div className="flex items-center gap-2 mb-3">
                 <BatteryCharging className="w-4 h-4 text-blue-600" />
-                <span className="text-sm font-semibold text-foreground">Ingresa el estado de tu batería</span>
+                <span className="text-sm font-semibold text-foreground">Recalibrar SOC actual</span>
               </div>
               <p className="text-xs text-muted-foreground mb-3">
-                Tu cargador no reporta el SoC. Ingresa el porcentaje actual de tu vehículo para cálculos más precisos.
+                Escribe el porcentaje que muestra ahora tu vehículo. Este valor reemplaza la estimación actual: la energía cargada antes del ajuste no se volverá a sumar.
               </p>
               {defaultVehicle && (
                 <div className="text-xs bg-blue-500/10 text-blue-700 dark:text-blue-300 rounded-md px-2 py-1.5 mb-3 flex items-center gap-1">
@@ -672,7 +686,7 @@ export default function ChargingMonitor() {
                   <span>Vehículo: <strong>{defaultVehicle.brand} {defaultVehicle.model}</strong>{defaultVehicle.batteryCapacityKwh ? ` (${defaultVehicle.batteryCapacityKwh} kWh)` : ''}</span>
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label className="text-xs font-medium text-muted-foreground mb-1 block">% Batería actual</label>
                   <div className="flex items-center gap-1">
@@ -704,7 +718,7 @@ export default function ChargingMonitor() {
                   </div>
                 </div>
               </div>
-              <div className="flex gap-2 mt-3">
+              <div className="mt-3 flex flex-col-reverse gap-2 sm:flex-row">
                 <Button
                   variant="outline"
                   size="sm"
@@ -739,7 +753,7 @@ export default function ChargingMonitor() {
                   ) : (
                     <>
                       <Check className="w-4 h-4 mr-1" />
-                      Confirmar
+                      Aplicar como valor actual
                     </>
                   )}
                 </Button>

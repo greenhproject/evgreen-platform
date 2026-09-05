@@ -120,6 +120,13 @@
       "when": 1788557258622,
       "tag": "0035_contract_operator_profile",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "5",
+      "when": 1788620400000,
+      "tag": "0036_manual_soc_calibration_anchor",
+      "breakpoints": true
     }
   ]
 }

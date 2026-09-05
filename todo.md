@@ -4308,3 +4308,9 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] QA WhatsApp/Open Graph: verificar desde producción que la página y la imagen responden públicamente, tienen dimensiones correctas y no requieren autenticación.
 - [x] Presentación modelo de inversión: reemplazar todas las imágenes genéricas de estaciones por los renders oficiales EVGreen diurno y nocturno aportados por el usuario, conservando contenido y diseño.
 - [x] QA presentación con renders: revisar diapositiva por diapositiva continuidad visual, fidelidad de la infraestructura, texto y ausencia de duplicaciones antes de presentar la versión corregida.
+- [x] SOC manual AC: tratar cada ajuste ingresado por el usuario como una recalibración absoluta del porcentaje actual, nunca como incremento acumulable sobre el SOC estimado previo.
+- [x] SOC AC persistente: continuar la estimación desde el valor y la energía del instante de calibración, incluso en sesiones largas, sin provocar cierres anticipados por doble conteo.
+- [x] SOC DC autoritativo: priorizar el porcentaje real reportado por OCPP y bloquear o ignorar calibraciones manuales cuando exista telemetría válida del cargador.
+- [x] UX calibración SOC: precargar el porcentaje mostrado, explicar que se reemplazará la estimación actual y mostrar mensajes claros de éxito o error en móvil.
+- [x] QA SOC AC/DC: validar escenarios de calibración tardía, múltiples recalibraciones, límites 0–100 %, telemetría DC y reglas de finalización automática antes de publicar.
+- [ ] QA productivo SOC: comprobar en una sesión AC controlada que la calibración queda absoluta y en una sesión DC que OCPP mantiene prioridad, sin alterar la transacción real 1140015.

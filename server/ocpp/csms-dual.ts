@@ -17,6 +17,7 @@ import { findPendingSessionByOcppIdentity, findPendingSessionFromDb, removePendi
 import { sendChargingCompleteNotification } from "../firebase/fcm";
 // alertsService ya no se usa directamente aquí — las alertas se manejan en index.ts
 import mysql from "mysql2/promise";
+import { calculateSocEstimation } from "../charging/soc-estimation";
 
 // BUILD VERSION para diagnóstico de deploys
 const BUILD_VERSION = "v2026.02.18.B";
@@ -1366,9 +1367,19 @@ export class DualCSMS {
       const battCapKwh = transaction.manualBatteryCapacityKwh
         ? parseFloat(String(transaction.manualBatteryCapacityKwh))
         : (activeSession?.manualBatteryCapacityKwh ?? null);
+      const calibrationEnergyKwh = transaction.manualSocCalibrationKwh !== null
+        && transaction.manualSocCalibrationKwh !== undefined
+        ? parseFloat(String(transaction.manualSocCalibrationKwh))
+        : activeSession?.manualSocCalibrationKwh ?? null;
       if (manualSocStart !== null && battCapKwh && battCapKwh > 0 && energyDelivered > 0) {
-        manualSocEndValue = Math.min(100, Math.round(manualSocStart + (energyDelivered / battCapKwh) * 100));
-        console.log(`[CSMS-DUAL] manualSocEnd calculado: ${manualSocStart}% + (${energyDelivered.toFixed(3)} kWh / ${battCapKwh} kWh) * 100 = ${manualSocEndValue}%`);
+        manualSocEndValue = calculateSocEstimation({
+          chargerSoc: null,
+          manualSoc: manualSocStart,
+          batteryCapacityKwh: battCapKwh,
+          currentEnergyKwh: energyDelivered,
+          calibrationEnergyKwh,
+        }).soc;
+        console.log(`[CSMS-DUAL] manualSocEnd calculado desde ancla ${calibrationEnergyKwh ?? 0} kWh: ${manualSocEndValue}%`);
       }
     } catch (socCalcErr) {
       console.error(`[CSMS-DUAL] Error calculando manualSocEnd:`, socCalcErr);
@@ -1603,10 +1614,19 @@ export class DualCSMS {
       const batteryCapKwh = transaction.manualBatteryCapacityKwh
         ? parseFloat(transaction.manualBatteryCapacityKwh)
         : activeSession?.manualBatteryCapacityKwh ?? null;
+      const calibrationEnergyKwh = transaction.manualSocCalibrationKwh !== null
+        && transaction.manualSocCalibrationKwh !== undefined
+        ? parseFloat(String(transaction.manualSocCalibrationKwh))
+        : activeSession?.manualSocCalibrationKwh ?? null;
 
       if (manualSocValue !== null && batteryCapKwh && batteryCapKwh > 0 && energyDelivered > 0) {
-        // SoC calculado al finalizar: SoC inicio + (kWh reales / capacidad) * 100
-        const calculatedSocEnd = Math.min(100, Math.round(manualSocValue + (energyDelivered / batteryCapKwh) * 100));
+        const calculatedSocEnd = calculateSocEstimation({
+          chargerSoc: null,
+          manualSoc: manualSocValue,
+          batteryCapacityKwh: batteryCapKwh,
+          currentEnergyKwh: energyDelivered,
+          calibrationEnergyKwh,
+        }).soc ?? manualSocValue;
         // SoC reportado por el cargador (si disponible en MeterValues)
         const chargerSocEnd = activeSession?.soc ?? null;
         // Error estimado: si el cargador reportó SoC, comparar con el calculado
@@ -1878,6 +1898,8 @@ export class DualCSMS {
             socTargetNotified: false,
             manualSoc: null,
             manualBatteryCapacityKwh: null,
+            manualSocCalibrationKwh: null,
+            manualSocCalibratedAt: null,
             lowPowerSince: null,
             chargeCompleteDetected: false,
             chargeCompleteNotified: false,
@@ -2062,12 +2084,16 @@ export class DualCSMS {
             
             // 3. Verificar por porcentaje objetivo
             if (!shouldAutoStop && activeSession.chargeMode === "percentage" && activeSession.targetValue > 0) {
-              const batteryCapacity = activeSession.manualBatteryCapacityKwh || 60; // Usar capacidad real del vehículo
-              const startPercentage = activeSession.manualSoc || 20;
-              const targetKwh = ((activeSession.targetValue - startPercentage) / 100) * batteryCapacity;
-              if (consumedKwh >= targetKwh && targetKwh > 0) {
+              const authoritativeSoc = calculateSocEstimation({
+                chargerSoc: activeSession.soc,
+                manualSoc: activeSession.manualSoc,
+                batteryCapacityKwh: activeSession.manualBatteryCapacityKwh,
+                currentEnergyKwh: consumedKwh,
+                calibrationEnergyKwh: activeSession.manualSocCalibrationKwh,
+              });
+              if (authoritativeSoc.soc !== null && authoritativeSoc.soc >= activeSession.targetValue) {
                 shouldAutoStop = true;
-                autoStopReason = `Porcentaje objetivo alcanzado: ${consumedKwh.toFixed(2)} kWh >= ${targetKwh.toFixed(2)} kWh (${activeSession.targetValue}%)`;
+                autoStopReason = `Porcentaje objetivo alcanzado: SOC ${authoritativeSoc.soc}% >= ${activeSession.targetValue}% (${authoritativeSoc.source})`;
               }
             }
             // full_charge: no auto-stop por lógica de negocio, se detecta por caída de potencia en AC

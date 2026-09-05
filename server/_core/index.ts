@@ -34,6 +34,7 @@ import { handleDocusignWebhook } from "../contracts/docusign-webhook";
 import { handleManualContractDownload } from "../contracts/manual-contract-download";
 import { ensureContractDocumentStorage } from "../contracts/ensure-contract-document-storage";
 import { registerStorageProxy } from "./storageProxy";
+import { calculateSocEstimation } from "../charging/soc-estimation";
 
 // Grace period para desconexiones temporales del legacy CSMS
 // Evita notificaciones por reconexiones intermitentes (WiFi inestable, reinicios breves)
@@ -1507,9 +1508,19 @@ async function handleOCPP16Message(
         const manualSocStart = sessionForSoc?.manualSoc ?? (transaction as any).manualSoc ?? null;
         const battCapKwh = sessionForSoc?.manualBatteryCapacityKwh
           ?? ((transaction as any).manualBatteryCapacityKwh ? parseFloat(String((transaction as any).manualBatteryCapacityKwh)) : null);
+        const calibrationEnergyKwh = sessionForSoc?.manualSocCalibrationKwh
+          ?? ((transaction as any).manualSocCalibrationKwh !== null && (transaction as any).manualSocCalibrationKwh !== undefined
+            ? parseFloat(String((transaction as any).manualSocCalibrationKwh))
+            : null);
         if (manualSocStart !== null && battCapKwh && battCapKwh > 0 && energyDelivered > 0) {
-          manualSocEndValue = Math.min(100, Math.round(manualSocStart + (energyDelivered / battCapKwh) * 100));
-          console.log(`[OCPP] StopTransaction - manualSocEnd calculado: ${manualSocStart}% + (${energyDelivered.toFixed(3)} kWh / ${battCapKwh} kWh) * 100 = ${manualSocEndValue}%`);
+          manualSocEndValue = calculateSocEstimation({
+            chargerSoc: null,
+            manualSoc: manualSocStart,
+            batteryCapacityKwh: battCapKwh,
+            currentEnergyKwh: energyDelivered,
+            calibrationEnergyKwh,
+          }).soc;
+          console.log(`[OCPP] StopTransaction - manualSocEnd calculado desde ancla ${calibrationEnergyKwh ?? 0} kWh: ${manualSocEndValue}%`);
         }
       } catch (socCalcErr) {
         console.error(`[OCPP] Error calculando manualSocEnd:`, socCalcErr);
@@ -1604,9 +1615,19 @@ async function handleOCPP16Message(
         const manualSocValue = activeSession?.manualSoc ?? (transaction as any).manualSoc ?? null;
         const batteryCapKwh = activeSession?.manualBatteryCapacityKwh 
           ?? ((transaction as any).manualBatteryCapacityKwh ? parseFloat(String((transaction as any).manualBatteryCapacityKwh)) : null);
+        const calibrationEnergyKwh = activeSession?.manualSocCalibrationKwh
+          ?? ((transaction as any).manualSocCalibrationKwh !== null && (transaction as any).manualSocCalibrationKwh !== undefined
+            ? parseFloat(String((transaction as any).manualSocCalibrationKwh))
+            : null);
         
         if (manualSocValue !== null && batteryCapKwh && batteryCapKwh > 0 && energyDelivered > 0) {
-          const calculatedSocEnd = Math.min(100, Math.round(manualSocValue + (energyDelivered / batteryCapKwh) * 100));
+          const calculatedSocEnd = calculateSocEstimation({
+            chargerSoc: null,
+            manualSoc: manualSocValue,
+            batteryCapacityKwh: batteryCapKwh,
+            currentEnergyKwh: energyDelivered,
+            calibrationEnergyKwh,
+          }).soc ?? manualSocValue;
           const chargerSocEnd = activeSession?.soc ?? null;
           let estimatedErrorKwh: number | null = null;
           let estimatedErrorSocPct: number | null = null;
@@ -2019,6 +2040,12 @@ async function handleOCPP16Message(
                 socTargetNotified: false,
                 manualSoc: autoManualSoc,
                 manualBatteryCapacityKwh: autoBatteryCapacity,
+                manualSocCalibrationKwh: (transaction as any).manualSocCalibrationKwh !== null && (transaction as any).manualSocCalibrationKwh !== undefined
+                  ? parseFloat(String((transaction as any).manualSocCalibrationKwh))
+                  : (autoManualSoc !== null ? 0 : null),
+                manualSocCalibratedAt: (transaction as any).manualSocCalibratedAt
+                  ? new Date((transaction as any).manualSocCalibratedAt)
+                  : null,
                 lowPowerSince: null,
                 chargeCompleteDetected: false,
                 chargeCompleteNotified: false,
@@ -2138,6 +2165,12 @@ async function handleOCPP16Message(
               socTargetNotified: false,
               manualSoc: autoManualSoc2,
               manualBatteryCapacityKwh: autoBatteryCapacity2,
+              manualSocCalibrationKwh: (transaction as any).manualSocCalibrationKwh !== null && (transaction as any).manualSocCalibrationKwh !== undefined
+                ? parseFloat(String((transaction as any).manualSocCalibrationKwh))
+                : (autoManualSoc2 !== null ? 0 : null),
+              manualSocCalibratedAt: (transaction as any).manualSocCalibratedAt
+                ? new Date((transaction as any).manualSocCalibratedAt)
+                : null,
               lowPowerSince: null,
               chargeCompleteDetected: false,
               chargeCompleteNotified: false,

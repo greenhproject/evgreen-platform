@@ -7,64 +7,69 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  * 2. Detección de batería llena por caída de potencia
  * 3. Prioridad de fuentes de SoC
  */
+import { calculateSocEstimation } from "./charging/soc-estimation";
 
 describe("SoC Correction - Energy-based SoC Calculation", () => {
-  it("should calculate energyBasedSoc from manual SoC + real kWh delivered", () => {
-    // Simular: SoC manual = 36%, Batería = 90 kWh, kWh entregados = 15.22
-    const manualSoc = 36;
-    const batteryCapacityKwh = 90;
-    const currentKwh = 15.22;
-    
-    const kwhToSocPercent = (currentKwh / batteryCapacityKwh) * 100;
-    const energyBasedSoc = Math.min(100, Math.round(manualSoc + kwhToSocPercent));
-    
-    // 36% + (15.22/90)*100 = 36% + 16.9% = 52.9% ≈ 53%
-    expect(energyBasedSoc).toBe(53);
+  it("keeps the manual SOC unchanged at the calibration instant", () => {
+    const result = calculateSocEstimation({
+      chargerSoc: null,
+      manualSoc: 36,
+      batteryCapacityKwh: 90,
+      currentEnergyKwh: 15.22,
+      calibrationEnergyKwh: 15.22,
+    });
+
+    expect(result.soc).toBe(36);
+    expect(result.energySinceCalibrationKwh).toBe(0);
   });
 
-  it("should cap energyBasedSoc at 100%", () => {
-    const manualSoc = 80;
-    const batteryCapacityKwh = 40;
-    const currentKwh = 20; // 50% of battery
-    
-    const kwhToSocPercent = (currentKwh / batteryCapacityKwh) * 100;
-    const energyBasedSoc = Math.min(100, Math.round(manualSoc + kwhToSocPercent));
-    
-    // 80% + 50% = 130% → capped at 100%
-    expect(energyBasedSoc).toBe(100);
+  it("adds only energy delivered after calibration", () => {
+    const result = calculateSocEstimation({
+      chargerSoc: null,
+      manualSoc: 36,
+      batteryCapacityKwh: 90,
+      currentEnergyKwh: 24.22,
+      calibrationEnergyKwh: 15.22,
+    });
+
+    expect(result.soc).toBe(46);
+    expect(result.energySinceCalibrationKwh).toBe(9);
   });
 
-  it("should handle small battery capacity correctly", () => {
-    const manualSoc = 20;
-    const batteryCapacityKwh = 24; // Small EV battery
-    const currentKwh = 12;
-    
-    const kwhToSocPercent = (currentKwh / batteryCapacityKwh) * 100;
-    const energyBasedSoc = Math.min(100, Math.round(manualSoc + kwhToSocPercent));
-    
-    // 20% + 50% = 70%
-    expect(energyBasedSoc).toBe(70);
+  it("caps the estimate at 100%", () => {
+    const result = calculateSocEstimation({
+      chargerSoc: null,
+      manualSoc: 80,
+      batteryCapacityKwh: 40,
+      currentEnergyKwh: 30,
+      calibrationEnergyKwh: 10,
+    });
+
+    expect(result.soc).toBe(100);
   });
 
   it("should handle zero kWh delivered", () => {
-    const manualSoc = 50;
-    const batteryCapacityKwh = 60;
-    const currentKwh = 0;
-    
-    const kwhToSocPercent = (currentKwh / batteryCapacityKwh) * 100;
-    const energyBasedSoc = Math.min(100, Math.round(manualSoc + kwhToSocPercent));
-    
-    // 50% + 0% = 50%
-    expect(energyBasedSoc).toBe(50);
+    const result = calculateSocEstimation({
+      chargerSoc: null,
+      manualSoc: 50,
+      batteryCapacityKwh: 60,
+      currentEnergyKwh: 0,
+      calibrationEnergyKwh: 0,
+    });
+
+    expect(result.soc).toBe(50);
   });
 
   it("should not calculate energyBasedSoc when batteryCapacity is 0 or null", () => {
-    const manualSoc = 50;
-    const batteryCapacityKwh = 0;
-    
-    // The condition checks batteryCapacityKwh > 0
-    const shouldCalculate = manualSoc !== null && batteryCapacityKwh && batteryCapacityKwh > 0;
-    expect(shouldCalculate).toBeFalsy();
+    const result = calculateSocEstimation({
+      chargerSoc: null,
+      manualSoc: 50,
+      batteryCapacityKwh: 0,
+      currentEnergyKwh: 5,
+      calibrationEnergyKwh: 0,
+    });
+
+    expect(result.soc).toBeNull();
   });
 });
 
@@ -236,64 +241,54 @@ describe("SoC Correction - SoC Source Priority", () => {
 });
 
 describe("SoC Correction - Real-world Scenarios", () => {
-  it("Scenario: User enters 36% manual SoC but real battery is at 50%", () => {
-    // User enters 36% but real is 50%. Battery = 90 kWh.
-    // After 15.22 kWh delivered:
-    // Manual-based: 36% + (15.22/90)*100 = 53% (close to real)
-    // Real battery: 50% + (15.22/90)*100 = 67%
-    // The energy-based calculation self-corrects as more kWh are delivered
-    const manualSoc = 36;
-    const realSoc = 50; // Unknown to the system
-    const batteryCapacity = 90;
-    const kwhDelivered = 15.22;
-    
-    const energyBasedSoc = Math.min(100, Math.round(manualSoc + (kwhDelivered / batteryCapacity) * 100));
-    
-    // Even with wrong manual SoC, the kWh are real from OCPP
-    expect(energyBasedSoc).toBe(53);
-    
-    // But when power drops to 0, we detect battery full regardless
-    const chargeCompleteDetected = true; // Power dropped to 0
-    const finalSoc = chargeCompleteDetected ? 100 : energyBasedSoc;
+  it("Scenario: a late calibration replaces the prior estimate", () => {
+    const calibrated = calculateSocEstimation({
+      chargerSoc: null,
+      manualSoc: 35,
+      batteryCapacityKwh: 60,
+      currentEnergyKwh: 12,
+      calibrationEnergyKwh: 12,
+    });
+    expect(calibrated.soc).toBe(35);
+
+    const afterThreeKwh = calculateSocEstimation({
+      chargerSoc: null,
+      manualSoc: 35,
+      batteryCapacityKwh: 60,
+      currentEnergyKwh: 15,
+      calibrationEnergyKwh: 12,
+    });
+    expect(afterThreeKwh.soc).toBe(40);
+
+    const chargeCompleteDetected = true;
+    const finalSoc = chargeCompleteDetected ? 100 : afterThreeKwh.soc;
     expect(finalSoc).toBe(100);
   });
 
-  it("Scenario: App shows 100% but real battery is at 95%", () => {
-    // If manual SoC was too high (e.g., 60% when real is 55%)
-    // and battery capacity is underestimated
-    // The energy-based calc might reach 100% before real battery does
-    // But power detection saves us: power won't drop until real 100%
-    const manualSoc = 60;
-    const batteryCapacity = 50; // Underestimated (real is 60 kWh)
-    const kwhDelivered = 25;
-    
-    const energyBasedSoc = Math.min(100, Math.round(manualSoc + (kwhDelivered / batteryCapacity) * 100));
-    // 60% + 50% = 110% → capped at 100%
-    expect(energyBasedSoc).toBe(100);
-    
-    // But power detection hasn't triggered yet (power is still > 0.5 kW)
+  it("Scenario: OCPP SOC remains authoritative over a prior manual value", () => {
+    const result = calculateSocEstimation({
+      chargerSoc: 55,
+      manualSoc: 90,
+      batteryCapacityKwh: 50,
+      currentEnergyKwh: 25,
+      calibrationEnergyKwh: 0,
+    });
+
+    expect(result.soc).toBe(55);
+    expect(result.source).toBe("charger");
     const chargeCompleteDetected = false;
-    const currentPower = 3.5; // Still charging at 3.5 kW
-    
-    // In this case, the SoC shows 100% but charging continues
-    // The user should see "SoC manual" badge, not "battery full"
-    // This is acceptable because the system will stop when power actually drops
     expect(chargeCompleteDetected).toBe(false);
-    expect(currentPower).toBeGreaterThan(0.5);
   });
 
   it("Scenario: Charger charges faster than estimated", () => {
-    // 7 kW charger but battery accepts 7.4 kW initially
-    // After 2 hours, more kWh delivered than estimated
-    const manualSoc = 20;
-    const batteryCapacity = 60;
-    const kwhDelivered = 16; // More than expected for 2h at 7kW
-    
-    const energyBasedSoc = Math.min(100, Math.round(manualSoc + (kwhDelivered / batteryCapacity) * 100));
-    // 20% + 26.7% = 46.7% ≈ 47%
-    expect(energyBasedSoc).toBe(47);
-    
-    // The energy-based SoC automatically adjusts because it uses REAL kWh
-    // not estimated kWh based on power rating
+    const result = calculateSocEstimation({
+      chargerSoc: null,
+      manualSoc: 20,
+      batteryCapacityKwh: 60,
+      currentEnergyKwh: 16,
+      calibrationEnergyKwh: 4,
+    });
+
+    expect(result.soc).toBe(40);
   });
 });

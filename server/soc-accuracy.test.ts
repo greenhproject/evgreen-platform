@@ -3,6 +3,7 @@
  * Verifica el cálculo de errores, sugerencias de capacidad y lógica de registro
  */
 import { describe, it, expect } from "vitest";
+import { calculateSocEstimation } from "./charging/soc-estimation";
 
 // ============================================================================
 // FUNCIONES PURAS DE CÁLCULO (extraídas de la lógica de csms-dual.ts y db.ts)
@@ -11,10 +12,19 @@ import { describe, it, expect } from "vitest";
 /**
  * Calcula el SoC estimado al finalizar la carga basado en datos manuales y kWh reales
  */
-function calculateSocEnd(manualSocStart: number, realKwhDelivered: number, batteryCapacityKwh: number): number {
-  if (batteryCapacityKwh <= 0) return manualSocStart;
-  const kwhToSocPercent = (realKwhDelivered / batteryCapacityKwh) * 100;
-  return Math.min(100, Math.round(manualSocStart + kwhToSocPercent));
+function calculateSocEnd(
+  manualSocStart: number,
+  realKwhDelivered: number,
+  batteryCapacityKwh: number,
+  calibrationEnergyKwh = 0,
+): number {
+  return calculateSocEstimation({
+    chargerSoc: null,
+    manualSoc: manualSocStart,
+    batteryCapacityKwh,
+    currentEnergyKwh: realKwhDelivered,
+    calibrationEnergyKwh,
+  }).soc ?? manualSocStart;
 }
 
 /**
@@ -70,6 +80,11 @@ function determineDetectionMethod(
 // ============================================================================
 
 describe("SoC Accuracy - calculateSocEnd", () => {
+  it("mantiene una calibración tardía en su valor absoluto", () => {
+    expect(calculateSocEnd(35, 12, 60, 12)).toBe(35);
+    expect(calculateSocEnd(35, 15, 60, 12)).toBe(40);
+  });
+
   it("calcula SoC final correctamente con datos típicos", () => {
     // Batería de 60 kWh, SoC inicial 20%, cargó 24 kWh → 20 + 40 = 60%
     expect(calculateSocEnd(20, 24, 60)).toBe(60);
@@ -95,8 +110,8 @@ describe("SoC Accuracy - calculateSocEnd", () => {
   });
 
   it("maneja kWh muy pequeños (carga corta)", () => {
-    // Batería 60 kWh, SoC inicial 50%, cargó 0.5 kWh → 50 + 0.83 ≈ 51%
-    expect(calculateSocEnd(50, 0.5, 60)).toBe(51);
+    // Batería 60 kWh, SoC inicial 50%, cargó 0.5 kWh → 50 + 0.83 = 50.8%
+    expect(calculateSocEnd(50, 0.5, 60)).toBe(50.8);
   });
 });
 
