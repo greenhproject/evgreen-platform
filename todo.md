@@ -4303,8 +4303,8 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Diseño PDF contractual: crear una portada EVGreen de página completa, jerarquía editorial moderna, encabezados, pies, numeración y bloques de firma presentables sin alterar el contenido legal.
 - [x] Identidad visual contractual: integrar estratégicamente los logos oficiales EVGreen blanco/negro y Green House Project SAS, preservando transparencia, proporciones y alta resolución.
 - [x] QA PDF corporativo: verificar visualmente portada, páginas interiores, tablas, anexos, firmas, paginación y ausencia de hojas en blanco en el PDF real antes de publicar.
-- [ ] Tarjeta social EVGreen: crear una imagen Open Graph de alta calidad y formato 1200×630 para compartir app.evgreen.lat en WhatsApp y redes sociales.
-- [ ] Metadatos sociales: configurar `og:image`, `og:title`, `og:description`, URL canónica y Twitter Card con activos públicos rastreables por Meta.
-- [ ] QA WhatsApp/Open Graph: verificar desde producción que la página y la imagen responden públicamente, tienen dimensiones correctas y no requieren autenticación.
+- [x] Tarjeta social EVGreen: crear una imagen Open Graph de alta calidad y formato 1200×630 para compartir app.evgreen.lat en WhatsApp y redes sociales.
+- [x] Metadatos sociales: configurar `og:image`, `og:title`, `og:description`, URL canónica y Twitter Card con activos públicos rastreables por Meta.
+- [x] QA WhatsApp/Open Graph: verificar desde producción que la página y la imagen responden públicamente, tienen dimensiones correctas y no requieren autenticación.
 - [x] Presentación modelo de inversión: reemplazar todas las imágenes genéricas de estaciones por los renders oficiales EVGreen diurno y nocturno aportados por el usuario, conservando contenido y diseño.
 - [x] QA presentación con renders: revisar diapositiva por diapositiva continuidad visual, fidelidad de la infraestructura, texto y ausencia de duplicaciones antes de presentar la versión corregida.
