@@ -17,3 +17,9 @@ La nueva tarjeta usará el render oficial como imagen principal y una composici�
 Se seleccionó el render nocturno por su mayor contraste en miniaturas y por la iluminación verde integrada a la arquitectura. Nano Banana Pro generó una composición dividida: bloque editorial azul petróleo a la izquierda y electrolinera oficial a la derecha. La imagen conserva el encabezado `EVGreen`, el mensaje `Carga el futuro, hoy.`, la descripción `Red inteligente de carga eléctrica en Colombia` y el descriptor `Carga rápida · Energía solar · Gestión con IA`.
 
 El archivo maestro quedó en 2752 × 1536. Se realizó un recorte vertical mínimo centrado y una reducción de alta calidad para obtener la variante Open Graph exacta de **1200 × 630 píxeles**, formato JPEG progresivo y **175.636 bytes**. Esta versión reduce aproximadamente cinco veces el peso de la tarjeta anterior y usa una relación 1,91:1 compatible con vistas previas sociales.
+
+## Validación productiva
+
+El commit `94e24307` fue desplegado correctamente por Railway en `app.evgreen.lat`. Una solicitud pública con agente `facebookexternalhit/1.1` recibió el nuevo título **“EVGreen | Carga el futuro, hoy”**, la descripción, la URL canónica, `summary_large_image` y la imagen versionada.
+
+La imagen respondió sin autenticación con **HTTP 200**, `Content-Type: image/jpeg`, **175.636 bytes**, dimensiones reales **1200 × 630** y caché pública de un año. Con ello queda comprobado el acceso técnico requerido por Meta y WhatsApp; la actualización visible en conversaciones existentes dependerá del caché de WhatsApp para la URL compartida.
