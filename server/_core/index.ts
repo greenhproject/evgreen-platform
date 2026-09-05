@@ -33,6 +33,7 @@ import { handleResendWebhook } from "../email/resend-webhook-router";
 import { handleDocusignWebhook } from "../contracts/docusign-webhook";
 import { handleManualContractDownload } from "../contracts/manual-contract-download";
 import { ensureContractDocumentStorage } from "../contracts/ensure-contract-document-storage";
+import { registerStorageProxy } from "./storageProxy";
 
 // Grace period para desconexiones temporales del legacy CSMS
 // Evita notificaciones por reconexiones intermitentes (WiFi inestable, reinicios breves)
@@ -247,6 +248,10 @@ async function startServer() {
     console.log(`[Auth RECV] ${req.method} /api/auth${req.path} | platform=${req.query.platform ?? 'none'} | UA=${req.headers['user-agent']?.slice(0, 60) ?? 'unknown'}`);
     next();
   });
+
+  // Activos persistentes públicos: resolver claves opacas mediante URL temporal
+  // antes de que las rutas de autenticación o la SPA capturen la solicitud.
+  registerStorageProxy(app);
 
   // Auth0 authentication routes
   registerAuth0Routes(app);
