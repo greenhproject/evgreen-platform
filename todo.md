@@ -4320,4 +4320,4 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] UI SOC operativo: mostrar porcentaje y origen del SOC en monitores de Admin, Soporte y SaaS, con estados claros cuando el cargador AC no tiene calibración.
 - [x] UI recalibración AC operativa: añadir un flujo responsive para escribir/recalibrar SOC desde perfiles autorizados, bloqueado cuando el cargador sea DC o reporte SOC OCPP.
 - [x] Test SOC operativo: cubrir permisos por rol, aislamiento multi-tenant, calibración AC absoluta, bloqueo DC/OCPP y lectura de sesiones tras reinicio.
-- [ ] QA SOC operativo: ejecutar TypeScript, Vitest completo, build, revisión responsive y validación productiva antes de comunicar la mejora.
+- [x] QA SOC operativo: TypeScript limpio, 188 archivos/2.163 pruebas aprobadas, build exitoso, revisión responsive del componente, Railway Success y chunks SOC verificados en app.evgreen.lat; la consulta real de solo lectura mostró la sesión AC 1140015 al 81% desde su ancla sin modificarla.
