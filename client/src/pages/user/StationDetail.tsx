@@ -149,7 +149,11 @@ function DynamicPricingCard({ stationId }: { stationId: number }) {
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Penalización por ocupación</span>
-                <span className="font-medium">$500 COP/min</span>
+                <span className="font-medium">
+                  {(kwhPrice.occupancyRatePerMinute ?? 0) > 0
+                    ? `$${kwhPrice.occupancyRatePerMinute.toLocaleString()} COP/min`
+                    : "Sin cobro"}
+                </span>
               </div>
             </div>
           )}

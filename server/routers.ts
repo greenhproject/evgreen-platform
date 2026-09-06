@@ -1788,6 +1788,8 @@ const transactionsRouter = router({
     .query(async ({ input, ctx }) => {
       // Verificar si la estación tiene autoPricing activado
       const tariff = await db.getActiveTariffByStationId(input.stationId);
+      const station = await db.getChargingStationById(input.stationId);
+      const occupancyRatePerMinute = Math.max(0, Number(station?.occupancyRatePerMinute ?? 0));
       const useAutoPricing = tariff?.autoPricing === 1 || (tariff?.autoPricing as any) === 1;
 
       if (!useAutoPricing) {
@@ -1811,6 +1813,7 @@ const transactionsRouter = router({
           currency: "COP",
           subscriptionDiscount: 0,
           priceBeforeDiscount: undefined,
+          occupancyRatePerMinute,
           useAutoPricing: false,
         };
       }
@@ -1846,6 +1849,7 @@ const transactionsRouter = router({
         // Precio sin descuento (para mostrar comparación)
         priceBeforeDiscount: subscriptionDiscount > 0 ? pricing.dynamicPricePerKwh : undefined,
         subscriptionDiscount,
+        occupancyRatePerMinute,
         useAutoPricing: true,
       };
     }),
