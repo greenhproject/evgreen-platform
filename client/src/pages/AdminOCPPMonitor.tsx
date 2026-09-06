@@ -69,6 +69,7 @@ import {
   Filler,
 } from "chart.js";
 import { Line, Bar } from "react-chartjs-2";
+import { OperationalSocPanel } from "@/components/OperationalSocPanel";
 
 ChartJS.register(
   CategoryScale,
@@ -640,16 +641,26 @@ function ChargerDetailView({
           <CardContent>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
               {chargerDetail.connectors.map((c: any) => (
-                <div key={c.connectorId} className="flex items-center gap-3 p-3 border rounded-lg">
-                  <div className={`h-10 w-10 rounded-full flex items-center justify-center text-white font-bold ${getConnectorStatusColor(c.status)}`}>
-                    #{c.connectorId}
+                <div key={c.connectorId} className="rounded-lg border p-3">
+                  <div className="flex items-center gap-3">
+                    <div className={`h-10 w-10 rounded-full flex items-center justify-center text-white font-bold ${getConnectorStatusColor(c.status)}`}>
+                      #{c.connectorId}
+                    </div>
+                    <div>
+                      <p className="font-medium text-sm">{c.connectorType || 'Desconocido'}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {c.status} {c.chargeType ? `· ${c.chargeType}` : ''} {c.powerKw ? `· ${c.powerKw} kW` : ''}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-medium text-sm">{c.connectorType || 'Desconocido'}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {c.status} {c.powerKw ? `· ${c.powerKw} kW` : ''}
-                    </p>
-                  </div>
+                  {c.activeSession && (
+                    <OperationalSocPanel
+                      session={c.activeSession}
+                      stationName={station?.name || ocppIdentity}
+                      connectorLabel={`${c.connectorType || "Conector"} #${c.connectorId}`}
+                      onUpdated={() => refetchDetail()}
+                    />
+                  )}
                 </div>
               ))}
             </div>

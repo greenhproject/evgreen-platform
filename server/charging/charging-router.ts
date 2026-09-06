@@ -18,7 +18,7 @@ import { v4 as uuidv4 } from "uuid";
 import * as simulator from "./charging-simulator";
 import { sendUserPush } from "../push/unified-push";
 import { dispatchOrganizationWebhookEvent } from "../api/webhook-dispatcher";
-import { calculateSocEstimation, getManualSocAvailability } from "./soc-estimation";
+import { calculateSocEstimation, getManualSocAvailability, resolveOperationalSoc } from "./soc-estimation";
 
 // Helper: buscar conexión por stationId en dualCSMS primero, luego fallback a legacy
 // Si ocppIdentity se provee, también busca en dualCSMS por identidad cuando stationId=null
@@ -120,6 +120,133 @@ const activeChargeSessions = new Map<number, {
   // SoC calculado por energía real del OCPP (independiente del manual)
   energyBasedSoc: number | null; // SoC calculado solo por kWh reales / capacidad batería
 }>();
+
+type ManualSocTransaction = NonNullable<Awaited<ReturnType<typeof db.getTransactionById>>>;
+
+/**
+ * Aplica una recalibración manual absoluta a una transacción activa. Esta es la
+ * única operación de escritura usada por la app del conductor y el NOC para
+ * garantizar la misma validación AC/DC, ancla energética y persistencia.
+ */
+export async function recalibrateManualSocTransaction(input: {
+  transaction: ManualSocTransaction;
+  soc: number;
+  batteryCapacityKwh?: number;
+  actorUserId: number;
+}) {
+  const { transaction } = input;
+  const isActive = transaction.status === "IN_PROGRESS" || transaction.transactionStatus === "IN_PROGRESS";
+  if (!isActive) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "La sesión ya no está activa" });
+  }
+
+  let session = getActiveSessionById(transaction.id);
+  const evse = await db.getEvseById(transaction.evseId);
+  const lastMeterValue = await db.getLastMeterValue(transaction.id);
+  const chargerSoc = session?.soc ?? lastMeterValue?.soc ?? null;
+  const manualSocAvailability = getManualSocAvailability({
+    chargeType: evse?.chargeType,
+    chargerSoc,
+  });
+
+  if (!manualSocAvailability.allowed) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: manualSocAvailability.reason ?? "El SOC manual no está disponible para esta sesión.",
+    });
+  }
+
+  const meterStartKwh = transaction.meterStart
+    ? parseFloat(String(transaction.meterStart)) / 1000
+    : 0;
+  const lastMeterEnergyKwh = lastMeterValue?.energyKwh
+    ? Math.max(0, parseFloat(String(lastMeterValue.energyKwh)) - meterStartKwh)
+    : 0;
+  const persistedEnergyKwh = transaction.kwhConsumed
+    ? Math.max(0, parseFloat(String(transaction.kwhConsumed)))
+    : 0;
+  const currentKwh = session?.currentKwh ?? Math.max(lastMeterEnergyKwh, persistedEnergyKwh);
+
+  let batteryCapacityKwh = input.batteryCapacityKwh
+    ?? session?.manualBatteryCapacityKwh
+    ?? (transaction.manualBatteryCapacityKwh
+      ? parseFloat(String(transaction.manualBatteryCapacityKwh))
+      : null);
+
+  if (!batteryCapacityKwh) {
+    const defaultVehicle = await db.getDefaultVehicle(transaction.userId);
+    batteryCapacityKwh = defaultVehicle?.batteryCapacityKwh
+      ? parseFloat(String(defaultVehicle.batteryCapacityKwh))
+      : 60;
+  }
+
+  const calibratedAt = new Date();
+
+  if (!session) {
+    const effectivePrice = await db.getEffectiveStationPrice(transaction.stationId);
+    const pricePerKwh = transaction.appliedPricePerKwh
+      ? parseFloat(String(transaction.appliedPricePerKwh))
+      : (effectivePrice?.pricePerKwh || 1800);
+    const restoredChargeMode = (transaction.chargeMode as ChargeMode) || "full_charge";
+    const restoredTargetValue = transaction.targetValue
+      ? parseFloat(String(transaction.targetValue))
+      : (restoredChargeMode === "full_charge" ? 100 : 0);
+
+    setActiveSession(transaction.id, {
+      transactionId: transaction.id,
+      userId: transaction.userId,
+      stationId: transaction.stationId,
+      connectorId: transaction.evseId,
+      chargeMode: restoredChargeMode,
+      targetValue: restoredTargetValue,
+      startTime: new Date(transaction.startTime),
+      currentKwh,
+      currentCost: transaction.totalCost ? parseFloat(transaction.totalCost) : 0,
+      pricePerKwh,
+      soc: null,
+      currentPower: 0,
+      voltage: null,
+      current: null,
+      lastMeterUpdate: null,
+      powerHistory: [],
+      socTargetNotified: false,
+      manualSoc: input.soc,
+      manualBatteryCapacityKwh: batteryCapacityKwh,
+      manualSocCalibrationKwh: currentKwh,
+      manualSocCalibratedAt: calibratedAt,
+      lowPowerSince: null,
+      chargeCompleteDetected: false,
+      chargeCompleteNotified: false,
+      autoStopSent: false,
+      energyBasedSoc: input.soc,
+    });
+    session = getActiveSessionById(transaction.id);
+  } else {
+    session.manualSoc = input.soc;
+    session.manualBatteryCapacityKwh = batteryCapacityKwh;
+    session.manualSocCalibrationKwh = currentKwh;
+    session.manualSocCalibratedAt = calibratedAt;
+    session.energyBasedSoc = input.soc;
+  }
+
+  await db.updateTransaction(transaction.id, {
+    manualSoc: input.soc,
+    manualBatteryCapacityKwh: batteryCapacityKwh.toFixed(2),
+    manualSocCalibrationKwh: currentKwh.toFixed(4),
+    manualSocCalibratedAt: calibratedAt.toISOString().slice(0, 19).replace("T", " "),
+  });
+
+  console.log(`[setManualSoc] Actor ${input.actorUserId} recalibrated transaction ${transaction.id} to ${input.soc}% at ${currentKwh.toFixed(4)} kWh`);
+
+  return {
+    success: true,
+    transactionId: transaction.id,
+    soc: input.soc,
+    batteryCapacityKwh,
+    calibrationEnergyKwh: currentKwh,
+    calibratedAt,
+  };
+}
 
 /**
  * Deferred RemoteStartTransaction: reintenta enviar el comando con backoff adaptativo.
@@ -1270,15 +1397,18 @@ export const chargingRouter = router({
       if (manualBatteryCapacity === null) manualBatteryCapacity = 60;
       
       const hasManualSoc = manualSoc !== null;
-
-      const socEstimation = calculateSocEstimation({
+      const chargeCompleteDetected = activeSessionInfo?.chargeCompleteDetected || false;
+      const chargeType = evse?.chargeType ?? null;
+      const operationalSoc = resolveOperationalSoc({
+        chargeType,
         chargerSoc: soc,
         manualSoc,
         batteryCapacityKwh: manualBatteryCapacity,
         currentEnergyKwh: currentKwh,
         calibrationEnergyKwh: manualSocCalibrationKwh,
+        chargeCompleteDetected,
       });
-      const estimatedSoc = socEstimation.soc;
+      const estimatedSoc = operationalSoc.soc;
       
       // Estimar tiempo restante basado en la potencia actual
       // Restaurar chargeMode y targetValue: priorizar memoria, luego BD
@@ -1323,41 +1453,7 @@ export const chargingRouter = router({
         }
       }
       
-      // ============================================================
-      // SoC INTELIGENTE: Prioridad de fuentes de datos
-      // 1) SoC real del cargador (OCPP MeterValues con SoC)
-      // 2) Batería llena detectada por caída de potencia
-      // 3) SoC estimado por energía real + SoC manual
-      // 4) SoC manual puro (sin corrección)
-      // ============================================================
-      const chargeCompleteDetected = activeSessionInfo?.chargeCompleteDetected || false;
-      const energyBasedSoc = socEstimation.source === "manual" ? socEstimation.soc : null;
-      const chargeType = evse?.chargeType ?? null;
-      const manualSocAvailability = getManualSocAvailability({ chargeType, chargerSoc: soc });
-      
-      let displaySoc: number | null;
-      let socSource: string;
-      
-      if (soc !== null) {
-        // Prioridad 1: SoC real del cargador
-        displaySoc = soc;
-        socSource = "charger";
-      } else if (chargeCompleteDetected) {
-        // Prioridad 2: Batería llena detectada por caída de potencia
-        displaySoc = 100;
-        socSource = "power_detection";
-      } else if (energyBasedSoc !== null) {
-        // Prioridad 3: SoC calculado por energía real del OCPP
-        displaySoc = energyBasedSoc;
-        socSource = hasManualSoc ? "manual" : "energy";
-      } else if (estimatedSoc !== null) {
-        // Prioridad 4: Estimación previa
-        displaySoc = estimatedSoc;
-        socSource = hasManualSoc ? "manual" : "none";
-      } else {
-        displaySoc = null;
-        socSource = "none";
-      }
+      const energyBasedSoc = operationalSoc.source === "manual" ? operationalSoc.soc : null;
       
       return {
         transactionId: activeTransaction.id,
@@ -1380,16 +1476,16 @@ export const chargingRouter = router({
         targetPercentage: chargeMode === "percentage" ? targetValue : 100,
         targetAmount: chargeMode === "fixed_amount" ? targetValue : currentCost * 2,
         startPercentage: hasManualSoc ? manualSoc : (soc !== null ? null : 20),
-        soc: displaySoc, // SoC del vehículo (real o estimado desde manual)
-        socSource, // "charger" | "manual" | "none"
+        soc: operationalSoc.soc, // SoC del vehículo desde la fuente única autoritativa
+        socSource: operationalSoc.source,
         manualSoc: manualSoc, // SoC original ingresado por el usuario
         manualBatteryCapacityKwh: manualBatteryCapacity,
         chargeType,
-        manualSocAvailable: manualSocAvailability.allowed,
-        manualSocUnavailableReason: manualSocAvailability.reason,
+        manualSocAvailable: operationalSoc.manualSocAvailable,
+        manualSocUnavailableReason: operationalSoc.manualSocUnavailableReason,
         manualSocCalibrationKwh,
         manualSocCalibratedAt,
-        energySinceCalibrationKwh: socEstimation.energySinceCalibrationKwh,
+        energySinceCalibrationKwh: operationalSoc.energySinceCalibrationKwh,
         voltage: voltage,
         currentAmp: currentAmp,
         progress,
@@ -1436,114 +1532,12 @@ export const chargingRouter = router({
         });
       }
 
-      let session = getActiveSessionById(activeTransaction.id);
-      const evse = await db.getEvseById(activeTransaction.evseId);
-      const lastMeterValue = await db.getLastMeterValue(activeTransaction.id);
-      const chargerSoc = session?.soc ?? lastMeterValue?.soc ?? null;
-      const manualSocAvailability = getManualSocAvailability({
-        chargeType: evse?.chargeType,
-        chargerSoc,
-      });
-
-      if (!manualSocAvailability.allowed) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: manualSocAvailability.reason ?? "El SOC manual no está disponible para esta sesión.",
-        });
-      }
-
-      const meterStartKwh = activeTransaction.meterStart
-        ? parseFloat(String(activeTransaction.meterStart)) / 1000
-        : 0;
-      const lastMeterEnergyKwh = lastMeterValue?.energyKwh
-        ? Math.max(0, parseFloat(String(lastMeterValue.energyKwh)) - meterStartKwh)
-        : 0;
-      const persistedEnergyKwh = activeTransaction.kwhConsumed
-        ? Math.max(0, parseFloat(String(activeTransaction.kwhConsumed)))
-        : 0;
-      const currentKwh = session?.currentKwh ?? Math.max(lastMeterEnergyKwh, persistedEnergyKwh);
-
-      let batteryCapacityKwh = input.batteryCapacityKwh
-        ?? session?.manualBatteryCapacityKwh
-        ?? (activeTransaction.manualBatteryCapacityKwh
-          ? parseFloat(String(activeTransaction.manualBatteryCapacityKwh))
-          : null);
-
-      if (!batteryCapacityKwh) {
-        const defaultVehicle = await db.getDefaultVehicle(ctx.user.id);
-        batteryCapacityKwh = defaultVehicle?.batteryCapacityKwh
-          ? parseFloat(String(defaultVehicle.batteryCapacityKwh))
-          : 60;
-      }
-
-      const calibratedAt = new Date();
-
-      if (!session) {
-        console.log(`[setManualSoc] No active session in memory for transaction ${activeTransaction.id}, creating one now`);
-        const effectivePrice = await db.getEffectiveStationPrice(activeTransaction.stationId);
-        const pricePerKwh = activeTransaction.appliedPricePerKwh
-          ? parseFloat(String(activeTransaction.appliedPricePerKwh))
-          : (effectivePrice?.pricePerKwh || 1800);
-        const startTime = new Date(activeTransaction.startTime);
-        const currentCost = activeTransaction.totalCost ? parseFloat(activeTransaction.totalCost) : 0;
-
-        const restoredChargeMode = (activeTransaction.chargeMode as "fixed_amount" | "percentage" | "full_charge") || "full_charge";
-        const restoredTargetValue = activeTransaction.targetValue ? parseFloat(String(activeTransaction.targetValue)) : (restoredChargeMode === "full_charge" ? 100 : 0);
-        console.log(`[setManualSoc] Restoring session from DB: chargeMode=${restoredChargeMode}, targetValue=${restoredTargetValue}`);
-
-        setActiveSession(activeTransaction.id, {
-          transactionId: activeTransaction.id,
-          userId: ctx.user.id,
-          stationId: activeTransaction.stationId,
-          connectorId: activeTransaction.evseId,
-          chargeMode: restoredChargeMode,
-          targetValue: restoredTargetValue,
-          startTime,
-          currentKwh,
-          currentCost,
-          pricePerKwh,
-          soc: null,
-          currentPower: 0,
-          voltage: null,
-          current: null,
-          lastMeterUpdate: null,
-          powerHistory: [],
-          socTargetNotified: false,
-          manualSoc: input.soc,
-          manualBatteryCapacityKwh: batteryCapacityKwh,
-          manualSocCalibrationKwh: currentKwh,
-          manualSocCalibratedAt: calibratedAt,
-          lowPowerSince: null,
-          chargeCompleteDetected: false,
-          chargeCompleteNotified: false,
-          autoStopSent: false,
-          energyBasedSoc: input.soc,
-        });
-        session = getActiveSessionById(activeTransaction.id);
-      } else {
-        session.manualSoc = input.soc;
-        session.manualBatteryCapacityKwh = batteryCapacityKwh;
-        session.manualSocCalibrationKwh = currentKwh;
-        session.manualSocCalibratedAt = calibratedAt;
-        session.energyBasedSoc = input.soc;
-      }
-
-      await db.updateTransaction(activeTransaction.id, {
-        manualSoc: input.soc,
-        manualBatteryCapacityKwh: batteryCapacityKwh.toFixed(2),
-        manualSocCalibrationKwh: currentKwh.toFixed(4),
-        manualSocCalibratedAt: calibratedAt.toISOString().slice(0, 19).replace("T", " "),
-      });
-
-      console.log(`[setManualSoc] User ${ctx.user.id} recalibrated transaction ${activeTransaction.id} to ${input.soc}% at ${currentKwh.toFixed(4)} kWh`);
-
-      return {
-        success: true,
+      return recalibrateManualSocTransaction({
+        transaction: activeTransaction,
         soc: input.soc,
-        batteryCapacityKwh,
-        calibrationEnergyKwh: currentKwh,
-        calibratedAt,
-      };
+        batteryCapacityKwh: input.batteryCapacityKwh,
+        actorUserId: ctx.user.id,
+      });
     }),
 
   /**
@@ -2116,17 +2110,34 @@ export function getActiveSessionPowerHistory(transactionId: number): PowerHistor
 
 /**
  * Obtener potencia real actual de todas las sesiones activas en memoria.
- * Retorna un mapa transactionId -> { currentPower, currentKwh, soc, lastMeterUpdate }
- * Usado por el NOC y dashboards para mostrar potencia real en lugar de potencia nominal.
+ * Usado por el NOC y dashboards para mostrar telemetría y calcular el mismo SOC
+ * autoritativo que consume la aplicación del conductor.
  */
-export function getAllActiveSessionsPower(): Map<number, { currentPower: number; currentKwh: number; soc: number | null; lastMeterUpdate: Date | null }> {
-  const result = new Map<number, { currentPower: number; currentKwh: number; soc: number | null; lastMeterUpdate: Date | null }>();
+export type ActiveSessionOperationalSnapshot = {
+  currentPower: number;
+  currentKwh: number;
+  soc: number | null;
+  lastMeterUpdate: Date | null;
+  manualSoc: number | null;
+  manualBatteryCapacityKwh: number | null;
+  manualSocCalibrationKwh: number | null;
+  manualSocCalibratedAt: Date | null;
+  chargeCompleteDetected: boolean;
+};
+
+export function getAllActiveSessionsPower(): Map<number, ActiveSessionOperationalSnapshot> {
+  const result = new Map<number, ActiveSessionOperationalSnapshot>();
   for (const [txId, session] of Array.from(activeChargeSessions.entries())) {
     result.set(txId, {
       currentPower: session.currentPower || 0,
       currentKwh: session.currentKwh || 0,
       soc: session.soc ?? null,
       lastMeterUpdate: session.lastMeterUpdate ?? null,
+      manualSoc: session.manualSoc ?? null,
+      manualBatteryCapacityKwh: session.manualBatteryCapacityKwh ?? null,
+      manualSocCalibrationKwh: session.manualSocCalibrationKwh ?? null,
+      manualSocCalibratedAt: session.manualSocCalibratedAt ?? null,
+      chargeCompleteDetected: session.chargeCompleteDetected ?? false,
     });
   }
   return result;

@@ -4314,3 +4314,10 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] UX calibración SOC: precargar el porcentaje mostrado, explicar que se reemplazará la estimación actual y mostrar mensajes claros de éxito o error en móvil.
 - [x] QA SOC AC/DC: validar escenarios de calibración tardía, múltiples recalibraciones, límites 0–100 %, telemetría DC y reglas de finalización automática antes de publicar.
 - [ ] QA productivo SOC: comprobar en una sesión AC controlada que la calibración queda absoluta y en una sesión DC que OCPP mantiene prioridad, sin alterar la transacción real 1140015.
+- [x] Auditoría SOC operativa: identificar las vistas y consultas de sesiones activas usadas por Admin, Soporte y empresas SaaS.
+- [x] Backend SOC operativo: exponer porcentaje autoritativo, fuente, tipo AC/DC, ancla y disponibilidad de recalibración en sesiones visibles según rol y tenant.
+- [x] Seguridad SOC operativo: permitir recalibración manual por transacción solo a Admin y Soporte técnico autorizado; mantener a SaaS en lectura aislada de sus propios cargadores y bloquear accesos cruzados.
+- [x] UI SOC operativo: mostrar porcentaje y origen del SOC en monitores de Admin, Soporte y SaaS, con estados claros cuando el cargador AC no tiene calibración.
+- [x] UI recalibración AC operativa: añadir un flujo responsive para escribir/recalibrar SOC desde perfiles autorizados, bloqueado cuando el cargador sea DC o reporte SOC OCPP.
+- [x] Test SOC operativo: cubrir permisos por rol, aislamiento multi-tenant, calibración AC absoluta, bloqueo DC/OCPP y lectura de sesiones tras reinicio.
+- [ ] QA SOC operativo: ejecutar TypeScript, Vitest completo, build, revisión responsive y validación productiva antes de comunicar la mejora.

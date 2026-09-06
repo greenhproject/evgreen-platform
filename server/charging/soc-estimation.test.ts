@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateSocEstimation, getManualSocAvailability } from "./soc-estimation";
+import { calculateSocEstimation, getManualSocAvailability, resolveOperationalSoc } from "./soc-estimation";
 
 describe("SOC estimation with absolute AC recalibration", () => {
   it("does not add energy delivered before a late calibration", () => {
@@ -76,5 +76,53 @@ describe("SOC estimation with absolute AC recalibration", () => {
     expect(getManualSocAvailability({ chargeType: "AC", chargerSoc: 55 }).allowed).toBe(false);
     expect(getManualSocAvailability({ chargeType: "AC", chargerSoc: null }).allowed).toBe(true);
   });
-});
 
+  it("projects the same anchored manual SOC for operational dashboards", () => {
+    expect(resolveOperationalSoc({
+      chargeType: "AC",
+      chargerSoc: null,
+      manualSoc: 35,
+      batteryCapacityKwh: 60,
+      currentEnergyKwh: 15,
+      calibrationEnergyKwh: 12,
+    })).toEqual({
+      soc: 40,
+      source: "manual",
+      energySinceCalibrationKwh: 3,
+      manualSocAvailable: true,
+      manualSocUnavailableReason: null,
+    });
+  });
+
+  it("keeps OCPP SOC authoritative in DC even if a manual value exists", () => {
+    const result = resolveOperationalSoc({
+      chargeType: "DC",
+      chargerSoc: 68,
+      manualSoc: 90,
+      batteryCapacityKwh: 60,
+      currentEnergyKwh: 25,
+      calibrationEnergyKwh: 10,
+      chargeCompleteDetected: true,
+    });
+
+    expect(result.soc).toBe(68);
+    expect(result.source).toBe("charger");
+    expect(result.manualSocAvailable).toBe(false);
+  });
+
+  it("uses conservative full-charge detection only when OCPP has no SOC", () => {
+    const result = resolveOperationalSoc({
+      chargeType: "AC",
+      chargerSoc: null,
+      manualSoc: null,
+      batteryCapacityKwh: null,
+      currentEnergyKwh: 7,
+      calibrationEnergyKwh: null,
+      chargeCompleteDetected: true,
+    });
+
+    expect(result.soc).toBe(100);
+    expect(result.source).toBe("power_detection");
+    expect(result.manualSocAvailable).toBe(true);
+  });
+});

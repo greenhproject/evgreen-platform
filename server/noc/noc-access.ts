@@ -3,6 +3,7 @@ export type NocScope = {
   organizationId: number | null;
   canViewFinancials: boolean;
   canViewPersonalActivity: boolean;
+  canCalibrateSoc: boolean;
 };
 
 type NocAccessInput = {
@@ -17,17 +18,35 @@ type NocAccessInput = {
  */
 export function resolveNocScope({ role, organizationId = null }: NocAccessInput): NocScope | null {
   if (role === "admin") {
-    return { mode: "global", organizationId: null, canViewFinancials: true, canViewPersonalActivity: true };
+    return {
+      mode: "global",
+      organizationId: null,
+      canViewFinancials: true,
+      canViewPersonalActivity: true,
+      canCalibrateSoc: true,
+    };
   }
 
   if (["staff", "engineer", "technician"].includes(role)) {
-    return { mode: "global", organizationId: null, canViewFinancials: false, canViewPersonalActivity: false };
+    return {
+      mode: "global",
+      organizationId: null,
+      canViewFinancials: false,
+      canViewPersonalActivity: false,
+      canCalibrateSoc: role === "engineer" || role === "technician",
+    };
   }
 
   if (organizationId) {
     // Un tenant SaaS es un negocio independiente: puede ver únicamente sus
     // propios KPI financieros, pero no actividad identificable de usuarios.
-    return { mode: "organization", organizationId, canViewFinancials: true, canViewPersonalActivity: false };
+    return {
+      mode: "organization",
+      organizationId,
+      canViewFinancials: true,
+      canViewPersonalActivity: false,
+      canCalibrateSoc: false,
+    };
   }
 
   return null;
