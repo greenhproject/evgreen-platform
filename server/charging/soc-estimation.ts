@@ -14,6 +14,14 @@ export interface SocEstimationResult {
   energySinceCalibrationKwh: number;
 }
 
+export type OperationalSocSource = SocSource | "power_detection";
+
+export interface OperationalSocResult extends Omit<SocEstimationResult, "source"> {
+  source: OperationalSocSource;
+  manualSocAvailable: boolean;
+  manualSocUnavailableReason: string | null;
+}
+
 function validSoc(value: number | null | undefined): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100;
 }
@@ -67,4 +75,44 @@ export function getManualSocAvailability(input: {
   }
 
   return { allowed: true, reason: null };
+}
+
+/**
+ * Proyección SOC autoritativa compartida por usuario final, NOC y monitores
+ * técnicos. La detección conservadora por caída de potencia solo se usa cuando
+ * el cargador no reporta SOC; nunca reemplaza telemetría OCPP válida.
+ */
+export function resolveOperationalSoc(input: SocEstimationInput & {
+  chargeType: string | null | undefined;
+  chargeCompleteDetected?: boolean;
+}): OperationalSocResult {
+  const estimation = calculateSocEstimation(input);
+  const availability = getManualSocAvailability({
+    chargeType: input.chargeType,
+    chargerSoc: input.chargerSoc,
+  });
+
+  if (estimation.source === "charger") {
+    return {
+      ...estimation,
+      manualSocAvailable: availability.allowed,
+      manualSocUnavailableReason: availability.reason,
+    };
+  }
+
+  if (input.chargeCompleteDetected) {
+    return {
+      soc: 100,
+      source: "power_detection",
+      energySinceCalibrationKwh: estimation.energySinceCalibrationKwh,
+      manualSocAvailable: availability.allowed,
+      manualSocUnavailableReason: availability.reason,
+    };
+  }
+
+  return {
+    ...estimation,
+    manualSocAvailable: availability.allowed,
+    manualSocUnavailableReason: availability.reason,
+  };
 }

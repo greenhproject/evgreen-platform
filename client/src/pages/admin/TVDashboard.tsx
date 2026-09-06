@@ -7,6 +7,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
 import { MapView } from "@/components/Map";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { OperationalSocPanel } from "@/components/OperationalSocPanel";
 
 // ─── tipos ────────────────────────────────────────────────────────────────────
 type StationStatus = "charging" | "available" | "offline" | "faulted" | "inactive";
@@ -91,7 +92,7 @@ function KpiCard({ label, value, sub, color, icon }: { label: string; value: str
   );
 }
 
-function StationCard({ s }: { s: any }) {
+function StationCard({ s, onSocUpdated }: { s: any; onSocUpdated: () => void | Promise<unknown> }) {
   const status = s.overallStatus as StationStatus;
   const color  = STATUS_COLOR[status];
   return (
@@ -110,13 +111,25 @@ function StationCard({ s }: { s: any }) {
         </div>
       </div>
       {/* connectors */}
-      <div className="flex gap-1 flex-wrap">
+      <div className="flex flex-col gap-1.5">
         {s.evses.map((e: any) => {
           const ec = e.isCharging ? "#22c55e" : e.connectorStatus === "AVAILABLE" ? "#3b82f6" : e.connectorStatus === "FAULTED" ? "#f97316" : "#6b7280";
           return (
-            <span key={e.id} className="text-[10px] px-1.5 py-0.5 rounded-full border" style={{ borderColor: `${ec}40`, backgroundColor: `${ec}15`, color: ec }}>
-              ⚡ {e.connectorType}{e.isCharging && e.currentTx ? ` · ${parseFloat(e.currentTx.kwhConsumed || "0").toFixed(1)} kWh` : ""}
-            </span>
+            <div key={e.id}>
+              <span className="inline-flex text-[10px] px-1.5 py-0.5 rounded-full border" style={{ borderColor: `${ec}40`, backgroundColor: `${ec}15`, color: ec }}>
+                ⚡ {e.connectorType}{e.chargeType ? ` · ${e.chargeType}` : ""}
+              </span>
+              {e.isCharging && e.currentTx && (
+                <OperationalSocPanel
+                  session={e.currentTx}
+                  stationName={s.name}
+                  connectorLabel={`${e.connectorType || "Conector"} #${e.evseIdLocal}`}
+                  onUpdated={onSocUpdated}
+                  compact
+                  dark
+                />
+              )}
+            </div>
           );
         })}
       </div>
@@ -411,7 +424,7 @@ export default function TVDashboard() {
             {!isLoading && sorted.length === 0 && (
               <div className="text-center text-gray-600 py-8 text-xs">Sin estaciones registradas</div>
             )}
-            {sorted.map(s => <StationCard key={s.id} s={s} />)}
+            {sorted.map(s => <StationCard key={s.id} s={s} onSocUpdated={() => refetch()} />)}
           </div>
         </div>
       </div>

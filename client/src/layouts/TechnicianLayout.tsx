@@ -35,7 +35,8 @@ import {
   Terminal,
   Activity,
   Cpu,
-  Headphones
+  Headphones,
+  MonitorUp
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -46,6 +47,7 @@ const technicianMenuItems = [
   { icon: LayoutDashboard, label: "Mi Panel", path: "/technician" },
   { icon: ClipboardList, label: "Mis Tickets", path: "/technician/tickets" },
   { icon: MapPin, label: "Estaciones", path: "/technician/stations" },
+  { icon: MonitorUp, label: "Monitor Operativo", path: "/admin/tv" },
   { icon: AlertTriangle, label: "Alertas", path: "/technician/alerts" },
   { icon: Terminal, label: "Monitor OCPP", path: "/technician/ocpp-monitor" },
   { icon: Activity, label: "Diagnóstico", path: "/technician/diagnostics" },

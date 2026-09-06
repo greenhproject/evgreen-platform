@@ -37,7 +37,8 @@ import {
   Cpu,
   Users,
   Shield,
-  CalendarClock
+  CalendarClock,
+  MonitorUp
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -49,6 +50,7 @@ const engineerMenuItems = [
   { icon: ClipboardList, label: "Gestión de Tickets", path: "/engineer/tickets", section: "principal" },
   { icon: Users, label: "Equipo Técnico", path: "/engineer/technicians", section: "principal" },
   { icon: MapPin, label: "Estaciones", path: "/engineer/stations", section: "operaciones" },
+  { icon: MonitorUp, label: "Monitor Operativo", path: "/admin/tv", section: "operaciones" },
   { icon: AlertTriangle, label: "Alertas", path: "/engineer/alerts", section: "operaciones" },
   { icon: Activity, label: "Diagnóstico", path: "/engineer/diagnostics", section: "operaciones" },
   { icon: Terminal, label: "Monitor OCPP", path: "/engineer/ocpp-monitor", section: "operaciones" },

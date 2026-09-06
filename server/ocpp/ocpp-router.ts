@@ -11,6 +11,9 @@ import { nanoid } from "nanoid";
 import { dualCSMS } from "./csms-dual";
 import { storagePut } from "../storage";
 import { checkStationHealth, generateOfflineAlerts } from "./station-health-monitor";
+import { getAllActiveSessionsPower } from "../charging/charging-router";
+import { resolveOperationalSoc } from "../charging/soc-estimation";
+import { resolveNocScope } from "../noc/noc-access";
 
 // Procedimiento para admin y técnicos
 const ocppProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -747,7 +750,7 @@ export const ocppRouter = router({
    */
   getChargerDetail: ocppProcedure
     .input(z.object({ ocppIdentity: z.string() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       // Datos de conexión en tiempo real del connection-manager (fuente real de datos OCPP)
       const liveConn = ocppManager.getConnection(input.ocppIdentity);
       const liveConnInfo = ocppManager.getAllConnections().find(c => c.ocppIdentity === input.ocppIdentity);
@@ -766,6 +769,19 @@ export const ocppRouter = router({
       // Datos de BD
       const station = await db.getChargingStationByOcppIdentity(input.ocppIdentity);
       const evses = station ? await db.getEvsesByStationId(station.id) : [];
+      const activeTransactions = station ? await db.getActiveTransactionsByStationId(station.id) : [];
+      const activeTransactionByEvse = new Map(activeTransactions.map(tx => [tx.evseId, tx]));
+      const liveSessions = getAllActiveSessionsPower();
+      const lastMeterByTransaction = new Map<number, Awaited<ReturnType<typeof db.getLastMeterValue>>>();
+      await Promise.all(activeTransactions.map(async tx => {
+        if (!liveSessions.has(tx.id)) {
+          lastMeterByTransaction.set(tx.id, await db.getLastMeterValue(tx.id));
+        }
+      }));
+      const nocScope = resolveNocScope({
+        role: ctx.user.role,
+        organizationId: ctx.tenant?.organizationId,
+      });
       
       // Últimos 30 logs de este cargador
       const recentLogs = await db.getOcppLogs({
@@ -868,13 +884,69 @@ export const ocppRouter = router({
         connectors: evses.map(e => {
           // Priorizar estado OCPP en tiempo real del connection-manager sobre la BD
           const liveStatus = liveConnInfo?.connectorStatuses?.[e.evseIdLocal];
+          const transaction = activeTransactionByEvse.get(e.id);
+          const liveSession = transaction ? liveSessions.get(transaction.id) : null;
+          const lastMeterValue = transaction ? lastMeterByTransaction.get(transaction.id) : null;
+          const currentKwh = transaction
+            ? liveSession?.currentKwh ?? parseFloat(transaction.kwhConsumed?.toString() || "0")
+            : 0;
+          const chargerSoc = liveSession?.soc
+            ?? (lastMeterValue?.soc !== null && lastMeterValue?.soc !== undefined ? Number(lastMeterValue.soc) : null);
+          const manualSoc = transaction
+            ? liveSession?.manualSoc
+              ?? (transaction.manualSoc !== null && transaction.manualSoc !== undefined ? Number(transaction.manualSoc) : null)
+            : null;
+          const manualBatteryCapacityKwh = transaction
+            ? liveSession?.manualBatteryCapacityKwh
+              ?? (transaction.manualBatteryCapacityKwh !== null && transaction.manualBatteryCapacityKwh !== undefined
+                ? parseFloat(String(transaction.manualBatteryCapacityKwh))
+                : null)
+            : null;
+          const manualSocCalibrationKwh = transaction
+            ? liveSession?.manualSocCalibrationKwh
+              ?? (transaction.manualSocCalibrationKwh !== null && transaction.manualSocCalibrationKwh !== undefined
+                ? parseFloat(String(transaction.manualSocCalibrationKwh))
+                : null)
+            : null;
+          const operationalSoc = transaction ? resolveOperationalSoc({
+            chargeType: e.chargeType,
+            chargerSoc,
+            manualSoc,
+            batteryCapacityKwh: manualBatteryCapacityKwh,
+            currentEnergyKwh: currentKwh,
+            calibrationEnergyKwh: manualSocCalibrationKwh,
+            chargeCompleteDetected: liveSession?.chargeCompleteDetected ?? false,
+          }) : null;
           return {
             id: e.id,
             connectorId: e.evseIdLocal,
             status: liveStatus || e.connectorStatus, // OCPP en tiempo real > BD
             dbStatus: e.connectorStatus, // Siempre incluir estado de BD para referencia
             connectorType: e.connectorType,
+            chargeType: e.chargeType,
             powerKw: e.powerKw,
+            activeSession: transaction && operationalSoc ? {
+              transactionId: transaction.id,
+              startTime: transaction.startTime,
+              currentKwh,
+              currentPower: liveSession?.currentPower
+                ?? parseFloat(lastMeterValue?.powerKw?.toString() || "0"),
+              soc: operationalSoc.soc,
+              socSource: operationalSoc.source,
+              manualSoc,
+              manualBatteryCapacityKwh,
+              manualSocCalibrationKwh,
+              manualSocCalibratedAt: liveSession?.manualSocCalibratedAt
+                ?? (transaction.manualSocCalibratedAt ? new Date(transaction.manualSocCalibratedAt) : null),
+              energySinceCalibrationKwh: operationalSoc.energySinceCalibrationKwh,
+              manualSocAvailable: operationalSoc.manualSocAvailable,
+              manualSocUnavailableReason: operationalSoc.manualSocUnavailableReason,
+              canCalibrateSoc: Boolean(nocScope?.canCalibrateSoc && operationalSoc.manualSocAvailable),
+              calibrationPermissionReason: nocScope?.canCalibrateSoc
+                ? operationalSoc.manualSocUnavailableReason
+                : "Tu perfil puede consultar el SOC, pero no modificarlo.",
+              lastMeterUpdate: liveSession?.lastMeterUpdate ?? lastMeterValue?.timestamp ?? null,
+            } : null,
           };
         }),
         recentLogs: recentLogs.logs || [],

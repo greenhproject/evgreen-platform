@@ -25,7 +25,8 @@ import { wompiRouter } from "./wompi/router";
 import { ocppRouter } from "./ocpp/ocpp-router";
 import { dualCSMS } from "./ocpp/csms-dual";
 import * as ocppManager from "./ocpp/connection-manager";
-import { chargingRouter, getAllActiveSessionsPower } from "./charging/charging-router";
+import { chargingRouter, getAllActiveSessionsPower, recalibrateManualSocTransaction } from "./charging/charging-router";
+import { resolveOperationalSoc } from "./charging/soc-estimation";
 import { pushRouter } from "./push/push-router";
 import { generateExcelReport, generatePDFReport } from "./reports/export-transactions";
 import { sendBroadcastNotification, getNotificationStats, getBroadcastHistory } from "./notifications/broadcast-service";
@@ -7446,6 +7447,11 @@ const nocRouter = router({
       ? await dbInst.select().from(transactions)
         .where(andOp(eqOp(transactions.status, "IN_PROGRESS"), inArray(transactions.stationId, scopedStationIds)))
       : [];
+    const transactionScopeCondition = scope.mode === "organization"
+      ? (scopedStationIds.length > 0
+        ? inArray(transactions.stationId, scopedStationIds)
+        : sql`1 = 0`)
+      : undefined;
 
     // Potencia real de sesiones activas (desde memoria — MeterValues en tiempo real)
     const liveSessionPower = getAllActiveSessionsPower();
@@ -7455,20 +7461,34 @@ const nocRouter = router({
     const txIdsWithoutLiveData = activeTxs
       .filter(tx => !liveSessionPower.has(tx.id))
       .map(tx => tx.id);
-    const fallbackPowerMap = new Map<number, number>();
+    const fallbackTelemetryMap = new Map<number, {
+      currentPower: number;
+      soc: number | null;
+      lastMeterUpdate: Date | null;
+    }>();
     if (txIdsWithoutLiveData.length > 0) {
       try {
         const { meterValues } = await import("../drizzle/schema");
         const { sql: sqlRaw } = await import("drizzle-orm");
-        // Obtener el último MeterValue con powerKw para cada transacción sin datos en memoria
+        // Obtener el último MeterValue para cada transacción sin datos en memoria.
         for (const txId of txIdsWithoutLiveData) {
-          const lastMv = await dbInst.select({ powerKw: meterValues.powerKw })
+          const lastMv = await dbInst.select({
+            powerKw: meterValues.powerKw,
+            soc: meterValues.soc,
+            timestamp: meterValues.timestamp,
+          })
             .from(meterValues)
             .where(eqOp(meterValues.transactionId, txId))
             .orderBy(desc(meterValues.timestamp))
             .limit(1);
-          if (lastMv.length > 0 && lastMv[0].powerKw !== null) {
-            fallbackPowerMap.set(txId, parseFloat(lastMv[0].powerKw?.toString() || "0"));
+          if (lastMv.length > 0) {
+            fallbackTelemetryMap.set(txId, {
+              currentPower: parseFloat(lastMv[0].powerKw?.toString() || "0"),
+              soc: lastMv[0].soc !== null && lastMv[0].soc !== undefined
+                ? Number(lastMv[0].soc)
+                : null,
+              lastMeterUpdate: lastMv[0].timestamp ? new Date(lastMv[0].timestamp) : null,
+            });
           }
         }
       } catch { /* fallback silencioso */ }
@@ -7482,7 +7502,7 @@ const nocRouter = router({
       platformFee: sum(transactions.platformFee),
     }).from(transactions)
       // @ts-expect-error -- Drizzle type mismatch: schema field type vs inferred type
-      .where(andOp(eqOp(transactions.status, "COMPLETED"), gte(transactions.startTime, startOfDay)));
+      .where(andOp(eqOp(transactions.status, "COMPLETED"), gte(transactions.startTime, startOfDay), transactionScopeCondition));
 
     // KPIs del mes
     const monthStats = await dbInst.select({
@@ -7491,7 +7511,7 @@ const nocRouter = router({
       totalRevenue: sum(transactions.totalCost),
     }).from(transactions)
       // @ts-expect-error -- Drizzle type mismatch: schema field type vs inferred type
-      .where(andOp(eqOp(transactions.status, "COMPLETED"), gte(transactions.startTime, startOfMonth)));
+      .where(andOp(eqOp(transactions.status, "COMPLETED"), gte(transactions.startTime, startOfMonth), transactionScopeCondition));
 
     // KPIs de la semana
     const weekStats = await dbInst.select({
@@ -7500,7 +7520,7 @@ const nocRouter = router({
       totalRevenue: sum(transactions.totalCost),
     }).from(transactions)
       // @ts-expect-error -- Drizzle type mismatch: schema field type vs inferred type
-      .where(andOp(eqOp(transactions.status, "COMPLETED"), gte(transactions.startTime, startOfWeek)));
+      .where(andOp(eqOp(transactions.status, "COMPLETED"), gte(transactions.startTime, startOfWeek), transactionScopeCondition));
 
     // Últimas 20 transacciones completadas (para el ticker)
     const recentTxs = await dbInst.select({
@@ -7513,6 +7533,7 @@ const nocRouter = router({
       endTime: transactions.endTime,
       status: transactions.status,
     }).from(transactions)
+      .where(transactionScopeCondition)
       .orderBy(desc(transactions.updatedAt))
       .limit(20);
 
@@ -7534,7 +7555,7 @@ const nocRouter = router({
     }).from(transactions)
       .innerJoin(chargingStations, eqOp(chargingStations.id, transactions.stationId))
       // @ts-expect-error -- Drizzle type mismatch: schema field type vs inferred type
-      .where(andOp(eqOp(transactions.status, "COMPLETED"), gte(transactions.startTime, startOfMonth)))
+      .where(andOp(eqOp(transactions.status, "COMPLETED"), gte(transactions.startTime, startOfMonth), transactionScopeCondition))
       .groupBy(transactions.stationId, chargingStations.name)
       .orderBy(desc(sum(transactions.totalCost)))
       .limit(5);
@@ -7543,14 +7564,43 @@ const nocRouter = router({
     // Ingresos por hora (últimas 24h) para el gráfico (usando raw SQL)
     let hourlyData: Array<{ hour: number; sessions: number; revenue: string; kwh: string }> = [];
     try {
-      const hourlyRaw = await dbInst.execute(sql`
-        SELECT HOUR(startTime) as hour, COUNT(*) as sessions, SUM(totalCost) as revenue, SUM(kwhConsumed) as kwh
-        FROM transactions
-        WHERE status = 'COMPLETED' AND startTime >= ${startOfDayStr}
-        GROUP BY HOUR(startTime)
-        ORDER BY hour
-      `);
-      hourlyData = ((hourlyRaw as any)[0] || []) as Array<{ hour: number; sessions: number; revenue: string; kwh: string }>;
+      if (scope.mode === "organization") {
+        const scopedRows = scopedStationIds.length > 0
+          ? await dbInst.select({
+            startTime: transactions.startTime,
+            totalCost: transactions.totalCost,
+            kwhConsumed: transactions.kwhConsumed,
+          }).from(transactions).where(andOp(
+            eqOp(transactions.status, "COMPLETED"),
+            gte(transactions.startTime, startOfDayStr),
+            inArray(transactions.stationId, scopedStationIds),
+          ))
+          : [];
+        const byHour = new Map<number, { sessions: number; revenue: number; kwh: number }>();
+        for (const row of scopedRows) {
+          const hour = new Date(row.startTime).getHours();
+          const current = byHour.get(hour) ?? { sessions: 0, revenue: 0, kwh: 0 };
+          current.sessions += 1;
+          current.revenue += parseFloat(row.totalCost?.toString() || "0");
+          current.kwh += parseFloat(row.kwhConsumed?.toString() || "0");
+          byHour.set(hour, current);
+        }
+        hourlyData = Array.from(byHour.entries()).map(([hour, values]) => ({
+          hour,
+          sessions: values.sessions,
+          revenue: values.revenue.toString(),
+          kwh: values.kwh.toString(),
+        }));
+      } else {
+        const hourlyRaw = await dbInst.execute(sql`
+          SELECT HOUR(startTime) as hour, COUNT(*) as sessions, SUM(totalCost) as revenue, SUM(kwhConsumed) as kwh
+          FROM transactions
+          WHERE status = 'COMPLETED' AND startTime >= ${startOfDayStr}
+          GROUP BY HOUR(startTime)
+          ORDER BY hour
+        `);
+        hourlyData = ((hourlyRaw as any)[0] || []) as Array<{ hour: number; sessions: number; revenue: string; kwh: string }>;
+      }
     } catch {
       // fallback: generate empty hourly data
       hourlyData = Array.from({ length: 24 }, (_, i) => ({ hour: i, sessions: 0, revenue: '0', kwh: '0' }));
@@ -7593,7 +7643,7 @@ const nocRouter = router({
         const liveData = liveSessionPower.get(tx.id);
         if (liveData && liveData.currentPower > 0) return sum + liveData.currentPower;
         // 2. Fallback: último MeterValue desde BD (si el servidor se reinició)
-        const fallbackPower = fallbackPowerMap.get(tx.id);
+        const fallbackPower = fallbackTelemetryMap.get(tx.id)?.currentPower;
         if (fallbackPower && fallbackPower > 0) return sum + fallbackPower;
         // 3. Último recurso: potencia nominal del EVSE (estática)
         return sum + parseFloat(e.powerKw?.toString() || "0");
@@ -7638,18 +7688,54 @@ const nocRouter = router({
           currentTx: activeTxByEvse.get(e.id) ? (() => {
             const tx = activeTxByEvse.get(e.id)!;
             const liveData = liveSessionPower.get(tx.id);
-            const fallbackPower = fallbackPowerMap.get(tx.id);
+            const fallbackTelemetry = fallbackTelemetryMap.get(tx.id);
+            const fallbackPower = fallbackTelemetry?.currentPower;
             const realPower = (liveData && liveData.currentPower > 0)
               ? liveData.currentPower
               : (fallbackPower && fallbackPower > 0 ? fallbackPower : 0);
+            const currentKwh = liveData?.currentKwh ?? parseFloat(tx.kwhConsumed?.toString() || "0");
+            const chargerSoc = liveData?.soc ?? fallbackTelemetry?.soc ?? null;
+            const manualSoc = liveData?.manualSoc
+              ?? (tx.manualSoc !== null && tx.manualSoc !== undefined ? Number(tx.manualSoc) : null);
+            const manualBatteryCapacityKwh = liveData?.manualBatteryCapacityKwh
+              ?? (tx.manualBatteryCapacityKwh !== null && tx.manualBatteryCapacityKwh !== undefined
+                ? parseFloat(String(tx.manualBatteryCapacityKwh))
+                : null);
+            const manualSocCalibrationKwh = liveData?.manualSocCalibrationKwh
+              ?? (tx.manualSocCalibrationKwh !== null && tx.manualSocCalibrationKwh !== undefined
+                ? parseFloat(String(tx.manualSocCalibrationKwh))
+                : null);
+            const manualSocCalibratedAt = liveData?.manualSocCalibratedAt
+              ?? (tx.manualSocCalibratedAt ? new Date(tx.manualSocCalibratedAt) : null);
+            const operationalSoc = resolveOperationalSoc({
+              chargeType: e.chargeType,
+              chargerSoc,
+              manualSoc,
+              batteryCapacityKwh: manualBatteryCapacityKwh,
+              currentEnergyKwh: currentKwh,
+              calibrationEnergyKwh: manualSocCalibrationKwh,
+              chargeCompleteDetected: liveData?.chargeCompleteDetected ?? false,
+            });
             return {
               id: tx.id,
-              kwhConsumed: liveData ? liveData.currentKwh.toFixed(4) : tx.kwhConsumed,
+              kwhConsumed: currentKwh.toFixed(4),
               totalCost: scope.canViewFinancials ? tx.totalCost : null,
               startTime: tx.startTime,
               currentPower: Math.round(realPower * 10) / 10,
-              soc: liveData?.soc ?? null,
-              lastMeterUpdate: liveData?.lastMeterUpdate ?? null,
+              soc: operationalSoc.soc,
+              socSource: operationalSoc.source,
+              manualSoc,
+              manualBatteryCapacityKwh,
+              manualSocCalibrationKwh,
+              manualSocCalibratedAt,
+              energySinceCalibrationKwh: operationalSoc.energySinceCalibrationKwh,
+              manualSocAvailable: operationalSoc.manualSocAvailable,
+              manualSocUnavailableReason: operationalSoc.manualSocUnavailableReason,
+              canCalibrateSoc: scope.canCalibrateSoc && operationalSoc.manualSocAvailable,
+              calibrationPermissionReason: scope.canCalibrateSoc
+                ? operationalSoc.manualSocUnavailableReason
+                : "Tu perfil puede consultar el SOC, pero no modificarlo.",
+              lastMeterUpdate: liveData?.lastMeterUpdate ?? fallbackTelemetry?.lastMeterUpdate ?? null,
             };
           })() : null,
         })),
@@ -7671,6 +7757,7 @@ const nocRouter = router({
         scope: scope.mode,
         canViewFinancials: scope.canViewFinancials,
         canViewPersonalActivity: scope.canViewPersonalActivity,
+        canCalibrateSoc: scope.canCalibrateSoc,
       },
       // KPIs globales
       kpis: {
@@ -7728,6 +7815,44 @@ const nocRouter = router({
       })) : [],
     };
   }),
+
+  recalibrateManualSoc: protectedProcedure
+    .input(z.object({
+      transactionId: z.number().int().positive(),
+      soc: z.number().min(0).max(100),
+      batteryCapacityKwh: z.number().min(10).max(200).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const scope = resolveNocScope({
+        role: ctx.user.role,
+        organizationId: ctx.tenant?.organizationId,
+      });
+      if (!scope?.canCalibrateSoc) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Tu perfil puede consultar el SOC, pero no tiene permiso para recalibrarlo.",
+        });
+      }
+
+      const transaction = await db.getTransactionById(input.transactionId);
+      if (!transaction) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Sesión de carga no encontrada" });
+      }
+
+      if (scope.mode === "organization") {
+        const station = await db.getChargingStationById(transaction.stationId);
+        if (!station || station.organizationId !== scope.organizationId) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "La sesión no pertenece a tu organización" });
+        }
+      }
+
+      return recalibrateManualSocTransaction({
+        transaction,
+        soc: input.soc,
+        batteryCapacityKwh: input.batteryCapacityKwh,
+        actorUserId: ctx.user.id,
+      });
+    }),
 });
 
 // ─── Router de Feedback de Sesión de Carga ──────────────────────────────────
