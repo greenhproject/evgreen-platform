@@ -4325,4 +4325,4 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Fuente autoritativa de ocupación: contrastar estado OCPP, estado EVSE y transacción IN_PROGRESS para definir una única clasificación por conector.
 - [x] Corrección estadística de conectores: contar como cargando todo EVSE con sesión activa válida aunque exista desincronización temporal del estado persistido.
 - [x] QA métrica estación: validar el caso real mostrado sin modificar ni detener la sesión activa, además de pruebas TypeScript, Vitest y build.
-- [ ] Publicación métrica estación: guardar checkpoint, sincronizar GitHub, verificar Railway y comprobar el contador en producción.
+- [x] Publicación métrica estación: checkpoint y GitHub `5065ea27`, Railway Success, chunks de Admin/Soporte verificados en app.evgreen.lat y sesión 1140015 confirmada IN_PROGRESS/CHARGING con 5.92 kW después del despliegue.
