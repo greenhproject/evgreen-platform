@@ -1200,6 +1200,27 @@ export async function getActiveTransaction(evseId: number) {
   return result.length > 0 ? result[0] : undefined;
 }
 
+/**
+ * Obtiene en una sola consulta las transacciones activas de varias estaciones.
+ * Considera ambos campos de estado por compatibilidad con transacciones OCPP
+ * creadas antes de la normalización de transactionStatus.
+ */
+export async function getActiveTransactionsForStations(stationIds: number[]) {
+  if (stationIds.length === 0) return [];
+  const db = (await getDb())!;
+  if (!db) return [];
+
+  return db.select().from(transactions)
+    .where(and(
+      inArray(transactions.stationId, stationIds),
+      or(
+        eq(transactions.status, "IN_PROGRESS"),
+        eq(transactions.transactionStatus, "IN_PROGRESS"),
+      ),
+    ))
+    .orderBy(desc(transactions.startTime));
+}
+
 // ============================================================================
 // METER VALUES OPERATIONS
 // ============================================================================

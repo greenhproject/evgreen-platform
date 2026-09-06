@@ -4321,3 +4321,8 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] UI recalibración AC operativa: añadir un flujo responsive para escribir/recalibrar SOC desde perfiles autorizados, bloqueado cuando el cargador sea DC o reporte SOC OCPP.
 - [x] Test SOC operativo: cubrir permisos por rol, aislamiento multi-tenant, calibración AC absoluta, bloqueo DC/OCPP y lectura de sesiones tras reinicio.
 - [x] QA SOC operativo: TypeScript limpio, 188 archivos/2.163 pruebas aprobadas, build exitoso, revisión responsive del componente, Railway Success y chunks SOC verificados en app.evgreen.lat; la consulta real de solo lectura mostró la sesión AC 1140015 al 81% desde su ancla sin modificarla.
+- [x] Bug métrica estación: identificar la pantalla de detalle que muestra 0 disponibles y 0 cargando mientras existe una sesión activa.
+- [x] Fuente autoritativa de ocupación: contrastar estado OCPP, estado EVSE y transacción IN_PROGRESS para definir una única clasificación por conector.
+- [x] Corrección estadística de conectores: contar como cargando todo EVSE con sesión activa válida aunque exista desincronización temporal del estado persistido.
+- [x] QA métrica estación: validar el caso real mostrado sin modificar ni detener la sesión activa, además de pruebas TypeScript, Vitest y build.
+- [ ] Publicación métrica estación: guardar checkpoint, sincronizar GitHub, verificar Railway y comprobar el contador en producción.

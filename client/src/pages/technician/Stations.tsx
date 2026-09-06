@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Card } from "@/components/ui/card";
@@ -45,6 +45,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Search, Plus, MapPin, Zap, Settings, Eye, Pencil, Trash2, X, QrCode, FileText, Wifi, WifiOff, Activity, Wrench } from "lucide-react";
 import { toast } from "sonner";
 import { StationQRCode } from "@/components/StationQRCode";
+import { resolveConnectorOperationalState } from "@shared/connector-operational-state";
 
 // Tipos de conectores disponibles según OCPI
 const CONNECTOR_TYPES = [
@@ -114,7 +115,15 @@ export default function TechnicianStations() {
     quantity: 1,
   });
 
-  const { data: stations, isLoading, refetch } = trpc.stations.listAll.useQuery();
+  const { data: stations, isLoading, refetch } = trpc.stations.listAll.useQuery(undefined, {
+    refetchInterval: showDetailsDialog ? 5000 : false,
+  });
+
+  useEffect(() => {
+    if (!viewingStation?.id || !stations) return;
+    const freshStation = stations.find(station => station.id === viewingStation.id);
+    if (freshStation) setViewingStation(freshStation);
+  }, [stations, viewingStation?.id]);
   
   // Obtener conexiones OCPP activas
   const { data: ocppConnections } = trpc.ocpp.getActiveConnections.useQuery(undefined, {
@@ -1162,10 +1171,13 @@ export default function TechnicianStations() {
                       {viewingStation.evses.map((evse: any, index: number) => {
                         const connInfo = getOCPPConnectionInfo(viewingStation);
                         const ocppStatus = connInfo?.connectorStatuses?.[evse.evseIdLocal] || null;
-                        const realStatus = ocppStatus || evse.status;
-                        const isAvailable = realStatus === 'Available' || realStatus === 'AVAILABLE';
-                        const isCharging = realStatus === 'Charging' || realStatus === 'CHARGING' || realStatus === 'Occupied';
-                        const isPreparing = realStatus === 'Preparing' || realStatus === 'PREPARING';
+                        const operationalState = resolveConnectorOperationalState({
+                          liveOcppStatus: ocppStatus,
+                          persistedStatus: evse.operationalStatus ?? evse.connectorStatus ?? evse.status,
+                          activeTransactionId: evse.activeTransactionId,
+                        });
+                        const realStatus = operationalState.status;
+                        const { isAvailable, isCharging, isPreparing } = operationalState;
                         
                         return (
                           <div 

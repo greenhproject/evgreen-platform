@@ -58,6 +58,7 @@ import { userOnboardingRouter } from "./routers/user-onboarding";
 import { buildOcpiRouter } from "./ocpi/ocpi-router";
 import { stageSiemLocationSnapshot } from "./ocpi/ocpi-station-snapshot";
 import { contractsRouter } from "./contracts/contracts-router";
+import { resolveConnectorOperationalState } from "../shared/connector-operational-state";
 
 // ============================================================================
 // ROLE-BASED PROCEDURES
@@ -468,7 +469,16 @@ const stationsRouter = router({
       
       // Agregar tarifa activa y EVSEs a cada estación
       const { isDemoStation } = await import("./charging/charging-simulator");
-      const ocppManager = await import("./ocpp/connection-manager");
+      const publicStationIds = stations.map((station: any) => station.id);
+      const activeTransactions = await db.getActiveTransactionsForStations(publicStationIds);
+      const activeTransactionByEvse = new Map<number, typeof activeTransactions[number]>();
+      for (const transaction of activeTransactions) {
+        if (!activeTransactionByEvse.has(transaction.evseId)) {
+          activeTransactionByEvse.set(transaction.evseId, transaction);
+        }
+      }
+      const publicConnections = dualCSMS.getConnectionsStatus();
+      const publicConnectionMap = new Map(publicConnections.map(connection => [connection.ocppIdentity, connection]));
       const stationsWithData = await Promise.all(
         stations.map(async (station: any) => {
           const tariff = await db.getActiveTariffByStationId(station.id);
@@ -490,23 +500,31 @@ const stationsRouter = router({
             // La memoria puede confirmar online, pero no puede negar lo que dice la BD
             realIsOnline = memoryOnline || !!station.isOnline;
           }
-          
-          // Si la estación está offline, todos sus EVSEs deben mostrarse como UNAVAILABLE
-          // para que el usuario no intente cargar en una estación desconectada
-          const effectiveEvses = isDemo
-            ? evses.map((e: any) => ({
-                ...e,
-                status: e.connectorStatus === 'RESERVED' ? 'RESERVED' : 'AVAILABLE',
-              }))
-            : realIsOnline
-              ? evses  // Online: mostrar estado real de BD
-              : evses.map((e: any) => ({
-                  ...e,
-                  // Offline: solo preservar CHARGING/RESERVED (sesiones activas), el resto UNAVAILABLE
-                  status: (e.connectorStatus === 'CHARGING' || e.connectorStatus === 'RESERVED')
-                    ? e.connectorStatus
-                    : 'UNAVAILABLE',
-                }));
+          const publicConnection = station.ocppIdentity
+            ? publicConnectionMap.get(station.ocppIdentity)
+            : undefined;
+          const effectiveEvses = evses.map((evse: any) => {
+            const activeTransaction = activeTransactionByEvse.get(evse.id);
+            const persistedStatus = isDemo
+              ? (evse.connectorStatus === "RESERVED" ? "RESERVED" : "AVAILABLE")
+              : (!realIsOnline && !activeTransaction && evse.connectorStatus !== "RESERVED"
+                ? "UNAVAILABLE"
+                : evse.connectorStatus);
+            const operationalState = resolveConnectorOperationalState({
+              liveOcppStatus: (publicConnection as any)?.connectorStatuses?.[evse.evseIdLocal],
+              persistedStatus,
+              activeTransactionId: activeTransaction?.id ?? null,
+            });
+            return {
+              ...evse,
+              status: operationalState.status,
+              operationalStatus: operationalState.status,
+              operationalStatusSource: operationalState.source,
+              activeTransactionId: activeTransaction?.id ?? null,
+              isCharging: operationalState.isCharging,
+              isAvailable: operationalState.isAvailable,
+            };
+          });
 
           return {
             ...station,
@@ -537,6 +555,14 @@ const stationsRouter = router({
     // Batch: obtener TODOS los EVSEs de todas las estaciones en 2 queries (no N+1)
     const stationIds = stations.map((s: any) => s.id);
     const evsesMap = await db.getAllEvsesForStations(stationIds);
+    const activeTransactions = await db.getActiveTransactionsForStations(stationIds);
+    const activeTransactionByEvse = new Map<number, typeof activeTransactions[number]>();
+    for (const transaction of activeTransactions) {
+      // La consulta está ordenada por inicio descendente: conservar la más reciente.
+      if (!activeTransactionByEvse.has(transaction.evseId)) {
+        activeTransactionByEvse.set(transaction.evseId, transaction);
+      }
+    }
     
     // Batch: obtener TODAS las tarifas activas de todas las estaciones
     const tariffsMap = new Map<number, any>();
@@ -555,10 +581,32 @@ const stationsRouter = router({
     
     // Enriquecer estaciones con EVSEs, tarifas y datos OCPP (sin queries adicionales)
     const stationsWithEvses = stations.map((station: any) => {
-      const stationEvses = evsesMap.get(station.id) || [];
+      const persistedEvses = evsesMap.get(station.id) || [];
       const ocppId = station.ocppIdentity || station.id?.toString();
       const ocppConn = csmsMap.get(ocppId);
       const tariff = tariffsMap.get(station.id);
+      const stationEvses = persistedEvses.map((evse: any) => {
+        const activeTransaction = activeTransactionByEvse.get(evse.id);
+        const liveOcppStatus = ocppConn?.connectorStatuses?.[evse.evseIdLocal] ?? null;
+        const operationalState = resolveConnectorOperationalState({
+          liveOcppStatus,
+          persistedStatus: evse.connectorStatus,
+          activeTransactionId: activeTransaction?.id ?? null,
+        });
+
+        return {
+          ...evse,
+          // `status` se mantiene por compatibilidad con pantallas históricas.
+          status: operationalState.status,
+          operationalStatus: operationalState.status,
+          operationalStatusSource: operationalState.source,
+          activeTransactionId: activeTransaction?.id ?? null,
+          isCharging: operationalState.isCharging,
+          isAvailable: operationalState.isAvailable,
+          isPreparing: operationalState.isPreparing,
+          isUnavailable: operationalState.isUnavailable,
+        };
+      });
       // isOnline: memoria OCPP (tiempo real) OR BD (persiste entre reinicios)
       const isMemoryOnline = ocppId ? csmsMap.has(ocppId) : false;
       const isLiveOnline = isMemoryOnline || (!!station.isOnline && !!station.ocppIdentity);
@@ -595,6 +643,14 @@ const stationsRouter = router({
     // Obtener conexiones OCPP activas para estado en tiempo real
     const csmsConnections = dualCSMS.getConnectionsStatus();
     const legacyConnections = ocppManager.getAllConnections();
+    const ownedStationIds = allStations.map(station => station.id);
+    const activeTransactions = await db.getActiveTransactionsForStations(ownedStationIds);
+    const activeTransactionByEvse = new Map<number, typeof activeTransactions[number]>();
+    for (const transaction of activeTransactions) {
+      if (!activeTransactionByEvse.has(transaction.evseId)) {
+        activeTransactionByEvse.set(transaction.evseId, transaction);
+      }
+    }
     
     // Enriquecer con tarifas, EVSEs y estado real de conexión
     const enrichedStations = await Promise.all(
@@ -642,13 +698,29 @@ const stationsRouter = router({
             overstayGracePeriodMinutes: tariff.overstayGracePeriodMinutes ?? 10,
             autoPricing: tariff.autoPricing === 1 || (tariff.autoPricing as any) === 1,
           } : undefined,
-          evses: evses.map(e => ({
-            id: e.id,
-            connectorId: e.connectorId,
-            connectorType: e.connectorType,
-            powerKw: e.powerKw?.toString() || "22",
-            status: e.connectorStatus,
-          })),
+          evses: evses.map(e => {
+            const activeTransaction = activeTransactionByEvse.get(e.id);
+            const operationalState = resolveConnectorOperationalState({
+              liveOcppStatus: (ocppConn as any)?.connectorStatuses?.[e.evseIdLocal],
+              persistedStatus: e.connectorStatus,
+              activeTransactionId: activeTransaction?.id ?? null,
+            });
+            return {
+              id: e.id,
+              evseIdLocal: e.evseIdLocal,
+              connectorId: e.connectorId,
+              connectorType: e.connectorType,
+              chargeType: e.chargeType,
+              powerKw: e.powerKw?.toString() || "22",
+              connectorStatus: e.connectorStatus,
+              status: operationalState.status,
+              operationalStatus: operationalState.status,
+              operationalStatusSource: operationalState.source,
+              activeTransactionId: activeTransaction?.id ?? null,
+              isCharging: operationalState.isCharging,
+              isAvailable: operationalState.isAvailable,
+            };
+          }),
         };
       })
     );
@@ -847,16 +919,37 @@ const stationsRouter = router({
       if (!station) return evses;
       const { isDemoStation } = await import("./charging/charging-simulator");
       const isDemo = station.ocppIdentity ? isDemoStation(station.ocppIdentity) : false;
-      if (isDemo) return evses; // Demo: siempre estado real
       // Verificar estado online: BD como fuente de verdad + memoria como enriquecimiento
       const memoryOnline2 = station.ocppIdentity ? dualCSMS.isStationOnline(station.ocppIdentity) : false;
       const realIsOnline = memoryOnline2 || !!station.isOnline;
-      if (realIsOnline) return evses; // Online: estado real de BD
-      // Offline: marcar todos como UNAVAILABLE excepto CHARGING/RESERVED
-      return evses.map((e: any) => ({
-        ...e,
-        connectorStatus: (e.connectorStatus === 'CHARGING' || e.connectorStatus === 'RESERVED') ? e.connectorStatus : 'UNAVAILABLE',
-      }));
+      const activeTransactions = await db.getActiveTransactionsByStationId(input.stationId);
+      const activeTransactionByEvse = new Map(activeTransactions.map(transaction => [transaction.evseId, transaction]));
+      const liveConnection = station.ocppIdentity
+        ? dualCSMS.getConnectionsStatus().find(connection => connection.ocppIdentity === station.ocppIdentity)
+        : undefined;
+      return evses.map((e: any) => {
+        const activeTransaction = activeTransactionByEvse.get(e.id);
+        const persistedStatus = isDemo
+          ? (e.connectorStatus === "RESERVED" ? "RESERVED" : "AVAILABLE")
+          : (!realIsOnline && !activeTransaction && e.connectorStatus !== "RESERVED"
+            ? "UNAVAILABLE"
+            : e.connectorStatus);
+        const operationalState = resolveConnectorOperationalState({
+          liveOcppStatus: (liveConnection as any)?.connectorStatuses?.[e.evseIdLocal],
+          persistedStatus,
+          activeTransactionId: activeTransaction?.id ?? null,
+        });
+        return {
+          ...e,
+          connectorStatus: operationalState.status ?? e.connectorStatus,
+          status: operationalState.status,
+          operationalStatus: operationalState.status,
+          operationalStatusSource: operationalState.source,
+          activeTransactionId: activeTransaction?.id ?? null,
+          isCharging: operationalState.isCharging,
+          isAvailable: operationalState.isAvailable,
+        };
+      });
     }),
   
   // Eliminar estación (admin/técnico)

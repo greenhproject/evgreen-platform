@@ -47,6 +47,7 @@ import { MapView } from "@/components/Map";
 import { toast } from "sonner";
 import { StationQRCode } from "@/components/StationQRCode";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { resolveConnectorOperationalState } from "@shared/connector-operational-state";
 
 // Zonas premium con fee adicional
 const PREMIUM_ZONES = [
@@ -181,7 +182,15 @@ export default function AdminStations() {
     quantity: 1,
   });
 
-  const { data: stations, isLoading, refetch } = trpc.stations.listAll.useQuery();
+  const { data: stations, isLoading, refetch } = trpc.stations.listAll.useQuery(undefined, {
+    refetchInterval: showDetailsDialog ? 5000 : false,
+  });
+
+  useEffect(() => {
+    if (!viewingStation?.id || !stations) return;
+    const freshStation = stations.find(station => station.id === viewingStation.id);
+    if (freshStation) setViewingStation(freshStation);
+  }, [stations, viewingStation?.id]);
   
   // Obtener perfiles de marca de cargador
   const { data: chargerBrands } = trpc.chargerBrands.list.useQuery();
@@ -2090,12 +2099,13 @@ export default function AdminStations() {
                       // Obtener estado OCPP en tiempo real si está conectado
                       const connInfo = getOCPPConnectionInfo(viewingStation);
                       const ocppStatus = connInfo?.connectorStatuses?.[evse.evseIdLocal] || null;
-                      // Usar estado OCPP si está disponible, sino usar estado de BD
-                      const realStatus = ocppStatus || evse.status;
-                      const isAvailable = realStatus === 'Available' || realStatus === 'AVAILABLE';
-                      const isCharging = realStatus === 'Charging' || realStatus === 'CHARGING' || realStatus === 'Occupied';
-                      const isPreparing = realStatus === 'Preparing' || realStatus === 'PREPARING';
-                      const isUnavailable = realStatus === 'Unavailable' || realStatus === 'UNAVAILABLE' || realStatus === 'Faulted';
+                      const operationalState = resolveConnectorOperationalState({
+                        liveOcppStatus: ocppStatus,
+                        persistedStatus: evse.operationalStatus ?? evse.connectorStatus ?? evse.status,
+                        activeTransactionId: evse.activeTransactionId,
+                      });
+                      const realStatus = operationalState.status;
+                      const { isAvailable, isCharging, isPreparing, isUnavailable } = operationalState;
                       
                       return (
                       <div 
@@ -2158,9 +2168,13 @@ export default function AdminStations() {
                   
                   evses.forEach((evse: any) => {
                     const ocppStatus = connInfo?.connectorStatuses?.[evse.evseIdLocal];
-                    const realStatus = ocppStatus || evse.status;
-                    if (realStatus === 'Available' || realStatus === 'AVAILABLE') availableCount++;
-                    if (realStatus === 'Charging' || realStatus === 'CHARGING' || realStatus === 'Occupied') chargingCount++;
+                    const operationalState = resolveConnectorOperationalState({
+                      liveOcppStatus: ocppStatus,
+                      persistedStatus: evse.operationalStatus ?? evse.connectorStatus ?? evse.status,
+                      activeTransactionId: evse.activeTransactionId,
+                    });
+                    if (operationalState.isAvailable) availableCount++;
+                    if (operationalState.isCharging) chargingCount++;
                   });
                   
                   return (
