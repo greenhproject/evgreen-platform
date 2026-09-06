@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ManualFormalizationAudit, ManualFormalizationFields } from "@/components/spaces/ManualFormalizationAudit";
+import { SpacePhotoLightbox } from "@/components/spaces/SpacePhotoLightbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
@@ -1087,7 +1088,7 @@ function SpaceDetailDialog({
   const [manualFormalizationEvidence, setManualFormalizationEvidence] = useState("");
   const [rejectionReason, setRejectionReason] = useState("");
   const [showRejectDialog, setShowRejectDialog] = useState(false);
-  const [expandedPhoto, setExpandedPhoto] = useState<string | null>(null);
+  const [activePhotoIndex, setActivePhotoIndex] = useState<number | null>(null);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [editForm, setEditForm] = useState<Record<string, any>>({});
@@ -1584,8 +1585,10 @@ function SpaceDetailDialog({
                       {space.photos.map((photo: any, i: number) => (
                         <button
                           key={i}
-                          onClick={() => setExpandedPhoto(photo.photoUrl)}
-                          className="block relative group"
+                          type="button"
+                          onClick={() => setActivePhotoIndex(i)}
+                          className="block relative group rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#111827]"
+                          aria-label={`Abrir ${photo.caption || `fotografía ${i + 1}`} en la galería`}
                         >
                           <img
                             src={photo.photoUrl}
@@ -1704,34 +1707,11 @@ function SpaceDetailDialog({
         </DialogContent>
       </Dialog>
 
-      {/* Photo Lightbox */}
-      {expandedPhoto && (
-        <div
-          className="fixed inset-0 z-[9999] bg-black/90 flex items-center justify-center p-4"
-          onClick={() => setExpandedPhoto(null)}
-        >
-          {/* Inner wrapper stops propagation so clicks on image/button don't bubble to backdrop */}
-          <div
-            className="relative max-w-full max-h-[90vh] flex items-center justify-center"
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Close button — large tap target for mobile */}
-            <button
-              type="button"
-              onClick={() => setExpandedPhoto(null)}
-              className="absolute -top-10 right-0 sm:-top-3 sm:-right-10 w-10 h-10 flex items-center justify-center rounded-full bg-black/60 hover:bg-black/80 text-white z-10 transition-colors"
-              aria-label="Cerrar imagen"
-            >
-              <X className="w-6 h-6" />
-            </button>
-            <img
-              src={expandedPhoto}
-              alt="Foto ampliada"
-              className="max-w-full max-h-[85vh] object-contain rounded-lg"
-            />
-          </div>
-        </div>
-      )}
+      <SpacePhotoLightbox
+        photos={space.photos || []}
+        activeIndex={activePhotoIndex}
+        onActiveIndexChange={setActivePhotoIndex}
+      />
 
       {/* Reject Dialog */}
       <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>

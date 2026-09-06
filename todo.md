@@ -4326,3 +4326,9 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Corrección estadística de conectores: contar como cargando todo EVSE con sesión activa válida aunque exista desincronización temporal del estado persistido.
 - [x] QA métrica estación: validar el caso real mostrado sin modificar ni detener la sesión activa, además de pruebas TypeScript, Vitest y build.
 - [x] Publicación métrica estación: checkpoint y GitHub `5065ea27`, Railway Success, chunks de Admin/Soporte verificados en app.evgreen.lat y sesión 1140015 confirmada IN_PROGRESS/CHARGING con 5.92 kW después del despliegue.
+- [x] Galería de postulaciones: auditado el visor anterior de una sola imagen dentro del modal de detalle del espacio.
+- [x] Lightbox fotográfico: navegación circular anterior/siguiente, contador, miniaturas y cierre con X que conserva abierto el modal principal.
+- [x] Accesibilidad de galería: teclado (flechas, Inicio, Fin y Escape), foco restaurado, controles etiquetados y gestos táctiles horizontales.
+- [x] Responsive mobile-first: imagen completa sin recortes, áreas seguras, X de 44×44 px y flechas de 48×48 px dentro de un viewport real de 390×844.
+- [x] QA galería: 2.171 pruebas aprobadas en ejecución determinista, TypeScript y build limpios; CDP confirmó cambio de imagen y cierre exclusivo del lightbox con el modal padre abierto.
+- [ ] Publicación galería: guardar checkpoint, sincronizar GitHub, verificar Railway y comprobar producción.
