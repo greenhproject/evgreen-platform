@@ -4337,5 +4337,5 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Protección tarifa cero: impedir creación de penalidades, débitos, deudas o notificaciones de cobro cuando la tarifa autoritativa sea $0.
 - [x] Conciliación devolución Andrés Salas: reintegro manual de $59.998 verificado sin segundo abono; transacción en $0 de sobreestadía, total $61.532,20, reembolso auditado y liquidaciones no pagadas conciliadas a $0.
 - [x] QA financiero sobreestadía: tarifa cero y positiva validadas, cancelación dinámica antes del débito, TypeScript limpio, 2.175 pruebas aprobadas y build productivo exitoso.
-- [x] Publicación sobreestadía: checkpoint `6261d1a9`, GitHub `5fa0b85d`, Railway Success, interfaces sin fallback de $500 verificadas en producción, EVG Diamante en $0 con cero locks y cero débitos nuevos después del reembolso.
-- [x] UI pública sobreestadía: el detalle de estación consume la tarifa autoritativa del backend y muestra “Sin cobro” cuando es $0; TypeScript, 31 pruebas focalizadas y build validados.
+- [x] Publicación sobreestadía: checkpoints `6261d1a9`/`ddf808fb`, GitHub `e44c96fb`, Railway Success, interfaces sin fallback de $500 verificadas, EVG Diamante en $0 con cero locks y cero débitos nuevos después del reembolso.
+- [x] UI pública sobreestadía: el detalle de estación consume la tarifa autoritativa y muestra “Sin cobro” cuando es $0; TypeScript, 31 pruebas focalizadas y build aprobados, con `occupancyRatePerMinute: 0` confirmado en el endpoint productivo.
