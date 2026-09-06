@@ -624,7 +624,7 @@ const stationsRouter = router({
           id: tariff.id,
           pricePerKwh: tariff.pricePerKwh?.toString() || "1300",
           reservationFee: tariff.reservationFee?.toString() || "5000",
-          idleFeePerMin: tariff.overstayPenaltyPerMinute?.toString() || "500",
+          idleFeePerMin: tariff.overstayPenaltyPerMinute?.toString() ?? "0",
           connectionFee: tariff.pricePerSession?.toString() || "2000",
           overstayGracePeriodMinutes: tariff.overstayGracePeriodMinutes ?? 10,
           autoPricing: tariff.autoPricing === 1 || tariff.autoPricing === 1,
@@ -693,7 +693,7 @@ const stationsRouter = router({
           tariff: tariff ? {
             pricePerKwh: tariff.pricePerKwh?.toString() || "1200",
             reservationFee: tariff.reservationFee?.toString() || "5000",
-            idleFeePerMin: tariff.overstayPenaltyPerMinute?.toString() || "500",
+            idleFeePerMin: tariff.overstayPenaltyPerMinute?.toString() ?? "0",
             connectionFee: tariff.pricePerSession?.toString() || "2000",
             overstayGracePeriodMinutes: tariff.overstayGracePeriodMinutes ?? 10,
             autoPricing: tariff.autoPricing === 1 || (tariff.autoPricing as any) === 1,
@@ -1087,6 +1087,12 @@ const tariffsRouter = router({
           message: `El precio por kWh ($${pricePerKwh.toLocaleString("es-CO")} COP) debe estar dentro del rango global permitido: $${priceRanges.minPrice.toLocaleString("es-CO")} - $${priceRanges.maxPrice.toLocaleString("es-CO")} COP/kWh`,
         });
       }
+      const occupancyRate = input.overstayPenaltyPerMinute === undefined
+        ? null
+        : Number(input.overstayPenaltyPerMinute);
+      if (occupancyRate !== null && (!Number.isFinite(occupancyRate) || occupancyRate < 0)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "La tarifa de ocupación debe ser mayor o igual a cero" });
+      }
       
       // Desactivar tarifas anteriores
       const existingTariffs = await db.getTariffsByStationId(input.stationId);
@@ -1097,6 +1103,11 @@ const tariffsRouter = router({
       }
       
       const id = await db.createTariff({ ...input, isActive: 1 });
+      if (occupancyRate !== null) {
+        await db.updateChargingStation(input.stationId, {
+          occupancyRatePerMinute: occupancyRate,
+        });
+      }
       
       // Registrar en log de auditoría
       try {
@@ -1154,7 +1165,19 @@ const tariffsRouter = router({
         }
       }
       
+      const occupancyRate = input.data.overstayPenaltyPerMinute === undefined
+        ? null
+        : Number(input.data.overstayPenaltyPerMinute);
+      if (occupancyRate !== null && (!Number.isFinite(occupancyRate) || occupancyRate < 0)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "La tarifa de ocupación debe ser mayor o igual a cero" });
+      }
+
       await db.updateTariff(input.id, input.data as any);
+      if (occupancyRate !== null) {
+        await db.updateChargingStation(tariff.stationId, {
+          occupancyRatePerMinute: occupancyRate,
+        });
+      }
       return { success: true };
     }),
 
@@ -1250,7 +1273,14 @@ const tariffsRouter = router({
           });
         } catch (e) { console.error('[AuditLog] Error logging tariff create via updateByStation:', e); }
       }
-      
+
+      // La tarifa operativa por estación es la fuente autoritativa. Mantenerla
+      // sincronizada con el editor de tarifas evita que un cero válido vuelva a
+      // convertirse en un fallback histórico de $500.
+      await db.updateChargingStation(input.stationId, {
+        occupancyRatePerMinute: input.idleFeePerMin,
+      });
+
       return { success: true };
     }),
   

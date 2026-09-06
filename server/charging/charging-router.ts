@@ -2019,7 +2019,7 @@ export function updateActiveSessionMeterData(transactionId: number, data: {
           db.createNotification({
             userId: session.userId,
             title: "⚡ ¡Batería llena!",
-            message: `Tu vehículo ha completado la carga. ${kwhDelivered} kWh entregados. Desconecta para evitar la tarifa de ocupación ($500/min).`,
+            message: `Tu vehículo ha completado la carga. ${kwhDelivered} kWh entregados. Desconecta el vehículo para liberar el conector.`,
             type: "CHARGING",
           }).catch(err => console.error(`[SoC] Error creating in-app notification:`, err));
           console.log(`[SoC] Transaction ${transactionId}: Battery full notification sent to user ${session.userId}`);

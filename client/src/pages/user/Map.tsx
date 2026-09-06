@@ -686,7 +686,7 @@ export default function UserMap() {
                       overstayStatus.status === 'penalty' ? 'text-red-300' : 'text-amber-300'
                     }`}>
                       {overstayStatus.status === 'penalty'
-                        ? `$${Math.round(overstayStatus.accumulatedCost || 0).toLocaleString()} COP • $${(overstayStatus.penaltyPerMinute || 500).toLocaleString()}/min`
+                        ? `$${Math.round(overstayStatus.accumulatedCost || 0).toLocaleString()} COP • $${(overstayStatus.penaltyPerMinute ?? 0).toLocaleString()}/min`
                         : `Desconecta en ${'gracePeriodMinutes' in overstayStatus ? overstayStatus.gracePeriodMinutes : 10} min`
                       }
                     </p>

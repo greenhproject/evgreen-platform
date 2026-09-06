@@ -4,6 +4,8 @@ const dbMocks = vi.hoisted(() => ({
   getDb: vi.fn(),
   getEvsesByStationId: vi.fn(),
   getWalletByUserId: vi.fn(),
+  getEvseById: vi.fn(),
+  getChargingStationById: vi.fn(),
   createWalletTransaction: vi.fn(),
   createUserDebt: vi.fn(),
   createNotification: vi.fn(),
@@ -78,6 +80,21 @@ describe("monitor real de sobretiempo al desconectar", () => {
     expect(__overstayTestHooks.activeSessionCount()).toBe(0);
     expect(dbMocks.lockDelete).toHaveBeenCalledTimes(1);
     expect(dbMocks.lockWhere).toHaveBeenCalledTimes(1);
+    expect(dbMocks.createWalletTransaction).not.toHaveBeenCalled();
+    expect(dbMocks.createUserDebt).not.toHaveBeenCalled();
+    expect(dbMocks.createNotification).not.toHaveBeenCalled();
+  });
+
+  it("una tarifa explícita de $0 cancela un monitor activo antes de generar débitos", async () => {
+    __overstayTestHooks.seedSession({ evseId: 71, stationId: 15, accumulatedCost: 0 });
+    dbMocks.getEvseById.mockResolvedValue({ id: 71, connectorStatus: "FINISHING" });
+    dbMocks.getChargingStationById.mockResolvedValue({ id: 15, occupancyRatePerMinute: 0 });
+
+    await __overstayTestHooks.processSeededSession(71);
+
+    expect(__overstayTestHooks.activeSessionCount()).toBe(0);
+    expect(dbMocks.lockDelete).toHaveBeenCalledTimes(1);
+    expect(dbMocks.getWalletByUserId).not.toHaveBeenCalled();
     expect(dbMocks.createWalletTransaction).not.toHaveBeenCalled();
     expect(dbMocks.createUserDebt).not.toHaveBeenCalled();
     expect(dbMocks.createNotification).not.toHaveBeenCalled();

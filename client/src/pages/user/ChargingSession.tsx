@@ -380,7 +380,7 @@ function OverstayBanner({ overstayStatus }: { overstayStatus: any }) {
             <p className="font-semibold text-amber-400 text-sm">Período de gracia</p>
             <p className="text-xs text-muted-foreground mt-1">
               Desconecta tu vehículo en los próximos {overstayStatus.gracePeriodMinutes || 10} minutos
-              para evitar la tarifa de ocupación de ${(overstayStatus.penaltyPerMinute || 500).toLocaleString()}/min.
+              para evitar la tarifa de ocupación de ${(overstayStatus.penaltyPerMinute ?? 0).toLocaleString()}/min.
             </p>
           </div>
         </div>
@@ -402,7 +402,7 @@ function OverstayBanner({ overstayStatus }: { overstayStatus: any }) {
             <p className="font-semibold text-red-400 text-sm">Tarifa de ocupación activa</p>
             <div className="flex items-center justify-between mt-2">
               <span className="text-xs text-muted-foreground">
-                ${(overstayStatus.penaltyPerMinute || 500).toLocaleString()}/min
+                ${(overstayStatus.penaltyPerMinute ?? 0).toLocaleString()}/min
               </span>
               <span className="text-lg font-bold text-red-400">
                 ${Math.round(overstayStatus.accumulatedCost || 0).toLocaleString()} COP
@@ -500,7 +500,7 @@ function OverstayScreen({ overstayStatus, onGoBack }: { overstayStatus: any; onG
             <div className="mt-4 pt-4 border-t border-red-500/20 flex justify-between text-sm">
               <span className="text-muted-foreground">Tarifa</span>
               <span className="font-medium text-red-400">
-                ${(overstayStatus.penaltyPerMinute || 500).toLocaleString()}/min
+                ${(overstayStatus.penaltyPerMinute ?? 0).toLocaleString()}/min
               </span>
             </div>
             {overstayStatus.elapsedMinutes != null && (
@@ -529,7 +529,7 @@ function OverstayScreen({ overstayStatus, onGoBack }: { overstayStatus: any; onG
               <p className="text-sm text-amber-400/70 mt-1">para desconectar</p>
             </div>
             <div className="mt-4 pt-4 border-t border-amber-500/20 text-sm text-center text-muted-foreground">
-              Después se cobrará ${(overstayStatus.penaltyPerMinute || 500).toLocaleString()}/min
+              Después se cobrará ${(overstayStatus.penaltyPerMinute ?? 0).toLocaleString()}/min
             </div>
           </Card>
         </motion.div>

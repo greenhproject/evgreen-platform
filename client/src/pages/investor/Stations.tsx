@@ -45,6 +45,7 @@ interface Station {
   isActive: boolean;
   isPublic: boolean;
   description?: string | null;
+  occupancyRatePerMinute?: number | string | null;
   isConnectedOCPP?: boolean;
   // Tipo de propiedad
   ownershipType?: 'owned' | 'crowdfunding';
@@ -267,13 +268,13 @@ export default function InvestorStations() {
     if (station.tariff) {
       setPricePerKwh(station.tariff.pricePerKwh);
       setReservationFee(station.tariff.reservationFee);
-      setIdleFee(station.tariff.idleFeePerMin);
+      setIdleFee((station.occupancyRatePerMinute ?? station.tariff.idleFeePerMin ?? 0).toString());
       setConnectionFee(station.tariff.connectionFee);
       setAutoPricing(station.tariff.autoPricing || false);
     } else {
       setPricePerKwh("1200");
       setReservationFee("5000");
-      setIdleFee("500");
+      setIdleFee("0");
       setConnectionFee("2000");
       setAutoPricing(false);
     }
@@ -293,11 +294,17 @@ export default function InvestorStations() {
       }
     }
     
+    const parsedIdleFee = Number(idleFee);
+    if (!Number.isFinite(parsedIdleFee) || parsedIdleFee < 0) {
+      toast.error("La tarifa de ocupación debe ser un valor válido mayor o igual a cero");
+      return;
+    }
+
     updateTariff.mutate({
       stationId: selectedStation.id,
       pricePerKwh: price,
       reservationFee: parseFloat(reservationFee) || 5000,
-      idleFeePerMin: parseFloat(idleFee) || 500,
+      idleFeePerMin: parsedIdleFee,
       connectionFee: parseFloat(connectionFee) || 2000,
       autoPricing,
     });

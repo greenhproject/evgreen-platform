@@ -239,7 +239,7 @@ export default function AdminStations() {
     const t = station.tariff;
     setTariffPricePerKwh(t?.pricePerKwh?.toString() || "1300");
     setTariffReservationFee(t?.reservationFee?.toString() || "5000");
-    setTariffIdleFee((t?.overstayPenaltyPerMinute || t?.idleFeePerMin || "500").toString());
+    setTariffIdleFee((station.occupancyRatePerMinute ?? t?.overstayPenaltyPerMinute ?? t?.idleFeePerMin ?? 0).toString());
     setTariffConnectionFee((t?.pricePerSession || t?.connectionFee || "2000").toString());
     setTariffAutoPricing(t?.autoPricing || false);
     setShowTariffModal(true);
@@ -253,11 +253,16 @@ export default function AdminStations() {
         return;
       }
     }
+    const idleFee = Number(tariffIdleFee);
+    if (!Number.isFinite(idleFee) || idleFee < 0) {
+      toast.error("La tarifa de ocupación debe ser un valor válido mayor o igual a cero");
+      return;
+    }
     updateTariffMutation.mutate({
       stationId: tariffStation.id,
       pricePerKwh: price,
       reservationFee: parseFloat(tariffReservationFee) || 5000,
-      idleFeePerMin: parseFloat(tariffIdleFee) || 500,
+      idleFeePerMin: idleFee,
       connectionFee: parseFloat(tariffConnectionFee) || 2000,
       autoPricing: tariffAutoPricing,
     });

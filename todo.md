@@ -4332,3 +4332,9 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Responsive mobile-first: imagen completa sin recortes, áreas seguras, X de 44×44 px y flechas de 48×48 px dentro de un viewport real de 390×844.
 - [x] QA galería: 2.171 pruebas aprobadas en ejecución determinista, TypeScript y build limpios; CDP confirmó cambio de imagen y cierre exclusivo del lightbox con el modal padre abierto.
 - [x] Publicación galería: checkpoint `30c2c8f8`, GitHub `6280f73a`, Railway Success y controles del lightbox confirmados en el chunk productivo de Admin Espacios; ruta QA temporal ausente.
+- [x] Incidente sobreestadía 1140015: auditar la tarifa efectiva configurada en EVG Diamante, los débitos de Andrés Salas y el saldo antes/después.
+- [x] Fuente tarifaria de sobreestadía: eliminar valores por defecto que sustituyan incorrectamente una tarifa explícita de cero y documentar la precedencia estación/tenant/global.
+- [x] Protección tarifa cero: impedir creación de penalidades, débitos, deudas o notificaciones de cobro cuando la tarifa autoritativa sea $0.
+- [x] Conciliación devolución Andrés Salas: reintegro manual de $59.998 verificado sin segundo abono; transacción en $0 de sobreestadía, total $61.532,20, reembolso auditado y liquidaciones no pagadas conciliadas a $0.
+- [x] QA financiero sobreestadía: tarifa cero y positiva validadas, cancelación dinámica antes del débito, TypeScript limpio, 2.175 pruebas aprobadas y build productivo exitoso.
+- [ ] Publicación sobreestadía: guardar checkpoint, sincronizar GitHub, verificar Railway y comprobar producción antes de cerrar el incidente.

@@ -101,7 +101,7 @@ export default function OverstayMonitor() {
 
   const isPenalty = overstayStatus.status === "penalty";
   const isGrace = overstayStatus.status === "grace" || overstayStatus.status === "finishing";
-  const penaltyPerMinute = overstayStatus.penaltyPerMinute || 500;
+  const penaltyPerMinute = overstayStatus.penaltyPerMinute ?? 0;
   const accumulatedCost = ('accumulatedCost' in overstayStatus ? overstayStatus.accumulatedCost : 0) || 0;
   const gracePeriodMinutes = ('gracePeriodMinutes' in overstayStatus ? overstayStatus.gracePeriodMinutes : 10) || 10;
   const graceRemaining = ('graceRemaining' in overstayStatus ? overstayStatus.graceRemaining : 0) || 0;
