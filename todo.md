@@ -4331,4 +4331,4 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Accesibilidad de galería: teclado (flechas, Inicio, Fin y Escape), foco restaurado, controles etiquetados y gestos táctiles horizontales.
 - [x] Responsive mobile-first: imagen completa sin recortes, áreas seguras, X de 44×44 px y flechas de 48×48 px dentro de un viewport real de 390×844.
 - [x] QA galería: 2.171 pruebas aprobadas en ejecución determinista, TypeScript y build limpios; CDP confirmó cambio de imagen y cierre exclusivo del lightbox con el modal padre abierto.
-- [ ] Publicación galería: guardar checkpoint, sincronizar GitHub, verificar Railway y comprobar producción.
+- [x] Publicación galería: checkpoint `30c2c8f8`, GitHub `6280f73a`, Railway Success y controles del lightbox confirmados en el chunk productivo de Admin Espacios; ruta QA temporal ausente.
