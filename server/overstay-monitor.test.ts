@@ -94,13 +94,12 @@ describe("Overstay Monitor - Core Logic", () => {
       expect(penaltyAmount).toBe(0);
     });
 
-    it("should use default penalty of $500/min when not configured", () => {
-      const defaultPenalty = 500;
-      const tariffPenalty = undefined;
-      const globalPenalty = undefined;
-      
-      const effectivePenalty = tariffPenalty ?? globalPenalty ?? defaultPenalty;
-      expect(effectivePenalty).toBe(500);
+    it("should preserve an explicit zero instead of replacing it with $500/min", () => {
+      const stationPenalty = 0;
+      const tariffPenalty = 500;
+
+      const effectivePenalty = stationPenalty ?? tariffPenalty;
+      expect(effectivePenalty).toBe(0);
     });
   });
 

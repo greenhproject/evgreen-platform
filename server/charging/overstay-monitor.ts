@@ -24,6 +24,7 @@ import { sendUserPush } from "../push/unified-push";
 import { sendWhatsAppTemplate, WA_TEMPLATE_NAMES } from "../whatsapp/whatsapp-service";
 import { autoChargeIfNeeded } from "../wompi/auto-charge";
 import { createOverstayLifecycle } from "./overstay-lifecycle";
+import { resolveOverstayPolicy } from "./overstay-policy";
 import crypto from "crypto";
 
 // Unique instance ID for this server process (survives restarts with different ID)
@@ -311,44 +312,35 @@ export async function onChargingFinished(evseId: number, stationId: number) {
       return;
     }
 
-    // Get tariff for overstay rates - first try station tariff, then global defaults
+    // Resolver la tarifa con una única precedencia: estación > tarifa > global.
+    // Un cero explícito en la estación deshabilita el cobro y nunca cae a $500.
     const globalPriceRanges = await db.getPriceRanges();
-    let gracePeriodMinutes = globalPriceRanges.defaultOverstayGracePeriodMinutes ?? 10;
-    let penaltyPerMinute = globalPriceRanges.defaultOverstayPenaltyPerMin ?? 500;
     const whatsappNotifIntervalMinutes = globalPriceRanges.whatsappPenaltyNotifIntervalMinutes ?? 5;
+    const station = await db.getChargingStationById(stationId);
+    const tariff = transaction.tariffId ? await db.getTariffById(transaction.tariffId) : null;
+    const overstayPolicy = resolveOverstayPolicy({
+      stationOccupancyRatePerMinute: station?.occupancyRatePerMinute,
+      tariffPenaltyPerMinute: tariff?.overstayPenaltyPerMinute,
+      globalPenaltyPerMinute: globalPriceRanges.defaultOverstayPenaltyPerMin,
+      tariffGracePeriodMinutes: tariff?.overstayGracePeriodMinutes,
+      globalGracePeriodMinutes: globalPriceRanges.defaultOverstayGracePeriodMinutes,
+    });
+    const gracePeriodMinutes = overstayPolicy.gracePeriodMinutes;
+    const penaltyPerMinute = overstayPolicy.penaltyPerMinute;
 
-    if (transaction.tariffId) {
-      const tariff = await db.getTariffById(transaction.tariffId);
-      if (tariff) {
-        const overstayRate = parseFloat(tariff.overstayPenaltyPerMinute?.toString() || "0");
-        if (overstayRate > 0) {
-          penaltyPerMinute = overstayRate;
-        }
-        if (tariff.overstayGracePeriodMinutes != null && tariff.overstayGracePeriodMinutes >= 0) {
-          gracePeriodMinutes = tariff.overstayGracePeriodMinutes;
-        }
-      }
-    }
-
-    // Only track if penalty is configured (> 0)
-    if (penaltyPerMinute <= 0) {
-      console.log(`[OverstayMonitor] No overstay penalty configured for EVSE ${evseId}, skipping`);
+    if (!overstayPolicy.enabled) {
+      console.log(`[OverstayMonitor] Overstay disabled by ${overstayPolicy.source} policy for EVSE ${evseId}; skipping charges and notifications.`);
+      await releaseOverstayLock(evseId);
       return;
     }
 
     // Get station and EVSE info for notification messages
-    const station = await db.getChargingStationById(stationId);
     const evse = await db.getEvseById(evseId);
     const stationName = station?.name || `Estación #${stationId}`;
     const connectorId = evse?.connectorId || 1;
 
     // Tarifas de parqueo del aliado (para liquidación)
     const parkingRatePerMinute = station?.parkingRatePerMinute ?? 0;
-    // Si la estación tiene occupancyRatePerMinute configurado, usarlo en lugar del penaltyPerMinute global
-    const stationOccupancyRate = station?.occupancyRatePerMinute ?? 0;
-    if (stationOccupancyRate > 0) {
-      penaltyPerMinute = stationOccupancyRate;
-    }
     const hostUserId = station?.hostUserId ?? null;
 
     const session: OverstaySession = {
@@ -504,9 +496,14 @@ export const __overstayTestHooks = {
   },
   seedSession(session: Pick<OverstaySession, "evseId" | "stationId" | "accumulatedCost">) {
     activeOverstaySessions.set(session.evseId, session as OverstaySession);
+    overstayLifecycle.markFinishing(session.evseId);
   },
   activeSessionCount() {
     return activeOverstaySessions.size;
+  },
+  async processSeededSession(evseId: number) {
+    const session = activeOverstaySessions.get(evseId);
+    if (session) await chargeOverstayForSession(session, false);
   },
 };
 
@@ -648,6 +645,31 @@ async function chargeOverstayForSession(session: OverstaySession, isFinal: boole
     console.log(`[OverstayMonitor] EVSE ${session.evseId} is no longer FINISHING before charge. Cancelling session.`);
     await onCableDisconnected(session.evseId);
     return;
+  }
+
+  // La configuración puede cambiar mientras el vehículo sigue conectado. Antes
+  // de cada débito se relee la estación: pasarla a $0 detiene inmediatamente el
+  // monitor y libera el lock, sin cargos ni mensajes posteriores.
+  const liveStation = await db.getChargingStationById(session.stationId);
+  if (!liveStation) {
+    console.log(`[OverstayMonitor] Station ${session.stationId} no longer exists; cancelling EVSE ${session.evseId} before charge.`);
+    activeOverstaySessions.delete(session.evseId);
+    await releaseOverstayLock(session.evseId);
+    return;
+  }
+  const rawLiveStationRate = liveStation.occupancyRatePerMinute;
+  const liveStationRate = rawLiveStationRate === null || rawLiveStationRate === undefined
+    ? null
+    : Number(rawLiveStationRate);
+  if (liveStationRate !== null && (!Number.isFinite(liveStationRate) || liveStationRate <= 0)) {
+    console.log(`[OverstayMonitor] Station ${session.stationId} has overstay disabled; cancelling EVSE ${session.evseId} before charge.`);
+    activeOverstaySessions.delete(session.evseId);
+    await releaseOverstayLock(session.evseId);
+    return;
+  }
+  if (liveStationRate !== null) {
+    session.penaltyPerMinute = liveStationRate;
+    session.occupancyRatePerMinute = liveStationRate;
   }
 
   const now = new Date();
