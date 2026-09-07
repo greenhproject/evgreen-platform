@@ -99,9 +99,12 @@ export default function OverstayMonitor() {
 
   if (!overstayStatus) return null;
 
-  const isPenalty = overstayStatus.status === "penalty";
-  const isGrace = overstayStatus.status === "grace" || overstayStatus.status === "finishing";
   const penaltyPerMinute = overstayStatus.penaltyPerMinute ?? 0;
+  const overstayEnabled = ('overstayEnabled' in overstayStatus
+    ? overstayStatus.overstayEnabled
+    : penaltyPerMinute > 0) && penaltyPerMinute > 0;
+  const isPenalty = overstayEnabled && overstayStatus.status === "penalty";
+  const isGrace = !isPenalty;
   const accumulatedCost = ('accumulatedCost' in overstayStatus ? overstayStatus.accumulatedCost : 0) || 0;
   const gracePeriodMinutes = ('gracePeriodMinutes' in overstayStatus ? overstayStatus.gracePeriodMinutes : 10) || 10;
   const graceRemaining = ('graceRemaining' in overstayStatus ? overstayStatus.graceRemaining : 0) || 0;
@@ -131,9 +134,11 @@ export default function OverstayMonitor() {
       <div className="min-h-screen bg-background">
         {/* Header con gradiente */}
         <div className={`relative overflow-hidden ${
-          isPenalty 
+          isPenalty
             ? "bg-gradient-to-b from-red-950 via-red-900/80 to-background" 
-            : "bg-gradient-to-b from-amber-950 via-amber-900/80 to-background"
+            : overstayEnabled
+              ? "bg-gradient-to-b from-amber-950 via-amber-900/80 to-background"
+              : "bg-gradient-to-b from-emerald-950 via-emerald-900/70 to-background"
         }`}>
           {/* Botón atrás */}
           <div className="absolute top-[max(1rem,env(safe-area-inset-top))] left-4 z-10">
@@ -158,7 +163,9 @@ export default function OverstayMonitor() {
               <div className={`w-28 h-28 mx-auto rounded-full flex items-center justify-center ${
                 isPenalty 
                   ? "bg-red-500/20 ring-2 ring-red-500/40" 
-                  : "bg-amber-500/20 ring-2 ring-amber-500/40"
+                  : overstayEnabled
+                    ? "bg-amber-500/20 ring-2 ring-amber-500/40"
+                    : "bg-emerald-500/20 ring-2 ring-emerald-500/40"
               }`}>
                 {isPenalty ? (
                   <motion.div
@@ -167,13 +174,15 @@ export default function OverstayMonitor() {
                   >
                     <AlertTriangle className="w-14 h-14 text-red-400" />
                   </motion.div>
-                ) : (
+                ) : overstayEnabled ? (
                   <motion.div
                     animate={{ rotate: [0, 8, -8, 0] }}
                     transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
                   >
                     <Timer className="w-14 h-14 text-amber-400" />
                   </motion.div>
+                ) : (
+                  <Shield className="w-14 h-14 text-emerald-400" />
                 )}
               </div>
             </motion.div>
@@ -184,12 +193,18 @@ export default function OverstayMonitor() {
               transition={{ delay: 0.2 }}
             >
               <h1 className="text-2xl font-bold text-white mb-1">
-                {isPenalty ? "Tarifa de ocupación activa" : "Período de gracia"}
+                {isPenalty
+                  ? "Tarifa de ocupación activa"
+                  : overstayEnabled
+                    ? "Período de gracia"
+                    : "Carga completada"}
               </h1>
               <p className="text-white/60 text-sm px-8">
-                {isPenalty 
+                {isPenalty
                   ? "Se está cobrando por mantener el vehículo conectado"
-                  : "Desconecta tu vehículo antes de que inicie la penalización"
+                  : overstayEnabled
+                    ? "Desconecta tu vehículo antes de que inicie la penalización"
+                    : "Esta estación no aplica tarifa de ocupación"
                 }
               </p>
             </motion.div>
@@ -253,48 +268,54 @@ export default function OverstayMonitor() {
                 </div>
               </Card>
             ) : (
-              <Card className="overflow-hidden border-amber-500/30">
-                <div className="bg-amber-500/5 p-6">
+              <Card className={`overflow-hidden ${overstayEnabled ? "border-amber-500/30" : "border-emerald-500/30"}`}>
+                <div className={`${overstayEnabled ? "bg-amber-500/5" : "bg-emerald-500/5"} p-6`}>
                   {/* Tiempo restante grande */}
                   <div className="text-center mb-4">
-                    <p className="text-xs uppercase tracking-wider text-amber-400/80 mb-1">Tiempo restante</p>
+                    <p className={`text-xs uppercase tracking-wider mb-1 ${overstayEnabled ? "text-amber-400/80" : "text-emerald-400/80"}`}>
+                      {overstayEnabled ? "Tiempo restante" : "Tarifa de ocupación"}
+                    </p>
                     <motion.div
                       key={Math.floor(graceRemaining)}
                       initial={{ scale: 1.05 }}
                       animate={{ scale: 1 }}
                     >
-                      <span className="text-5xl font-bold text-amber-400 tabular-nums">
-                        {graceRemaining > 0 ? `${Math.ceil(graceRemaining)} min` : "0 min"}
+                      <span className={`text-5xl font-bold tabular-nums ${overstayEnabled ? "text-amber-400" : "text-emerald-400"}`}>
+                        {overstayEnabled
+                          ? graceRemaining > 0 ? `${Math.ceil(graceRemaining)} min` : "0 min"
+                          : "Sin cobro"}
                       </span>
                     </motion.div>
-                    <p className="text-amber-400/60 text-sm mt-1">para desconectar sin costo</p>
+                    <p className={`text-sm mt-1 ${overstayEnabled ? "text-amber-400/60" : "text-emerald-400/60"}`}>
+                      {overstayEnabled ? "para desconectar sin costo" : "Puedes desconectar el vehículo sin penalización"}
+                    </p>
                   </div>
 
                   {/* Barra de progreso */}
                   <div className="mb-4">
                     <div className="h-3 rounded-full bg-amber-900/30 overflow-hidden">
                       <motion.div
-                        className="h-full rounded-full bg-gradient-to-r from-amber-500 to-amber-400"
+                        className={`h-full rounded-full bg-gradient-to-r ${overstayEnabled ? "from-amber-500 to-amber-400" : "from-emerald-500 to-emerald-400"}`}
                         initial={{ width: 0 }}
                         animate={{ width: `${graceProgress}%` }}
                         transition={{ duration: 0.5 }}
                       />
                     </div>
-                    <div className="flex justify-between mt-1.5 text-[10px] text-amber-400/50">
+                    <div className={`flex justify-between mt-1.5 text-[10px] ${overstayEnabled ? "text-amber-400/50" : "text-emerald-400/50"}`}>
                       <span>Carga completada</span>
-                      <span>Inicio penalización</span>
+                      <span>{overstayEnabled ? "Inicio penalización" : "Sin penalización"}</span>
                     </div>
                   </div>
 
                   {/* Info de penalización próxima */}
-                  <div className="flex items-center gap-3 p-3 rounded-xl bg-amber-500/10">
-                    <Shield className="w-5 h-5 text-amber-400 shrink-0" />
+                  <div className={`flex items-center gap-3 p-3 rounded-xl ${overstayEnabled ? "bg-amber-500/10" : "bg-emerald-500/10"}`}>
+                    <Shield className={`w-5 h-5 shrink-0 ${overstayEnabled ? "text-amber-400" : "text-emerald-400"}`} />
                     <div>
-                      <p className="text-sm font-medium text-amber-300">
-                        Después: {formatCurrency(penaltyPerMinute)}/min
+                      <p className={`text-sm font-medium ${overstayEnabled ? "text-amber-300" : "text-emerald-300"}`}>
+                        {overstayEnabled ? <>Después: {formatCurrency(penaltyPerMinute)}/min</> : "Tarifa configurada: $0/min"}
                       </p>
-                      <p className="text-xs text-amber-400/60">
-                        Se cobrará automáticamente de tu billetera
+                      <p className={`text-xs ${overstayEnabled ? "text-amber-400/60" : "text-emerald-400/60"}`}>
+                        {overstayEnabled ? "Se cobrará automáticamente de tu billetera" : "No se realizarán débitos por sobreestadía"}
                       </p>
                     </div>
                   </div>
