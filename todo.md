@@ -4353,4 +4353,4 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Aislamiento de pruebas de espacios: helper transaccional restringido a Vitest, limpieza `beforeAll`/`afterEach`/`afterAll`, bloqueo si existe contrato/proyecto y cleanup general de `spaces.test` limitado a correos fixture exactos.
 - [x] Limpieza segura de espacios QA: eliminados únicamente IDs 240859, 240861, 240862, 240863 y 240864 junto con dos eventos de correo; se preservaron 18 espacios restantes, incluido el registro real 240143.
 - [x] Validación anti-regresión: las tres suites responsables aprobaron 7 pruebas; la suite completa aprobó 193 archivos/2.185 pruebas, build y TypeScript, y una consulta posterior confirmó cero fixtures QA reaparecidos.
-- [ ] Publicación espacios QA: checkpoint, GitHub, Railway y verificación productiva de la limpieza y del aislamiento.
+- [x] Publicación espacios QA: checkpoint `ba5d14b4`, GitHub `f2befac9`, Railway Success y verificación productiva con 0 espacios QA, 0 eventos huérfanos y 18 postulaciones reales preservadas.
