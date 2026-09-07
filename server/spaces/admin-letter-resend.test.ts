@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 const { sendEmail } = vi.hoisted(() => ({ sendEmail: vi.fn() }));
 vi.mock("../email/resend-client", () => ({
@@ -10,6 +10,15 @@ import type { TrpcContext } from "../_core/context";
 import { getDb } from "../db";
 import { spaceSubmissions } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
+import { cleanupSpaceQaFixtures } from "./test-space-fixture-cleanup";
+
+const fixtureEmails = ["seguimiento-admin@example.com"] as const;
+const createdSubmissionIds = new Set<number>();
+
+async function cleanupFixtures() {
+  await cleanupSpaceQaFixtures({ createdIds: createdSubmissionIds, fixtureEmails });
+  createdSubmissionIds.clear();
+}
 
 function adminContext(): TrpcContext {
   return {
@@ -25,7 +34,7 @@ function publicContext(): TrpcContext {
 
 async function createSubmission() {
   const caller = appRouter.createCaller(publicContext());
-  return caller.spaces.submit({
+  const submission = await caller.spaces.submit({
     submitterName: "Seguimiento Administrativo",
     submitterEmail: "seguimiento-admin@example.com",
     submitterPhone: "3001234567",
@@ -34,9 +43,15 @@ async function createSubmission() {
     address: "Calle 72 # 10-20",
     city: "Bogotá",
   });
+  createdSubmissionIds.add(submission.submissionId);
+  return submission;
 }
 
 describe("reenvío administrativo de carta", () => {
+  beforeAll(cleanupFixtures);
+  afterEach(cleanupFixtures);
+  afterAll(cleanupFixtures);
+
   it("permite reenviar una carta pendiente, rota el vínculo y reinicia la entrega", async () => {
     sendEmail.mockResolvedValue({ data: { id: "email-admin-reenvio-nuevo" }, error: null });
     const { submissionId } = await createSubmission();

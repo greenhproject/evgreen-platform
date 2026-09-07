@@ -4349,3 +4349,8 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Endpoint periodo de gracia: usa la misma política autoritativa estación → tarifa → global, preserva cero y expone `overstayEnabled` y origen del valor.
 - [x] Seguridad tarifa cero en sesión: transacción 1140021 confirmada con $0 de sobreestadía, cero movimientos de ocupación y cero locks activos.
 - [x] QA periodo de gracia: endpoint real devuelve `penaltyPerMinute: 0`/`overstayEnabled: false`; TypeScript limpio, 193 archivos/2.185 pruebas, build, GitHub `083b815e`, Railway Success, textos “Sin cobro” verificados en el bundle productivo y monitor confirmado sin cargos ni notificaciones para EVSE 150001.
+- [x] Incidente espacios QA recurrentes: las suites `letter-delivery-events`, `gestor-letter-followup` y `admin-letter-resend` creaban exactamente cinco postulaciones por ejecución y no tenían cleanup.
+- [x] Aislamiento de pruebas de espacios: helper transaccional restringido a Vitest, limpieza `beforeAll`/`afterEach`/`afterAll`, bloqueo si existe contrato/proyecto y cleanup general de `spaces.test` limitado a correos fixture exactos.
+- [x] Limpieza segura de espacios QA: eliminados únicamente IDs 240859, 240861, 240862, 240863 y 240864 junto con dos eventos de correo; se preservaron 18 espacios restantes, incluido el registro real 240143.
+- [x] Validación anti-regresión: las tres suites responsables aprobaron 7 pruebas; la suite completa aprobó 193 archivos/2.185 pruebas, build y TypeScript, y una consulta posterior confirmó cero fixtures QA reaparecidos.
+- [ ] Publicación espacios QA: checkpoint, GitHub, Railway y verificación productiva de la limpieza y del aislamiento.

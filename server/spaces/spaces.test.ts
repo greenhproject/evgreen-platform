@@ -7,7 +7,23 @@ import { appRouter } from "../routers";
 import type { TrpcContext } from "../_core/context";
 import { getDb } from "../db";
 import { spacePhotos, spaceSubmissions } from "../../drizzle/schema";
-import { eq, like, or } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
+
+const SPACE_TEST_FIXTURE_EMAILS = [
+  "cf-integration@example.com",
+  "detail@example.com",
+  "edicion-numerica@example.com",
+  "formalizacion-interna@example.com",
+  "galeria-heredada@example.com",
+  "herencia-completa@example.com",
+  "juan.test@example.com",
+  "maria.test@example.com",
+  "nodup@example.com",
+  "permiso-manual@example.com",
+  "rotacion-enlace@example.com",
+  "status.test@example.com",
+  "update@example.com",
+] as const;
 
 // ============================================================================
 // HELPERS
@@ -688,11 +704,7 @@ afterAll(async () => {
   try {
     const db = await getDb();
     await db.delete(spaceSubmissions).where(
-      or(
-        like(spaceSubmissions.spaceName, "%Test%"),
-        like(spaceSubmissions.submitterName, "%Test%"),
-        like(spaceSubmissions.submitterEmail, "%example.com%")
-      )
+      inArray(spaceSubmissions.submitterEmail, [...SPACE_TEST_FIXTURE_EMAILS]),
     );
   } catch (e) {
     // Silenciar errores de cleanup para no afectar resultados de tests

@@ -1,10 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { appRouter } from "../routers";
 import type { TrpcContext } from "../_core/context";
 import { getDb } from "../db";
 import { letterEmailEvents, spaceSubmissions } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
 import { recordLetterDeliveryEvent } from "./letter-delivery-events";
+import { cleanupSpaceQaFixtures } from "../spaces/test-space-fixture-cleanup";
+
+const fixtureEmails = ["entrega-correo@example.com"] as const;
+const createdSubmissionIds = new Set<number>();
+
+async function cleanupFixtures() {
+  await cleanupSpaceQaFixtures({ createdIds: createdSubmissionIds, fixtureEmails });
+  createdSubmissionIds.clear();
+}
 
 function publicContext(): TrpcContext {
   return { user: null, req: { protocol: "https", headers: {}, socket: { remoteAddress: "127.0.0.1" } } as any, res: { clearCookie: () => undefined } as any };
@@ -29,6 +38,7 @@ async function createTrackedLetter() {
     address: "Calle 80 # 20-30",
     city: "Bogotá",
   });
+  createdSubmissionIds.add(submissionId);
   const providerEmailId = `email-${submissionId}-${Date.now()}`;
   const db = await getDb();
   await db!.update(spaceSubmissions).set({
@@ -41,6 +51,10 @@ async function createTrackedLetter() {
 }
 
 describe("eventos de entrega de cartas", () => {
+  beforeAll(cleanupFixtures);
+  afterEach(cleanupFixtures);
+  afterAll(cleanupFixtures);
+
   it("guarda un evento, evita duplicados y no retrocede el estado con eventos atrasados", async () => {
     const { submissionId, providerEmailId } = await createTrackedLetter();
     const delivered = await recordLetterDeliveryEvent(`svix-delivered-${submissionId}`, {
