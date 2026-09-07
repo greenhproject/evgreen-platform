@@ -3394,28 +3394,31 @@ export class DualCSMS {
 
     // Restaurar estado persistente si hay reconexión seamless
     const extGracePrevState = this.gracePeriodStates.get(ocppIdentity);
-    const extIsSeamless = extGracePrevState !== undefined;
+    const extPreviousState = extGracePrevState ?? existing;
+    const extIsSeamless = extPreviousState !== undefined;
     if (extIsSeamless) {
       const timer = this.gracePeriodTimers.get(ocppIdentity);
       if (timer) { clearTimeout(timer); this.gracePeriodTimers.delete(ocppIdentity); }
       this.gracePeriodStates.delete(ocppIdentity);
-      console.log(`[CSMS-DUAL] ⚡ SEAMLESS RECONNECTION (external) #${(extGracePrevState.seamlessReconnections || 0) + 1}: ${ocppIdentity}`);
+      console.log(`[CSMS-DUAL] ⚡ SEAMLESS RECONNECTION (external) #${(extGracePrevState?.seamlessReconnections || 0) + 1}: ${ocppIdentity}`);
+    } else if (existing) {
+      console.log(`[CSMS-DUAL] ⚡ ACTIVE SOCKET REPLACEMENT (external) #${(existing.seamlessReconnections || 0) + 1}: ${ocppIdentity}`);
     }
     const extNow = new Date();
     const connection: ChargingStationConnection = {
       ws,
-      stationId: stationId ?? (extGracePrevState?.stationId ?? null),
+      stationId: stationId ?? (extPreviousState?.stationId ?? null),
       ocppIdentity,
       ocppVersion,
       connectedAt: extNow,
-      originalConnectedAt: extGracePrevState?.originalConnectedAt ?? extNow,
+      originalConnectedAt: extPreviousState?.originalConnectedAt ?? extNow,
       lastHeartbeat: extNow,
       lastMessage: extNow,
       messageIdCounter: 0,
       pendingCalls: new Map(),
-      connectorStatuses: extGracePrevState?.connectorStatuses ?? new Map(),
-      bootInfo: extGracePrevState?.bootInfo,
-      seamlessReconnections: extIsSeamless ? (extGracePrevState.seamlessReconnections || 0) + 1 : 0,
+      connectorStatuses: new Map(extPreviousState?.connectorStatuses ?? []),
+      bootInfo: extPreviousState?.bootInfo,
+      seamlessReconnections: extIsSeamless ? (extPreviousState?.seamlessReconnections || 0) + 1 : 0,
       lastSeamlessReconnect: extIsSeamless ? extNow : null,
     };
     this.connections.set(ocppIdentity, connection);

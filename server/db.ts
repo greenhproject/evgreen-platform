@@ -1247,6 +1247,17 @@ export async function getLatestMeterValue(transactionId: number) {
   return result.length > 0 ? result[0] : undefined;
 }
 
+export async function getRecentMeterValuesByTransactionId(transactionId: number, limit = 120) {
+  const db = (await getDb())!;
+  if (!db) return [];
+  const safeLimit = Math.min(Math.max(Math.trunc(limit), 2), 360);
+  const result = await db.select().from(meterValues)
+    .where(eq(meterValues.transactionId, transactionId))
+    .orderBy(desc(meterValues.timestamp))
+    .limit(safeLimit);
+  return result.reverse();
+}
+
 // ============================================================================
 // RESERVATION OPERATIONS
 // ============================================================================

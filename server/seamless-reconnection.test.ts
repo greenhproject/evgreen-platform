@@ -99,6 +99,25 @@ describe('Seamless Reconnection - Connection Manager', () => {
   });
 
   describe('handleDisconnection', () => {
+    it('no elimina una conexión nueva cuando el socket anterior cierra tarde', () => {
+      const oldWs = { readyState: 1, send: vi.fn() } as any;
+      const newWs = { readyState: 1, send: vi.fn() } as any;
+
+      ocppManager.registerConnection('EVG001', oldWs, '1.6');
+      ocppManager.updateBootInfo('EVG001', { vendor: 'Wallbox', model: 'Pulsar Max' }, 150001);
+      ocppManager.updateConnectorStatus('EVG001', 1, 'Charging');
+      ocppManager.registerConnection('EVG001', newWs, '1.6');
+
+      const result = ocppManager.handleDisconnection('EVG001', 1006, '', oldWs);
+
+      expect(result.wasSeamless).toBe(true);
+      expect(result.isGracePeriod).toBe(false);
+      expect(ocppManager.getConnection('EVG001')?.ws).toBe(newWs);
+      expect(ocppManager.getConnection('EVG001')?.stationId).toBe(150001);
+      expect(ocppManager.getConnection('EVG001')?.connectorStatuses.get(1)).toBe('Charging');
+      expect(ocppManager.isInGracePeriod('EVG001')).toBe(false);
+    });
+
     it('debe iniciar grace period y preservar estado', () => {
       const mockWs = { readyState: 1, send: vi.fn() } as any;
       ocppManager.registerConnection('EVG001', mockWs, '1.6');

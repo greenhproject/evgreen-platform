@@ -123,10 +123,12 @@ export function registerConnection(
 ): OcppConnection {
   const existingState = persistentStates.get(ocppIdentity);
   const wasInGracePeriod = existingState?.isInGracePeriod === true;
+  const existingConnection = activeConnections.get(ocppIdentity);
+  const isSocketReplacement = Boolean(existingConnection && existingConnection.ws !== ws);
   
   let connection: OcppConnection;
   
-  if (existingState && wasInGracePeriod) {
+  if (existingState && (wasInGracePeriod || isSocketReplacement)) {
     // *** RECONEXIÓN SEAMLESS ***
     // El cargador se reconectó dentro del grace period
     // Restaurar TODO el estado anterior
@@ -206,10 +208,18 @@ export function registerConnection(
 export function handleDisconnection(
   ocppIdentity: string,
   closeCode: number | null = null,
-  closeReason: string = ''
+  closeReason: string = '',
+  closedWs?: WebSocket
 ): { isGracePeriod: boolean; wasSeamless: boolean } {
   const connection = activeConnections.get(ocppIdentity);
   const state = persistentStates.get(ocppIdentity);
+
+  // Una reconexión rápida puede registrar un socket nuevo antes de que el socket
+  // anterior emita `close`. Ese cierre tardío no debe borrar la conexión vigente.
+  if (closedWs && connection && connection.ws !== closedWs) {
+    console.log(`[OCPP Manager] Ignoring stale socket close for ${ocppIdentity}; a newer connection is active`);
+    return { isGracePeriod: false, wasSeamless: true };
+  }
   
   // Remover la conexión WebSocket activa (el socket ya está cerrado)
   activeConnections.delete(ocppIdentity);

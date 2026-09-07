@@ -44,6 +44,7 @@ import { toast } from "sonner";
 import { useNotificationSound } from "@/hooks/useNotificationSound";
 import { hasAuthoritativeSoc } from "@/lib/charging-soc";
 import { PowerChart } from "@/components/PowerChart";
+import { formatTelemetryAge, type ChargingTelemetryStatus } from "@shared/charging-telemetry";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -468,6 +469,12 @@ export default function ChargingMonitor() {
   const manualSocUnavailableReason = (session as any).manualSocUnavailableReason as string | null | undefined;
   const energySinceCalibrationKwh = Number((session as any).energySinceCalibrationKwh || 0);
   const manualSocCalibratedAt = (session as any).manualSocCalibratedAt as string | Date | null | undefined;
+  const telemetryStatus = ((session as any).telemetryStatus || "unavailable") as ChargingTelemetryStatus;
+  const telemetryAgeSeconds = (session as any).telemetryAgeSeconds as number | null;
+  const telemetryAgeLabel = formatTelemetryAge(telemetryAgeSeconds);
+  const telemetryIsFresh = telemetryStatus === "live";
+  const ocppConnected = (session as any).ocppConnected === true;
+  const lastReportedPower = Number((session as any).lastReportedPower || 0);
   
   let progressPercentage = 0;
   
@@ -514,7 +521,7 @@ export default function ChargingMonitor() {
   const displayCost = session.currentCost || 0;
   
   // Potencia real vs nominal
-  const realPower = session.currentPower || 0;
+  const realPower = telemetryIsFresh ? (session.currentPower || 0) : 0;
   const nominalPower = session.powerKw || 7;
   const displayPower = realPower > 0 ? realPower : 0;
   const hasPowerData = realPower > 0;
@@ -763,7 +770,38 @@ export default function ChargingMonitor() {
         </div>
       )}
       
-      {/* Métricas en tiempo real */}
+      {!isSimulation && telemetryStatus !== "live" && (
+        <div className="px-4 mt-6">
+          <Card className={`border ${telemetryStatus === "stale" ? "border-red-500/30 bg-red-500/5" : "border-amber-500/30 bg-amber-500/5"}`}>
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <div className={`mt-0.5 rounded-full p-2 ${telemetryStatus === "stale" ? "bg-red-500/10 text-red-600" : "bg-amber-500/10 text-amber-600"}`}>
+                  <AlertTriangle className="h-5 w-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-foreground">
+                    {telemetryStatus === "unavailable"
+                      ? "Esperando telemetría del cargador"
+                      : ocppConnected
+                        ? "Telemetría OCPP retrasada"
+                        : "Cargador reconectando con EVGreen"}
+                  </p>
+                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                    El vehículo puede continuar cargando localmente, pero potencia, energía y costo solo se actualizarán cuando llegue una nueva lectura OCPP.
+                  </p>
+                  {telemetryAgeSeconds !== null && (
+                    <p className="mt-2 text-xs font-medium text-muted-foreground">
+                      Última muestra recibida {telemetryAgeLabel}.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Métricas de la sesión */}
       <div className="px-4 mt-6">
         <div className="grid grid-cols-2 gap-3">
           {/* kWh consumidos */}
@@ -778,7 +816,9 @@ export default function ChargingMonitor() {
                 <span className="text-sm font-normal text-muted-foreground ml-1">kWh</span>
               </p>
               <p className="text-xs text-muted-foreground">
-                {session.estimatedKwh > 0 
+                {!telemetryIsFresh && telemetryAgeSeconds !== null
+                  ? `Última lectura ${telemetryAgeLabel}`
+                  : session.estimatedKwh > 0
                   ? `de ${session.estimatedKwh.toFixed(1)} kWh estimados`
                   : "Acumulando..."}
               </p>
@@ -800,6 +840,9 @@ export default function ChargingMonitor() {
                 {connectionFee > 0 && (
                   <span className="block">+ {formatCurrency(connectionFee)} conexión</span>
                 )}
+                {!telemetryIsFresh && telemetryAgeSeconds !== null && (
+                  <span className="block text-amber-600">Actualizado con la última lectura</span>
+                )}
               </p>
             </CardContent>
           </Card>
@@ -815,9 +858,9 @@ export default function ChargingMonitor() {
                 {formatDuration(elapsedSeconds)}
               </p>
               <p className="text-xs text-muted-foreground">
-                Est: {session.estimatedMinutes >= 60 
+                {!telemetryIsFresh ? "Estimación pausada" : <>Est: {session.estimatedMinutes >= 60
                   ? `${Math.floor(session.estimatedMinutes / 60)}h ${session.estimatedMinutes % 60}min`
-                  : `${session.estimatedMinutes} min`}
+                  : `${session.estimatedMinutes} min`}</>}
               </p>
             </CardContent>
           </Card>
@@ -843,6 +886,8 @@ export default function ChargingMonitor() {
               <p className="text-xs text-muted-foreground">
                 {hasPowerData 
                   ? `Máx: ${nominalPower} kW`
+                  : lastReportedPower > 0 && telemetryAgeSeconds !== null
+                    ? `Último: ${lastReportedPower.toFixed(1)} kW · ${telemetryAgeLabel}`
                   : `Nominal: ${nominalPower} kW`}
               </p>
             </CardContent>
@@ -850,7 +895,7 @@ export default function ChargingMonitor() {
         </div>
         
         {/* Datos técnicos adicionales (voltaje, corriente) si están disponibles */}
-        {((session as any).voltage || (session as any).currentAmp) && (
+        {telemetryIsFresh && ((session as any).voltage || (session as any).currentAmp) && (
           <div className="grid grid-cols-2 gap-3 mt-3">
             {(session as any).voltage && (
               <Card className="bg-gradient-to-br from-cyan-500/10 to-cyan-600/5 border-cyan-500/20">
@@ -889,8 +934,15 @@ export default function ChargingMonitor() {
             <CardContent className="p-4">
               <div className="flex items-center gap-2 mb-3">
                 <Zap className="w-4 h-4 text-amber-600" />
-                <span className="text-sm font-semibold text-foreground">Potencia en tiempo real</span>
-                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse ml-auto" />
+                <div className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-foreground">
+                    {telemetryIsFresh ? "Potencia en tiempo real" : "Historial de potencia recibido"}
+                  </span>
+                  {!telemetryIsFresh && telemetryAgeSeconds !== null && (
+                    <span className="block text-xs text-muted-foreground">Última muestra {telemetryAgeLabel}</span>
+                  )}
+                </div>
+                <span className={`w-2 h-2 rounded-full ml-auto ${telemetryIsFresh ? "bg-emerald-500 animate-pulse" : "bg-amber-500"}`} />
               </div>
               <div style={{ height: "200px" }}>
                 <PowerChart
