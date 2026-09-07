@@ -4343,4 +4343,5 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Causa discrepancia Wallbox: la app fabricante medía localmente mientras OCPP sufría cierres 1006; las lecturas almacenadas llegaban juntas y EVGreen usaba hora de recepción, mostrando 1,6 kW en vez de los 5,772 kW derivados de timestamps reales.
 - [x] Fuente autoritativa de medición: preservar timestamp OCPP, reconciliar memoria con BD, ignorar muestras fuera de orden, proteger reconexiones simultáneas y exponer frescura sin presentar datos obsoletos como tiempo real.
 - [x] QA telemetría: TypeScript limpio, 193 archivos/2.185 pruebas aprobadas, build productivo exitoso y QA real de solo lectura sobre la transacción 1140020.
-- [ ] Publicación telemetría Wallbox: checkpoint, GitHub, Railway y comprobación productiva comparativa.
+- [x] Publicación telemetría Wallbox: checkpoint `8c648818`, GitHub `a80ebaca`, Railway Success y estados de frescura confirmados en el chunk productivo de ChargingMonitor.
+- [ ] QA físico Wallbox posterior: durante la próxima sesión activa comparar simultáneamente potencia y energía de Wallbox y EVGreen con OCPP conectado; la sesión 1140020 ya había finalizado al desplegar la corrección.
