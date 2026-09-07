@@ -27,6 +27,7 @@ import { dualCSMS } from "./ocpp/csms-dual";
 import * as ocppManager from "./ocpp/connection-manager";
 import { chargingRouter, getAllActiveSessionsPower, recalibrateManualSocTransaction } from "./charging/charging-router";
 import { resolveOperationalSoc } from "./charging/soc-estimation";
+import { resolveOverstayPolicy } from "./charging/overstay-policy";
 import { pushRouter } from "./push/push-router";
 import { generateExcelReport, generatePDFReport } from "./reports/export-transactions";
 import { sendBroadcastNotification, getNotificationStats, getBroadcastHistory } from "./notifications/broadcast-service";
@@ -6089,6 +6090,15 @@ const overstayRouter = router({
       
       // Obtener datos de estación para la UI
       const station = await db.getChargingStationById(transaction.stationId);
+      const tariff = transaction.tariffId ? await db.getTariffById(transaction.tariffId) : null;
+      const globalPrices = await db.getPriceRanges();
+      const overstayPolicy = resolveOverstayPolicy({
+        stationOccupancyRatePerMinute: station?.occupancyRatePerMinute,
+        tariffPenaltyPerMinute: tariff?.overstayPenaltyPerMinute,
+        globalPenaltyPerMinute: globalPrices.defaultOverstayPenaltyPerMin,
+        tariffGracePeriodMinutes: tariff?.overstayGracePeriodMinutes,
+        globalGracePeriodMinutes: globalPrices.defaultOverstayGracePeriodMinutes,
+      });
       const stationInfo = {
         stationName: station?.name || "Estación",
         stationAddress: station?.address || "",
@@ -6100,19 +6110,18 @@ const overstayRouter = router({
         totalChargeCost: transaction.totalCost ? parseFloat(transaction.totalCost.toString()) : 0,
         chargeEndTime: transaction.endTime ? new Date(transaction.endTime).toISOString() : new Date().toISOString(),
         chargeStartTime: transaction.startTime ? new Date(transaction.startTime).toISOString() : new Date().toISOString(),
+        overstayEnabled: overstayPolicy.enabled,
+        overstayRateSource: overstayPolicy.source,
       };
       
       const info = getOverstayInfo(evse.id);
       if (!info) {
         // No hay overstay activo en memoria, pero verificar si el EVSE está en Finishing
         if (evse.connectorStatus === "FINISHING" || evse.connectorStatus === "SUSPENDED_EV") {
-          // Obtener tarifa para mostrar info de grace period
-          const tariff = transaction.tariffId ? await db.getTariffById(transaction.tariffId) : null;
-          const globalPrices = await db.getPriceRanges();
           return {
             status: "finishing" as const,
-            gracePeriodMinutes: tariff?.overstayGracePeriodMinutes ?? globalPrices.defaultOverstayGracePeriodMinutes ?? 10,
-            penaltyPerMinute: tariff?.overstayPenaltyPerMinute ? parseFloat(tariff.overstayPenaltyPerMinute.toString()) : (globalPrices.defaultOverstayPenaltyPerMin ?? 500),
+            gracePeriodMinutes: overstayPolicy.gracePeriodMinutes,
+            penaltyPerMinute: overstayPolicy.penaltyPerMinute,
             evseId: evse.id,
             transactionId: transaction.id,
             ...stationInfo,
@@ -6122,8 +6131,10 @@ const overstayRouter = router({
       }
       
       return {
-        status: info.isPenaltyActive ? "penalty" as const : "grace" as const,
+        status: overstayPolicy.enabled && info.isPenaltyActive ? "penalty" as const : "grace" as const,
         ...info,
+        penaltyPerMinute: overstayPolicy.penaltyPerMinute,
+        gracePeriodMinutes: overstayPolicy.gracePeriodMinutes,
         ...stationInfo,
       };
     }),

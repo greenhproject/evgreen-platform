@@ -4345,3 +4345,7 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] QA telemetría: TypeScript limpio, 193 archivos/2.185 pruebas aprobadas, build productivo exitoso y QA real de solo lectura sobre la transacción 1140020.
 - [x] Publicación telemetría Wallbox: checkpoint `8c648818`, GitHub `a80ebaca`, Railway Success y estados de frescura confirmados en el chunk productivo de ChargingMonitor.
 - [ ] QA físico Wallbox posterior: durante la próxima sesión activa comparar simultáneamente potencia y energía de Wallbox y EVGreen con OCPP conectado; la sesión 1140020 ya había finalizado al desplegar la corrección.
+- [x] Regresión periodo de gracia: localizada en `overstay.getMyStatus`, que todavía convertía la tarifa histórica de $500 en tarifa visual cuando la estación tenía $0.
+- [x] Endpoint periodo de gracia: usa la misma política autoritativa estación → tarifa → global, preserva cero y expone `overstayEnabled` y origen del valor.
+- [x] Seguridad tarifa cero en sesión: transacción 1140021 confirmada con $0 de sobreestadía, cero movimientos de ocupación y cero locks activos.
+- [x] QA periodo de gracia: endpoint real devuelve `penaltyPerMinute: 0`/`overstayEnabled: false`; TypeScript limpio, 193 archivos/2.185 pruebas y build aprobados. Pendiente únicamente comprobar el bundle productivo tras publicar.
