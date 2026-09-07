@@ -19,6 +19,7 @@ import * as simulator from "./charging-simulator";
 import { sendUserPush } from "../push/unified-push";
 import { dispatchOrganizationWebhookEvent } from "../api/webhook-dispatcher";
 import { calculateSocEstimation, getManualSocAvailability, resolveOperationalSoc } from "./soc-estimation";
+import { resolveChargingTelemetryFreshness, shouldAdvanceTelemetrySample } from "../../shared/charging-telemetry";
 
 // Helper: buscar conexión por stationId en dualCSMS primero, luego fallback a legacy
 // Si ocppIdentity se provee, también busca en dualCSMS por identidad cuando stationId=null
@@ -103,6 +104,7 @@ const activeChargeSessions = new Map<number, {
   voltage: number | null; // Voltaje (V)
   current: number | null; // Corriente (A)
   lastMeterUpdate: Date | null; // Timestamp del último MeterValues
+  lastMeterSampleAt?: Date | null; // Timestamp real reportado por el cargador
   // Historial de potencia para gráfico en tiempo real
   powerHistory: PowerHistoryPoint[];
   // Control de notificación SoC objetivo
@@ -1253,14 +1255,16 @@ export const chargingRouter = router({
       let currentPower: number = 0;
       let voltage: number | null = null;
       let currentAmp: number | null = null;
+      const latestStoredMeterValue = await db.getLastMeterValue(activeTransaction.id);
+      let resolvedPowerHistory = activeSessionInfo?.powerHistory || [];
 
       // ── Reconstruir powerHistory desde BD si la memoria está vacía (ej: tras reinicio) ──
-      if (activeSessionInfo && activeSessionInfo.powerHistory.length < 2) {
+      if (resolvedPowerHistory.length < 2) {
         try {
-          const storedMeterValues = await db.getMeterValuesByTransactionId(activeTransaction.id);
+          const storedMeterValues = await db.getRecentMeterValuesByTransactionId(activeTransaction.id, 120);
           if (storedMeterValues.length >= 2) {
             const meterStart = activeTransaction.meterStart ? parseFloat(activeTransaction.meterStart) : 0;
-            activeSessionInfo.powerHistory = storedMeterValues
+            resolvedPowerHistory = storedMeterValues
               .filter(mv => mv.powerKw !== null && mv.powerKw !== undefined)
               .map(mv => ({
                 timestamp: new Date(mv.timestamp).getTime(),
@@ -1268,6 +1272,7 @@ export const chargingRouter = router({
                 energy: mv.energyKwh ? Math.max(0, parseFloat(mv.energyKwh) - meterStart / 1000) : 0,
                 soc: mv.soc ?? null,
               }));
+            if (activeSessionInfo) activeSessionInfo.powerHistory = resolvedPowerHistory;
           }
         } catch (_e) { /* no-op: no bloquear si falla */ }
       }
@@ -1281,9 +1286,24 @@ export const chargingRouter = router({
         currentPower = activeSessionInfo.currentPower || 0;
         voltage = activeSessionInfo.voltage;
         currentAmp = activeSessionInfo.current;
+
+        // En despliegues con varias instancias, el MeterValue más reciente puede haber
+        // sido recibido por otro proceso. La BD reconcilia la proyección del usuario.
+        const memorySampleAt = activeSessionInfo.lastMeterSampleAt ?? activeSessionInfo.lastMeterUpdate;
+        const storedSampleAt = latestStoredMeterValue?.timestamp ? new Date(latestStoredMeterValue.timestamp) : null;
+        if (latestStoredMeterValue && storedSampleAt && (!memorySampleAt || storedSampleAt.getTime() > memorySampleAt.getTime())) {
+          const meterStart = activeTransaction.meterStart ? parseFloat(activeTransaction.meterStart) : 0;
+          currentKwh = latestStoredMeterValue.energyKwh
+            ? Math.max(0, parseFloat(latestStoredMeterValue.energyKwh) - meterStart / 1000)
+            : currentKwh;
+          currentPower = latestStoredMeterValue.powerKw ? parseFloat(latestStoredMeterValue.powerKw) : currentPower;
+          soc = latestStoredMeterValue.soc ?? soc;
+          voltage = latestStoredMeterValue.voltage ? parseFloat(latestStoredMeterValue.voltage) : voltage;
+          currentAmp = latestStoredMeterValue.current ? parseFloat(latestStoredMeterValue.current) : currentAmp;
+        }
       } else {
         // Fallback: leer de la BD (tabla meter_values)
-        const lastMeterValue = await db.getLastMeterValue(activeTransaction.id);
+        const lastMeterValue = latestStoredMeterValue;
         if (lastMeterValue) {
           const meterStart = activeTransaction.meterStart ? parseFloat(activeTransaction.meterStart) : 0;
           currentKwh = lastMeterValue.energyKwh 
@@ -1454,6 +1474,15 @@ export const chargingRouter = router({
       }
       
       const energyBasedSoc = operationalSoc.source === "manual" ? operationalSoc.soc : null;
+      const memorySampleAt = activeSessionInfo?.lastMeterSampleAt ?? activeSessionInfo?.lastMeterUpdate ?? null;
+      const storedSampleAt = latestStoredMeterValue?.timestamp ? new Date(latestStoredMeterValue.timestamp) : null;
+      const lastMeterSampleAt = storedSampleAt && (!memorySampleAt || storedSampleAt.getTime() > memorySampleAt.getTime())
+        ? storedSampleAt
+        : memorySampleAt;
+      const telemetryFreshness = resolveChargingTelemetryFreshness({ sampleAt: lastMeterSampleAt });
+      const lastReportedPower = Math.round(currentPower * 10) / 10;
+      const liveCurrentPower = telemetryFreshness.isFresh ? lastReportedPower : 0;
+      const ocppConnected = station?.ocppIdentity ? dualCSMS.isStationConnected(station.ocppIdentity) : false;
       
       return {
         transactionId: activeTransaction.id,
@@ -1470,7 +1499,13 @@ export const chargingRouter = router({
         pricePerKwh,
         connectionFee,
         powerKw: nominalPowerKw,
-        currentPower: Math.round(currentPower * 10) / 10,
+        currentPower: liveCurrentPower,
+        lastReportedPower,
+        lastMeterSampleAt,
+        telemetryStatus: telemetryFreshness.status,
+        telemetryAgeSeconds: telemetryFreshness.ageSeconds,
+        hasFreshMeterData: telemetryFreshness.isFresh,
+        ocppConnected,
         status: activeTransaction.status,
         chargeMode,
         targetPercentage: chargeMode === "percentage" ? targetValue : 100,
@@ -1490,8 +1525,8 @@ export const chargingRouter = router({
         currentAmp: currentAmp,
         progress,
         isSimulation: false,
-        hasRealMeterData: activeSessionInfo?.lastMeterUpdate !== null && activeSessionInfo?.lastMeterUpdate !== undefined,
-        powerHistory: (activeSessionInfo?.powerHistory || []).slice(-120),
+        hasRealMeterData: lastMeterSampleAt !== null,
+        powerHistory: resolvedPowerHistory.slice(-120),
         // Nuevos campos para detección de batería llena
         chargeCompleteDetected, // true si se detectó batería llena por caída de potencia
         energyBasedSoc, // SoC calculado por energía real del OCPP
@@ -1893,9 +1928,15 @@ export function updateActiveSessionMeterData(transactionId: number, data: {
   currentPower?: number;
   voltage?: number | null;
   current?: number | null;
+  sampleAt?: Date;
 }) {
   const session = activeChargeSessions.get(transactionId);
   if (!session) return false;
+
+  if (data.sampleAt && !shouldAdvanceTelemetrySample(session.lastMeterSampleAt, data.sampleAt)) {
+    console.log(`[MeterValues] Transaction ${transactionId}: ignoring non-current sample ${data.sampleAt.toISOString()}`);
+    return true;
+  }
   
   if (data.currentKwh !== undefined) session.currentKwh = data.currentKwh;
   if (data.currentCost !== undefined) session.currentCost = data.currentCost;
@@ -1904,6 +1945,7 @@ export function updateActiveSessionMeterData(transactionId: number, data: {
   if (data.voltage !== undefined) session.voltage = data.voltage;
   if (data.current !== undefined) session.current = data.current;
   session.lastMeterUpdate = new Date();
+  if (data.sampleAt) session.lastMeterSampleAt = data.sampleAt;
   
   // ============================================================
   // AUTO-STOP POR VALOR FIJO ALCANZADO (fixed_amount)
@@ -1983,14 +2025,16 @@ export function updateActiveSessionMeterData(transactionId: number, data: {
   const LOW_POWER_THRESHOLD_KW = 0.15; // kW - umbral MUY bajo (casi cero corriente)
   const LOW_POWER_DURATION_MS = 10 * 60 * 1000; // 10 minutos (antes era 5)
   const currentPowerVal = data.currentPower !== undefined ? data.currentPower : session.currentPower;
+  const sampleEventAt = data.sampleAt ?? new Date();
+  const sampleIsFresh = resolveChargingTelemetryFreshness({ sampleAt: sampleEventAt }).isFresh;
   
-  if (currentPowerVal < LOW_POWER_THRESHOLD_KW && session.currentKwh > 0.5) {
+  if (sampleIsFresh && currentPowerVal < LOW_POWER_THRESHOLD_KW && session.currentKwh > 0.5) {
     // La potencia está por debajo del umbral y ya se ha entregado algo de energía
     if (!session.lowPowerSince) {
-      session.lowPowerSince = new Date();
+      session.lowPowerSince = sampleEventAt;
       console.log(`[SoC] Transaction ${transactionId}: Low power detected (${currentPowerVal.toFixed(2)} kW < ${LOW_POWER_THRESHOLD_KW} kW). Monitoring...`);
     } else {
-      const lowPowerDuration = Date.now() - session.lowPowerSince.getTime();
+      const lowPowerDuration = sampleEventAt.getTime() - session.lowPowerSince.getTime();
       if (lowPowerDuration >= LOW_POWER_DURATION_MS && !session.chargeCompleteDetected) {
         session.chargeCompleteDetected = true;
         // Forzar SoC a 100% ya que la batería está llena
@@ -2060,12 +2104,14 @@ export function updateActiveSessionMeterData(transactionId: number, data: {
         }
       }
     }
-  } else if (currentPowerVal >= LOW_POWER_THRESHOLD_KW) {
+  } else if (sampleIsFresh && currentPowerVal >= LOW_POWER_THRESHOLD_KW) {
     // La potencia volvió a subir - resetear el timer
     if (session.lowPowerSince) {
       console.log(`[SoC] Transaction ${transactionId}: Power recovered (${currentPowerVal.toFixed(2)} kW). Resetting low power timer.`);
       session.lowPowerSince = null;
     }
+  } else if (!sampleIsFresh) {
+    console.log(`[SoC] Transaction ${transactionId}: stale MeterValue ignored for battery-full detection (${sampleEventAt.toISOString()})`);
   }
   
   // Agregar punto al historial de potencia (máx 360 puntos = ~30 min a 5s interval)
@@ -2085,7 +2131,7 @@ export function updateActiveSessionMeterData(transactionId: number, data: {
   if (!session.powerHistory) session.powerHistory = [];
   
   session.powerHistory.push({
-    timestamp: Date.now(),
+    timestamp: data.sampleAt?.getTime() ?? Date.now(),
     power: power ?? 0,
     energy: energy,
     soc: soc,
@@ -2118,6 +2164,7 @@ export type ActiveSessionOperationalSnapshot = {
   currentKwh: number;
   soc: number | null;
   lastMeterUpdate: Date | null;
+  lastMeterSampleAt: Date | null;
   manualSoc: number | null;
   manualBatteryCapacityKwh: number | null;
   manualSocCalibrationKwh: number | null;
@@ -2133,6 +2180,7 @@ export function getAllActiveSessionsPower(): Map<number, ActiveSessionOperationa
       currentKwh: session.currentKwh || 0,
       soc: session.soc ?? null,
       lastMeterUpdate: session.lastMeterUpdate ?? null,
+      lastMeterSampleAt: session.lastMeterSampleAt ?? session.lastMeterUpdate ?? null,
       manualSoc: session.manualSoc ?? null,
       manualBatteryCapacityKwh: session.manualBatteryCapacityKwh ?? null,
       manualSocCalibrationKwh: session.manualSocCalibrationKwh ?? null,

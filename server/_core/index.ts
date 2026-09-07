@@ -35,6 +35,7 @@ import { handleManualContractDownload } from "../contracts/manual-contract-downl
 import { ensureContractDocumentStorage } from "../contracts/ensure-contract-document-storage";
 import { registerStorageProxy } from "./storageProxy";
 import { calculateSocEstimation } from "../charging/soc-estimation";
+import { estimatePowerFromEnergySamples, shouldAdvanceTelemetrySample } from "../../shared/charging-telemetry";
 
 // Grace period para desconexiones temporales del legacy CSMS
 // Evita notificaciones por reconexiones intermitentes (WiFi inestable, reinicios breves)
@@ -950,7 +951,7 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
       });
       
       // Delegar al connection-manager: inicia grace period y preserva estado
-      const { isGracePeriod } = ocppManager.handleDisconnection(ocppIdentity, code, reasonStr);
+      const { isGracePeriod } = ocppManager.handleDisconnection(ocppIdentity, code, reasonStr, ws);
       
       // Registrar log de desconexión (para auditoría, marcado como proxy_cycle si es código 1006)
       // Proxy Cycle: Railway/proxy recicla la conexión WebSocket periódicamente.
@@ -1900,6 +1901,15 @@ async function handleOCPP16Message(
       }
       
       if (payload.meterValue && payload.meterValue.length > 0) {
+          const orderedMeterValues = [...payload.meterValue].sort((left: any, right: any) => {
+            const leftTime = new Date(left?.timestamp || 0).getTime();
+            const rightTime = new Date(right?.timestamp || 0).getTime();
+            return leftTime - rightTime;
+          });
+          const latestMeterSample = orderedMeterValues[orderedMeterValues.length - 1];
+          const parsedSampleTimestamp = new Date(latestMeterSample?.timestamp || Date.now());
+          const sampleTimestamp = Number.isNaN(parsedSampleTimestamp.getTime()) ? new Date() : parsedSampleTimestamp;
+
         // Extraer TODOS los measurands de los sampledValues
           let energyWh: number | null = null;
           let powerW: number | null = null;
@@ -1908,7 +1918,7 @@ async function handleOCPP16Message(
           let currentA: number | null = null;
           let temperature: number | null = null;
           
-          for (const mv of payload.meterValue) {
+          for (const mv of orderedMeterValues) {
             for (const sv of mv.sampledValue || []) {
               const measurand = sv.measurand || "Energy.Active.Import.Register";
               const value = parseFloat(sv.value);
@@ -1975,22 +1985,24 @@ async function handleOCPP16Message(
           
           // Potencia en kW - si el cargador no envía Power, estimar por diferencia de energía
           let powerKw = powerW !== null ? powerW / 1000 : null;
+          const activeSessionBeforeUpdate = getActiveSessionById(transaction.id);
+          const currentSampleAt = activeSessionBeforeUpdate?.lastMeterSampleAt ?? activeSessionBeforeUpdate?.lastMeterUpdate ?? null;
+          const shouldAdvanceCurrentState = shouldAdvanceTelemetrySample(currentSampleAt, sampleTimestamp);
           
           // Si no hay potencia reportada, estimar por diferencia de energía entre lecturas
-          if (powerKw === null && energyWh !== null) {
-            const activeSession = getActiveSessionById(transaction.id);
-            if (activeSession && activeSession.lastMeterUpdate) {
-              const timeDiffMs = Date.now() - activeSession.lastMeterUpdate.getTime();
-              const timeDiffHours = timeDiffMs / (1000 * 3600);
-              if (timeDiffHours > 0.001) { // Al menos ~3.6 segundos
-                const prevEnergyKwh = activeSession.currentKwh;
-                const energyDiffKwh = kwhConsumed - prevEnergyKwh;
-                if (energyDiffKwh >= 0) {
-                  powerKw = energyDiffKwh / timeDiffHours;
-                  // Limitar a la potencia nominal del conector (máx 150 kW para ser razonable)
-                  if (powerKw > 150) powerKw = 150;
-                  console.log(`[OCPP] MeterValues - Estimated power: ${powerKw.toFixed(2)} kW (delta=${energyDiffKwh.toFixed(4)} kWh in ${(timeDiffMs/1000).toFixed(0)}s)`);
-                }
+          if (powerKw === null && energyWh !== null && shouldAdvanceCurrentState) {
+            const activeSession = activeSessionBeforeUpdate;
+            const previousSampleAt = currentSampleAt;
+            if (activeSession && previousSampleAt) {
+              powerKw = estimatePowerFromEnergySamples({
+                previousEnergyKwh: activeSession.currentKwh,
+                currentEnergyKwh: kwhConsumed,
+                previousSampleAt,
+                currentSampleAt: sampleTimestamp,
+              });
+              if (powerKw !== null) {
+                const sampleDeltaSeconds = Math.round((sampleTimestamp.getTime() - previousSampleAt.getTime()) / 1000);
+                console.log(`[OCPP] MeterValues - Estimated power from sample timestamps: ${powerKw.toFixed(2)} kW (${sampleDeltaSeconds}s between OCPP samples)`);
               }
             } else if (!activeSession) {
               // Si no hay sesión activa en memoria, crearla automáticamente
@@ -2036,6 +2048,7 @@ async function handleOCPP16Message(
                 voltage: null,
                 current: null,
                 lastMeterUpdate: null,
+                lastMeterSampleAt: null,
                 powerHistory: [],
                 socTargetNotified: false,
                 manualSoc: autoManualSoc,
@@ -2076,7 +2089,7 @@ async function handleOCPP16Message(
             await db.createMeterValue({
               transactionId: transaction.id,
               evseId: transaction.evseId,
-              timestamp: new Date(),
+              timestamp: sampleTimestamp,
               energyKwh: energyWh !== null ? (energyWh / 1000).toFixed(4) : null,
               powerKw: powerKw !== null ? powerKw.toFixed(2) : null,
               voltage: voltage !== null ? voltage.toFixed(2) : null,
@@ -2091,7 +2104,7 @@ async function handleOCPP16Message(
           }
           
           // Actualizar transacción con valores parciales
-          if (energyWh !== null) {
+          if (energyWh !== null && shouldAdvanceCurrentState) {
             await db.updateTransaction(transaction.id, {
               kwhConsumed: kwhConsumed.toFixed(4),
               energyCost: energyCost.toFixed(2),
@@ -2102,14 +2115,21 @@ async function handleOCPP16Message(
           }
           
           // Actualizar sesión activa en memoria (para consultas en tiempo real del frontend)
-          const updated = updateActiveSessionMeterData(transaction.id, {
-            currentKwh: kwhConsumed,
-            currentCost: currentTotalCost,
-            soc: soc,
-            currentPower: powerKw !== null ? powerKw : 0,
-            voltage: voltage,
-            current: currentA,
-          });
+          const updated = shouldAdvanceCurrentState
+            ? updateActiveSessionMeterData(transaction.id, {
+                currentKwh: kwhConsumed,
+                currentCost: currentTotalCost,
+                soc: soc,
+                currentPower: powerKw !== null ? powerKw : 0,
+                voltage: voltage,
+                current: currentA,
+                sampleAt: sampleTimestamp,
+              })
+            : true;
+
+          if (!shouldAdvanceCurrentState) {
+            console.log(`[OCPP] MeterValues stored as history but ignored for current state: sampleAt=${sampleTimestamp.toISOString()}, currentSampleAt=${currentSampleAt?.toISOString()}`);
+          }
           
           console.log(`[OCPP] MeterValues PROCESSED - txId=${transaction.id}: ${kwhConsumed.toFixed(4)} kWh, $${currentTotalCost.toFixed(0)} COP, SoC=${soc ?? 'N/A'}%, Power=${powerKw?.toFixed(1) ?? 'N/A'}kW, sessionUpdated=${updated}`);
           
@@ -2156,8 +2176,9 @@ async function handleOCPP16Message(
               voltage: voltage,
               current: currentA,
               lastMeterUpdate: new Date(),
+              lastMeterSampleAt: sampleTimestamp,
               powerHistory: [{
-                timestamp: Date.now(),
+                timestamp: sampleTimestamp.getTime(),
                 power: powerKw !== null ? powerKw : 0,
                 energy: kwhConsumed,
                 soc: soc,

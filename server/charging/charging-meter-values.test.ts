@@ -78,6 +78,57 @@ describe("updateActiveSessionMeterData", () => {
     const session = getActiveSessionById(testTransactionId);
     expect(session!.currentPower).toBe(6.8);
   });
+
+  it("debe conservar el timestamp OCPP real en la sesión y en el historial", () => {
+    const sampleAt = new Date("2026-09-06T22:43:27Z");
+    updateActiveSessionMeterData(testTransactionId, {
+      currentKwh: 7.297,
+      currentPower: 5.832,
+      sampleAt,
+    });
+
+    const session = getActiveSessionById(testTransactionId);
+    expect(session!.lastMeterSampleAt?.toISOString()).toBe(sampleAt.toISOString());
+    expect(session!.powerHistory.at(-1)?.timestamp).toBe(sampleAt.getTime());
+  });
+
+  it("debe ignorar una muestra atrasada para la detección de batería llena", () => {
+    const session = getActiveSessionById(testTransactionId)!;
+    session.currentKwh = 5;
+    session.lowPowerSince = new Date(Date.now() - 20 * 60 * 1000);
+    session.chargeCompleteDetected = false;
+
+    updateActiveSessionMeterData(testTransactionId, {
+      currentKwh: 5.1,
+      currentPower: 0,
+      sampleAt: new Date(Date.now() - 30 * 60 * 1000),
+    });
+
+    expect(session.chargeCompleteDetected).toBe(false);
+    expect(session.autoStopSent).not.toBe(true);
+  });
+
+  it("no debe hacer retroceder energía ni potencia con una muestra fuera de orden", () => {
+    const currentSampleAt = new Date("2026-09-06T23:44:06Z");
+    updateActiveSessionMeterData(testTransactionId, {
+      currentKwh: 11.7,
+      currentPower: 5.8,
+      sampleAt: currentSampleAt,
+    });
+    const historyLength = getActiveSessionById(testTransactionId)!.powerHistory.length;
+
+    updateActiveSessionMeterData(testTransactionId, {
+      currentKwh: 7.3,
+      currentPower: 1.6,
+      sampleAt: new Date("2026-09-06T22:43:27Z"),
+    });
+
+    const session = getActiveSessionById(testTransactionId)!;
+    expect(session.currentKwh).toBe(11.7);
+    expect(session.currentPower).toBe(5.8);
+    expect(session.lastMeterSampleAt?.toISOString()).toBe(currentSampleAt.toISOString());
+    expect(session.powerHistory).toHaveLength(historyLength);
+  });
   
   it("debe actualizar todos los campos de MeterValues simultáneamente", () => {
     updateActiveSessionMeterData(testTransactionId, {

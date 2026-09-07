@@ -4339,3 +4339,8 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] QA financiero sobreestadía: tarifa cero y positiva validadas, cancelación dinámica antes del débito, TypeScript limpio, 2.175 pruebas aprobadas y build productivo exitoso.
 - [x] Publicación sobreestadía: checkpoints `6261d1a9`/`ddf808fb`, GitHub `e44c96fb`, Railway Success, interfaces sin fallback de $500 verificadas, EVG Diamante en $0 con cero locks y cero débitos nuevos después del reembolso.
 - [x] UI pública sobreestadía: el detalle de estación consume la tarifa autoritativa y muestra “Sin cobro” cuando es $0; TypeScript, 31 pruebas focalizadas y build aprobados, con `occupancyRatePerMinute: 0` confirmado en el endpoint productivo.
+- [x] Telemetría Wallbox: transacción real 1140020 auditada sin escrituras; 13,308 kWh finales, muestras OCPP crudas y cronología de conexiones/desconexiones contrastadas.
+- [x] Causa discrepancia Wallbox: la app fabricante medía localmente mientras OCPP sufría cierres 1006; las lecturas almacenadas llegaban juntas y EVGreen usaba hora de recepción, mostrando 1,6 kW en vez de los 5,772 kW derivados de timestamps reales.
+- [x] Fuente autoritativa de medición: preservar timestamp OCPP, reconciliar memoria con BD, ignorar muestras fuera de orden, proteger reconexiones simultáneas y exponer frescura sin presentar datos obsoletos como tiempo real.
+- [x] QA telemetría: TypeScript limpio, 193 archivos/2.185 pruebas aprobadas, build productivo exitoso y QA real de solo lectura sobre la transacción 1140020.
+- [ ] Publicación telemetría Wallbox: checkpoint, GitHub, Railway y comprobación productiva comparativa.
