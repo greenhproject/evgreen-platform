@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const sendEmail = vi.fn(async () => ({ data: { id: "email-reenviado-prueba" }, error: null }));
 vi.mock("../email/resend-client", () => ({
@@ -10,6 +10,15 @@ import type { TrpcContext } from "../_core/context";
 import { getDb } from "../db";
 import { spaceSubmissions } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
+import { cleanupSpaceQaFixtures } from "../spaces/test-space-fixture-cleanup";
+
+const fixtureEmails = ["contacto-comercial@example.com"] as const;
+const createdSubmissionIds = new Set<number>();
+
+async function cleanupFixtures() {
+  await cleanupSpaceQaFixtures({ createdIds: createdSubmissionIds, fixtureEmails });
+  createdSubmissionIds.clear();
+}
 
 function contextFor(role: "comercial" | "user", id: number): TrpcContext {
   return {
@@ -24,7 +33,10 @@ function publicContext(): TrpcContext {
 }
 
 describe("seguimiento comercial de cartas", () => {
+  beforeAll(cleanupFixtures);
   beforeEach(() => sendEmail.mockClear());
+  afterEach(cleanupFixtures);
+  afterAll(cleanupFixtures);
 
   async function createAssignedLetter(gestorId = 81001) {
     const publicCaller = appRouter.createCaller(publicContext());
@@ -37,6 +49,7 @@ describe("seguimiento comercial de cartas", () => {
       address: "Carrera 20 # 10-20",
       city: "Bogotá",
     });
+    createdSubmissionIds.add(submissionId);
     const db = await getDb();
     const previousToken = `gestor-old-${submissionId}`;
     await db!.update(spaceSubmissions).set({ gestorId, spaceStatus: "letter_sent", letterToken: previousToken }).where(eq(spaceSubmissions.id, submissionId));
