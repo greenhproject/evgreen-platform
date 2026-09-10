@@ -4,9 +4,11 @@
  */
 
 import { useState, useEffect } from "react";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { InheritedFinancialAudit } from "@/components/crowdfunding/InheritedFinancialAudit";
 import { InheritedSpaceGallery } from "@/components/crowdfunding/InheritedSpaceGallery";
+import { CrowdfundingBulkActions, type BulkProjectStatus } from "@/components/crowdfunding/CrowdfundingBulkActions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -43,6 +45,7 @@ import {
 } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { 
   Plus, 
   Building2,
@@ -102,8 +105,10 @@ interface Project {
   address: string | null;
   targetAmount: number;
   raisedAmount: number;
-  minimumInvestment: number;
-  investorCount?: number;
+	minimumInvestment: number;
+	investorCount?: number;
+	participationCount?: number;
+	completedParticipationCount?: number;
   totalPowerKw: number | null;
   chargerCount: number | null;
   chargerPowerKw: number | null;
@@ -160,11 +165,15 @@ interface Participation {
 }
 
 export default function AdminCrowdfunding() {
+	const { user } = useAuth();
+	const canManageInBulk = user?.role === "admin";
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [showParticipationsDialog, setShowParticipationsDialog] = useState(false);
   const [showRegisterInvestorDialog, setShowRegisterInvestorDialog] = useState(false);
+	const [activeProjectTab, setActiveProjectTab] = useState("active");
+	const [selectedProjectIds, setSelectedProjectIds] = useState<Set<number>>(() => new Set());
   
   // Edit participation state
   const [editingParticipation, setEditingParticipation] = useState<Participation | null>(null);
@@ -326,17 +335,43 @@ export default function AdminCrowdfunding() {
     },
   });
 
+	const bulkManageMutation = trpc.crowdfunding.bulkManageProjects.useMutation({
+		onSuccess: (data) => {
+			if (data.affected.length > 0) {
+				toast.success(`${data.affected.length} proyecto(s) actualizado(s) correctamente.`);
+			}
+			if (data.skipped.length > 0) {
+				const summary = data.skipped.slice(0, 3).map((item) => `${item.name}: ${item.reason}`).join(" · ");
+				toast.warning(`${data.skipped.length} proyecto(s) omitido(s). ${summary}`);
+			}
+			setSelectedProjectIds(new Set(data.skipped.map((item) => item.id)));
+			refetch();
+		},
+		onError: (error: any) => toast.error(error.message || "No fue posible completar la acción masiva."),
+	});
+
   const handleDeleteProject = (project: any) => {
-    const investorCount = project.investorCount || 0;
-    const hasInvestors = investorCount > 0;
-    const msg = hasInvestors
-      ? `¿Eliminar el proyecto "${project.name}" en ${project.city} - ${project.zone}?\n\n⚠️ ADVERTENCIA: Este proyecto tiene ${investorCount} inversionista(s). Se eliminarán TODAS las participaciones asociadas.\n\nEsta acción es irreversible.`
-      : `¿Eliminar el proyecto "${project.name}" en ${project.city} - ${project.zone}?\n\nEsta acción es irreversible.`;
+    const msg = `¿Eliminar el proyecto "${project.name}" en ${project.city} - ${project.zone}?\n\nSolo se permitirá si es borrador o cancelado y no tiene participaciones, recaudo ni estación física. Esta acción es irreversible.`;
     
     if (window.confirm(msg)) {
       deleteProjectMutation.mutate({ projectId: project.id });
     }
   };
+
+	useEffect(() => {
+		if (!projects) return;
+		const validIds = new Set(projects.map((project) => project.id));
+		setSelectedProjectIds((current) => new Set([...current].filter((id) => validIds.has(id))));
+	}, [projects]);
+
+	const toggleProjectSelection = (projectId: number) => {
+		setSelectedProjectIds((current) => {
+			const next = new Set(current);
+			if (next.has(projectId)) next.delete(projectId);
+			else next.add(projectId);
+			return next;
+		});
+	};
 
 const resetForm = () => {
 setFormData({
@@ -596,6 +631,14 @@ const handleSubmit = () => {
   // Separar proyectos por categoría
   const draftProjects = projects?.filter(p => p.status === 'DRAFT') || [];
   const activeProjects = projects?.filter(p => p.status !== 'DRAFT') || [];
+	const visibleProjects = activeProjectTab === "draft" ? draftProjects : activeProjects;
+	const allVisibleSelected = visibleProjects.length > 0 && visibleProjects.every((project) => selectedProjectIds.has(project.id));
+	const toggleVisibleProjects = () => {
+		setSelectedProjectIds(allVisibleSelected ? new Set() : new Set(visibleProjects.map((project) => project.id)));
+	};
+	const executeBulkAction = (action: { type: "PUBLISH" } | { type: "DELETE" } | { type: "SET_STATUS"; status: BulkProjectStatus }) => {
+		bulkManageMutation.mutate({ projectIds: [...selectedProjectIds], action });
+	};
 
   return (
     <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
@@ -667,19 +710,30 @@ const handleSubmit = () => {
           </Button>
         </Card>
       ) : (
-        <Tabs defaultValue="active" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
+	        <Tabs value={activeProjectTab} onValueChange={(value) => { setActiveProjectTab(value); setSelectedProjectIds(new Set()); }} className="w-full">
+	          <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="active" className="gap-2">
               <TrendingUp className="w-4 h-4" />
               Proyectos Activos ({activeProjects.length})
             </TabsTrigger>
             <TabsTrigger value="draft" className="gap-2">
               <FileText className="w-4 h-4" />
-              Espacios Aprobados ({draftProjects.length})
-            </TabsTrigger>
-          </TabsList>
+	              Espacios Aprobados ({draftProjects.length})
+	            </TabsTrigger>
+	          </TabsList>
+			  {canManageInBulk && (
+				<CrowdfundingBulkActions
+					selectedCount={selectedProjectIds.size}
+					visibleCount={visibleProjects.length}
+					allVisibleSelected={allVisibleSelected}
+					pending={bulkManageMutation.isPending}
+					onToggleVisible={toggleVisibleProjects}
+					onClear={() => setSelectedProjectIds(new Set())}
+					onExecute={executeBulkAction}
+				/>
+			  )}
 
-          {/* Tab: Proyectos Activos */}
+	          {/* Tab: Proyectos Activos */}
           <TabsContent value="active" className="mt-4">
             {activeProjects.length === 0 ? (
               <Card className="p-6 text-center text-muted-foreground">
@@ -689,10 +743,13 @@ const handleSubmit = () => {
               <>
                 {/* Vista m\u00f3vil - tarjetas */}
                 <div className="sm:hidden space-y-3">
-                  {activeProjects.map((project: any) => (
-                    <Card key={project.id} className="p-4">
-                      <div className="flex justify-between items-start mb-3">
-                        <div className="flex-1 min-w-0">
+	                  {activeProjects.map((project: any) => (
+	                    <Card key={project.id} className={`p-4 ${selectedProjectIds.has(project.id) ? "border-emerald-500/60 bg-emerald-500/5" : ""}`}>
+	                      <div className="flex justify-between items-start mb-3">
+						{canManageInBulk && (
+						  <Checkbox checked={selectedProjectIds.has(project.id)} onCheckedChange={() => toggleProjectSelection(project.id)} aria-label={`Seleccionar ${project.name}`} className="mr-3 mt-0.5 h-5 w-5 shrink-0" />
+						)}
+	                        <div className="flex-1 min-w-0">
                           <h3 className="font-semibold text-sm truncate">{project.name || project.city}</h3>
                           <p className="text-xs text-muted-foreground">{project.zone}</p>
                           {project.linkedSpaceName && (
@@ -725,9 +782,11 @@ const handleSubmit = () => {
                         <Button size="sm" variant="outline" className="text-xs h-8" onClick={() => { handleEdit(project); setShowCreateDialog(true); }}>
                           <Pencil className="w-3 h-3" />
                         </Button>
-                        <Button size="sm" variant="outline" className="text-xs h-8 text-red-500 hover:text-red-600 hover:border-red-300" onClick={() => handleDeleteProject(project)} disabled={deleteProjectMutation.isPending}>
-                          <Trash2 className="w-3 h-3" />
-                        </Button>
+						{project.status === "CANCELLED" && (
+						  <Button size="sm" variant="outline" className="text-xs h-8 text-red-500 hover:text-red-600 hover:border-red-300" onClick={() => handleDeleteProject(project)} disabled={deleteProjectMutation.isPending}>
+						    <Trash2 className="w-3 h-3" />
+						  </Button>
+						)}
                       </div>
                     </Card>
                   ))}
@@ -737,9 +796,10 @@ const handleSubmit = () => {
                 <div className="hidden sm:block">
                   <Card>
                     <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Proyecto</TableHead>
+	                      <TableHeader>
+	                        <TableRow>
+						  {canManageInBulk && <TableHead className="w-12"><Checkbox checked={allVisibleSelected} onCheckedChange={toggleVisibleProjects} aria-label="Seleccionar proyectos visibles" /></TableHead>}
+	                          <TableHead>Proyecto</TableHead>
                           <TableHead>Meta</TableHead>
                           <TableHead>Recaudado</TableHead>
                           <TableHead>Inversionistas</TableHead>
@@ -749,9 +809,10 @@ const handleSubmit = () => {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {activeProjects.map((project: any) => (
-                          <TableRow key={project.id}>
-                            <TableCell>
+	                        {activeProjects.map((project: any) => (
+	                          <TableRow key={project.id} className={selectedProjectIds.has(project.id) ? "bg-emerald-500/5" : undefined}>
+							{canManageInBulk && <TableCell><Checkbox checked={selectedProjectIds.has(project.id)} onCheckedChange={() => toggleProjectSelection(project.id)} aria-label={`Seleccionar ${project.name}`} /></TableCell>}
+	                            <TableCell>
                               <div>
                                 <p className="font-medium">{project.name || project.city}</p>
                                 <p className="text-sm text-muted-foreground">{project.zone}</p>
@@ -789,9 +850,11 @@ const handleSubmit = () => {
                                 <Button size="sm" variant="outline" onClick={() => { handleEdit(project); setShowCreateDialog(true); }}>
                                   <Pencil className="w-4 h-4" />
                                 </Button>
-                                <Button size="sm" variant="outline" onClick={() => handleDeleteProject(project)} disabled={deleteProjectMutation.isPending} className="text-red-500 hover:text-red-600 hover:border-red-300" title="Eliminar proyecto">
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
+								{project.status === "CANCELLED" && (
+								  <Button size="sm" variant="outline" onClick={() => handleDeleteProject(project)} disabled={deleteProjectMutation.isPending} className="text-red-500 hover:text-red-600 hover:border-red-300" title="Eliminar proyecto">
+								    <Trash2 className="w-4 h-4" />
+								  </Button>
+								)}
                               </div>
                             </TableCell>
                           </TableRow>
@@ -818,10 +881,14 @@ const handleSubmit = () => {
                   <p className="text-sm text-amber-400 font-medium">Espacios aprobados pendientes de publicar al crowdfunding</p>
                   <p className="text-xs text-muted-foreground mt-1">Estos proyectos fueron creados autom\u00e1ticamente al aprobar un espacio. Edita los datos financieros y publica cuando est\u00e9 listo.</p>
                 </div>
-                {draftProjects.map((project: any) => (
-                  <Card key={project.id} className="p-4 border-amber-500/20">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div className="flex-1 min-w-0">
+	                {draftProjects.map((project: any) => (
+	                  <Card key={project.id} className={`p-4 border-amber-500/20 ${selectedProjectIds.has(project.id) ? "border-emerald-500/60 bg-emerald-500/5" : ""}`}>
+	                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+						<div className="flex min-w-0 flex-1 items-start gap-3">
+						  {canManageInBulk && (
+						    <Checkbox checked={selectedProjectIds.has(project.id)} onCheckedChange={() => toggleProjectSelection(project.id)} aria-label={`Seleccionar ${project.name}`} className="mt-1 h-5 w-5 shrink-0" />
+						  )}
+	                      <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <h3 className="font-semibold text-sm truncate">{project.name || 'Sin nombre'}</h3>
                           {getStatusBadge(project.status)}
@@ -850,10 +917,11 @@ const handleSubmit = () => {
                           <span>Meta: {formatCOPShort(Number(project.targetAmount))}</span>
                           <span>Potencia: {project.totalPowerKw || '?'} kW</span>
                           <span>Cargadores: {project.chargerCount || '?'}</span>
-                          <span>Creado: {new Date(project.createdAt).toLocaleDateString('es-CO')}</span>
-                        </div>
-                      </div>
-                      <div className="flex gap-2 flex-shrink-0">
+	                          <span>Creado: {new Date(project.createdAt).toLocaleDateString('es-CO')}</span>
+	                        </div>
+	                      </div>
+						</div>
+	                      <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-shrink-0">
                         <Button size="sm" variant="outline" onClick={() => { handleEdit(project); setShowCreateDialog(true); }} className="gap-1">
                           <Pencil className="w-3 h-3" /> Editar
                         </Button>

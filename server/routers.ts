@@ -60,6 +60,8 @@ import { buildOcpiRouter } from "./ocpi/ocpi-router";
 import { stageSiemLocationSnapshot } from "./ocpi/ocpi-station-snapshot";
 import { contractsRouter } from "./contracts/contracts-router";
 import { resolveConnectorOperationalState } from "../shared/connector-operational-state";
+import { CROWDFUNDING_PROJECT_STATUSES } from "./crowdfunding/project-bulk-policy";
+import { manageCrowdfundingProjectsBulk } from "./crowdfunding/project-bulk-operations";
 
 // ============================================================================
 // ROLE-BASED PROCEDURES
@@ -71,6 +73,16 @@ const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "Acceso denegado. Se requiere rol de administrador.",
+    });
+  }
+  return next({ ctx });
+});
+
+const strictAdminProcedure = protectedProcedure.use(({ ctx, next }) => {
+  if (ctx.user.role !== "admin") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Esta operación financiera masiva requiere rol Administrador.",
     });
   }
   return next({ ctx });
@@ -5113,23 +5125,43 @@ const crowdfundingRouter = router({
       return { success: true };
     }),
 
-  // Admin: Eliminar proyecto de crowdfunding completo
-  deleteProject: adminProcedure
-    .input(z.object({ projectId: z.number() }))
-    .mutation(async ({ input }) => {
-      const project = await db.getCrowdfundingProjectById(input.projectId);
-      if (!project) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Proyecto no encontrado' });
-      }
-      
-      // 1. Eliminar todas las participaciones del proyecto
-      await db.deleteCrowdfundingProjectParticipations(input.projectId);
-      
-      // 2. Eliminar el proyecto
-      await db.deleteCrowdfundingProject(input.projectId);
-      
-      return { success: true, deletedProject: project.name };
-    }),
+	  bulkManageProjects: strictAdminProcedure
+	    .input(z.object({
+	      projectIds: z.array(z.number().int().positive()).min(1).max(500),
+	      action: z.discriminatedUnion("type", [
+	        z.object({ type: z.literal("PUBLISH") }),
+	        z.object({
+	          type: z.literal("SET_STATUS"),
+	          status: z.enum(CROWDFUNDING_PROJECT_STATUSES),
+	        }),
+	        z.object({ type: z.literal("DELETE") }),
+	      ]),
+	    }))
+	    .mutation(async ({ input, ctx }) => {
+	      return manageCrowdfundingProjectsBulk({
+	        projectIds: input.projectIds,
+	        action: input.action,
+	        actorId: ctx.user.id,
+	      });
+	    }),
+
+	  // Admin: Eliminar proyecto de crowdfunding completo
+	  deleteProject: strictAdminProcedure
+	    .input(z.object({ projectId: z.number() }))
+	    .mutation(async ({ input, ctx }) => {
+	      const result = await manageCrowdfundingProjectsBulk({
+	        projectIds: [input.projectId],
+	        action: { type: "DELETE" },
+	        actorId: ctx.user.id,
+	      });
+	      if (result.affected.length === 0) {
+	        throw new TRPCError({
+	          code: result.skipped[0]?.reason === "El proyecto ya no existe." ? "NOT_FOUND" : "CONFLICT",
+	          message: result.skipped[0]?.reason || "El proyecto no puede eliminarse.",
+	        });
+	      }
+	      return { success: true, deletedProject: result.affected[0].name };
+	    }),
 });
 
 // ============================================================================

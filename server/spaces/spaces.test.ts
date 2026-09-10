@@ -7,7 +7,8 @@ import { appRouter } from "../routers";
 import type { TrpcContext } from "../_core/context";
 import { getDb } from "../db";
 import { spacePhotos, spaceSubmissions } from "../../drizzle/schema";
-import { eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
+import { cleanupSpaceQaFixtures } from "./test-space-fixture-cleanup";
 
 const SPACE_TEST_FIXTURE_EMAILS = [
   "cf-integration@example.com",
@@ -100,6 +101,9 @@ function createUserContext(): TrpcContext {
 // ============================================================================
 // TESTS
 // ============================================================================
+beforeAll(async () => {
+  await cleanupSpaceQaFixtures({ fixtureEmails: SPACE_TEST_FIXTURE_EMAILS });
+});
 
 describe("spaces.submit", () => {
   it("crea una postulación con datos mínimos requeridos", async () => {
@@ -702,12 +706,8 @@ describe("spaces → crowdfunding integration", () => {
 // ============================================================================
 afterAll(async () => {
   try {
-    const db = await getDb();
-    await db.delete(spaceSubmissions).where(
-      inArray(spaceSubmissions.submitterEmail, [...SPACE_TEST_FIXTURE_EMAILS]),
-    );
+    await cleanupSpaceQaFixtures({ fixtureEmails: SPACE_TEST_FIXTURE_EMAILS });
   } catch (e) {
-    // Silenciar errores de cleanup para no afectar resultados de tests
     console.warn("[spaces.test cleanup] Error limpiando registros de test:", e);
   }
 });
