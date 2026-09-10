@@ -7,7 +7,7 @@
 import { router, publicProcedure, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { getDb } from "../db";
+import { getDb, getPlatformSettings } from "../db";
 import { getResendClient } from "../email/resend-client";
 import { buildCrowdfundingProjectInheritanceUpdate, getCrowdfundingInheritanceSnapshot } from "./crowdfunding-inheritance";
 import {
@@ -26,6 +26,11 @@ import { buildEmailParams } from "../utils/email-helper";
 import { optionalFormInteger, optionalFormNumber } from "./space-input-normalization";
 import { canManageCommercialPipeline, canManageSpaceAdministration } from "./pipeline-access";
 import { assertCommercialTransition, type SpacePipelineStatus } from "./pipeline-transitions";
+import {
+  buildCrowdfundingProjectionSnapshot,
+  getSelectedCrowdfundingProjection,
+  type CrowdfundingProjectionSnapshot,
+} from "../../shared/crowdfunding-financial-projection";
 
 // ============================================================================
 // ROLE GUARDS
@@ -58,6 +63,78 @@ async function getDatabase() {
 
 function toSqlTimestamp(date = new Date()) {
   return date.toISOString().slice(0, 19).replace("T", " ");
+}
+
+function firstPositiveNumber(...values: unknown[]): number | null {
+  for (const value of values) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && numeric > 0) return numeric;
+  }
+  return null;
+}
+
+function parseProjectionSnapshot(value: unknown): CrowdfundingProjectionSnapshot | null {
+  if (!value) return null;
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value) as CrowdfundingProjectionSnapshot;
+    } catch {
+      return null;
+    }
+  }
+  return typeof value === "object" ? value as CrowdfundingProjectionSnapshot : null;
+}
+
+async function buildSpaceCrowdfundingProjection(input: {
+  investmentCop: number;
+  totalPowerKw: number;
+  currentProject?: any;
+}) {
+  if (input.investmentCop <= 0 || input.totalPowerKw <= 0) return null;
+
+  const settings = await getPlatformSettings();
+  const stored = parseProjectionSnapshot(input.currentProject?.financialProjectionSnapshot);
+  const investorSharePercent = Number(
+    input.currentProject?.investorSharePercent
+      ?? stored?.assumptions.investorSharePercent
+      ?? settings?.investorPercentage
+      ?? 70,
+  );
+  const evgreenSharePercent = Number(
+    input.currentProject?.evgreenSharePercent
+      ?? stored?.assumptions.evgreenSharePercent
+      ?? (100 - investorSharePercent),
+  );
+  const selectedScenario = stored?.selectedScenario ?? "REALISTIC";
+  const snapshot = buildCrowdfundingProjectionSnapshot({
+    investmentCop: input.investmentCop,
+    totalPowerKw: input.totalPowerKw,
+    salePricePerKwh: Number(stored?.assumptions.salePricePerKwh ?? settings?.precioVentaDefault ?? 1800),
+    energyCostPerKwh: Number(
+      input.currentProject?.energyPurchaseCostPerKwh
+        ?? stored?.assumptions.energyCostPerKwh
+        ?? settings?.costoEnergiaRed
+        ?? 850,
+    ),
+    hostSharePercent: Number(
+      input.currentProject?.hostSharePercent
+        ?? stored?.assumptions.hostSharePercent
+        ?? 10,
+    ),
+    investorSharePercent,
+    evgreenSharePercent,
+    efficiencyPercent: Number(stored?.assumptions.efficiencyPercent ?? settings?.eficienciaCargaDc ?? 92),
+    fixedMonthlyExpenses: Number(stored?.assumptions.fixedMonthlyExpenses ?? 0),
+  }, selectedScenario);
+  const selected = getSelectedCrowdfundingProjection(snapshot);
+
+  return {
+    snapshot,
+    selected,
+    selectedScenario,
+    investorSharePercent,
+    evgreenSharePercent,
+  };
 }
 
 async function recordSpaceStatusChange(
@@ -888,9 +965,11 @@ export const spacesRouter = router({
 				submissionId: spacePhotos.submissionId, url: spacePhotos.photoUrl, type: spacePhotos.photoType,
 				caption: spacePhotos.caption, sortOrder: spacePhotos.sortOrder,
 			}).from(spacePhotos).where(eq(spacePhotos.submissionId, input.id)).orderBy(spacePhotos.sortOrder);
-			const inherited = getCrowdfundingInheritanceSnapshot(submission, inheritedPhotos);
-			const targetAmount = inherited.targetAmount ?? 0;
-            const [cfResult] = await db.insert(crowdfundingProjects).values({
+				const inherited = getCrowdfundingInheritanceSnapshot(submission, inheritedPhotos);
+				const targetAmount = inherited.targetAmount ?? 0;
+				const totalPowerKw = inherited.totalPowerKw ?? 0;
+				const projection = await buildSpaceCrowdfundingProjection({ investmentCop: targetAmount, totalPowerKw });
+	            const [cfResult] = await db.insert(crowdfundingProjects).values({
 				name: inherited.name,
 				description: inherited.description,
 				city: inherited.city,
@@ -898,14 +977,18 @@ export const spacesRouter = router({
 				address: inherited.address,
               targetAmount,
 				minimumInvestment: inherited.minimumInvestment ?? 0,
-				totalPowerKw: inherited.totalPowerKw ?? 0,
+					totalPowerKw,
 				chargerCount: inherited.chargerCount ?? 0,
 				chargerPowerKw: inherited.chargerPowerKw ?? 0,
                             hasSolarPanels: 0,
               raisedAmount: 0,
-				estimatedRoiPercent: inherited.estimatedRoiPercent ?? "0.00",
-				estimatedPaybackMonths: inherited.estimatedPaybackMonths ?? 0,
-              status: "DRAFT",
+					estimatedRoiPercent: projection ? projection.selected.roiAnnualPercent.toFixed(2) : "0.00",
+					estimatedPaybackMonths: projection ? Math.ceil(projection.selected.paybackMonths) : 0,
+					financialProjectionSnapshot: projection?.snapshot ?? null,
+					financialProjectionScenario: projection?.selectedScenario ?? null,
+					financialProjectionUpdatedAt: projection ? toSqlTimestamp() : null,
+					financialProjectionUpdatedBy: projection ? ctx.user.id : null,
+					status: "DRAFT",
               spaceSubmissionId: input.id,
 				spaceInheritanceSnapshot: inherited,
               createdById: ctx.user.id,
@@ -1221,23 +1304,43 @@ Responde en formato JSON con la siguiente estructura:`;
 			caption: spacePhotos.caption, sortOrder: spacePhotos.sortOrder,
 		}).from(spacePhotos).where(eq(spacePhotos.submissionId, input.id)).orderBy(spacePhotos.sortOrder);
 		const inherited = getCrowdfundingInheritanceSnapshot(submission, inheritedPhotos);
-		const targetAmount = inherited.targetAmount ?? input.targetAmount;
-		if (!targetAmount) {
-			throw new TRPCError({ code: "BAD_REQUEST", message: "Completa la meta de inversión en Espacios antes de publicar." });
-		}
+			const [currentProject] = submission.crowdfundingProjectId
+				? await db.select().from(crowdfundingProjects).where(eq(crowdfundingProjects.id, submission.crowdfundingProjectId)).limit(1)
+				: [];
+			const targetAmount = firstPositiveNumber(currentProject?.targetAmount, inherited.targetAmount, input.targetAmount);
+			if (!targetAmount) {
+				throw new TRPCError({ code: "BAD_REQUEST", message: "Completa la meta de inversión en Espacios antes de publicar." });
+			}
+			const totalPowerKw = firstPositiveNumber(currentProject?.totalPowerKw, inherited.totalPowerKw, 120)!;
+			const projection = await buildSpaceCrowdfundingProjection({
+				investmentCop: targetAmount,
+				totalPowerKw,
+				currentProject,
+			});
+			if (!projection) {
+				throw new TRPCError({ code: "BAD_REQUEST", message: "Completa inversión y potencia para calcular los escenarios antes de publicar." });
+			}
+			const projectionValues = {
+				estimatedRoiPercent: projection.selected.roiAnnualPercent.toFixed(2),
+				estimatedPaybackMonths: Math.ceil(projection.selected.paybackMonths),
+				financialProjectionSnapshot: projection.snapshot,
+				financialProjectionScenario: projection.selectedScenario,
+				financialProjectionUpdatedAt: toSqlTimestamp(),
+				financialProjectionUpdatedBy: ctx.user.id,
+			};
 
         let crowdfundingProjectId: number;
 
         if (submission.crowdfundingProjectId) {
 	          // Ya existe un proyecto CF (creado auto al aprobar) → actualizar
-	          await db.update(crowdfundingProjects)
-	            .set({
-					spaceInheritanceSnapshot: inherited,
-					targetAmount,
-				minimumInvestment: inherited.minimumInvestment ?? input.minimumInvestment ?? 50000000,
-				estimatedRoiPercent: inherited.estimatedRoiPercent ?? input.estimatedRoiPercent ?? "85.00",
-				estimatedPaybackMonths: inherited.estimatedPaybackMonths ?? input.estimatedPaybackMonths ?? 14,
-              status: "OPEN",
+		          await db.update(crowdfundingProjects)
+		            .set({
+						spaceInheritanceSnapshot: inherited,
+						targetAmount,
+					minimumInvestment: firstPositiveNumber(currentProject?.minimumInvestment, inherited.minimumInvestment, input.minimumInvestment, 50000000)!,
+					totalPowerKw,
+					...projectionValues,
+	              status: "OPEN",
               launchDate: new Date().toISOString().slice(0, 19).replace("T", " "),
             })
             .where(eq(crowdfundingProjects.id, submission.crowdfundingProjectId));
@@ -1250,15 +1353,14 @@ Responde en formato JSON con la siguiente estructura:`;
 			city: inherited.city,
 			zone: inherited.zone,
 			address: inherited.address,
-			targetAmount,
-			minimumInvestment: inherited.minimumInvestment ?? input.minimumInvestment ?? 50000000,
-			totalPowerKw: inherited.totalPowerKw ?? 120,
+				targetAmount,
+				minimumInvestment: inherited.minimumInvestment ?? input.minimumInvestment ?? 50000000,
+				totalPowerKw,
 			chargerCount: inherited.chargerCount ?? 2,
 			chargerPowerKw: inherited.chargerPowerKw ?? 60,
             hasSolarPanels: 0,
             raisedAmount: 0,
-			estimatedRoiPercent: inherited.estimatedRoiPercent ?? input.estimatedRoiPercent ?? "85.00",
-			estimatedPaybackMonths: inherited.estimatedPaybackMonths ?? input.estimatedPaybackMonths ?? 14,
+				...projectionValues,
             status: "OPEN",
             launchDate: new Date().toISOString().slice(0, 19).replace("T", " "),
             spaceSubmissionId: input.id,
@@ -1845,8 +1947,9 @@ Responde en formato JSON con la siguiente estructura:`;
         try { aiData = JSON.parse(submission.aiAnalysis as string); } catch { /* ignore */ }
       }
 
-      // Generar PDF
-      const { generateProspectoPdf } = await import("./prospecto-pdf-service");
+	      // Generar PDF
+	      const platformSettings = await getPlatformSettings();
+	      const { generateProspectoPdf } = await import("./prospecto-pdf-service");
       const pdfBuffer = await generateProspectoPdf({
         code: submission.code,
         spaceName: submission.spaceName,
@@ -1880,8 +1983,9 @@ Responde en formato JSON con la siguiente estructura:`;
         investorSharePercent: input.investorSharePercent,
         platformSharePercent: input.platformSharePercent,
         installedPowerKw: input.installedPowerKw,
-        tarifaKwhCop: input.tarifaKwhCop,
-        energyCostPerKwhCop: input.energyCostPerKwhCop,
+	        tarifaKwhCop: input.tarifaKwhCop,
+	        energyCostPerKwhCop: input.energyCostPerKwhCop,
+	        efficiencyPercent: Number(platformSettings?.eficienciaCargaDc ?? 92),
         photos: photos.map(p => ({ url: p.photoUrl, caption: p.caption })),
         generatedAt: new Date(),
       });

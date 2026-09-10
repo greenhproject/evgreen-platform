@@ -6,7 +6,7 @@ import { describe, expect, it, vi, beforeAll, afterAll } from "vitest";
 import { appRouter } from "../routers";
 import type { TrpcContext } from "../_core/context";
 import { getDb } from "../db";
-import { spacePhotos, spaceSubmissions } from "../../drizzle/schema";
+import { crowdfundingProjects, spacePhotos, spaceSubmissions } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
 import { cleanupSpaceQaFixtures } from "./test-space-fixture-cleanup";
 
@@ -448,6 +448,22 @@ describe("publicación excepcional con formalización interna", () => {
     expect(detail.manualFormalizedBy).toBe(1);
     expect(detail.manualFormalizedAt).toBeTruthy();
     expect(detail.letterAcceptedAt).toBeNull();
+
+		const [project] = await db!.select().from(crowdfundingProjects)
+			.where(eq(crowdfundingProjects.id, detail.crowdfundingProjectId!))
+			.limit(1);
+		expect(project.targetAmount).toBe(150000000);
+		expect(project.financialProjectionScenario).toBe("REALISTIC");
+		expect(project.financialProjectionSnapshot).toMatchObject({
+			version: 1,
+			basis: "EVGREEN_CROWDFUNDING_SCENARIOS",
+			selectedScenario: "REALISTIC",
+		});
+		const selected = (project.financialProjectionSnapshot as any).scenarios.REALISTIC;
+		expect(Number(project.estimatedRoiPercent)).toBe(selected.roiAnnualPercent);
+		expect(project.estimatedPaybackMonths).toBe(Math.ceil(selected.paybackMonths));
+		expect(Number(project.estimatedRoiPercent)).not.toBe(85);
+		expect(project.estimatedPaybackMonths).not.toBe(14);
   });
 
   it("rechaza la publicación excepcional sin motivo suficiente y a un rol no administrativo", async () => {

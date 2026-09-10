@@ -50,23 +50,69 @@ describe("crowdfunding.updateProject - excepciones heredadas", () => {
 
   it("registra excepción y solo actualiza datos cuando el motivo es válido", async () => {
     const caller = appRouter.createCaller(adminContext());
-    await caller.crowdfunding.updateProject({
-      id: 501,
-      targetAmount: 950000000,
-      financialOverrideReason: "Cotización actualizada tras validar la potencia disponible en sitio.",
-    });
+	  await caller.crowdfunding.updateProject({
+	    id: 501,
+	    targetAmount: 950000000,
+	    financialOverrideReason: "Cotización actualizada tras validar la potencia disponible en sitio.",
+	    financialProjection: {
+	      selectedScenario: "REALISTIC",
+	      salePricePerKwh: 1800,
+	      energyCostPerKwh: 850,
+	      hostSharePercent: 10,
+	      investorSharePercent: 70,
+	      evgreenSharePercent: 30,
+	      efficiencyPercent: 92,
+	      fixedMonthlyExpenses: 0,
+	    },
+	  });
     expect(mockedDb.recordCrowdfundingFinancialOverride).toHaveBeenCalledWith(501, expect.objectContaining({
       reason: "Cotización actualizada tras validar la potencia disponible en sitio.",
       byUserId: 91,
     }));
-    expect(mockedDb.updateCrowdfundingProject).toHaveBeenCalledWith(501, { targetAmount: 950000000 });
+	  expect(mockedDb.updateCrowdfundingProject).toHaveBeenCalledWith(501, expect.objectContaining({
+	    targetAmount: 950000000,
+	    estimatedRoiPercent: expect.any(Number),
+	    estimatedPaybackMonths: expect.any(Number),
+	    financialProjectionScenario: "REALISTIC",
+	  }));
     expect(inheritedProject.spaceInheritanceSnapshot.photos).toHaveLength(1);
   });
 
-  it("permite cambios no financieros sin abrir una excepción", async () => {
-    const caller = appRouter.createCaller(adminContext());
-    await caller.crowdfunding.updateProject({ id: 501, city: "Medellín" });
-    expect(mockedDb.recordCrowdfundingFinancialOverride).not.toHaveBeenCalled();
-    expect(mockedDb.updateCrowdfundingProject).toHaveBeenCalledWith(501, { city: "Medellín" });
-  });
+	it("permite cambios no financieros sin abrir una excepción", async () => {
+	  const caller = appRouter.createCaller(adminContext());
+	  await caller.crowdfunding.updateProject({ id: 501, city: "Medellín" });
+	  expect(mockedDb.recordCrowdfundingFinancialOverride).not.toHaveBeenCalled();
+	  expect(mockedDb.updateCrowdfundingProject).toHaveBeenCalledWith(501, { city: "Medellín" });
+	});
+
+	it("recalcula ROI y payback en servidor desde el escenario seleccionado", async () => {
+	  const caller = appRouter.createCaller(adminContext());
+	  await caller.crowdfunding.updateProject({
+	    id: 501,
+	    financialOverrideReason: "Se aplicó el escenario realista con la tarifa y potencia verificadas.",
+	    financialProjection: {
+	      selectedScenario: "REALISTIC",
+	      salePricePerKwh: 1800,
+	      energyCostPerKwh: 850,
+	      hostSharePercent: 10,
+	      investorSharePercent: 70,
+	      evgreenSharePercent: 30,
+	      efficiencyPercent: 92,
+	      fixedMonthlyExpenses: 0,
+	    },
+	  });
+
+	  expect(mockedDb.recordCrowdfundingFinancialOverride).toHaveBeenCalledWith(501, expect.objectContaining({
+	    reason: expect.stringContaining("escenario realista"),
+	  }));
+	  expect(mockedDb.updateCrowdfundingProject).toHaveBeenCalledWith(501, expect.objectContaining({
+	    estimatedRoiPercent: expect.any(Number),
+	    estimatedPaybackMonths: expect.any(Number),
+	    financialProjectionScenario: "REALISTIC",
+	    financialProjectionSnapshot: expect.objectContaining({
+	      basis: "EVGREEN_CROWDFUNDING_SCENARIOS",
+	      selectedScenario: "REALISTIC",
+	    }),
+	  }));
+	});
 });

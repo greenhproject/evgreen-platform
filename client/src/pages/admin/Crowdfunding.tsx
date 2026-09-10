@@ -9,6 +9,17 @@ import { trpc } from "@/lib/trpc";
 import { InheritedFinancialAudit } from "@/components/crowdfunding/InheritedFinancialAudit";
 import { InheritedSpaceGallery } from "@/components/crowdfunding/InheritedSpaceGallery";
 import { CrowdfundingBulkActions, type BulkProjectStatus } from "@/components/crowdfunding/CrowdfundingBulkActions";
+import {
+  CrowdfundingProjectionSimulator,
+  type CrowdfundingProjectionAssumptions,
+} from "@/components/crowdfunding/CrowdfundingProjectionSimulator";
+import {
+  buildCrowdfundingProjectionSnapshot,
+  getSelectedCrowdfundingProjection,
+  type CrowdfundingProjectionScenario,
+  type CrowdfundingProjectionSnapshot,
+} from "@shared/crowdfunding-financial-projection";
+import { hasCrowdfundingFinancialChanges } from "@shared/crowdfunding-financial-changes";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -144,6 +155,14 @@ interface Project {
 	financialOverrideReason?: string | null;
 	financialOverrideAt?: string | Date | null;
 	financialOverrideByName?: string | null;
+	financialProjectionSnapshot?: CrowdfundingProjectionSnapshot | null;
+	financialProjectionScenario?: CrowdfundingProjectionScenario | null;
+	financialProjectionUpdatedAt?: string | Date | null;
+	evgreenSharePercent?: string | null;
+	investorSharePercent?: string | null;
+	hostSharePercent?: string | null;
+	energyPurchaseCostPerKwh?: string | null;
+	hostName?: string | null;
 	createdAt: Date;
 }
 
@@ -173,9 +192,20 @@ export default function AdminCrowdfunding() {
   const [showParticipationsDialog, setShowParticipationsDialog] = useState(false);
   const [showRegisterInvestorDialog, setShowRegisterInvestorDialog] = useState(false);
 	const [activeProjectTab, setActiveProjectTab] = useState("active");
-	const [selectedProjectIds, setSelectedProjectIds] = useState<Set<number>>(() => new Set());
-  
-  // Edit participation state
+	  const [selectedProjectIds, setSelectedProjectIds] = useState<Set<number>>(() => new Set());
+	  const [projectionScenario, setProjectionScenario] = useState<CrowdfundingProjectionScenario>("REALISTIC");
+	  const [projectionApplied, setProjectionApplied] = useState(false);
+	  const [projectionAssumptions, setProjectionAssumptions] = useState<CrowdfundingProjectionAssumptions>({
+	    salePricePerKwh: 1800,
+	    energyCostPerKwh: 850,
+	    hostSharePercent: 10,
+	    investorSharePercent: 70,
+	    evgreenSharePercent: 30,
+	    efficiencyPercent: 92,
+	    fixedMonthlyExpenses: 0,
+	  });
+
+	  // Edit participation state
   const [editingParticipation, setEditingParticipation] = useState<Participation | null>(null);
   const [showEditParticipationDialog, setShowEditParticipationDialog] = useState(false);
   const [editPartData, setEditPartData] = useState({
@@ -232,10 +262,29 @@ export default function AdminCrowdfunding() {
     energyPurchaseCostPerKwh: "800.00",
     hostName: "",
     latitude: "",
-    longitude: "",
-  });
+	    longitude: "",
+	  });
 
-  const { data: projects, isLoading, refetch } = trpc.crowdfunding.getAllProjects.useQuery();
+	  useEffect(() => {
+	    if (!projectionApplied) return;
+	    try {
+	      const selected = getSelectedCrowdfundingProjection(buildCrowdfundingProjectionSnapshot({
+	        investmentCop: formData.targetAmount,
+	        totalPowerKw: formData.totalPowerKw,
+	        ...projectionAssumptions,
+	      }, projectionScenario));
+	      setFormData((current) => {
+	        const nextPayback = Math.ceil(selected.paybackMonths);
+	        if (Number(current.estimatedRoiPercent) === selected.roiAnnualPercent && Number(current.estimatedPaybackMonths) === nextPayback) return current;
+	        return { ...current, estimatedRoiPercent: selected.roiAnnualPercent, estimatedPaybackMonths: nextPayback };
+	      });
+	    } catch {
+	      // El componente muestra el detalle de validación mientras los supuestos están incompletos.
+	    }
+	  }, [formData.targetAmount, formData.totalPowerKw, projectionApplied, projectionAssumptions, projectionScenario]);
+
+		  const { data: projects, isLoading, refetch } = trpc.crowdfunding.getAllProjects.useQuery();
+	  const { data: calculatorParams } = trpc.settings.getCalculatorParams.useQuery();
   const { data: participations, refetch: refetchParticipations } = trpc.crowdfunding.getParticipations.useQuery(
     { projectId: selectedProject?.id || 0 },
     { enabled: !!selectedProject }
@@ -373,8 +422,21 @@ export default function AdminCrowdfunding() {
 		});
 	};
 
-const resetForm = () => {
-setFormData({
+	const resetForm = () => {
+	const investorPercent = Number(calculatorParams?.investorPercentage ?? 70);
+	const hostPercent = Number(calculatorParams?.hostPercentage ?? 10);
+	setProjectionScenario("REALISTIC");
+	setProjectionApplied(true);
+	setProjectionAssumptions({
+	  salePricePerKwh: Number(calculatorParams?.precioVentaDefault ?? 1800),
+	  energyCostPerKwh: Number(calculatorParams?.costoEnergiaRed ?? 850),
+	  hostSharePercent: hostPercent,
+	  investorSharePercent: investorPercent,
+	  evgreenSharePercent: 100 - investorPercent,
+	  efficiencyPercent: Number(calculatorParams?.eficienciaCargaDc ?? 92),
+	  fixedMonthlyExpenses: 0,
+	});
+	setFormData({
 name: "",
 		financialOverrideReason: "",
 description: "",
@@ -393,10 +455,10 @@ description: "",
       status: "DRAFT",
       targetDate: "",
       priority: 1,
-      evgreenSharePercent: "30.00",
-      investorSharePercent: "70.00",
-      hostSharePercent: "10.00",
-      energyPurchaseCostPerKwh: "800.00",
+	      evgreenSharePercent: String(100 - investorPercent),
+	      investorSharePercent: String(investorPercent),
+	      hostSharePercent: String(hostPercent),
+	      energyPurchaseCostPerKwh: String(calculatorParams?.costoEnergiaRed ?? 850),
       hostName: "",
       latitude: "",
       longitude: "",
@@ -420,53 +482,62 @@ description: "",
     setSelectedRegisterUser(null);
   };
 
-	const handleEdit = (project: Project) => {
-		setEditingProject(project);
-		setFormData({
+		const handleEdit = (project: Project) => {
+			const storedProjection = project.financialProjectionSnapshot;
+			const investorPercent = Number(project.investorSharePercent ?? storedProjection?.assumptions.investorSharePercent ?? calculatorParams?.investorPercentage ?? 70);
+			const evgreenPercent = Number(project.evgreenSharePercent ?? storedProjection?.assumptions.evgreenSharePercent ?? (100 - investorPercent));
+			const hostPercent = Number(project.hostSharePercent ?? storedProjection?.assumptions.hostSharePercent ?? calculatorParams?.hostPercentage ?? 10);
+			setProjectionScenario(storedProjection?.selectedScenario ?? project.financialProjectionScenario ?? "REALISTIC");
+			setProjectionApplied(Boolean(storedProjection));
+			setProjectionAssumptions({
+				salePricePerKwh: Number(storedProjection?.assumptions.salePricePerKwh ?? calculatorParams?.precioVentaDefault ?? 1800),
+				energyCostPerKwh: Number(project.energyPurchaseCostPerKwh ?? storedProjection?.assumptions.energyCostPerKwh ?? calculatorParams?.costoEnergiaRed ?? 850),
+				hostSharePercent: hostPercent,
+				investorSharePercent: investorPercent,
+				evgreenSharePercent: evgreenPercent,
+				efficiencyPercent: Number(storedProjection?.assumptions.efficiencyPercent ?? calculatorParams?.eficienciaCargaDc ?? 92),
+				fixedMonthlyExpenses: Number(storedProjection?.assumptions.fixedMonthlyExpenses ?? 0),
+			});
+			setEditingProject(project);
+			setFormData({
       name: project.name,
       description: project.description || "",
       city: project.city,
       zone: project.zone,
       address: project.address || "",
-			targetAmount: Number(project.inheritedTargetAmount ?? project.targetAmount),
-			raisedAmount: Number(project.raisedAmount) || 0,
-			minimumInvestment: Number(project.inheritedMinimumInvestment ?? project.minimumInvestment),
-			totalPowerKw: Number(project.inheritedTotalPowerKw ?? project.totalPowerKw) || 480,
-			chargerCount: Number(project.inheritedChargerCount ?? project.chargerCount) || 4,
-			chargerPowerKw: project.inheritedTotalPowerKw && project.inheritedChargerCount
-				? Math.round(Number(project.inheritedTotalPowerKw) / Number(project.inheritedChargerCount))
-				: project.chargerPowerKw || 120,
-			hasSolarPanels: project.hasSolarPanels,
-			estimatedRoiPercent: Number(project.inheritedRoiPercent ?? project.estimatedRoiPercent) || 85,
-			estimatedPaybackMonths: Number(project.inheritedPaybackMonths ?? project.estimatedPaybackMonths) || 14,
+				targetAmount: Number(project.targetAmount),
+				raisedAmount: Number(project.raisedAmount) || 0,
+				minimumInvestment: Number(project.minimumInvestment),
+				totalPowerKw: Number(project.totalPowerKw) || 480,
+				chargerCount: Number(project.chargerCount) || 4,
+				chargerPowerKw: Number(project.chargerPowerKw) || 120,
+				hasSolarPanels: project.hasSolarPanels,
+				estimatedRoiPercent: Number(project.estimatedRoiPercent) || 0,
+				estimatedPaybackMonths: Number(project.estimatedPaybackMonths) || 0,
       status: project.status,
       targetDate: project.targetDate ? new Date(project.targetDate).toISOString().split('T')[0] : "",
       priority: project.priority,
-      evgreenSharePercent: (project as any).evgreenSharePercent || "30.00",
-      investorSharePercent: (project as any).investorSharePercent || "70.00",
-      hostSharePercent: (project as any).hostSharePercent || "10.00",
-      energyPurchaseCostPerKwh: (project as any).energyPurchaseCostPerKwh || "800.00",
-	      hostName: (project as any).hostName || "",
+	      evgreenSharePercent: String(evgreenPercent),
+	      investorSharePercent: String(investorPercent),
+	      hostSharePercent: String(hostPercent),
+	      energyPurchaseCostPerKwh: String(project.energyPurchaseCostPerKwh ?? storedProjection?.assumptions.energyCostPerKwh ?? calculatorParams?.costoEnergiaRed ?? 850),
+	      hostName: project.hostName || "",
 	      latitude: (project as any).latitude || "",
 	      longitude: (project as any).longitude || "",
-			financialOverrideReason: project.financialOverrideReason || "",
-	    });
-  };
+				financialOverrideReason: "",
+		    });
+	  };
 
-const handleSubmit = () => {
-		const inheritedFinancialChanged = Boolean(editingProject?.spaceSubmissionId) && [
-			[formData.targetAmount, editingProject?.inheritedTargetAmount],
-			[formData.minimumInvestment, editingProject?.inheritedMinimumInvestment],
-			[formData.totalPowerKw, editingProject?.inheritedTotalPowerKw],
-			[formData.chargerCount, editingProject?.inheritedChargerCount],
-			[formData.estimatedRoiPercent, editingProject?.inheritedRoiPercent],
-			[formData.estimatedPaybackMonths, editingProject?.inheritedPaybackMonths],
-		].some(([current, inherited]) => inherited !== null && inherited !== undefined && Number(current) !== Number(inherited));
+	const handleSubmit = () => {
+			const inheritedFinancialChanged = Boolean(editingProject?.spaceSubmissionId) && hasCrowdfundingFinancialChanges(
+				editingProject as unknown as Record<string, unknown>,
+				formData,
+			);
 
-		if (inheritedFinancialChanged && formData.financialOverrideReason.trim().length < 15) {
-			toast.error("Explica con al menos 15 caracteres por qué se ajusta la proyección heredada de Espacios.");
-			return;
-		}
+			if (inheritedFinancialChanged && formData.financialOverrideReason.trim().length < 15) {
+				toast.error("Explica con al menos 15 caracteres por qué se ajusta la proyección heredada de Espacios.");
+				return;
+			}
     // Validar que EVGreen + Inversionista sumen 100% (el aliado es % separado sobre margen bruto)
     const evInvSum = parseFloat(formData.evgreenSharePercent || '0') + parseFloat(formData.investorSharePercent || '0');
     if (Math.abs(evInvSum - 100) > 0.1) {
@@ -479,15 +550,25 @@ const handleSubmit = () => {
       return;
     }
 
-    const { raisedAmount, ...rest } = formData;
-    const data = {
-      ...rest,
-      targetDate: formData.targetDate ? new Date(formData.targetDate) : undefined,
-	      hostName: formData.hostName || undefined,
-	      latitude: formData.latitude || undefined,
-	      longitude: formData.longitude || undefined,
-			financialOverrideReason: inheritedFinancialChanged ? formData.financialOverrideReason.trim() : undefined,
-	    };
+	    const { raisedAmount, ...rest } = formData;
+	    const data = {
+	      ...rest,
+	      targetDate: formData.targetDate ? new Date(formData.targetDate) : undefined,
+		      hostName: formData.hostName || undefined,
+		      latitude: formData.latitude || undefined,
+		      longitude: formData.longitude || undefined,
+				financialOverrideReason: inheritedFinancialChanged ? formData.financialOverrideReason.trim() : undefined,
+				financialProjection: (!editingProject || projectionApplied) ? {
+					selectedScenario: projectionScenario,
+					salePricePerKwh: projectionAssumptions.salePricePerKwh,
+					energyCostPerKwh: projectionAssumptions.energyCostPerKwh,
+					hostSharePercent: projectionAssumptions.hostSharePercent,
+					investorSharePercent: projectionAssumptions.investorSharePercent,
+					evgreenSharePercent: projectionAssumptions.evgreenSharePercent,
+					efficiencyPercent: projectionAssumptions.efficiencyPercent,
+					fixedMonthlyExpenses: projectionAssumptions.fixedMonthlyExpenses ?? 0,
+				} : undefined,
+		    };
 
     if (editingProject) {
       updateMutation.mutate({ id: editingProject.id, ...data });
@@ -945,11 +1026,11 @@ const handleSubmit = () => {
         </Tabs>
       )}
 
-      {/* Dialog para crear/editar proyecto */}
-      <Dialog open={showCreateDialog} onOpenChange={(open) => {
-        if (!open) { setShowCreateDialog(false); setEditingProject(null); resetForm(); }
-      }}>
-	        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+	      {/* Dialog para crear/editar proyecto */}
+	      <Dialog open={showCreateDialog} onOpenChange={(open) => {
+	        if (!open) { setShowCreateDialog(false); setEditingProject(null); resetForm(); }
+	      }}>
+		        <DialogContent className="w-[calc(100vw-1rem)] max-h-[92vh] overflow-y-auto sm:max-w-3xl">
 	          <DialogHeader>
 	            <DialogTitle>
 	              {editingProject ? "Editar Proyecto" : "Nuevo Proyecto de Inversión"}
@@ -957,9 +1038,9 @@ const handleSubmit = () => {
 				{editingProject?.spaceSubmissionId && (
 					<div className="mt-2 flex items-start gap-2 rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-3 text-xs text-cyan-100">
 						<Database className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
-						<span>
-							<strong>Datos heredados de Espacios.</strong> Ubicación, evaluación técnica, proyección y fotos se cargan desde <strong>{editingProject.linkedSpaceName || "el espacio vinculado"}</strong> para evitar una segunda digitación.
-						</span>
+							<span>
+								<strong>Proyecto vinculado a Espacios.</strong> El editor muestra los valores actuales; el snapshot original de <strong>{editingProject.linkedSpaceName || "el espacio vinculado"}</strong> se conserva para comparar y auditar cada ajuste.
+							</span>
 					</div>
 				)}
 	          </DialogHeader>
@@ -1019,9 +1100,9 @@ const handleSubmit = () => {
 
             <TabsContent value="technical" className="space-y-4 mt-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <Label>Potencia Total (kW)</Label>
-                  <Input type="number" value={formData.totalPowerKw} onChange={(e) => setFormData({ ...formData, totalPowerKw: parseInt(e.target.value) || 0 })} />
+	                <div>
+	                  <Label>Potencia Total (kW)</Label>
+	                  <Input type="number" value={formData.totalPowerKw} onChange={(e) => { setFormData({ ...formData, totalPowerKw: parseInt(e.target.value) || 0 }); setProjectionApplied(true); }} />
                 </div>
                 <div>
                   <Label>Cantidad de Cargadores</Label>
@@ -1039,10 +1120,10 @@ const handleSubmit = () => {
             </TabsContent>
 
 	            <TabsContent value="financial" className="space-y-4 mt-4">
-				{editingProject?.spaceSubmissionId && (
-					<div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-100">
-						<strong>Proyección heredada del espacio:</strong> los valores provienen de la evaluación técnica y financiera aprobada. Un cambio posterior debe justificarse como una excepción administrativa.
-					</div>
+					{editingProject?.spaceSubmissionId && (
+						<div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-100">
+							<strong>Edición controlada:</strong> puedes cambiar inversión, potencia y supuestos. ROI y payback se recalculan desde el escenario; si el resultado altera el valor actual, registra el motivo para dejar trazabilidad.
+						</div>
 				)}
 				{editingProject?.spaceSubmissionId && (
 					<InheritedFinancialAudit
@@ -1054,9 +1135,9 @@ const handleSubmit = () => {
 					/>
 				)}
 	              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <Label>Meta de Inversión (COP)</Label>
-                  <Input type="number" value={formData.targetAmount} onChange={(e) => setFormData({ ...formData, targetAmount: parseInt(e.target.value) || 0 })} />
+	                <div>
+	                  <Label>Meta de Inversión (COP)</Label>
+	                  <Input type="number" value={formData.targetAmount} onChange={(e) => { setFormData({ ...formData, targetAmount: parseInt(e.target.value) || 0 }); setProjectionApplied(true); }} />
                   <p className="text-xs text-muted-foreground mt-1">{formatCOP(formData.targetAmount)}</p>
                 </div>
                 <div>
@@ -1064,15 +1145,41 @@ const handleSubmit = () => {
                   <Input type="number" value={formData.minimumInvestment} onChange={(e) => setFormData({ ...formData, minimumInvestment: parseInt(e.target.value) || 0 })} />
                   <p className="text-xs text-muted-foreground mt-1">{formatCOP(formData.minimumInvestment)}</p>
                 </div>
-                <div>
-                  <Label>ROI Estimado (%)</Label>
-                  <Input type="number" value={formData.estimatedRoiPercent} onChange={(e) => setFormData({ ...formData, estimatedRoiPercent: parseInt(e.target.value) || 0 })} />
-                </div>
-                <div>
-                  <Label>Payback Estimado (meses)</Label>
-                  <Input type="number" value={formData.estimatedPaybackMonths} onChange={(e) => setFormData({ ...formData, estimatedPaybackMonths: parseInt(e.target.value) || 0 })} />
-                </div>
-              </div>
+	                <div>
+	                  <Label>ROI anual aplicado (%)</Label>
+	                  <Input type="number" value={formData.estimatedRoiPercent} readOnly className="cursor-not-allowed bg-muted/60" />
+	                  <p className="mt-1 text-xs text-emerald-400">Resultado del escenario seleccionado</p>
+	                </div>
+	                <div>
+	                  <Label>Payback aplicado (meses)</Label>
+	                  <Input type="number" value={formData.estimatedPaybackMonths} readOnly className="cursor-not-allowed bg-muted/60" />
+	                  <p className="mt-1 text-xs text-emerald-400">Resultado del escenario seleccionado</p>
+	                </div>
+	              </div>
+				<CrowdfundingProjectionSimulator
+					investmentCop={formData.targetAmount}
+					totalPowerKw={formData.totalPowerKw}
+					assumptions={projectionAssumptions}
+					selectedScenario={projectionScenario}
+					applied={projectionApplied}
+					hasStoredProjection={Boolean(editingProject?.financialProjectionSnapshot)}
+					onAssumptionsChange={(next) => {
+						setProjectionAssumptions(next);
+						setFormData((current) => ({
+							...current,
+							evgreenSharePercent: String(next.evgreenSharePercent),
+							investorSharePercent: String(next.investorSharePercent),
+							hostSharePercent: String(next.hostSharePercent),
+							energyPurchaseCostPerKwh: String(next.energyCostPerKwh),
+						}));
+						setProjectionApplied(true);
+					}}
+					onScenarioChange={(scenario) => { setProjectionScenario(scenario); setProjectionApplied(true); }}
+					onApply={(roiAnnualPercent, paybackMonths) => {
+						setFormData((current) => ({ ...current, estimatedRoiPercent: roiAnnualPercent, estimatedPaybackMonths: paybackMonths }));
+						setProjectionApplied(true);
+					}}
+				/>
 				{editingProject?.spaceSubmissionId && (
 					<div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
 						<Label className="text-amber-100">Motivo del ajuste financiero (solo si cambias valores heredados)</Label>
@@ -1106,16 +1213,18 @@ const handleSubmit = () => {
                     step="0.01"
                     min="0"
                     max="100"
-                    value={formData.evgreenSharePercent}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      const remaining = 100 - parseFloat(val || '0');
+	                    value={formData.evgreenSharePercent}
+	                    onChange={(e) => {
+	                      const val = e.target.value;
+	                      const remaining = 100 - parseFloat(val || '0');
                       setFormData({
                         ...formData,
                         evgreenSharePercent: val,
-                        investorSharePercent: Math.max(0, remaining).toFixed(2),
-                      });
-                    }}
+	                        investorSharePercent: Math.max(0, remaining).toFixed(2),
+	                      });
+	                      setProjectionAssumptions((current) => ({ ...current, evgreenSharePercent: Number(val || 0), investorSharePercent: Math.max(0, remaining) }));
+	                      setProjectionApplied(true);
+	                    }}
                   />
                   <p className="text-xs text-muted-foreground mt-1">Comisión plataforma (del neto después del aliado)</p>
                 </div>
@@ -1126,16 +1235,18 @@ const handleSubmit = () => {
                     step="0.01"
                     min="0"
                     max="100"
-                    value={formData.investorSharePercent}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      const remaining = 100 - parseFloat(val || '0');
+	                    value={formData.investorSharePercent}
+	                    onChange={(e) => {
+	                      const val = e.target.value;
+	                      const remaining = 100 - parseFloat(val || '0');
                       setFormData({
                         ...formData,
                         investorSharePercent: val,
-                        evgreenSharePercent: Math.max(0, remaining).toFixed(2),
-                      });
-                    }}
+	                        evgreenSharePercent: Math.max(0, remaining).toFixed(2),
+	                      });
+	                      setProjectionAssumptions((current) => ({ ...current, investorSharePercent: Number(val || 0), evgreenSharePercent: Math.max(0, remaining) }));
+	                      setProjectionApplied(true);
+	                    }}
                   />
                   <p className="text-xs text-muted-foreground mt-1">Retorno a inversionistas (del neto después del aliado)</p>
                 </div>
@@ -1153,9 +1264,13 @@ const handleSubmit = () => {
                     type="number"
                     step="0.01"
                     min="0"
-                    max="50"
-                    value={formData.hostSharePercent}
-                    onChange={(e) => setFormData({ ...formData, hostSharePercent: e.target.value })}
+	                    max="50"
+	                    value={formData.hostSharePercent}
+	                    onChange={(e) => {
+	                      setFormData({ ...formData, hostSharePercent: e.target.value });
+	                      setProjectionAssumptions((current) => ({ ...current, hostSharePercent: Number(e.target.value || 0) }));
+	                      setProjectionApplied(true);
+	                    }}
                   />
                   <p className="text-xs text-muted-foreground mt-1">Dueño del espacio (0-50%)</p>
                 </div>
@@ -1186,9 +1301,13 @@ const handleSubmit = () => {
                   <Label>Costo Energía (COP/kWh)</Label>
                   <Input
                     type="number"
-                    step="0.01"
-                    value={formData.energyPurchaseCostPerKwh}
-                    onChange={(e) => setFormData({ ...formData, energyPurchaseCostPerKwh: e.target.value })}
+	                    step="0.01"
+	                    value={formData.energyPurchaseCostPerKwh}
+	                    onChange={(e) => {
+	                      setFormData({ ...formData, energyPurchaseCostPerKwh: e.target.value });
+	                      setProjectionAssumptions((current) => ({ ...current, energyCostPerKwh: Number(e.target.value || 0) }));
+	                      setProjectionApplied(true);
+	                    }}
                   />
                   <p className="text-xs text-muted-foreground mt-1">Costo de compra de energía al operador de red</p>
                 </div>

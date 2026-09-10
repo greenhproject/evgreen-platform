@@ -136,7 +136,8 @@ import {
 	  InsertUserVehicle,
 	  spaceSubmissions,
 	  spacePhotos,
-} from "../drizzle/schema";
+	  crowdfundingProjects,
+	} from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { ConnectorStatus, TriggeredBy } from "./charging/connector-state.service";
 import { toUtcIso } from "./utils/dates";
@@ -4931,6 +4932,15 @@ export interface CrowdfundingProject {
   createdById: number | null;
   createdAt: Date;
   updatedAt: Date;
+  spaceSubmissionId?: number | null;
+  spaceInheritanceSnapshot?: unknown;
+  financialOverrideReason?: string | null;
+  financialOverrideAt?: string | null;
+  financialOverrideBy?: number | null;
+  financialProjectionSnapshot?: unknown;
+  financialProjectionScenario?: string | null;
+  financialProjectionUpdatedAt?: string | null;
+  financialProjectionUpdatedBy?: number | null;
   investorCount?: number;
 }
 
@@ -4993,10 +5003,15 @@ export async function getCrowdfundingProjects(options?: {
 	      s.estimatedEvPercent as inheritedEvPercent,
 	      s.transformerCapacityKva as inheritedTransformerKva,
 	      s.availableAreaM2 as inheritedAvailableAreaM2,
-	      s.parkingSpots as inheritedParkingSpots,
-	      override_user.name as financialOverrideByName,
-	      COALESCE(s.latitude, cs.latitude) as linkedLatitude,
-	      COALESCE(s.longitude, cs.longitude) as linkedLongitude
+		      s.parkingSpots as inheritedParkingSpots,
+		      override_user.name as financialOverrideByName,
+		      COALESCE(s.latitude, cs.latitude) as linkedLatitude,
+		      COALESCE(s.longitude, cs.longitude) as linkedLongitude,
+		      cs.evgreenSharePercent,
+		      cs.investorSharePercent,
+		      cs.hostSharePercent,
+		      cs.energyPurchaseCostPerKwh,
+		      cs.hostName
       FROM crowdfunding_projects p
 	      LEFT JOIN space_submissions s ON s.id = p.spaceSubmissionId
 	      LEFT JOIN charging_stations cs ON cs.id = p.stationId
@@ -5047,6 +5062,12 @@ export async function getCrowdfundingProjects(options?: {
 				financialOverrideAt: r.financial_override_at || null,
 				financialOverrideBy: r.financial_override_by || null,
 				financialOverrideByName: r.financialOverrideByName || null,
+				financialProjectionSnapshot: typeof r.financial_projection_snapshot === "string"
+					? (() => { try { return JSON.parse(r.financial_projection_snapshot); } catch { return null; } })()
+					: r.financial_projection_snapshot || null,
+				financialProjectionScenario: r.financial_projection_scenario || null,
+				financialProjectionUpdatedAt: r.financial_projection_updated_at || null,
+				financialProjectionUpdatedBy: r.financial_projection_updated_by || null,
 				inheritedPhotos: snapshotPhotos ?? (r.spaceSubmissionId ? photosBySpace[r.spaceSubmissionId] || [] : []),
 			};
 		});
@@ -5071,11 +5092,20 @@ export async function getCrowdfundingProjectById(projectId: number): Promise<Cro
       LIMIT 1
     `);
     
-    const rows = (result as any)[0] as CrowdfundingProject[];
-    const row = rows[0] || null;
-    // Normalizar hasSolarPanels de tinyint(1) a boolean
-    if (row) row.hasSolarPanels = !!row.hasSolarPanels;
-    return row;
+	    const rows = (result as any)[0] as any[];
+	    const row = rows[0] || null;
+	    if (!row) return null;
+	    row.hasSolarPanels = !!row.hasSolarPanels;
+	    row.spaceInheritanceSnapshot = typeof row.space_inheritance_snapshot === "string"
+	      ? (() => { try { return JSON.parse(row.space_inheritance_snapshot); } catch { return null; } })()
+	      : row.space_inheritance_snapshot || null;
+	    row.financialProjectionSnapshot = typeof row.financial_projection_snapshot === "string"
+	      ? (() => { try { return JSON.parse(row.financial_projection_snapshot); } catch { return null; } })()
+	      : row.financial_projection_snapshot || null;
+	    row.financialProjectionScenario = row.financial_projection_scenario || null;
+	    row.financialProjectionUpdatedAt = row.financial_projection_updated_at || null;
+	    row.financialProjectionUpdatedBy = row.financial_projection_updated_by || null;
+	    return row as CrowdfundingProject;
   } catch (error) {
     console.error('[DB] Error getting crowdfunding project:', error);
     return null;
@@ -5095,9 +5125,13 @@ export async function createCrowdfundingProject(data: {
   chargerCount?: number;
   chargerPowerKw?: number;
   hasSolarPanels?: boolean;
-  estimatedRoiPercent?: number;
-  estimatedPaybackMonths?: number;
-  status?: string;
+	estimatedRoiPercent?: number;
+	estimatedPaybackMonths?: number;
+	financialProjectionSnapshot?: unknown;
+	financialProjectionScenario?: string;
+	financialProjectionUpdatedAt?: string;
+	financialProjectionUpdatedBy?: number;
+	status?: string;
   targetDate?: Date;
   priority?: number;
   createdById?: number;
@@ -5105,34 +5139,30 @@ export async function createCrowdfundingProject(data: {
   const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   
-  const result = await db.execute(sql`
-    INSERT INTO crowdfunding_projects (
-      name, description, city, zone, address,
-      targetAmount, minimumInvestment, totalPowerKw, chargerCount, chargerPowerKw,
-      hasSolarPanels, estimatedRoiPercent, estimatedPaybackMonths,
-      status, targetDate, priority, createdById
-    ) VALUES (
-      ${data.name},
-      ${data.description || null},
-      ${data.city},
-      ${data.zone},
-      ${data.address || null},
-      ${data.targetAmount},
-      ${data.minimumInvestment || 50000000},
-      ${data.totalPowerKw || 480},
-      ${data.chargerCount || 4},
-      ${data.chargerPowerKw || 120},
-      ${data.hasSolarPanels !== false},
-      ${data.estimatedRoiPercent || 85.00},
-      ${data.estimatedPaybackMonths || 14},
-      ${data.status || 'DRAFT'},
-      ${data.targetDate || null},
-      ${data.priority || 0},
-      ${data.createdById || null}
-    )
-  `);
-  
-  return (result[0] as any).insertId;
+	  const [result] = await db.insert(crowdfundingProjects).values({
+	    name: data.name,
+	    description: data.description || null,
+	    city: data.city,
+	    zone: data.zone,
+	    address: data.address || null,
+	    targetAmount: data.targetAmount,
+	    minimumInvestment: data.minimumInvestment ?? 50000000,
+	    totalPowerKw: data.totalPowerKw ?? 480,
+	    chargerCount: data.chargerCount ?? 4,
+	    chargerPowerKw: data.chargerPowerKw ?? 120,
+	    hasSolarPanels: data.hasSolarPanels === false ? 0 : 1,
+	    estimatedRoiPercent: data.estimatedRoiPercent !== undefined ? String(data.estimatedRoiPercent) : null,
+	    estimatedPaybackMonths: data.estimatedPaybackMonths ?? null,
+	    financialProjectionSnapshot: data.financialProjectionSnapshot ?? null,
+	    financialProjectionScenario: data.financialProjectionScenario ?? null,
+	    financialProjectionUpdatedAt: data.financialProjectionUpdatedAt ?? null,
+	    financialProjectionUpdatedBy: data.financialProjectionUpdatedBy ?? null,
+	    status: (data.status || "DRAFT") as any,
+	    targetDate: data.targetDate ? data.targetDate.toISOString().slice(0, 19).replace("T", " ") : null,
+	    priority: data.priority ?? 0,
+	    createdById: data.createdById ?? null,
+	  } as any);
+	  return Number(result.insertId);
 }
 
 // Actualizar un proyecto de crowdfunding
@@ -5162,53 +5192,18 @@ data: Partial<{
     stationId: number;
 		financialOverrideReason: string;
 		financialOverrideAt: string;
-		financialOverrideBy: number;
-  }>
+			financialOverrideBy: number;
+			financialProjectionSnapshot: unknown;
+			financialProjectionScenario: string;
+			financialProjectionUpdatedAt: string;
+			financialProjectionUpdatedBy: number;
+	  }>
 ): Promise<void> {
-const db = (await getDb())!;
-if (!db) throw new Error("Database not available");
-  
-  
-const updates: string[] = [];
-const values: any[] = [];
-	const columnNames: Record<string, string> = {
-		financialOverrideReason: "financial_override_reason",
-		financialOverrideAt: "financial_override_at",
-		financialOverrideBy: "financial_override_by",
-	};
-  
-Object.entries(data).forEach(([key, value]) => {
-if (value !== undefined) {
-      updates.push(`${columnNames[key] || key} = ?`);
-values.push(value);
-}
-  });
-  
-  if (updates.length === 0) return;
-  
-  // Construir la query con valores interpolados
-  const setClause = Object.entries(data)
-    .filter(([_, v]) => v !== undefined)
-    .map(([key, value]) => {
-      if (value instanceof Date) {
-        return `${key} = '${value.toISOString().slice(0, 19).replace('T', ' ')}'`;
-      } else if (typeof value === 'string') {
-        return `${key} = '${value.replace(/'/g, "''")}'`;
-      } else if (typeof value === 'boolean') {
-        return `${key} = ${value ? 1 : 0}`;
-      } else {
-        return `${key} = ${value}`;
-      }
-    })
-    .join(', ');
-  
-  if (!setClause) return;
-  
-	  await db.execute(sql.raw(`
-	    UPDATE crowdfunding_projects 
-	    SET ${setClause}
-	    WHERE id = ${projectId}
-	  `));
+	const db = (await getDb())!;
+	if (!db) throw new Error("Database not available");
+	const cleanData = Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined));
+	if (Object.keys(cleanData).length === 0) return;
+	await db.update(crowdfundingProjects).set(cleanData as any).where(eq(crowdfundingProjects.id, projectId));
 }
 
 export async function recordCrowdfundingFinancialOverride(

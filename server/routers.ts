@@ -62,6 +62,10 @@ import { contractsRouter } from "./contracts/contracts-router";
 import { resolveConnectorOperationalState } from "../shared/connector-operational-state";
 import { CROWDFUNDING_PROJECT_STATUSES } from "./crowdfunding/project-bulk-policy";
 import { manageCrowdfundingProjectsBulk } from "./crowdfunding/project-bulk-operations";
+import {
+  buildCrowdfundingProjectionSnapshot,
+  getSelectedCrowdfundingProjection,
+} from "../shared/crowdfunding-financial-projection";
 
 // ============================================================================
 // ROLE-BASED PROCEDURES
@@ -4615,8 +4619,8 @@ const crowdfundingRouter = router({
   }),
   
   // Admin: Crear proyecto
-  createProject: adminProcedure
-    .input(z.object({
+	  createProject: adminProcedure
+	    .input(z.object({
       name: z.string().min(1),
       description: z.string().optional(),
       city: z.string().min(1),
@@ -4640,17 +4644,53 @@ const crowdfundingRouter = router({
       energyPurchaseCostPerKwh: z.string().optional(),
       hostName: z.string().optional(),
       hostUserId: z.number().optional(),
-      latitude: z.string().optional(),
-      longitude: z.string().optional(),
-    }))
-    .mutation(async ({ ctx, input }) => {
-      const { evgreenSharePercent, investorSharePercent, hostSharePercent, energyPurchaseCostPerKwh, hostName, hostUserId, latitude, longitude, ...projectInput } = input;
-      
-      // 1. Crear el proyecto crowdfunding
-      const projectId = await db.createCrowdfundingProject({
-        ...projectInput,
-        createdById: ctx.user.id,
-      });
+	      latitude: z.string().optional(),
+	      longitude: z.string().optional(),
+	      financialProjection: z.object({
+	        selectedScenario: z.enum(["PESSIMISTIC", "REALISTIC", "OPTIMISTIC"]),
+	        salePricePerKwh: z.number().positive(),
+	        energyCostPerKwh: z.number().min(0),
+	        hostSharePercent: z.number().min(0).max(50),
+	        investorSharePercent: z.number().min(0).max(100),
+	        evgreenSharePercent: z.number().min(0).max(100),
+	        efficiencyPercent: z.number().positive().max(100),
+	        fixedMonthlyExpenses: z.number().min(0).optional(),
+	      }).optional(),
+	    }))
+	    .mutation(async ({ ctx, input }) => {
+	      const { evgreenSharePercent, investorSharePercent, hostSharePercent, energyPurchaseCostPerKwh, hostName, hostUserId, latitude, longitude, financialProjection, ...projectInput } = input;
+	      if (!financialProjection) {
+	        throw new TRPCError({ code: "BAD_REQUEST", message: "Aplica un escenario del simulador antes de crear el proyecto." });
+	      }
+	      const projectionTimestamp = new Date().toISOString().slice(0, 19).replace("T", " ");
+	      const projectionSnapshot = financialProjection
+	        ? buildCrowdfundingProjectionSnapshot({
+	            investmentCop: projectInput.targetAmount,
+	            totalPowerKw: projectInput.totalPowerKw ?? 480,
+	            salePricePerKwh: financialProjection.salePricePerKwh,
+	            energyCostPerKwh: financialProjection.energyCostPerKwh,
+	            hostSharePercent: financialProjection.hostSharePercent,
+	            investorSharePercent: financialProjection.investorSharePercent,
+	            evgreenSharePercent: financialProjection.evgreenSharePercent,
+	            efficiencyPercent: financialProjection.efficiencyPercent,
+	            fixedMonthlyExpenses: financialProjection.fixedMonthlyExpenses ?? 0,
+	          }, financialProjection.selectedScenario)
+	        : null;
+	      const selectedProjection = projectionSnapshot ? getSelectedCrowdfundingProjection(projectionSnapshot) : null;
+
+	      // 1. Crear el proyecto crowdfunding
+	      const projectId = await db.createCrowdfundingProject({
+	        ...projectInput,
+	        ...(selectedProjection ? {
+	          estimatedRoiPercent: selectedProjection.roiAnnualPercent,
+	          estimatedPaybackMonths: Math.ceil(selectedProjection.paybackMonths),
+	          financialProjectionSnapshot: projectionSnapshot,
+	          financialProjectionScenario: projectionSnapshot!.selectedScenario,
+	          financialProjectionUpdatedAt: projectionTimestamp,
+	          financialProjectionUpdatedBy: ctx.user.id,
+	        } : {}),
+	        createdById: ctx.user.id,
+	      });
       
       // 2. Auto-crear estación física vinculada al proyecto
       const stationName = `${input.name}`;
@@ -4667,10 +4707,10 @@ const crowdfundingRouter = router({
         isActive: 0, // Inactiva hasta que se instale
         isPublic: 0,
         // Modelo financiero
-        evgreenSharePercent: evgreenSharePercent || '30.00',
-        investorSharePercent: investorSharePercent || '70.00',
-        hostSharePercent: hostSharePercent || '10.00',
-        energyPurchaseCostPerKwh: energyPurchaseCostPerKwh || '800.00',
+	        evgreenSharePercent: evgreenSharePercent || String(financialProjection?.evgreenSharePercent ?? 30),
+	        investorSharePercent: investorSharePercent || String(financialProjection?.investorSharePercent ?? 70),
+	        hostSharePercent: hostSharePercent || String(financialProjection?.hostSharePercent ?? 10),
+	        energyPurchaseCostPerKwh: energyPurchaseCostPerKwh || String(financialProjection?.energyCostPerKwh ?? 800),
         hostName: hostName || null,
         hostUserId: hostUserId || null,
       });
@@ -4721,12 +4761,74 @@ const crowdfundingRouter = router({
       targetDate: z.date().optional(),
 	      priority: z.number().optional(),
 	      stationId: z.number().optional(),
+	      evgreenSharePercent: z.string().optional(),
+	      investorSharePercent: z.string().optional(),
+	      hostSharePercent: z.string().optional(),
+	      energyPurchaseCostPerKwh: z.string().optional(),
+	      hostName: z.string().optional(),
+	      latitude: z.string().optional(),
+	      longitude: z.string().optional(),
+	      financialProjection: z.object({
+	        selectedScenario: z.enum(["PESSIMISTIC", "REALISTIC", "OPTIMISTIC"]),
+	        salePricePerKwh: z.number().positive(),
+	        energyCostPerKwh: z.number().min(0),
+	        hostSharePercent: z.number().min(0).max(50),
+	        investorSharePercent: z.number().min(0).max(100),
+	        evgreenSharePercent: z.number().min(0).max(100),
+	        efficiencyPercent: z.number().positive().max(100),
+	        fixedMonthlyExpenses: z.number().min(0).optional(),
+	      }).optional(),
 		financialOverrideReason: z.string().trim().min(15).max(2000).optional(),
 	    }))
 	    .mutation(async ({ input, ctx }) => {
-	      const { id, financialOverrideReason, ...data } = input;
+	      const {
+	        id,
+	        financialOverrideReason,
+	        financialProjection,
+	        evgreenSharePercent,
+	        investorSharePercent,
+	        hostSharePercent,
+	        energyPurchaseCostPerKwh,
+	        hostName,
+	        latitude,
+	        longitude,
+	        ...data
+	      } = input;
 			const current = await db.getCrowdfundingProjectById(id);
 			if (!current) throw new TRPCError({ code: "NOT_FOUND", message: "Proyecto no encontrado" });
+			const changesProjectionDrivers = ["targetAmount", "totalPowerKw", "estimatedRoiPercent", "estimatedPaybackMonths"].some((field) => {
+				const nextValue = (data as Record<string, unknown>)[field];
+				return nextValue !== undefined && Number(nextValue) !== Number((current as any)[field]);
+			});
+			const editsInheritedBeforeProjection = requiresFinancialOverride(current, data as Record<string, unknown>);
+			if (editsInheritedBeforeProjection && !financialOverrideReason) {
+				throw new TRPCError({ code: "BAD_REQUEST", message: "Indica el motivo de la excepción antes de cambiar valores heredados de Espacios." });
+			}
+			if (changesProjectionDrivers && !financialProjection) {
+				throw new TRPCError({ code: "BAD_REQUEST", message: "Aplica un escenario del simulador para recalcular ROI y payback antes de guardar." });
+			}
+			if (financialProjection) {
+				const projectionSnapshot = buildCrowdfundingProjectionSnapshot({
+					investmentCop: data.targetAmount ?? current.targetAmount,
+					totalPowerKw: data.totalPowerKw ?? current.totalPowerKw,
+					salePricePerKwh: financialProjection.salePricePerKwh,
+					energyCostPerKwh: financialProjection.energyCostPerKwh,
+					hostSharePercent: financialProjection.hostSharePercent,
+					investorSharePercent: financialProjection.investorSharePercent,
+					evgreenSharePercent: financialProjection.evgreenSharePercent,
+					efficiencyPercent: financialProjection.efficiencyPercent,
+					fixedMonthlyExpenses: financialProjection.fixedMonthlyExpenses ?? 0,
+				}, financialProjection.selectedScenario);
+				const selectedProjection = getSelectedCrowdfundingProjection(projectionSnapshot);
+				Object.assign(data, {
+					estimatedRoiPercent: selectedProjection.roiAnnualPercent,
+					estimatedPaybackMonths: Math.ceil(selectedProjection.paybackMonths),
+					financialProjectionSnapshot: projectionSnapshot,
+					financialProjectionScenario: projectionSnapshot.selectedScenario,
+					financialProjectionUpdatedAt: new Date().toISOString().slice(0, 19).replace("T", " "),
+					financialProjectionUpdatedBy: ctx.user.id,
+				});
+			}
 			const editsInheritedFinancialData = requiresFinancialOverride(current, data as Record<string, unknown>);
 			if (editsInheritedFinancialData && !financialOverrideReason) {
 				throw new TRPCError({ code: "BAD_REQUEST", message: "Indica el motivo de la excepción antes de cambiar valores heredados de Espacios." });
@@ -4739,8 +4841,20 @@ const crowdfundingRouter = router({
 				});
 			}
 	      await db.updateCrowdfundingProject(id, data);
-      return { success: true };
-    }),
+	      if (current.stationId) {
+	        const stationUpdate = Object.fromEntries(Object.entries({
+	          evgreenSharePercent,
+	          investorSharePercent,
+	          hostSharePercent,
+	          energyPurchaseCostPerKwh,
+	          hostName,
+	          latitude,
+	          longitude,
+	        }).filter(([, value]) => value !== undefined));
+	        if (Object.keys(stationUpdate).length > 0) await db.updateChargingStation(current.stationId, stationUpdate as any);
+	      }
+	      return { success: true };
+	    }),
   
   // Obtener participaciones de un proyecto
   getParticipations: adminProcedure

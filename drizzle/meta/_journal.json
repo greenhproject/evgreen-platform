@@ -127,6 +127,13 @@
       "when": 1788620400000,
       "tag": "0036_manual_soc_calibration_anchor",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "5",
+      "when": 1789068832498,
+      "tag": "0018_crowdfunding_financial_projection",
+      "breakpoints": true
     }
   ]
 }

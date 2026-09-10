@@ -13,7 +13,7 @@ import autoTable from "jspdf-autotable";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const jsPDF = ((jsPDFModule as any).jsPDF ?? (jsPDFModule as any).default?.jsPDF ?? (jsPDFModule as any).default ?? jsPDFModule) as typeof import("jspdf").jsPDF;
 import axios from "axios";
-import { calculateFinancialWaterfall } from "../financial/waterfall";
+import { buildCrowdfundingProjectionSnapshot } from "../../shared/crowdfunding-financial-projection";
 
 // ============================================================
 // ASSETS ESTÁTICOS (CDN público — disponible en el servidor)
@@ -64,6 +64,7 @@ export interface ProspectoPdfData {
   installedPowerKw?: number;
   tarifaKwhCop?: number;
   energyCostPerKwhCop?: number;
+  efficiencyPercent?: number;
   // Fotos del espacio
   photos: Array<{ url: string; caption?: string | null }>;
   generatedAt: Date;
@@ -581,6 +582,7 @@ function addProyeccionFinanciera(
   const powerKw = data.installedPowerKw || data.estimatedPowerKw || 0;
   const tarifaKwh = data.tarifaKwhCop || 1800;
   const energyCostPerKwh = data.energyCostPerKwhCop ?? 700;
+  const efficiencyPercent = data.efficiencyPercent ?? 92;
 
   // Modelo de reparto: el aliado recibe una participación del margen bruto
   // y EVGreen + Inversionista se reparten exclusivamente el margen neto.
@@ -617,33 +619,40 @@ function addProyeccionFinanciera(
   doc.text(`Margen neto distribuible: Inversor ${investorNetPct}%  ·  EVGreen ${platformNetPct}%`, M + 4, barY + 20);
   y += 38;
 
-  if (powerKw > 0) {
+	  if (powerKw > 0 && inv > 0) {
     y = drawSectionTitle(doc, `ESCENARIOS DE OPERACIÓN — ${powerKw} kW INSTALADOS  ·  Tarifa: ${formatCOP(tarifaKwh)}/kWh`, M, y, CW);
 
-    const scenarios = [
-      { name: "PESIMISTA", hours: 4, color: C.amber },
-      { name: "REALISTA", hours: 6, color: C.green },
-      { name: "OPTIMISTA", hours: 9, color: C.greenDark },
-    ];
-
-    const scenarioData = scenarios.map(s => {
-      const kwhDay = powerKw * s.hours;
-      const kwhMonth = kwhDay * 30;
-      const grossMonth = kwhMonth * tarifaKwh;
-      const waterfall = calculateFinancialWaterfall({
-        grossRevenue: grossMonth,
-        totalKwh: kwhMonth,
-        energyCostPerKwh,
-        hostSharePercent: allyPct,
-        investorSharePercent: investorNetPct,
-        evgreenSharePercent: platformNetPct,
-      });
-      const investorMonth = waterfall.investorPool;
-      const investorYear = investorMonth * 12;
-      const roi = inv > 0 ? (investorYear / inv * 100) : 0;
-      const payback = inv > 0 && investorMonth > 0 ? inv / investorMonth : 0;
-      return { ...s, kwhDay, kwhMonth, investorMonth, investorYear, roi, payback, waterfall };
-    });
+	    const projection = buildCrowdfundingProjectionSnapshot({
+	      investmentCop: inv,
+	      totalPowerKw: powerKw,
+	      salePricePerKwh: tarifaKwh,
+	      energyCostPerKwh,
+	      hostSharePercent: allyPct,
+	      investorSharePercent: investorNetPct,
+	      evgreenSharePercent: platformNetPct,
+	      efficiencyPercent,
+	      fixedMonthlyExpenses: 0,
+	    }, "REALISTIC");
+	    const scenarios = [
+	      { key: "PESSIMISTIC" as const, name: "PESIMISTA", color: C.amber },
+	      { key: "REALISTIC" as const, name: "REALISTA", color: C.green },
+	      { key: "OPTIMISTIC" as const, name: "OPTIMISTA", color: C.greenDark },
+	    ];
+	    const scenarioData = scenarios.map(({ key, name, color }) => {
+	      const result = projection.scenarios[key];
+	      return {
+	        name,
+	        color,
+	        hours: result.hoursPerDay,
+	        kwhDay: result.energyKwhPerDay,
+	        kwhMonth: result.energyKwhPerMonth,
+	        investorMonth: result.investorMonthlyCashflow,
+	        investorYear: result.investorAnnualCashflow,
+	        roi: result.roiAnnualPercent,
+	        payback: result.paybackMonths,
+	        waterfall: result.waterfall,
+	      };
+	    });
 
     // Tarjetas de escenario (3 columnas)
     const cardW = (CW - 8) / 3;
@@ -697,7 +706,7 @@ function addProyeccionFinanciera(
     // Nota metodológica
     setColor(doc, C.gray500, "text");
     doc.setFontSize(7.5); doc.setFont("helvetica", "italic");
-    const nota = `* Proyecciones basadas en ${powerKw} kW instalados × horas de operación diaria × 30 días × ${formatCOP(tarifaKwh)}/kWh. El retorno y el ROI se calculan sobre el ${investorNetPct}% del margen neto, después del costo de energía de ${formatCOP(energyCostPerKwh)}/kWh y la participación del aliado. Las cifras son estimaciones orientativas y no constituyen una garantía de rentabilidad.`;
+	    const nota = `* Proyecciones basadas en ${powerKw} kW instalados × horas de operación diaria × ${efficiencyPercent}% de eficiencia × 30 días × ${formatCOP(tarifaKwh)}/kWh. El retorno y el ROI se calculan sobre el ${investorNetPct}% del margen neto, después del costo de energía de ${formatCOP(energyCostPerKwh)}/kWh y la participación del aliado. Las cifras son estimaciones orientativas y no constituyen una garantía de rentabilidad.`;
     const notaLines = doc.splitTextToSize(nota, CW);
     doc.text(notaLines, M, y);
     y += notaLines.length * 4.5 + 6;
@@ -707,7 +716,7 @@ function addProyeccionFinanciera(
     doc.roundedRect(M, y, CW, 14, 2, 2, "F");
     setColor(doc, C.white, "text");
     doc.setFontSize(9); doc.setFont("helvetica", "bold");
-    doc.text("Configure la potencia instalada en el modal para ver la proyeccion financiera detallada.", M + 4, y + 9);
+	    doc.text("Configure inversión y potencia instalada para ver la proyección financiera detallada.", M + 4, y + 9);
     y += 20;
   }
 
