@@ -8,7 +8,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { InheritedFinancialAudit } from "@/components/crowdfunding/InheritedFinancialAudit";
 import { InheritedSpaceGallery } from "@/components/crowdfunding/InheritedSpaceGallery";
-import { CrowdfundingBulkActions, type BulkProjectStatus } from "@/components/crowdfunding/CrowdfundingBulkActions";
+import { CrowdfundingBulkActions, type BulkProjectStatus, type BulkExecutableAction } from "@/components/crowdfunding/CrowdfundingBulkActions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -49,6 +49,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { 
   Plus, 
   Building2,
+  Ban,
   Users,
   DollarSign,
   MapPin,
@@ -142,9 +143,12 @@ interface Project {
 	inheritedPhotos?: Array<{ url: string; type: string; caption: string | null }>;
 	spaceInheritanceSnapshot?: Record<string, unknown> | null;
 	financialOverrideReason?: string | null;
-	financialOverrideAt?: string | Date | null;
-	financialOverrideByName?: string | null;
-	createdAt: Date;
+  financialOverrideAt?: string | Date | null;
+  financialOverrideByName?: string | null;
+  cancellationReason?: string | null;
+  cancelledAt?: string | Date | null;
+  cancelledByName?: string | null;
+  createdAt: Date;
 }
 
 interface Participation {
@@ -172,6 +176,8 @@ export default function AdminCrowdfunding() {
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [showParticipationsDialog, setShowParticipationsDialog] = useState(false);
   const [showRegisterInvestorDialog, setShowRegisterInvestorDialog] = useState(false);
+  const [projectToCancel, setProjectToCancel] = useState<Project | null>(null);
+  const [singleCancelReason, setSingleCancelReason] = useState("");
 	const [activeProjectTab, setActiveProjectTab] = useState("active");
 	const [selectedProjectIds, setSelectedProjectIds] = useState<Set<number>>(() => new Set());
   
@@ -335,6 +341,18 @@ export default function AdminCrowdfunding() {
     },
   });
 
+  const cancelProjectMutation = trpc.crowdfunding.cancelProject.useMutation({
+    onSuccess: (data: any) => {
+      toast.success(`Proyecto "${data.cancelledProject}" cancelado y archivado correctamente`);
+      setProjectToCancel(null);
+      setSingleCancelReason("");
+      refetch();
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Error al cancelar proyecto");
+    },
+  });
+
 	const bulkManageMutation = trpc.crowdfunding.bulkManageProjects.useMutation({
 		onSuccess: (data) => {
 			if (data.affected.length > 0) {
@@ -356,6 +374,23 @@ export default function AdminCrowdfunding() {
     if (window.confirm(msg)) {
       deleteProjectMutation.mutate({ projectId: project.id });
     }
+  };
+
+  const handleOpenCancelDialog = (project: Project) => {
+    setProjectToCancel(project);
+    setSingleCancelReason("");
+  };
+
+  const handleConfirmSingleCancel = () => {
+    if (!projectToCancel) return;
+    if (singleCancelReason.trim().length < 10) {
+      toast.error("La justificación debe tener al menos 10 caracteres.");
+      return;
+    }
+    cancelProjectMutation.mutate({
+      projectId: projectToCancel.id,
+      reason: singleCancelReason.trim(),
+    });
   };
 
 	useEffect(() => {
@@ -636,7 +671,7 @@ const handleSubmit = () => {
 	const toggleVisibleProjects = () => {
 		setSelectedProjectIds(allVisibleSelected ? new Set() : new Set(visibleProjects.map((project) => project.id)));
 	};
-	const executeBulkAction = (action: { type: "PUBLISH" } | { type: "DELETE" } | { type: "SET_STATUS"; status: BulkProjectStatus }) => {
+	const executeBulkAction = (action: BulkExecutableAction) => {
 		bulkManageMutation.mutate({ projectIds: [...selectedProjectIds], action });
 	};
 
@@ -782,6 +817,17 @@ const handleSubmit = () => {
                         <Button size="sm" variant="outline" className="text-xs h-8" onClick={() => { handleEdit(project); setShowCreateDialog(true); }}>
                           <Pencil className="w-3 h-3" />
                         </Button>
+                        {(project.status === "OPEN" || project.status === "IN_PROGRESS") && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs h-8 text-amber-500 hover:text-amber-600 hover:border-amber-300"
+                            onClick={() => handleOpenCancelDialog(project)}
+                            title="Cancelar y archivar proyecto"
+                          >
+                            <Ban className="w-3 h-3" />
+                          </Button>
+                        )}
 						{project.status === "CANCELLED" && (
 						  <Button size="sm" variant="outline" className="text-xs h-8 text-red-500 hover:text-red-600 hover:border-red-300" onClick={() => handleDeleteProject(project)} disabled={deleteProjectMutation.isPending}>
 						    <Trash2 className="w-3 h-3" />
@@ -850,6 +896,17 @@ const handleSubmit = () => {
                                 <Button size="sm" variant="outline" onClick={() => { handleEdit(project); setShowCreateDialog(true); }}>
                                   <Pencil className="w-4 h-4" />
                                 </Button>
+                                {(project.status === "OPEN" || project.status === "IN_PROGRESS") && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => handleOpenCancelDialog(project)}
+                                    className="text-amber-500 hover:text-amber-600 hover:border-amber-300"
+                                    title="Cancelar y archivar proyecto con justificación"
+                                  >
+                                    <Ban className="w-4 h-4" />
+                                  </Button>
+                                )}
 								{project.status === "CANCELLED" && (
 								  <Button size="sm" variant="outline" onClick={() => handleDeleteProject(project)} disabled={deleteProjectMutation.isPending} className="text-red-500 hover:text-red-600 hover:border-red-300" title="Eliminar proyecto">
 								    <Trash2 className="w-4 h-4" />
@@ -1867,6 +1924,95 @@ const handleSubmit = () => {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog para Cancelar y Archivar Proyecto con Justificación */}
+      <Dialog open={!!projectToCancel} onOpenChange={(open) => {
+        if (!open) {
+          setProjectToCancel(null);
+          setSingleCancelReason("");
+        }
+      }}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-500">
+              <Ban className="w-5 h-5" />
+              Cancelar y Archivar Proyecto
+            </DialogTitle>
+          </DialogHeader>
+          {projectToCancel && (
+            <div className="space-y-4 py-2">
+              <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-sm space-y-1">
+                <p className="font-semibold text-foreground">{projectToCancel.name}</p>
+                <p className="text-xs text-muted-foreground">{projectToCancel.city} - {projectToCancel.zone}</p>
+                <p className="text-xs text-muted-foreground">
+                  Estado actual: <span className="font-medium text-amber-400">{projectToCancel.status}</span> · Recaudado: {formatCOPShort(Number(projectToCancel.raisedAmount))} · Inversionistas: {projectToCancel.investorCount || 0}
+                </p>
+              </div>
+
+              {Number(projectToCancel.raisedAmount) > 0 || (projectToCancel.investorCount || 0) > 0 ? (
+                <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-400 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>
+                    Este proyecto ya cuenta con actividad financiera o inversionistas. No puede ser cancelado directamente sin antes realizar el proceso formal de conciliación y reembolso de aportes.
+                  </span>
+                </div>
+              ) : (
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    El proyecto dejará de estar abierto al público inversionista. Quedará archivado como <strong className="text-foreground">CANCELADO</strong> conservando su historial, fecha, usuario responsable y justificación obligatoria.
+                  </p>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="single-cancel-reason" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Justificación de la cancelación (obligatoria) *
+                    </Label>
+                    <Textarea
+                      id="single-cancel-reason"
+                      value={singleCancelReason}
+                      onChange={(e) => setSingleCancelReason(e.target.value)}
+                      placeholder="Ejemplo: Cancelado por error de duplicación en prefactibilidad, o solicitud formal del aliado antes de recaudo..."
+                      className="min-h-[100px] text-sm"
+                    />
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Mínimo 10 caracteres requeridos.</span>
+                      <span className={singleCancelReason.trim().length >= 10 ? "text-emerald-500 font-medium" : "text-amber-500"}>
+                        {singleCancelReason.trim().length} / 10
+                      </span>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setProjectToCancel(null);
+                setSingleCancelReason("");
+              }}
+            >
+              Volver
+            </Button>
+            <Button
+              type="button"
+              variant="default"
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+              disabled={
+                !projectToCancel ||
+                singleCancelReason.trim().length < 10 ||
+                cancelProjectMutation.isPending ||
+                Number(projectToCancel.raisedAmount) > 0 ||
+                (projectToCancel.investorCount || 0) > 0
+              }
+              onClick={handleConfirmSingleCancel}
+            >
+              {cancelProjectMutation.isPending ? "Cancelando..." : "Confirmar Cancelación"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

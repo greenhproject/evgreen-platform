@@ -4932,6 +4932,10 @@ export interface CrowdfundingProject {
   createdAt: Date;
   updatedAt: Date;
   investorCount?: number;
+  cancellationReason?: string | null;
+  cancelledAt?: string | Date | null;
+  cancelledBy?: number | null;
+  cancelledByName?: string | null;
 }
 
 export interface CrowdfundingParticipation {
@@ -4992,18 +4996,20 @@ export async function getCrowdfundingProjects(options?: {
 	      s.estimatedDailyVehicles as inheritedDailyVehicles,
 	      s.estimatedEvPercent as inheritedEvPercent,
 	      s.transformerCapacityKva as inheritedTransformerKva,
-	      s.availableAreaM2 as inheritedAvailableAreaM2,
-	      s.parkingSpots as inheritedParkingSpots,
-	      override_user.name as financialOverrideByName,
-	      COALESCE(s.latitude, cs.latitude) as linkedLatitude,
-	      COALESCE(s.longitude, cs.longitude) as linkedLongitude
-      FROM crowdfunding_projects p
-	      LEFT JOIN space_submissions s ON s.id = p.spaceSubmissionId
-	      LEFT JOIN charging_stations cs ON cs.id = p.stationId
-	      LEFT JOIN users override_user ON override_user.id = p.financial_override_by
-    `;
-    
-    if (sanitizedStatus) {
+		      s.availableAreaM2 as inheritedAvailableAreaM2,
+		      s.parkingSpots as inheritedParkingSpots,
+		      override_user.name as financialOverrideByName,
+		      cancel_user.name as cancelledByName,
+		      COALESCE(s.latitude, cs.latitude) as linkedLatitude,
+		      COALESCE(s.longitude, cs.longitude) as linkedLongitude
+	      FROM crowdfunding_projects p
+		      LEFT JOIN space_submissions s ON s.id = p.spaceSubmissionId
+		      LEFT JOIN charging_stations cs ON cs.id = p.stationId
+		      LEFT JOIN users override_user ON override_user.id = p.financial_override_by
+		      LEFT JOIN users cancel_user ON cancel_user.id = p.cancelled_by
+	    `;
+	    
+	    if (sanitizedStatus) {
       query += ` WHERE p.status = '${sanitizedStatus}'`;
     } else if (!options?.includePrivate) {
       query += ` WHERE p.status != 'DRAFT'`;
@@ -5065,8 +5071,10 @@ export async function getCrowdfundingProjectById(projectId: number): Promise<Cro
     const result = await db.execute(sql`
       SELECT 
         p.*,
-        (SELECT COUNT(*) FROM crowdfunding_participations WHERE projectId = p.id AND paymentStatus = 'COMPLETED') as investorCount
+        (SELECT COUNT(*) FROM crowdfunding_participations WHERE projectId = p.id AND paymentStatus = 'COMPLETED') as investorCount,
+        cancel_user.name as cancelledByName
       FROM crowdfunding_projects p
+      LEFT JOIN users cancel_user ON cancel_user.id = p.cancelled_by
       WHERE p.id = ${projectId}
       LIMIT 1
     `);

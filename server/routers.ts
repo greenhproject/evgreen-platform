@@ -5126,27 +5126,53 @@ const crowdfundingRouter = router({
     }),
 
 	  bulkManageProjects: strictAdminProcedure
-	    .input(z.object({
-	      projectIds: z.array(z.number().int().positive()).min(1).max(500),
-	      action: z.discriminatedUnion("type", [
-	        z.object({ type: z.literal("PUBLISH") }),
-	        z.object({
-	          type: z.literal("SET_STATUS"),
-	          status: z.enum(CROWDFUNDING_PROJECT_STATUSES),
-	        }),
-	        z.object({ type: z.literal("DELETE") }),
-	      ]),
-	    }))
-	    .mutation(async ({ input, ctx }) => {
-	      return manageCrowdfundingProjectsBulk({
-	        projectIds: input.projectIds,
-	        action: input.action,
-	        actorId: ctx.user.id,
-	      });
-	    }),
+		    .input(z.object({
+		      projectIds: z.array(z.number().int().positive()).min(1).max(500),
+		      action: z.discriminatedUnion("type", [
+		        z.object({ type: z.literal("PUBLISH") }),
+		        z.object({
+		          type: z.literal("SET_STATUS"),
+		          status: z.enum(CROWDFUNDING_PROJECT_STATUSES),
+		          reason: z.string().trim().min(10).max(2000).optional(),
+		        }),
+		        z.object({
+		          type: z.literal("CANCEL"),
+		          reason: z.string().trim().min(10, "La justificación debe tener al menos 10 caracteres").max(2000),
+		        }),
+		        z.object({ type: z.literal("DELETE") }),
+		      ]),
+		    }))
+		    .mutation(async ({ input, ctx }) => {
+		      return manageCrowdfundingProjectsBulk({
+		        projectIds: input.projectIds,
+		        action: input.action,
+		        actorId: ctx.user.id,
+		      });
+		    }),
 
-	  // Admin: Eliminar proyecto de crowdfunding completo
-	  deleteProject: strictAdminProcedure
+		  // Admin: Cancelar proyecto con justificación y auditoría
+		  cancelProject: strictAdminProcedure
+		    .input(z.object({
+		      projectId: z.number().int().positive(),
+		      reason: z.string().trim().min(10, "Indica una justificación clara de al menos 10 caracteres").max(2000),
+		    }))
+		    .mutation(async ({ input, ctx }) => {
+		      const result = await manageCrowdfundingProjectsBulk({
+		        projectIds: [input.projectId],
+		        action: { type: "CANCEL", reason: input.reason },
+		        actorId: ctx.user.id,
+		      });
+		      if (result.affected.length === 0) {
+		        throw new TRPCError({
+		          code: result.skipped[0]?.reason === "El proyecto ya no existe." ? "NOT_FOUND" : "CONFLICT",
+		          message: result.skipped[0]?.reason || "El proyecto no puede cancelarse.",
+		        });
+		      }
+		      return { success: true, cancelledProject: result.affected[0].name };
+		    }),
+
+		  // Admin: Eliminar proyecto de crowdfunding completo
+		  deleteProject: strictAdminProcedure
 	    .input(z.object({ projectId: z.number() }))
 	    .mutation(async ({ input, ctx }) => {
 	      const result = await manageCrowdfundingProjectsBulk({

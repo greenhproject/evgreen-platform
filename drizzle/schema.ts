@@ -423,6 +423,9 @@ export const crowdfundingProjects = mysqlTable("crowdfunding_projects", {
 	financialOverrideReason: text("financial_override_reason"),
 	financialOverrideAt: timestamp("financial_override_at", { mode: 'string' }),
 	financialOverrideBy: int("financial_override_by"),
+	cancellationReason: text("cancellation_reason"),
+	cancelledAt: timestamp("cancelled_at", { mode: 'string' }),
+	cancelledBy: int("cancelled_by"),
 });
 
 export const demoRequests = mysqlTable("demoRequests", {

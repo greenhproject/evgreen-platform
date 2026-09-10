@@ -86,4 +86,49 @@ describe("gestión masiva de proyectos de crowdfunding", () => {
       .limit(1);
     expect(persisted).toBeUndefined();
   });
+
+  it("permite a Admin cancelar un proyecto abierto con justificación y almacena auditoría", async () => {
+    const caller = appRouter.createCaller(context("admin"));
+    const newProjectId = await createCrowdfundingProject({
+      name: `${FIXTURE_NAME} Cancel Test`,
+      city: "Medellín",
+      zone: "Poblado",
+      targetAmount: 500_000_000,
+      minimumInvestment: 25_000_000,
+      totalPowerKw: 120,
+      chargerCount: 2,
+      chargerPowerKw: 60,
+      status: "OPEN",
+      createdById: 1,
+    });
+
+    try {
+      const reason = "Cancelación administrativa justificada por relocalización de estación.";
+      const result = await caller.crowdfunding.cancelProject({
+        projectId: newProjectId,
+        reason,
+      });
+      expect(result.success).toBe(true);
+
+      const db = await getDb();
+      const [persisted] = await db!.select({
+        id: crowdfundingProjects.id,
+        status: crowdfundingProjects.status,
+        cancellationReason: crowdfundingProjects.cancellationReason,
+        cancelledBy: crowdfundingProjects.cancelledBy,
+      })
+        .from(crowdfundingProjects)
+        .where(eq(crowdfundingProjects.id, newProjectId))
+        .limit(1);
+
+      expect(persisted?.status).toBe("CANCELLED");
+      expect(persisted?.cancellationReason).toBe(reason);
+      expect(persisted?.cancelledBy).toBe(1);
+    } finally {
+      const db = await getDb();
+      if (db) {
+        await db.delete(crowdfundingProjects).where(eq(crowdfundingProjects.id, newProjectId));
+      }
+    }
+  });
 });
