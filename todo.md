@@ -4354,3 +4354,11 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Limpieza segura de espacios QA: eliminados únicamente IDs 240859, 240861, 240862, 240863 y 240864 junto con dos eventos de correo; se preservaron 18 espacios restantes, incluido el registro real 240143.
 - [x] Validación anti-regresión: las tres suites responsables aprobaron 7 pruebas; la suite completa aprobó 193 archivos/2.185 pruebas, build y TypeScript, y una consulta posterior confirmó cero fixtures QA reaparecidos.
 - [x] Publicación espacios QA: checkpoint `ba5d14b4`, GitHub `f2befac9`, Railway Success y verificación productiva con 0 espacios QA, 0 eventos huérfanos y 18 postulaciones reales preservadas.
+- [x] Auditoría crowdfunding QA: identificados 248 proyectos inequívocos derivados de cinco fixtures de `spaces.test`, todos con referencia huérfana, $0 recaudado, sin participaciones, estación ni dependencias financieras.
+- [x] Cleanup integral crowdfunding: al limpiar fixtures de espacios elimina también proyectos derivados seguros y bloquea la operación si existe contrato, participación, recaudo o estación real.
+- [x] Limpieza productiva crowdfunding QA: eliminados únicamente los 248 proyectos confirmados; permanecen 27 proyectos y se preservaron dos huérfanos ambiguos para revisión manual.
+- [x] Gestión masiva crowdfunding: selección individual/visible, contador y acciones seguras para publicar, cambiar estado y eliminar borradores/cancelados compatibles.
+- [x] Responsive gestión masiva: barra mobile-first con controles táctiles, confirmaciones, resaltado y selección limitada a la pestaña visible; validada a 390×844 y 1440×900.
+- [x] Seguridad acciones masivas: permiso exclusivo Admin, validación transaccional, exclusión de proyectos con participaciones/recaudo/estación y resultado detallado por elemento omitido.
+- [x] QA crowdfunding masivo: TypeScript limpio, 195 archivos/2.192 pruebas, build productivo, pruebas de permisos/transiciones/cleanup y verificación visual móvil/escritorio.
+- [ ] Publicación crowdfunding QA/masivo: checkpoint, GitHub, Railway y comprobación productiva de no reaparición.

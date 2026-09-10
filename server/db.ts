@@ -4971,8 +4971,10 @@ export async function getCrowdfundingProjects(options?: {
     
     let query = `
       SELECT 
-        p.*,
-        (SELECT COUNT(*) FROM crowdfunding_participations WHERE projectId = p.id AND paymentStatus = 'COMPLETED') as investorCount,
+	        p.*,
+	        (SELECT COUNT(*) FROM crowdfunding_participations WHERE projectId = p.id AND paymentStatus = 'COMPLETED') as investorCount,
+	        (SELECT COUNT(*) FROM crowdfunding_participations WHERE projectId = p.id) as participationCount,
+	        (SELECT COUNT(*) FROM crowdfunding_participations WHERE projectId = p.id AND paymentStatus = 'COMPLETED') as completedParticipationCount,
 	      s.spaceName as linkedSpaceName,
 	      s.city as linkedSpaceCity,
 	      s.submitterName as linkedSubmitterName,
