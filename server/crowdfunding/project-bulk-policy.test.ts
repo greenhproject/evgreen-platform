@@ -43,6 +43,23 @@ describe("política de gestión masiva de crowdfunding", () => {
     expect(evaluateCrowdfundingBulkAction(project({ status: "OPEN", raisedAmount: 500 }), action).allowed).toBe(false);
   });
 
+  it("permite cancelar proyectos abiertos sin inversión requiriendo justificación mínima de 10 caracteres", () => {
+    const validCancel = { type: "CANCEL", reason: "Proyecto duplicado por error administrativo" } as const;
+    expect(evaluateCrowdfundingBulkAction(project({ status: "OPEN" }), validCancel)).toEqual({
+      allowed: true,
+      nextStatus: "CANCELLED",
+    });
+
+    const shortReason = { type: "CANCEL", reason: "corto" } as const;
+    expect(evaluateCrowdfundingBulkAction(project({ status: "OPEN" }), shortReason).allowed).toBe(false);
+
+    const withInvestors = { type: "CANCEL", reason: "Cancelación solicitada pero con inversionistas" } as const;
+    expect(evaluateCrowdfundingBulkAction(project({ status: "OPEN", participationCount: 2 }), withInvestors).allowed).toBe(false);
+
+    const withMoney = { type: "CANCEL", reason: "Cancelación solicitada pero con dinero recaudado" } as const;
+    expect(evaluateCrowdfundingBulkAction(project({ status: "OPEN", raisedAmount: 50_000_000 }), withMoney).allowed).toBe(false);
+  });
+
   it("solo permite financiar o completar cuando se alcanzó la meta", () => {
     const funded = { type: "SET_STATUS", status: "FUNDED" } as const;
     expect(evaluateCrowdfundingBulkAction(project({ status: "IN_PROGRESS", raisedAmount: 900 }), funded).allowed).toBe(false);

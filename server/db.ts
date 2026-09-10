@@ -4942,6 +4942,10 @@ export interface CrowdfundingProject {
   financialProjectionUpdatedAt?: string | null;
   financialProjectionUpdatedBy?: number | null;
   investorCount?: number;
+  cancellationReason?: string | null;
+  cancelledAt?: string | Date | null;
+  cancelledBy?: number | null;
+  cancelledByName?: string | null;
 }
 
 export interface CrowdfundingParticipation {
@@ -5003,9 +5007,10 @@ export async function getCrowdfundingProjects(options?: {
 	      s.estimatedEvPercent as inheritedEvPercent,
 	      s.transformerCapacityKva as inheritedTransformerKva,
 	      s.availableAreaM2 as inheritedAvailableAreaM2,
-		      s.parkingSpots as inheritedParkingSpots,
-		      override_user.name as financialOverrideByName,
-		      COALESCE(s.latitude, cs.latitude) as linkedLatitude,
+			      s.parkingSpots as inheritedParkingSpots,
+			      override_user.name as financialOverrideByName,
+			      cancel_user.name as cancelledByName,
+			      COALESCE(s.latitude, cs.latitude) as linkedLatitude,
 		      COALESCE(s.longitude, cs.longitude) as linkedLongitude,
 		      cs.evgreenSharePercent,
 		      cs.investorSharePercent,
@@ -5014,8 +5019,9 @@ export async function getCrowdfundingProjects(options?: {
 		      cs.hostName
       FROM crowdfunding_projects p
 	      LEFT JOIN space_submissions s ON s.id = p.spaceSubmissionId
-	      LEFT JOIN charging_stations cs ON cs.id = p.stationId
-	      LEFT JOIN users override_user ON override_user.id = p.financial_override_by
+		      LEFT JOIN charging_stations cs ON cs.id = p.stationId
+		      LEFT JOIN users override_user ON override_user.id = p.financial_override_by
+		      LEFT JOIN users cancel_user ON cancel_user.id = p.cancelled_by
     `;
     
     if (sanitizedStatus) {
@@ -5065,9 +5071,13 @@ export async function getCrowdfundingProjects(options?: {
 				financialProjectionSnapshot: typeof r.financial_projection_snapshot === "string"
 					? (() => { try { return JSON.parse(r.financial_projection_snapshot); } catch { return null; } })()
 					: r.financial_projection_snapshot || null,
-				financialProjectionScenario: r.financial_projection_scenario || null,
-				financialProjectionUpdatedAt: r.financial_projection_updated_at || null,
-				financialProjectionUpdatedBy: r.financial_projection_updated_by || null,
+					financialProjectionScenario: r.financial_projection_scenario || null,
+					financialProjectionUpdatedAt: r.financial_projection_updated_at || null,
+					financialProjectionUpdatedBy: r.financial_projection_updated_by || null,
+					cancellationReason: r.cancellation_reason || null,
+					cancelledAt: r.cancelled_at || null,
+					cancelledBy: r.cancelled_by || null,
+					cancelledByName: r.cancelledByName || null,
 				inheritedPhotos: snapshotPhotos ?? (r.spaceSubmissionId ? photosBySpace[r.spaceSubmissionId] || [] : []),
 			};
 		});
@@ -5084,10 +5094,12 @@ export async function getCrowdfundingProjectById(projectId: number): Promise<Cro
   
   try {
     const result = await db.execute(sql`
-      SELECT 
-        p.*,
-        (SELECT COUNT(*) FROM crowdfunding_participations WHERE projectId = p.id AND paymentStatus = 'COMPLETED') as investorCount
-      FROM crowdfunding_projects p
+	      SELECT
+	        p.*,
+	        (SELECT COUNT(*) FROM crowdfunding_participations WHERE projectId = p.id AND paymentStatus = 'COMPLETED') as investorCount,
+	        cancel_user.name as cancelledByName
+	      FROM crowdfunding_projects p
+	      LEFT JOIN users cancel_user ON cancel_user.id = p.cancelled_by
       WHERE p.id = ${projectId}
       LIMIT 1
     `);
@@ -5102,9 +5114,13 @@ export async function getCrowdfundingProjectById(projectId: number): Promise<Cro
 	    row.financialProjectionSnapshot = typeof row.financial_projection_snapshot === "string"
 	      ? (() => { try { return JSON.parse(row.financial_projection_snapshot); } catch { return null; } })()
 	      : row.financial_projection_snapshot || null;
-	    row.financialProjectionScenario = row.financial_projection_scenario || null;
-	    row.financialProjectionUpdatedAt = row.financial_projection_updated_at || null;
-	    row.financialProjectionUpdatedBy = row.financial_projection_updated_by || null;
+		    row.financialProjectionScenario = row.financial_projection_scenario || null;
+		    row.financialProjectionUpdatedAt = row.financial_projection_updated_at || null;
+		    row.financialProjectionUpdatedBy = row.financial_projection_updated_by || null;
+		    row.cancellationReason = row.cancellation_reason || null;
+		    row.cancelledAt = row.cancelled_at || null;
+		    row.cancelledBy = row.cancelled_by || null;
+		    row.cancelledByName = row.cancelledByName || null;
 	    return row as CrowdfundingProject;
   } catch (error) {
     console.error('[DB] Error getting crowdfunding project:', error);

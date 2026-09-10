@@ -1,7 +1,9 @@
 import { useState } from "react";
-import { ArrowRight, CheckSquare2, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Ban, CheckSquare2, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,9 +18,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 export type BulkProjectStatus = "DRAFT" | "OPEN" | "IN_PROGRESS" | "FUNDED" | "COMPLETED" | "CANCELLED";
 
+export type BulkExecutableAction =
+  | { type: "PUBLISH" }
+  | { type: "DELETE" }
+  | { type: "CANCEL"; reason: string }
+  | { type: "SET_STATUS"; status: BulkProjectStatus; reason?: string };
+
 type PendingAction =
   | { type: "PUBLISH" }
   | { type: "DELETE" }
+  | { type: "CANCEL" }
   | { type: "SET_STATUS"; status: BulkProjectStatus }
   | null;
 
@@ -29,7 +38,7 @@ type Props = {
   pending: boolean;
   onToggleVisible: () => void;
   onClear: () => void;
-  onExecute: (action: Exclude<PendingAction, null>) => void;
+  onExecute: (action: BulkExecutableAction) => void;
 };
 
 const STATUS_OPTIONS: Array<{ value: BulkProjectStatus; label: string }> = [
@@ -52,13 +61,37 @@ export function CrowdfundingBulkActions({
 }: Props) {
   const [targetStatus, setTargetStatus] = useState<BulkProjectStatus>("OPEN");
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
+  const [cancellationReason, setCancellationReason] = useState("");
   const hasSelection = selectedCount > 0;
 
+  const isCancelAction = pendingAction?.type === "CANCEL" || (pendingAction?.type === "SET_STATUS" && pendingAction.status === "CANCELLED");
+  const isDeleteAction = pendingAction?.type === "DELETE";
+  const isReasonValid = !isCancelAction || cancellationReason.trim().length >= 10;
+
   const actionDescription = pendingAction?.type === "DELETE"
-    ? "Se eliminarán únicamente borradores o cancelados sin participaciones, recaudo ni estación física. Los demás se omitirán y se informará el motivo."
-    : pendingAction?.type === "PUBLISH"
-      ? "Se publicarán únicamente borradores con meta, inversión mínima, potencia y número de cargadores completos."
-      : `Se intentará aplicar el nuevo estado a ${selectedCount} proyecto(s). Las transiciones incompatibles o con actividad financiera se omitirán.`;
+    ? "Se eliminarán definitivamente solo los proyectos en borrador o cancelados que no tengan participaciones, recaudo ni estación física. Los proyectos abiertos deben cancelarse primero."
+    : isCancelAction
+      ? "Los proyectos seleccionados pasarán a estado CANCELADO, dejando de estar abiertos al público y registrando la justificación y usuario responsable en la auditoría. Solo se cancelarán los proyectos sin dinero recaudado ni inversionistas."
+      : pendingAction?.type === "PUBLISH"
+        ? "Se publicarán únicamente borradores con meta, inversión mínima, potencia y número de cargadores completos."
+        : `Se intentará aplicar el nuevo estado a ${selectedCount} proyecto(s). Las transiciones incompatibles o con actividad financiera se omitirán.`;
+
+  const handleConfirm = () => {
+    if (!pendingAction) return;
+    if (pendingAction.type === "CANCEL") {
+      onExecute({ type: "CANCEL", reason: cancellationReason.trim() });
+    } else if (pendingAction.type === "SET_STATUS") {
+      onExecute({
+        type: "SET_STATUS",
+        status: pendingAction.status,
+        reason: pendingAction.status === "CANCELLED" ? cancellationReason.trim() : undefined,
+      });
+    } else {
+      onExecute(pendingAction);
+    }
+    setPendingAction(null);
+    setCancellationReason("");
+  };
 
   return (
     <>
@@ -84,6 +117,18 @@ export function CrowdfundingBulkActions({
             <Button type="button" variant="outline" disabled={!hasSelection || pending} onClick={() => setPendingAction({ type: "PUBLISH" })} className="min-h-11 gap-2">
               <ArrowRight className="h-4 w-4" /> Publicar
             </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!hasSelection || pending}
+              onClick={() => {
+                setCancellationReason("");
+                setPendingAction({ type: "CANCEL" });
+              }}
+              className="min-h-11 gap-2 text-amber-500 hover:text-amber-600 hover:bg-amber-500/10 border-amber-500/30"
+            >
+              <Ban className="h-4 w-4" /> Cancelar ({selectedCount})
+            </Button>
             <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 sm:flex">
               <Select value={targetStatus} onValueChange={(value) => setTargetStatus(value as BulkProjectStatus)}>
                 <SelectTrigger className="min-h-11 min-w-0 sm:w-44" aria-label="Nuevo estado masivo">
@@ -93,7 +138,20 @@ export function CrowdfundingBulkActions({
                   {STATUS_OPTIONS.map((status) => <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <Button type="button" variant="outline" disabled={!hasSelection || pending} onClick={() => setPendingAction({ type: "SET_STATUS", status: targetStatus })} className="min-h-11">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!hasSelection || pending}
+                onClick={() => {
+                  if (targetStatus === "CANCELLED") {
+                    setCancellationReason("");
+                    setPendingAction({ type: "CANCEL" });
+                  } else {
+                    setPendingAction({ type: "SET_STATUS", status: targetStatus });
+                  }
+                }}
+                className="min-h-11"
+              >
                 Aplicar
               </Button>
             </div>
@@ -104,22 +162,50 @@ export function CrowdfundingBulkActions({
         </div>
       </div>
 
-      <AlertDialog open={pendingAction !== null} onOpenChange={(open) => !open && setPendingAction(null)}>
+      <AlertDialog open={pendingAction !== null} onOpenChange={(open) => {
+        if (!open) {
+          setPendingAction(null);
+          setCancellationReason("");
+        }
+      }}>
         <AlertDialogContent className="w-[calc(100vw-2rem)] max-w-lg">
           <AlertDialogHeader>
-            <AlertDialogTitle>Confirmar acción sobre {selectedCount} proyecto(s)</AlertDialogTitle>
+            <AlertDialogTitle className="flex items-center gap-2">
+              {isCancelAction ? <Ban className="h-5 w-5 text-amber-500" /> : isDeleteAction ? <AlertTriangle className="h-5 w-5 text-red-500" /> : null}
+              Confirmar {isCancelAction ? "cancelación" : isDeleteAction ? "eliminación" : "acción"} sobre {selectedCount} proyecto(s)
+            </AlertDialogTitle>
             <AlertDialogDescription>{actionDescription}</AlertDialogDescription>
           </AlertDialogHeader>
+
+          {isCancelAction && (
+            <div className="space-y-2 py-2">
+              <Label htmlFor="bulk-cancel-reason" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Justificación administrativa de cancelación (obligatoria)
+              </Label>
+              <Textarea
+                id="bulk-cancel-reason"
+                value={cancellationReason}
+                onChange={(e) => setCancellationReason(e.target.value)}
+                placeholder="Ejemplo: Reemplazado por nueva ubicación, punto duplicado en prefactibilidad o cancelación acordada con el gestor..."
+                className="min-h-[90px] text-sm"
+              />
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Mínimo 10 caracteres requeridos.</span>
+                <span className={cancellationReason.trim().length >= 10 ? "text-emerald-500 font-medium" : "text-amber-500"}>
+                  {cancellationReason.trim().length} / 10
+                </span>
+              </div>
+            </div>
+          )}
+
           <AlertDialogFooter className="gap-2 sm:gap-0">
-            <AlertDialogCancel className="min-h-11">Cancelar</AlertDialogCancel>
+            <AlertDialogCancel className="min-h-11">Cerrar</AlertDialogCancel>
             <AlertDialogAction
-              className="min-h-11"
-              onClick={() => {
-                if (pendingAction) onExecute(pendingAction);
-                setPendingAction(null);
-              }}
+              className={`min-h-11 ${isCancelAction ? "bg-amber-600 hover:bg-amber-700 text-white" : isDeleteAction ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : ""}`}
+              disabled={!isReasonValid}
+              onClick={handleConfirm}
             >
-              Confirmar
+              {isCancelAction ? "Confirmar Cancelación" : isDeleteAction ? "Confirmar Eliminación" : "Confirmar"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

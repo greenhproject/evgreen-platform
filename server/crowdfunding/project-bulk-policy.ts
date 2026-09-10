@@ -11,8 +11,9 @@ export type CrowdfundingProjectStatus = typeof CROWDFUNDING_PROJECT_STATUSES[num
 
 export type CrowdfundingBulkAction =
   | { type: "PUBLISH" }
-  | { type: "SET_STATUS"; status: CrowdfundingProjectStatus }
-  | { type: "DELETE" };
+  | { type: "SET_STATUS"; status: CrowdfundingProjectStatus; reason?: string }
+  | { type: "CANCEL"; reason: string }
+  | { type: "DELETE"; reason?: string };
 
 export type CrowdfundingProjectSafetySnapshot = {
   id: number;
@@ -54,9 +55,35 @@ export function evaluateCrowdfundingBulkAction(
   project: CrowdfundingProjectSafetySnapshot,
   action: CrowdfundingBulkAction,
 ): BulkProjectDecision {
+  if (action.type === "CANCEL") {
+    const minReasonLength = 10;
+    if (!action.reason || action.reason.trim().length < minReasonLength) {
+      return {
+        allowed: false,
+        reason: `La justificación de cancelación debe tener al menos ${minReasonLength} caracteres.`,
+      };
+    }
+    if (project.status === "CANCELLED") {
+      return { allowed: false, reason: "El proyecto ya se encuentra cancelado." };
+    }
+    if (project.status === "COMPLETED") {
+      return { allowed: false, reason: "No se puede cancelar un proyecto que ya fue completado." };
+    }
+    if (project.participationCount > 0 || project.raisedAmount !== 0) {
+      return {
+        allowed: false,
+        reason: "No puede cancelarse porque ya tiene inversionistas o capital recaudado.",
+      };
+    }
+    return { allowed: true, nextStatus: "CANCELLED" };
+  }
+
   if (action.type === "DELETE") {
     if (project.status !== "DRAFT" && project.status !== "CANCELLED") {
-      return { allowed: false, reason: "Solo pueden eliminarse proyectos borrador o cancelados." };
+      return {
+        allowed: false,
+        reason: "Solo pueden eliminarse proyectos en borrador o cancelados. Si está abierto, cancélalo primero con su justificación.",
+      };
     }
     if (project.participationCount > 0) {
       return { allowed: false, reason: "El proyecto tiene participaciones registradas." };
@@ -88,7 +115,7 @@ export function evaluateCrowdfundingBulkAction(
     return { allowed: false, reason: "No puede volver a borrador porque tiene actividad financiera." };
   }
   if (nextStatus === "CANCELLED" && (project.participationCount > 0 || project.raisedAmount !== 0)) {
-    return { allowed: false, reason: "No puede cancelarse masivamente porque tiene participaciones o recaudo." };
+    return { allowed: false, reason: "No puede cancelarse porque tiene participaciones o recaudo." };
   }
   if ((nextStatus === "FUNDED" || nextStatus === "COMPLETED") && (
     project.targetAmount <= 0 || project.raisedAmount < project.targetAmount

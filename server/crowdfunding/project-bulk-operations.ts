@@ -23,6 +23,7 @@ export async function manageCrowdfundingProjectsBulk(input: {
   projectIds: number[];
   action: CrowdfundingBulkAction;
   actorId: number;
+  reason?: string;
 }): Promise<CrowdfundingBulkResult> {
   const db = await getDb();
   if (!db) throw new Error("Base de datos no disponible.");
@@ -90,10 +91,28 @@ export async function manageCrowdfundingProjectsBulk(input: {
         .set({ crowdfundingProjectId: null })
         .where(inArray(spaceSubmissions.crowdfundingProjectId, allowedIds));
       await tx.delete(crowdfundingProjects).where(inArray(crowdfundingProjects.id, allowedIds));
+    } else if (input.action.type === "CANCEL") {
+      const now = new Date().toISOString().slice(0, 19).replace("T", " ");
+      await tx.update(crowdfundingProjects)
+        .set({
+          status: "CANCELLED",
+          cancellationReason: input.action.reason.trim(),
+          cancelledAt: now,
+          cancelledBy: input.actorId,
+        })
+        .where(inArray(crowdfundingProjects.id, allowedIds));
     } else {
       const nextStatus = input.action.type === "PUBLISH" ? "OPEN" : input.action.status;
+      const updatePayload: Record<string, any> = { status: nextStatus };
+      const rawReason = "reason" in input.action ? (input.action as any).reason : undefined;
+      if (nextStatus === "CANCELLED" && rawReason) {
+        const now = new Date().toISOString().slice(0, 19).replace("T", " ");
+        updatePayload.cancellationReason = String(rawReason).trim();
+        updatePayload.cancelledAt = now;
+        updatePayload.cancelledBy = input.actorId;
+      }
       await tx.update(crowdfundingProjects)
-        .set({ status: nextStatus })
+        .set(updatePayload)
         .where(inArray(crowdfundingProjects.id, allowedIds));
     }
   });

@@ -427,6 +427,9 @@ export const crowdfundingProjects = mysqlTable("crowdfunding_projects", {
 	financialProjectionScenario: varchar("financial_projection_scenario", { length: 20 }),
 	financialProjectionUpdatedAt: timestamp("financial_projection_updated_at", { mode: 'string' }),
 	financialProjectionUpdatedBy: int("financial_projection_updated_by"),
+	cancellationReason: text("cancellation_reason"),
+	cancelledAt: timestamp("cancelled_at", { mode: 'string' }),
+	cancelledBy: int("cancelled_by"),
 });
 
 export const demoRequests = mysqlTable("demoRequests", {
