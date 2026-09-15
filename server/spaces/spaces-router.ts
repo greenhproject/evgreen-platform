@@ -31,6 +31,10 @@ import {
   getSelectedCrowdfundingProjection,
   type CrowdfundingProjectionSnapshot,
 } from "../../shared/crowdfunding-financial-projection";
+import {
+  assertProspectoFinancialScenarioIsDocumented,
+  resolveProspectoTechnicalCondition,
+} from "../../shared/prospecto-financial-scenario";
 
 // ============================================================================
 // ROLE GUARDS
@@ -1911,9 +1915,12 @@ Responde en formato JSON con la siguiente estructura:`;
       allySharePercent: z.number().min(0).max(50).default(10),
       investorSharePercent: z.number().min(1).max(99).default(70),
       platformSharePercent: z.number().min(1).max(99).default(30),
-      installedPowerKw: z.number().optional(),
-      tarifaKwhCop: z.number().default(1800),
-      energyCostPerKwhCop: z.number().min(0).max(10000).default(700),
+      installedPowerKw: z.number().positive().max(5000).optional(),
+      tarifaKwhCop: z.number().positive().max(10000).optional(),
+      energyCostPerKwhCop: z.number().min(0).max(10000).optional(),
+      fixedMonthlyExpensesCop: z.number().min(0).max(100000000).default(0),
+      capexIncludesGridUpgrade: z.boolean().default(false),
+      technicalConditionNote: z.string().trim().max(2000).optional(),
     }).refine(
       data => Math.abs(data.investorSharePercent + data.platformSharePercent - 100) < 0.001,
       { message: "La participación de Inversionista y EVGreen debe sumar exactamente 100 % del margen neto" },
@@ -1947,8 +1954,23 @@ Responde en formato JSON con la siguiente estructura:`;
         try { aiData = JSON.parse(submission.aiAnalysis as string); } catch { /* ignore */ }
       }
 
-	      // Generar PDF
+	      // Construir un escenario auditable con la tarifa vigente y con la condición eléctrica explícita.
 	      const platformSettings = await getPlatformSettings();
+	      const requestedPowerKw = input.installedPowerKw ?? Number(submission.estimatedPowerKw ?? 0);
+	      const technicalCondition = resolveProspectoTechnicalCondition({
+	        totalPowerKw: requestedPowerKw,
+	        transformerCapacityKva: submission.transformerCapacityKva ? Number(submission.transformerCapacityKva) : null,
+	        electricalViability: submission.electricalViability,
+	      });
+	      try {
+	        assertProspectoFinancialScenarioIsDocumented({
+	          technicalCondition,
+	          capexIncludesGridUpgrade: input.capexIncludesGridUpgrade,
+	          technicalConditionNote: input.technicalConditionNote,
+	        });
+	      } catch (error) {
+	        throw new TRPCError({ code: "PRECONDITION_FAILED", message: error instanceof Error ? error.message : "La condición técnica debe documentarse" });
+	      }
 	      const { generateProspectoPdf } = await import("./prospecto-pdf-service");
       const pdfBuffer = await generateProspectoPdf({
         code: submission.code,
@@ -1982,10 +2004,14 @@ Responde en formato JSON con la siguiente estructura:`;
         allySharePercent: input.allySharePercent,
         investorSharePercent: input.investorSharePercent,
         platformSharePercent: input.platformSharePercent,
-        installedPowerKw: input.installedPowerKw,
-	        tarifaKwhCop: input.tarifaKwhCop,
-	        energyCostPerKwhCop: input.energyCostPerKwhCop,
+	        installedPowerKw: requestedPowerKw,
+	        tarifaKwhCop: input.tarifaKwhCop ?? Number(platformSettings?.precioVentaDefault ?? 1800),
+	        energyCostPerKwhCop: input.energyCostPerKwhCop ?? Number(platformSettings?.costoEnergiaRed ?? 850),
 	        efficiencyPercent: Number(platformSettings?.eficienciaCargaDc ?? 92),
+	        fixedMonthlyExpensesCop: input.fixedMonthlyExpensesCop,
+	        technicalCondition,
+	        capexIncludesGridUpgrade: input.capexIncludesGridUpgrade,
+	        technicalConditionNote: input.technicalConditionNote,
         photos: photos.map(p => ({ url: p.photoUrl, caption: p.caption })),
         generatedAt: new Date(),
       });

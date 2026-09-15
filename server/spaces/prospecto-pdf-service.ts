@@ -13,7 +13,10 @@ import autoTable from "jspdf-autotable";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const jsPDF = ((jsPDFModule as any).jsPDF ?? (jsPDFModule as any).default?.jsPDF ?? (jsPDFModule as any).default ?? jsPDFModule) as typeof import("jspdf").jsPDF;
 import axios from "axios";
-import { buildCrowdfundingProjectionSnapshot } from "../../shared/crowdfunding-financial-projection";
+import {
+  buildProspectoFinancialScenario,
+  type ProspectoTechnicalCondition,
+} from "../../shared/prospecto-financial-scenario";
 
 // ============================================================
 // ASSETS ESTÁTICOS (CDN público — disponible en el servidor)
@@ -65,6 +68,10 @@ export interface ProspectoPdfData {
   tarifaKwhCop?: number;
   energyCostPerKwhCop?: number;
   efficiencyPercent?: number;
+  fixedMonthlyExpensesCop?: number;
+  technicalCondition: ProspectoTechnicalCondition;
+  capexIncludesGridUpgrade: boolean;
+  technicalConditionNote?: string | null;
   // Fotos del espacio
   photos: Array<{ url: string; caption?: string | null }>;
   generatedAt: Date;
@@ -103,6 +110,17 @@ function formatCOP(value: number): string {
   return "$" + Math.round(value).toLocaleString("es-CO");
 }
 
+function formatCompactCOP(value: number): string {
+  const amount = Math.abs(value);
+  if (amount >= 1_000_000) {
+    return `$${(value / 1_000_000).toLocaleString("es-CO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} M`;
+  }
+  if (amount >= 1_000) {
+    return `$${(value / 1_000).toLocaleString("es-CO", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} mil`;
+  }
+  return formatCOP(value);
+}
+
 function formatScore(score: number): string {
   if (score >= 80) return "ALTO";
   if (score >= 60) return "MEDIO-ALTO";
@@ -119,6 +137,19 @@ function spaceTypeLabel(type: string, other?: string | null): string {
     other: other || "Otro",
   };
   return map[type] || type;
+}
+
+function buildTechnicalRecommendation(data: ProspectoPdfData): string {
+  const chargerCount = Number(data.estimatedChargerCount || 0);
+  const powerKw = Number(data.installedPowerKw || data.estimatedPowerKw || 0);
+  const chargerText = chargerCount > 0 ? `${chargerCount} cargador${chargerCount === 1 ? "" : "es"}` : "la infraestructura de carga";
+  const powerText = powerKw > 0 ? `con una potencia proyectada de ${powerKw} kW` : "con potencia por definir";
+
+  if (data.technicalCondition.requiresGridUpgrade) {
+    return `Se recomienda estructurar ${chargerText} ${powerText} únicamente después de formalizar la ampliación eléctrica requerida, confirmar la potencia disponible mediante estudio técnico y asegurar que el CAPEX total incorpora esa intervención. La puesta en servicio se programará tras la aprobación del operador de red.`;
+  }
+
+  return `Se recomienda estructurar ${chargerText} ${powerText}, sujeto a la validación final de protecciones, capacidad disponible, diseño de acometida y aprobación del operador de red. La configuración definitiva debe responder al perfil de demanda, el tiempo de permanencia y la operación comercial del punto.`;
 }
 
 async function downloadImageAsBase64(url: string): Promise<{ data: string; format: string } | null> {
@@ -335,7 +366,13 @@ function addPortada(
 
   const metrics = [
     { label: "INVERSIÓN REQUERIDA", value: inv > 0 ? formatCOP(inv) : "A definir", sub: "Capital total" },
-    { label: "POTENCIA INSTALADA", value: powerKw > 0 ? `${powerKw} kW` : "A definir", sub: chargers > 0 ? `${chargers} cargadores` : "Cargadores EV" },
+    {
+      label: "POTENCIA PROYECTADA",
+      value: powerKw > 0 ? `${powerKw} kW` : "A definir",
+      sub: data.technicalCondition.requiresGridUpgrade
+        ? "Sujeta a ampliación de red"
+        : chargers > 0 ? `${chargers} cargadores` : "Cargadores EV",
+    },
     { label: "VIABILIDAD IA", value: score > 0 ? `${score}/100` : "—", sub: score > 0 ? formatScore(score) : "Pendiente" },
   ];
 
@@ -399,7 +436,6 @@ function addResumenEjecutivo(
   if (aiData) {
     const strengths: string[] = aiData.strengths || aiData.fortalezas || [];
     const weaknesses: string[] = aiData.weaknesses || aiData.debilidades || [];
-    const recommendation: string = aiData.recommendation || aiData.recomendacion || "";
 
     if (strengths.length > 0) {
       y = drawSectionTitle(doc, "FACTORES FAVORABLES PARA EL INVERSIONISTA", M, y, CW);
@@ -429,18 +465,18 @@ function addResumenEjecutivo(
       y += 4;
     }
 
-    if (recommendation) {
-      y = drawSectionTitle(doc, "RECOMENDACIÓN TÉCNICA", M, y, CW);
-      const recLines = doc.splitTextToSize(recommendation, CW - 8);
-      const recH = recLines.length * 5 + 8;
-      setColor(doc, C.greenLight, "fill");
-      doc.roundedRect(M, y, CW, recH, 2, 2, "F");
-      setColor(doc, C.greenDark, "text");
-      doc.setFontSize(9); doc.setFont("helvetica", "italic");
-      doc.text(recLines, M + 4, y + 6);
-      y += recH + 6;
-    }
   }
+
+  const recommendation = buildTechnicalRecommendation(data);
+  y = drawSectionTitle(doc, "RECOMENDACIÓN TÉCNICA", M, y, CW);
+  const recLines = doc.splitTextToSize(recommendation, CW - 8);
+  const recH = recLines.length * 5 + 8;
+  setColor(doc, data.technicalCondition.requiresGridUpgrade ? [255, 247, 237] : C.greenLight, "fill");
+  doc.roundedRect(M, y, CW, recH, 2, 2, "F");
+  setColor(doc, data.technicalCondition.requiresGridUpgrade ? [154, 52, 18] : C.greenDark, "text");
+  doc.setFontSize(9); doc.setFont("helvetica", "italic");
+  doc.text(recLines, M + 4, y + 6);
+  y += recH + 6;
 
   return y;
 }
@@ -462,8 +498,9 @@ function addDatosTecnicos(
     ...(data.availableAreaM2 ? [["Área disponible", `${data.availableAreaM2} m²`] as [string, string]] : []),
     ...(data.parkingSpots ? [["Parqueos disponibles", `${data.parkingSpots} espacios`] as [string, string]] : []),
     ...(data.estimatedChargerCount ? [["Cargadores proyectados", `${data.estimatedChargerCount} unidades`] as [string, string]] : []),
-    ...((data.installedPowerKw || data.estimatedPowerKw) ? [["Potencia instalada", `${data.installedPowerKw || data.estimatedPowerKw} kW`] as [string, string]] : []),
+    ...((data.installedPowerKw || data.estimatedPowerKw) ? [["Potencia proyectada", `${data.installedPowerKw || data.estimatedPowerKw} kW`] as [string, string]] : []),
     ...(data.transformerCapacityKva ? [["Capacidad transformador", `${data.transformerCapacityKva} kVA`] as [string, string]] : []),
+    ["Viabilidad eléctrica", data.technicalCondition.requiresGridUpgrade ? "Condicionada a ampliación de red" : "Sin condicionante reportado"],
     ["Tablero eléctrico", data.hasElectricalPanel ? "Disponible" : "Requiere instalación"],
     ...(data.electricalDistance ? [["Distancia al tablero", `${data.electricalDistance} metros`] as [string, string]] : []),
     ["Conectividad", data.hasInternet ? "Internet disponible" : "Sin internet"],
@@ -581,8 +618,9 @@ function addProyeccionFinanciera(
   const inv = data.estimatedInvestmentCop || 0;
   const powerKw = data.installedPowerKw || data.estimatedPowerKw || 0;
   const tarifaKwh = data.tarifaKwhCop || 1800;
-  const energyCostPerKwh = data.energyCostPerKwhCop ?? 700;
+  const energyCostPerKwh = data.energyCostPerKwhCop ?? 850;
   const efficiencyPercent = data.efficiencyPercent ?? 92;
+  const fixedMonthlyExpenses = data.fixedMonthlyExpensesCop ?? 0;
 
   // Modelo de reparto: el aliado recibe una participación del margen bruto
   // y EVGreen + Inversionista se reparten exclusivamente el margen neto.
@@ -615,14 +653,29 @@ function addProyeccionFinanciera(
 
   setColor(doc, C.gray700, "text");
   doc.setFontSize(7.2); doc.setFont("helvetica", "normal");
-  doc.text(`Ingreso bruto − costo energía (${formatCOP(energyCostPerKwh)}/kWh) = margen bruto  ·  Aliado: ${allyPct}% del margen bruto`, M + 4, barY + 14);
+  const operatingCostLine = fixedMonthlyExpenses > 0
+    ? `Ingreso bruto − energía (${formatCOP(energyCostPerKwh)}/kWh) − gastos fijos (${formatCompactCOP(fixedMonthlyExpenses)}/mes) = margen bruto`
+    : `Ingreso bruto − energía (${formatCOP(energyCostPerKwh)}/kWh) = margen bruto`;
+  doc.text(`${operatingCostLine}  ·  Aliado: ${allyPct}% del margen bruto`, M + 4, barY + 14);
   doc.text(`Margen neto distribuible: Inversor ${investorNetPct}%  ·  EVGreen ${platformNetPct}%`, M + 4, barY + 20);
   y += 38;
+
+  if (data.technicalCondition.requiresGridUpgrade) {
+    setColor(doc, C.amber, "fill");
+    doc.roundedRect(M, y, CW, 20, 2.5, 2.5, "F");
+    setColor(doc, C.navy, "text");
+    doc.setFontSize(8.2); doc.setFont("helvetica", "bold");
+    doc.text("CONDICIÓN TÉCNICA PREVIA: AMPLIACIÓN ELÉCTRICA", M + 4, y + 6);
+    doc.setFontSize(7.3); doc.setFont("helvetica", "normal");
+    const conditionLines = doc.splitTextToSize(`${data.technicalCondition.reason} CAPEX total declarado: ${data.capexIncludesGridUpgrade ? "incluye la ampliación" : "pendiente de confirmar"}. ${data.technicalConditionNote || ""}`, CW - 8);
+    doc.text(conditionLines.slice(0, 2), M + 4, y + 11);
+    y += 25;
+  }
 
 	  if (powerKw > 0 && inv > 0) {
     y = drawSectionTitle(doc, `ESCENARIOS DE OPERACIÓN — ${powerKw} kW INSTALADOS  ·  Tarifa: ${formatCOP(tarifaKwh)}/kWh`, M, y, CW);
 
-	    const projection = buildCrowdfundingProjectionSnapshot({
+	    const { projection } = buildProspectoFinancialScenario({
 	      investmentCop: inv,
 	      totalPowerKw: powerKw,
 	      salePricePerKwh: tarifaKwh,
@@ -631,8 +684,10 @@ function addProyeccionFinanciera(
 	      investorSharePercent: investorNetPct,
 	      evgreenSharePercent: platformNetPct,
 	      efficiencyPercent,
-	      fixedMonthlyExpenses: 0,
-	    }, "REALISTIC");
+	      fixedMonthlyExpenses,
+	      transformerCapacityKva: data.transformerCapacityKva,
+	      electricalViability: data.technicalCondition.requiresGridUpgrade ? "requires_upgrade" : "viable",
+	    });
 	    const scenarios = [
 	      { key: "PESSIMISTIC" as const, name: "PESIMISTA", color: C.amber },
 	      { key: "REALISTIC" as const, name: "REALISTA", color: C.green },
@@ -654,9 +709,13 @@ function addProyeccionFinanciera(
 	      };
 	    });
 
-    // Tarjetas de escenario (3 columnas)
+    setColor(doc, C.gray500, "text");
+    doc.setFontSize(7.2); doc.setFont("helvetica", "normal");
+    doc.text("Horas equivalentes de entrega a potencia proyectada · Cifras monetarias en millones de COP", M, y - 3);
+
+    // Tarjetas de escenario: resumen legible con importes compactos.
     const cardW = (CW - 8) / 3;
-    const cardH = 92;
+    const cardH = fixedMonthlyExpenses > 0 ? 107 : 101;
     scenarioData.forEach((s, i) => {
       const cx = M + i * (cardW + 4);
       const cy = y;
@@ -673,29 +732,30 @@ function addProyeccionFinanciera(
       doc.text(s.name, cx + cardW / 2, cy + 9, { align: "center" });
 
       setColor(doc, C.gray500, "text");
-      doc.setFontSize(7); doc.setFont("helvetica", "normal");
-      doc.text(`${s.hours} horas/día de operación`, cx + cardW / 2, cy + 18, { align: "center" });
+      doc.setFontSize(7.1); doc.setFont("helvetica", "normal");
+      doc.text(`${s.hours} h equivalentes/día`, cx + cardW / 2, cy + 18, { align: "center" });
 
       const items = [
         { label: "kWh/mes", value: `${Math.round(s.kwhMonth).toLocaleString("es-CO")} kWh`, highlight: false },
-        { label: "Ingreso bruto", value: formatCOP(s.waterfall.grossRevenue), highlight: false },
-        { label: "Costo energía", value: `− ${formatCOP(s.waterfall.energyCost)}`, highlight: false },
-        { label: "Margen bruto", value: formatCOP(s.waterfall.grossMargin), highlight: false },
-        { label: `Aliado (${allyPct}%)`, value: `− ${formatCOP(s.waterfall.hostPayout)}`, highlight: false },
-        { label: "Margen neto", value: formatCOP(s.waterfall.netDistributableMargin), highlight: false },
-        { label: "Retorno inv./mes", value: formatCOP(s.investorMonth), highlight: true },
-        { label: "Retorno inv./año", value: formatCOP(s.investorYear), highlight: true },
+        { label: "Ingreso bruto", value: formatCompactCOP(s.waterfall.grossRevenue), highlight: false },
+        { label: "Costo energía", value: `- ${formatCompactCOP(s.waterfall.energyCost)}`, highlight: false },
+        ...(s.waterfall.fixedExpenses > 0 ? [{ label: "Gastos fijos", value: `- ${formatCompactCOP(s.waterfall.fixedExpenses)}`, highlight: false }] : []),
+        { label: "Margen bruto", value: formatCompactCOP(s.waterfall.grossMargin), highlight: false },
+        { label: `Aliado (${allyPct}%)`, value: `- ${formatCompactCOP(s.waterfall.hostPayout)}`, highlight: false },
+        { label: "Margen neto", value: formatCompactCOP(s.waterfall.netDistributableMargin), highlight: false },
+        { label: "Retorno inv./mes", value: formatCompactCOP(s.investorMonth), highlight: true },
+        { label: "Retorno inv./año", value: formatCompactCOP(s.investorYear), highlight: true },
         ...(inv > 0 ? [{ label: "ROI anual", value: `${s.roi.toFixed(1)}%`, highlight: false }] : []),
         ...(inv > 0 && s.payback > 0 ? [{ label: "Recuperación", value: s.payback <= 12 ? `${s.payback.toFixed(1)} meses` : `${(s.payback / 12).toFixed(1)} años`, highlight: false }] : []),
       ];
 
       items.forEach((item, j) => {
-        const iy = cy + 22 + j * 6.3;
+        const iy = cy + 23 + j * 7;
         setColor(doc, C.gray500, "text");
-        doc.setFontSize(6.1); doc.setFont("helvetica", "normal");
+        doc.setFontSize(6.7); doc.setFont("helvetica", "normal");
         doc.text(item.label, cx + 4, iy);
         setColor(doc, item.highlight ? s.color : C.gray900, "text");
-        doc.setFontSize(item.highlight ? 7.5 : 6.8);
+        doc.setFontSize(item.highlight ? 8 : 7.2);
         doc.setFont("helvetica", item.highlight ? "bold" : "normal");
         doc.text(item.value, cx + cardW - 4, iy, { align: "right" });
       });
@@ -705,8 +765,8 @@ function addProyeccionFinanciera(
 
     // Nota metodológica
     setColor(doc, C.gray500, "text");
-    doc.setFontSize(7.5); doc.setFont("helvetica", "italic");
-	    const nota = `* Proyecciones basadas en ${powerKw} kW instalados × horas de operación diaria × ${efficiencyPercent}% de eficiencia × 30 días × ${formatCOP(tarifaKwh)}/kWh. El retorno y el ROI se calculan sobre el ${investorNetPct}% del margen neto, después del costo de energía de ${formatCOP(energyCostPerKwh)}/kWh y la participación del aliado. Las cifras son estimaciones orientativas y no constituyen una garantía de rentabilidad.`;
+    doc.setFontSize(7.8); doc.setFont("helvetica", "italic");
+	    const nota = `Base: ${powerKw} kW de potencia proyectada × horas equivalentes/día × ${efficiencyPercent}% de eficiencia × 30 días. Tarifa: ${formatCOP(tarifaKwh)}/kWh; energía: ${formatCOP(energyCostPerKwh)}/kWh${fixedMonthlyExpenses > 0 ? `; gastos fijos: ${formatCOP(fixedMonthlyExpenses)}/mes` : "; gastos fijos: no incluidos"}. El retorno corresponde al ${investorNetPct}% del margen neto después de energía y aliado. ${data.technicalCondition.requiresGridUpgrade ? "Resultado condicionado a la ampliación eléctrica y al CAPEX total declarado." : "Cifras orientativas; no constituyen garantía de rentabilidad."}`;
     const notaLines = doc.splitTextToSize(nota, CW);
     doc.text(notaLines, M, y);
     y += notaLines.length * 4.5 + 6;
