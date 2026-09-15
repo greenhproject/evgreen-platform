@@ -133,8 +133,8 @@ export function useNotifications() {
       onNotificationTap: (path) => {
         window.dispatchEvent(new CustomEvent("evgreen:native-navigate", { detail: path }));
       },
-    }).then((registered) => {
-      if (registered) setIsEnabled(true);
+    }).then((result) => {
+      if (result === "granted") setIsEnabled(true);
     });
   }, [registerTokenMutation]);
 
@@ -180,7 +180,7 @@ export function useNotifications() {
 
       // Rama nativa (Capacitor: iOS/Android) — usa el plugin de push nativo en vez de las APIs web
       if (isCapacitorNative()) {
-        const nativeRegistered = await initNativePush({
+        const nativeResult = await initNativePush({
           onToken: async (token) => {
             await registerTokenMutation.mutateAsync({ fcmToken: token });
             console.log("[Push] Token nativo registrado en el servidor");
@@ -193,17 +193,23 @@ export function useNotifications() {
           },
         });
 
-        setPermissionStatus(nativeRegistered ? "granted" : "denied");
-
-        if (nativeRegistered) {
+        if (nativeResult === "granted") {
+          setPermissionStatus("granted");
           nativeAutoInitDone.current = true;
           writeNativePushEnabledCache(true);
           setIsEnabled(true);
           toast.success("Notificaciones push activadas correctamente");
           preferencesQuery.refetch();
-        } else {
+        } else if (nativeResult === "denied") {
+          setPermissionStatus("denied");
           toast.error("Permiso de notificaciones denegado. Revisa la configuración de tu dispositivo.");
           setError("Permiso denegado");
+        } else {
+          // "unavailable": el dispositivo no tiene Google Play Services (p. ej.
+          // Huawei sin GMS). No es un error del usuario ni de la app — se informa
+          // sin alarmar y el resto del onboarding sigue normal.
+          setPermissionStatus("denied");
+          toast.info("Las notificaciones push no están disponibles en este dispositivo.");
         }
         return;
       }
