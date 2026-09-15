@@ -35,6 +35,7 @@ import {
   assertProspectoFinancialScenarioIsDocumented,
   resolveProspectoTechnicalCondition,
 } from "../../shared/prospecto-financial-scenario";
+import { buildProspectoGridUpgradeNote } from "./prospecto-grid-upgrade-note";
 
 // ============================================================================
 // ROLE GUARDS
@@ -1962,11 +1963,15 @@ Responde en formato JSON con la siguiente estructura:`;
 	        transformerCapacityKva: submission.transformerCapacityKva ? Number(submission.transformerCapacityKva) : null,
 	        electricalViability: submission.electricalViability,
 	      });
+	      const technicalConditionNote = buildProspectoGridUpgradeNote(
+	        submission.technicalNotes,
+	        input.technicalConditionNote,
+	      );
 	      try {
 	        assertProspectoFinancialScenarioIsDocumented({
 	          technicalCondition,
 	          capexIncludesGridUpgrade: input.capexIncludesGridUpgrade,
-	          technicalConditionNote: input.technicalConditionNote,
+	          technicalConditionNote,
 	        });
 	      } catch (error) {
 	        throw new TRPCError({ code: "PRECONDITION_FAILED", message: error instanceof Error ? error.message : "La condición técnica debe documentarse" });
@@ -2011,7 +2016,7 @@ Responde en formato JSON con la siguiente estructura:`;
 	        fixedMonthlyExpensesCop: input.fixedMonthlyExpensesCop,
 	        technicalCondition,
 	        capexIncludesGridUpgrade: input.capexIncludesGridUpgrade,
-	        technicalConditionNote: input.technicalConditionNote,
+	        technicalConditionNote,
         photos: photos.map(p => ({ url: p.photoUrl, caption: p.caption })),
         generatedAt: new Date(),
       });

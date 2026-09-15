@@ -654,26 +654,33 @@ function addProyeccionFinanciera(
   setColor(doc, C.gray700, "text");
   doc.setFontSize(7.2); doc.setFont("helvetica", "normal");
   const operatingCostLine = fixedMonthlyExpenses > 0
-    ? `Ingreso bruto − energía (${formatCOP(energyCostPerKwh)}/kWh) − gastos fijos (${formatCompactCOP(fixedMonthlyExpenses)}/mes) = margen bruto`
-    : `Ingreso bruto − energía (${formatCOP(energyCostPerKwh)}/kWh) = margen bruto`;
+    ? `Ingreso bruto − energía (${formatCOP(energyCostPerKwh)}/kWh) − gastos fijos (${formatCompactCOP(fixedMonthlyExpenses)}/mes) = margen base de reparto`
+    : `Ingreso bruto − energía (${formatCOP(energyCostPerKwh)}/kWh) = margen base de reparto`;
   doc.text(`${operatingCostLine}  ·  Aliado: ${allyPct}% del margen bruto`, M + 4, barY + 14);
   doc.text(`Margen neto distribuible: Inversor ${investorNetPct}%  ·  EVGreen ${platformNetPct}%`, M + 4, barY + 20);
   y += 38;
 
   if (data.technicalCondition.requiresGridUpgrade) {
     setColor(doc, C.amber, "fill");
-    doc.roundedRect(M, y, CW, 20, 2.5, 2.5, "F");
+    const conditionCopy = [
+      data.technicalCondition.reason,
+      `CAPEX total declarado: ${data.capexIncludesGridUpgrade ? "incluye la ampliación" : "pendiente de confirmar"}.`,
+      data.technicalConditionNote || "",
+    ].filter(Boolean).join(" ");
+    const conditionLines = doc.splitTextToSize(conditionCopy, CW - 8);
+    const conditionH = Math.max(20, 11 + conditionLines.length * 3.8);
+    doc.roundedRect(M, y, CW, conditionH, 2.5, 2.5, "F");
     setColor(doc, C.navy, "text");
     doc.setFontSize(8.2); doc.setFont("helvetica", "bold");
     doc.text("CONDICIÓN TÉCNICA PREVIA: AMPLIACIÓN ELÉCTRICA", M + 4, y + 6);
     doc.setFontSize(7.3); doc.setFont("helvetica", "normal");
-    const conditionLines = doc.splitTextToSize(`${data.technicalCondition.reason} CAPEX total declarado: ${data.capexIncludesGridUpgrade ? "incluye la ampliación" : "pendiente de confirmar"}. ${data.technicalConditionNote || ""}`, CW - 8);
-    doc.text(conditionLines.slice(0, 2), M + 4, y + 11);
-    y += 25;
+    doc.text(conditionLines, M + 4, y + 11);
+    y += conditionH + 5;
   }
 
 	  if (powerKw > 0 && inv > 0) {
-    y = drawSectionTitle(doc, `ESCENARIOS DE OPERACIÓN — ${powerKw} kW INSTALADOS  ·  Tarifa: ${formatCOP(tarifaKwh)}/kWh`, M, y, CW);
+      const powerStatus = data.technicalCondition.requiresGridUpgrade ? "PROYECTADOS" : "INSTALADOS";
+	    y = drawSectionTitle(doc, `ESCENARIOS DE OPERACIÓN — ${powerKw} kW ${powerStatus}  ·  Tarifa: ${formatCOP(tarifaKwh)}/kWh`, M, y, CW);
 
 	    const { projection } = buildProspectoFinancialScenario({
 	      investmentCop: inv,
@@ -740,13 +747,13 @@ function addProyeccionFinanciera(
         { label: "Ingreso bruto", value: formatCompactCOP(s.waterfall.grossRevenue), highlight: false },
         { label: "Costo energía", value: `- ${formatCompactCOP(s.waterfall.energyCost)}`, highlight: false },
         ...(s.waterfall.fixedExpenses > 0 ? [{ label: "Gastos fijos", value: `- ${formatCompactCOP(s.waterfall.fixedExpenses)}`, highlight: false }] : []),
-        { label: "Margen bruto", value: formatCompactCOP(s.waterfall.grossMargin), highlight: false },
-        { label: `Aliado (${allyPct}%)`, value: `- ${formatCompactCOP(s.waterfall.hostPayout)}`, highlight: false },
+        { label: "Margen base", value: formatCompactCOP(s.waterfall.grossMargin), highlight: false },
+        { label: `Aliado (${allyPct}% base)`, value: `- ${formatCompactCOP(s.waterfall.hostPayout)}`, highlight: false },
         { label: "Margen neto", value: formatCompactCOP(s.waterfall.netDistributableMargin), highlight: false },
         { label: "Retorno inv./mes", value: formatCompactCOP(s.investorMonth), highlight: true },
         { label: "Retorno inv./año", value: formatCompactCOP(s.investorYear), highlight: true },
-        ...(inv > 0 ? [{ label: "ROI anual", value: `${s.roi.toFixed(1)}%`, highlight: false }] : []),
-        ...(inv > 0 && s.payback > 0 ? [{ label: "Recuperación", value: s.payback <= 12 ? `${s.payback.toFixed(1)} meses` : `${(s.payback / 12).toFixed(1)} años`, highlight: false }] : []),
+        ...(inv > 0 ? [{ label: "ROI anual simple*", value: `${s.roi.toFixed(1)}%`, highlight: false }] : []),
+        ...(inv > 0 && s.payback > 0 ? [{ label: "Recuperación simple*", value: s.payback <= 12 ? `${s.payback.toFixed(1)} meses` : `${(s.payback / 12).toFixed(1)} años`, highlight: false }] : []),
       ];
 
       items.forEach((item, j) => {
@@ -766,7 +773,7 @@ function addProyeccionFinanciera(
     // Nota metodológica
     setColor(doc, C.gray500, "text");
     doc.setFontSize(7.8); doc.setFont("helvetica", "italic");
-	    const nota = `Base: ${powerKw} kW de potencia proyectada × horas equivalentes/día × ${efficiencyPercent}% de eficiencia × 30 días. Tarifa: ${formatCOP(tarifaKwh)}/kWh; energía: ${formatCOP(energyCostPerKwh)}/kWh${fixedMonthlyExpenses > 0 ? `; gastos fijos: ${formatCOP(fixedMonthlyExpenses)}/mes` : "; gastos fijos: no incluidos"}. El retorno corresponde al ${investorNetPct}% del margen neto después de energía y aliado. ${data.technicalCondition.requiresGridUpgrade ? "Resultado condicionado a la ampliación eléctrica y al CAPEX total declarado." : "Cifras orientativas; no constituyen garantía de rentabilidad."}`;
+	    const nota = `Base: ${powerKw} kW de potencia proyectada × horas equivalentes/día × ${efficiencyPercent}% de eficiencia × 30 días. Tarifa: ${formatCOP(tarifaKwh)}/kWh; energía: ${formatCOP(energyCostPerKwh)}/kWh${fixedMonthlyExpenses > 0 ? `; gastos fijos: ${formatCOP(fixedMonthlyExpenses)}/mes` : "; gastos fijos: no incluidos"}. El retorno corresponde al ${investorNetPct}% del margen neto después de energía, gastos fijos y aliado. *ROI anual simple = retorno anual estimado ÷ inversión; recuperación simple = inversión ÷ retorno mensual estimado. No son TIR ni garantía de rentabilidad. Rubros no incorporados como gastos fijos, incluidos impuestos, seguros, fiducia, financiación y depreciación, deben validarse antes de invertir. ${data.technicalCondition.requiresGridUpgrade ? "Resultado condicionado a la ampliación eléctrica y al CAPEX total declarado." : "Cifras orientativas; no constituyen garantía de rentabilidad."}`;
     const notaLines = doc.splitTextToSize(nota, CW);
     doc.text(notaLines, M, y);
     y += notaLines.length * 4.5 + 6;

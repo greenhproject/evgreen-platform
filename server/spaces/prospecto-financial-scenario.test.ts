@@ -67,4 +67,26 @@ describe("escenario financiero de prospecto", () => {
     expect(pessimistic.investorMonthlyCashflow).toBe(15_227_856);
     expect(pessimistic.roiAnnualPercent).toBeCloseTo(107.49, 2);
   });
+
+  it("reconcilia las cifras publicadas de SPE-2026-0067 con el costo vigente y las métricas simples", () => {
+    const { projection } = buildProspectoFinancialScenario({
+      ...baseInput,
+      fixedMonthlyExpenses: 350_000,
+      transformerCapacityKva: 112,
+      electricalViability: "requires_upgrade",
+    });
+
+    const pessimistic = projection.scenarios.PESSIMISTIC;
+    const realistic = projection.scenarios.REALISTIC;
+    const optimistic = projection.scenarios.OPTIMISTIC;
+
+    expect(pessimistic.energyKwhPerMonth).toBe(26_496);
+    expect(pessimistic.investorMonthlyCashflow).toBe(15_637_356);
+    expect(pessimistic.roiAnnualPercent).toBe(110.38);
+    expect(pessimistic.paybackMonths).toBe(10.9);
+    expect(realistic.investorAnnualCashflow).toBe(282_795_408);
+    expect(realistic.roiAnnualPercent).toBe(166.35);
+    expect(optimistic.investorAnnualCashflow).toBe(425_516_112);
+    expect(optimistic.paybackMonths).toBe(4.8);
+  });
 });

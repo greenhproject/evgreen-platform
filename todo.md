@@ -4378,3 +4378,16 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Rediseñar la maquetación: PDF identifica “Potencia proyectada”, condición de ampliación, horas equivalentes y cifras en millones; amplía tipografía de escenarios, elimina signos tipográficos defectuosos, corrige recomendación técnica y evita la tarjeta comprimida. El modal de generación pasa a una o varias columnas responsive, scroll seguro y advertencia explícita.
 - [x] Añadir regresiones y validar sin tocar espacios/proyectos reales: casos de 240 kW vs 112 kVA, costo vigente $850/kWh, cascada con gastos fijos y dirección económica de los tres escenarios. TypeScript limpio, suite completa 200 archivos/2.206 pruebas y build exitoso; PDF de control revisado visualmente sin recortes.
 - [x] Publicación y comprobación productiva: checkpoint `bafebb2c`, push fast-forward no forzado a GitHub y Railway `Success - app.evgreen.lat`. El chunk productivo de Espacios contiene los controles de ampliación, CAPEX, gastos fijos, potencia proyectada y costo vigente; logs posteriores sin errores de Espacios, prospectos, PDF o escenarios. No se generó ni modificó ningún prospecto, espacio o proyecto real durante la comprobación.
+
+## Auditoría reforzada para inversionistas — SPE-2026-0067 (2026-09-14)
+- [x] Extraer y reconciliar línea a línea las cifras del PDF final recibido: potencia, horas, kWh, venta, energía, gastos, aliado, margen, distribución, ROI y payback.
+- [x] Recalcular independientemente los tres escenarios contra el waterfall canónico y los parámetros vigentes, con control de unidades y redondeos: el PDF presenta correctamente $15.637.356/$23.566.284/$35.459.676 de retorno mensual, ROI simple 110,38%/166,35%/250,30% y recuperación simple 10,9/7,2/4,8 meses antes del redondeo de presentación.
+- [x] Evaluar advertencias y límites: los 240 kW permanecen condicionados por ampliación, pues el transformador declarado es 112 kVA y la nota técnica fuente exige nuevo transformador de 300 kVA; la proyección no puede presentarse como capacidad disponible ni rentabilidad garantizada.
+- [ ] Emitir un dictamen explícito de aptitud, hallazgos críticos y condiciones obligatorias antes de compartir el documento con inversionistas.
+
+## Corrección de divulgación del prospecto final — SPE-2026-0067 (2026-09-14)
+- [x] Corregir el bloque de condición técnica: su altura ahora se adapta a todas las líneas, eliminando el corte que dejaba “Incluye implementación de” incompleto.
+- [x] Identificar ROI y recuperación como métricas simples/no descontadas, no como TIR ni rentabilidad garantizada, e incorporar límites materiales de impuestos, seguros, fiducia, financiación y depreciación cuando no estén incluidos en gastos fijos.
+- [x] Regenerar PDF de control con nota de ampliación extensa, métricas simples y transformador de 300 kVA; revisión visual confirmó texto completo, sin hoja adicional vacía ni desbordamientos.
+- [x] Incorporar automáticamente en el prospecto el transformador propuesto almacenado en `technicalNotes`, para que el alcance de ampliación no dependa de un texto manual incompleto. Pruebas cubren JSON estructurado y notas históricas libres.
+- [ ] Publicar la corrección de divulgación, validar Railway y confirmar el bundle productivo antes de emitir el dictamen final.
