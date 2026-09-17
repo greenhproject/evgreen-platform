@@ -33,8 +33,10 @@ import {
   testProviderConnection,
   getProviderCatalogs,
   retryElectronicInvoice,
+  getAdapter,
 } from "../billing/billing-service";
 import type { BillingProviderType } from "../billing/types";
+import crypto from "crypto";
 
 // Helper: default modules per plan
 function getDefaultModules(plan: string): string[] {
@@ -1544,6 +1546,16 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
           worldOfficePaymentMethodId: "",
           worldOfficeItemId: "",
           worldOfficeTaxId: "",
+          selectedProductId: "",
+          selectedProductName: "",
+          selectedProductCode: "",
+          selectedProductPrice: null,
+          selectedProductTaxes: null,
+          selectedProductUnit: "",
+          selectedProductTaxIncluded: null,
+          selectedProductSyncedAt: null,
+          webhookSecret: "",
+          webhookConfiguredAt: null,
           lastTestStatus: "none" as const,
           lastTestMessage: null,
           lastTestedAt: null,
@@ -1562,6 +1574,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         alegraToken: settings.alegraToken ? "****" + settings.alegraToken.slice(-4) : "",
         siigoAccessKey: settings.siigoAccessKey ? "****" + settings.siigoAccessKey.slice(-4) : "",
         worldOfficeToken: settings.worldOfficeToken ? "****" + settings.worldOfficeToken.slice(-4) : "",
+        webhookSecret: settings.webhookSecret ? "****" + settings.webhookSecret.slice(-4) : "",
       };
     }),
 
@@ -1601,6 +1614,14 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
           worldOfficePaymentMethodId: z.string().optional(),
           worldOfficeItemId: z.string().optional(),
           worldOfficeTaxId: z.string().optional(),
+          selectedProductId: z.string().optional(),
+          selectedProductName: z.string().optional(),
+          selectedProductCode: z.string().optional(),
+          selectedProductPrice: z.number().optional().nullable(),
+          selectedProductTaxes: z.string().optional().nullable(),
+          selectedProductUnit: z.string().optional().nullable(),
+          selectedProductTaxIncluded: z.boolean().optional().nullable(),
+          selectedProductSyncedAt: z.string().optional().nullable(),
         })
       )
       .mutation(async ({ ctx, input }: any) => {
@@ -1633,6 +1654,14 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
           worldOfficePaymentMethodId: input.worldOfficePaymentMethodId || null,
           worldOfficeItemId: input.worldOfficeItemId || null,
           worldOfficeTaxId: input.worldOfficeTaxId || null,
+          selectedProductId: input.selectedProductId || null,
+          selectedProductName: input.selectedProductName || null,
+          selectedProductCode: input.selectedProductCode || null,
+          selectedProductPrice: input.selectedProductPrice !== undefined && input.selectedProductPrice !== null ? String(input.selectedProductPrice) : null,
+          selectedProductTaxes: input.selectedProductTaxes || null,
+          selectedProductUnit: input.selectedProductUnit || null,
+          selectedProductTaxIncluded: input.selectedProductTaxIncluded === true ? 1 : input.selectedProductTaxIncluded === false ? 0 : null,
+          selectedProductSyncedAt: input.selectedProductSyncedAt || null,
           updatedBy: ctx.user.id,
         };
 
@@ -1645,6 +1674,13 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         }
         if (input.worldOfficeToken && !input.worldOfficeToken.startsWith("****")) {
           payload.worldOfficeToken = input.worldOfficeToken;
+        }
+
+        // Si aún no tiene secreto de webhook para este tenant, generarlo de forma determinista y segura
+        const existingSettings = await getTenantBillingSettings(orgId);
+        if (!existingSettings?.webhookSecret) {
+          payload.webhookSecret = crypto.randomBytes(24).toString("hex");
+          payload.webhookConfiguredAt = new Date().toISOString();
         }
 
         await upsertTenantBillingSettings(orgId, payload);
@@ -1706,6 +1742,71 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         }
         const provider = (input?.provider || settings.provider) as BillingProviderType;
         return getProviderCatalogs(provider, settings);
+      }),
+
+    searchMyBillingItems: tenantProcedure
+      .input(
+        z.object({
+          query: z.string().min(1),
+          provider: z.enum(["alegra", "siigo", "world_office"]).optional(),
+        })
+      )
+      .query(async ({ ctx, input }: any) => {
+        const orgId = ctx.tenant.organizationId;
+        const settings = await getTenantBillingSettings(orgId);
+        if (!settings) return [];
+        const provider = (input.provider || settings.provider) as BillingProviderType;
+        const adapter = getAdapter(provider);
+        if (!adapter.listItems) return [];
+        return adapter.listItems(settings, input.query);
+      }),
+
+    selectAndSyncMyBillingProduct: tenantProcedure
+      .input(
+        z.object({
+          productId: z.string().min(1),
+          provider: z.enum(["alegra", "siigo", "world_office"]).optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }: any) => {
+        const orgId = ctx.tenant.organizationId;
+        const settings = await getTenantBillingSettings(orgId);
+        if (!settings) throw new TRPCError({ code: "BAD_REQUEST", message: "Debe configurar credenciales primero" });
+        const provider = (input.provider || settings.provider) as BillingProviderType;
+        const adapter = getAdapter(provider);
+        let product = adapter.getItemById ? await adapter.getItemById(settings, input.productId) : null;
+        if (!product && adapter.listItems) {
+          const list = await adapter.listItems(settings, input.productId);
+          product = list.find((i) => i.id === input.productId || i.code === input.productId) || null;
+        }
+        if (!product) {
+          throw new TRPCError({ code: "NOT_FOUND", message: `Producto #${input.productId} no encontrado en ${provider}` });
+        }
+
+        const taxesPayload = product.taxPercentage !== undefined || product.taxName
+          ? JSON.stringify([{ id: product.taxId, name: product.taxName, percentage: product.taxPercentage }])
+          : null;
+
+        await upsertTenantBillingSettings(orgId, {
+          selectedProductId: product.id,
+          selectedProductName: product.name,
+          selectedProductCode: product.code || null,
+          selectedProductPrice: product.price !== undefined ? String(product.price) : null,
+          selectedProductTaxes: taxesPayload,
+          selectedProductUnit: product.unit || "unidad",
+          selectedProductTaxIncluded: product.taxIncluded ? 1 : 0,
+          selectedProductSyncedAt: new Date().toISOString(),
+          // Sincronizar también en la columna legacy según proveedor
+          alegraDefaultItemId: provider === "alegra" ? product.id : settings.alegraDefaultItemId,
+          siigoProductCode: provider === "siigo" ? (product.code || product.id) : settings.siigoProductCode,
+          worldOfficeItemId: provider === "world_office" ? product.id : settings.worldOfficeItemId,
+        });
+
+        return {
+          success: true,
+          product,
+          message: `Producto "${product.name}" sincronizado con éxito. EVGreen sólo enviará la cantidad de kWh.`,
+        };
       }),
 
     getMyElectronicInvoices: tenantProcedure

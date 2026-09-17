@@ -65,6 +65,12 @@ export interface CatalogItem {
   name: string;
   code?: string;
   price?: number;
+  taxId?: string;
+  taxName?: string;
+  taxPercentage?: number;
+  unit?: string;
+  taxIncluded?: boolean;
+  raw?: any;
 }
 
 export interface CatalogTax {
@@ -90,6 +96,7 @@ export interface BillingAdapter {
   testConnection(settings: Record<string, any>): Promise<ConnectionTestResult>;
   createInvoice(settings: Record<string, any>, input: CanonicalInvoiceInput): Promise<InvoiceResult>;
   listItems?(settings: Record<string, any>, search?: string): Promise<CatalogItem[]>;
+  getItemById?(settings: Record<string, any>, itemId: string): Promise<CatalogItem | null>;
   listTaxes?(settings: Record<string, any>): Promise<CatalogTax[]>;
   listPaymentMethods?(settings: Record<string, any>): Promise<CatalogPaymentMethod[]>;
   listDocumentTypes?(settings: Record<string, any>): Promise<CatalogDocumentType[]>;

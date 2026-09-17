@@ -94,10 +94,24 @@ export class WorldOfficeAdapter implements BillingAdapter {
         name: inv.nombre || inv.descripcion || "Item World Office",
         code: inv.codigo || undefined,
         price: inv.precio || inv.valorUnitario,
+        taxId: inv.idImpuesto ? String(inv.idImpuesto) : undefined,
+        taxPercentage: inv.tarifaImpuesto ? parseFloat(inv.tarifaImpuesto) : undefined,
+        unit: inv.unidadMedida || "Unidad",
+        raw: inv,
       }));
     } catch (e: any) {
       console.warn("[WorldOfficeAdapter] Error listing inventory items:", e.message);
       return [];
+    }
+  }
+
+  async getItemById(settings: Record<string, any>, itemId: string): Promise<CatalogItem | null> {
+    try {
+      const all = await this.listItems(settings);
+      return all.find((i) => i.id === itemId || i.code === itemId) || null;
+    } catch (e: any) {
+      console.warn(`[WorldOfficeAdapter] Error fetching inventory item ${itemId}:`, e.message);
+      return null;
     }
   }
 
@@ -187,32 +201,36 @@ export class WorldOfficeAdapter implements BillingAdapter {
       const customerId = await this.syncCustomer(settings, input);
 
       // 2. Construir renglones de venta
-      const renglones: any[] = [];
-      const itemId = settings.worldOfficeItemId || "1";
+      const itemId = settings.selectedProductId || settings.worldOfficeItemId || "1";
+      let itemPrice = input.appliedPricePerKwh;
+      let itemTaxId = settings.worldOfficeTaxId;
+      let itemName = settings.selectedProductName || "Servicio de recarga de energía";
 
-      if (input.energyDelivered > 0 || input.energyCost > 0) {
-        renglones.push({
-          idInventario: itemId,
-          cantidad: parseFloat(input.energyDelivered.toFixed(2)),
-          valorUnitario: input.appliedPricePerKwh,
-          concepto: `Recarga de energía EVGreen - ${input.stationName} (${input.energyDelivered.toFixed(2)} kWh)`,
-          idImpuesto: settings.worldOfficeTaxId || undefined,
-        });
+      if (itemId) {
+        try {
+          const liveItem = await this.getItemById(settings, String(itemId));
+          if (liveItem) {
+            if (liveItem.name) itemName = liveItem.name;
+            if (liveItem.price !== undefined && liveItem.price > 0) itemPrice = liveItem.price;
+            if (liveItem.taxId) itemTaxId = liveItem.taxId;
+          }
+        } catch (woErr: any) {
+          console.warn("[WorldOfficeAdapter] Error consultando item:", woErr.message);
+        }
       }
 
-      if (input.sessionCost > 0) {
-        renglones.push({
-          idInventario: itemId,
-          cantidad: 1,
-          valorUnitario: input.sessionCost,
-          concepto: `Tarifa de conexión en ${input.stationName}`,
-          idImpuesto: settings.worldOfficeTaxId || undefined,
-        });
+      const energyQuantity = parseFloat(input.energyDelivered.toFixed(2));
+      if (energyQuantity <= 0) {
+        return { success: false, error: "La cantidad de energía (kWh) debe ser mayor a cero" };
       }
 
-      if (renglones.length === 0) {
-        return { success: false, error: "No hay conceptos facturables en la transacción" };
-      }
+      const renglones = [{
+        idInventario: itemId,
+        cantidad: energyQuantity,
+        valorUnitario: itemPrice,
+        concepto: `${itemName} - Estación: ${input.stationName}. Cantidad: ${energyQuantity} kWh`,
+        idImpuesto: itemTaxId || undefined,
+      }];
 
       const todayStr = new Date().toISOString().split("T")[0];
 

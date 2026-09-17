@@ -2791,6 +2791,21 @@ export const tenantBillingSettings = mysqlTable("tenant_billing_settings", {
 	worldOfficeItemId: varchar("world_office_item_id", { length: 50 }),
 	worldOfficeTaxId: varchar("world_office_tax_id", { length: 50 }),
 
+	// Producto/servicio único que EVGreen factura por cantidad de kWh.
+	// El precio e impuestos se sincronizan desde el catálogo del proveedor.
+	selectedProductId: varchar("selected_product_id", { length: 150 }),
+	selectedProductName: varchar("selected_product_name", { length: 255 }),
+	selectedProductCode: varchar("selected_product_code", { length: 150 }),
+	selectedProductPrice: decimal("selected_product_price", { precision: 14, scale: 6 }),
+	selectedProductTaxes: text("selected_product_taxes"),
+	selectedProductUnit: varchar("selected_product_unit", { length: 80 }),
+	selectedProductTaxIncluded: tinyint("selected_product_tax_included"),
+	selectedProductSyncedAt: timestamp("selected_product_synced_at", { mode: 'string' }),
+
+	// El proveedor recibe este secreto como header al enviar confirmaciones.
+	webhookSecret: text("webhook_secret"),
+	webhookConfiguredAt: timestamp("webhook_configured_at", { mode: 'string' }),
+
 	// Auditoría y estado operativo
 	lastTestStatus: mysqlEnum("billing_last_test_status", ['none', 'success', 'error']).default('none').notNull(),
 	lastTestMessage: text("last_test_message"),

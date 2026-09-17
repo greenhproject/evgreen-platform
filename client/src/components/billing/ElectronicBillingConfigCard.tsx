@@ -2,6 +2,13 @@
  * Componente de Configuración de Facturación Electrónica Multi-Proveedor
  * Compatible con Alegra, Siigo Nube y World Office Cloud
  * Modos: 'tenant' (portal de organización SaaS) o 'admin' (plataforma global)
+ * 
+ * Flujo optimizado:
+ * - El usuario escribe el nombre o código del producto ("Servicio de recarga de energía", etc.)
+ * - El sistema API busca en vivo el ítem en el proveedor y lo deja seleccionado
+ * - Precarga automáticamente precio unitario e IVA desde el catálogo del proveedor
+ * - Al terminar una carga, EVGreen sólo envía la cantidad de kWh vendidos
+ * - Incluye webhook para confirmación asíncrona de timbrado DIAN
  */
 
 import { useState, useEffect } from "react";
@@ -20,13 +27,12 @@ import {
   AlertCircle,
   RefreshCw,
   Zap,
-  Building,
   KeyRound,
-  Mail,
-  ShieldCheck,
-  Send,
-  Database,
   ExternalLink,
+  Search,
+  Sparkles,
+  Link,
+  Copy,
 } from "lucide-react";
 
 interface Props {
@@ -88,6 +94,21 @@ export default function ElectronicBillingConfigCard({ mode = "tenant" }: Props) 
     onError: (err: any) => toast.error(`Error en la prueba: ${err.message}`),
   });
 
+  const syncProductMutation = (trpc.organizations as any).selectAndSyncMyBillingProduct.useMutation({
+    onSuccess: (data: any) => {
+      toast.success(data.message || "Producto sincronizado correctamente");
+      setSelectedProductId(data.product.id);
+      setSelectedProductName(data.product.name);
+      setSelectedProductCode(data.product.code || "");
+      setSelectedProductPrice(data.product.price || 0);
+      setSelectedProductTaxes(data.product.taxName ? `${data.product.taxName} (${data.product.taxPercentage || 0}%)` : "Sin impuesto");
+      setSelectedProductUnit(data.product.unit || "unidad");
+      setSearchResults([]);
+      (utils.organizations as any).getMyElectronicBillingConfig.invalidate();
+    },
+    onError: (err: any) => toast.error(`Error sincronizando producto: ${err.message}`),
+  });
+
   // Estado del formulario
   const [provider, setProvider] = useState<"alegra" | "siigo" | "world_office">("alegra");
   const [enabled, setEnabled] = useState(false);
@@ -96,17 +117,29 @@ export default function ElectronicBillingConfigCard({ mode = "tenant" }: Props) 
   const [autoSendEmail, setAutoSendEmail] = useState(true);
   const [resolutionNumber, setResolutionNumber] = useState("");
 
-  // Alegra
+  // Búsqueda interactiva de producto
+  const [productSearchQuery, setProductSearchQuery] = useState("");
+  const [isSearchingProduct, setIsSearchingProduct] = useState(false);
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+
+  // Snapshot del producto sincronizado
+  const [selectedProductId, setSelectedProductId] = useState("");
+  const [selectedProductName, setSelectedProductName] = useState("");
+  const [selectedProductCode, setSelectedProductCode] = useState("");
+  const [selectedProductPrice, setSelectedProductPrice] = useState<number | null>(null);
+  const [selectedProductTaxes, setSelectedProductTaxes] = useState<string | null>(null);
+  const [selectedProductUnit, setSelectedProductUnit] = useState("");
+
+  // Credenciales Alegra
   const [alegraEmail, setAlegraEmail] = useState("");
   const [alegraToken, setAlegraToken] = useState("");
   const [alegraTokenSaved, setAlegraTokenSaved] = useState(false);
-  const [alegraDefaultItemId, setAlegraDefaultItemId] = useState("");
   const [alegraDefaultTaxId, setAlegraDefaultTaxId] = useState("");
   const [alegraPaymentMethodId, setAlegraPaymentMethodId] = useState("");
   const [alegraPaymentAccountId, setAlegraPaymentAccountId] = useState("");
   const [alegraUseElectronicStamp, setAlegraUseElectronicStamp] = useState(true);
 
-  // Siigo
+  // Credenciales Siigo
   const [siigoUsername, setSiigoUsername] = useState("");
   const [siigoAccessKey, setSiigoAccessKey] = useState("");
   const [siigoAccessKeySaved, setSiigoAccessKeySaved] = useState(false);
@@ -114,27 +147,19 @@ export default function ElectronicBillingConfigCard({ mode = "tenant" }: Props) 
   const [siigoDocumentId, setSiigoDocumentId] = useState("");
   const [siigoSellerId, setSiigoSellerId] = useState("");
   const [siigoPaymentTypeId, setSiigoPaymentTypeId] = useState("");
-  const [siigoProductCode, setSiigoProductCode] = useState("EV-KWH-01");
-  const [siigoTaxId, setSiigoTaxId] = useState("");
   const [siigoStamp, setSiigoStamp] = useState(true);
   const [siigoMail, setSiigoMail] = useState(true);
 
-  // World Office
+  // Credenciales World Office
   const [worldOfficeToken, setWorldOfficeToken] = useState("");
   const [worldOfficeTokenSaved, setWorldOfficeTokenSaved] = useState(false);
   const [worldOfficeCompanyId, setWorldOfficeCompanyId] = useState("1");
   const [worldOfficeDocumentTypeId, setWorldOfficeDocumentTypeId] = useState("1");
   const [worldOfficePrefixId, setWorldOfficePrefixId] = useState("");
   const [worldOfficePaymentMethodId, setWorldOfficePaymentMethodId] = useState("1");
-  const [worldOfficeItemId, setWorldOfficeItemId] = useState("1");
-  const [worldOfficeTaxId, setWorldOfficeTaxId] = useState("");
 
-  // Catálogos cargados
-  const [catalogItems, setCatalogItems] = useState<any[]>([]);
-  const [catalogTaxes, setCatalogTaxes] = useState<any[]>([]);
-  const [catalogPaymentMethods, setCatalogPaymentMethods] = useState<any[]>([]);
-  const [catalogDocTypes, setCatalogDocTypes] = useState<any[]>([]);
-  const [loadingCatalogs, setLoadingCatalogs] = useState(false);
+  // Webhook
+  const webhookUrl = typeof window !== "undefined" ? `${window.location.origin}/api/billing/webhook` : "/api/billing/webhook";
 
   // Sincronizar estado inicial desde DB
   useEffect(() => {
@@ -146,11 +171,18 @@ export default function ElectronicBillingConfigCard({ mode = "tenant" }: Props) 
       setAutoSendEmail(config.autoSendEmail !== false);
       setResolutionNumber(config.resolutionNumber || "");
 
+      // Snapshot producto
+      setSelectedProductId(config.selectedProductId || config.alegraDefaultItemId || config.worldOfficeItemId || "");
+      setSelectedProductName(config.selectedProductName || (config.selectedProductId ? "Producto configurado" : ""));
+      setSelectedProductCode(config.selectedProductCode || config.siigoProductCode || "");
+      setSelectedProductPrice(config.selectedProductPrice ? parseFloat(config.selectedProductPrice) : null);
+      setSelectedProductTaxes(config.selectedProductTaxes || null);
+      setSelectedProductUnit(config.selectedProductUnit || "unidad");
+
       // Alegra
       setAlegraEmail(config.alegraEmail || "");
       setAlegraTokenSaved(!!config.alegraToken);
       setAlegraToken(config.alegraToken || "");
-      setAlegraDefaultItemId(config.alegraDefaultItemId || "");
       setAlegraDefaultTaxId(config.alegraDefaultTaxId || "");
       setAlegraPaymentMethodId(config.alegraPaymentMethodId || "");
       setAlegraPaymentAccountId(config.alegraPaymentAccountId || "");
@@ -164,8 +196,6 @@ export default function ElectronicBillingConfigCard({ mode = "tenant" }: Props) 
       setSiigoDocumentId(config.siigoDocumentId || "");
       setSiigoSellerId(config.siigoSellerId || "");
       setSiigoPaymentTypeId(config.siigoPaymentTypeId || "");
-      setSiigoProductCode(config.siigoProductCode || "EV-KWH-01");
-      setSiigoTaxId(config.siigoTaxId || "");
       setSiigoStamp(config.siigoStamp !== false);
       setSiigoMail(config.siigoMail !== false);
 
@@ -176,32 +206,55 @@ export default function ElectronicBillingConfigCard({ mode = "tenant" }: Props) 
       setWorldOfficeDocumentTypeId(config.worldOfficeDocumentTypeId || "1");
       setWorldOfficePrefixId(config.worldOfficePrefixId || "");
       setWorldOfficePaymentMethodId(config.worldOfficePaymentMethodId || "1");
-      setWorldOfficeItemId(config.worldOfficeItemId || "1");
-      setWorldOfficeTaxId(config.worldOfficeTaxId || "");
     }
   }, [config]);
 
-  // Cargar catálogos dinámicamente según el proveedor activo
-  const handleLoadCatalogs = async () => {
-    setLoadingCatalogs(true);
+  // Buscar en vivo el producto en la API del proveedor
+  const handleSearchProduct = async () => {
+    if (!productSearchQuery.trim()) {
+      toast.info("Escribe el nombre o código del producto a buscar (ej: Servicio de recarga)");
+      return;
+    }
+    setIsSearchingProduct(true);
     try {
-      let data: any;
+      let items: any[] = [];
       if (mode === "tenant") {
-        data = await (utils.organizations as any).listMyBillingCatalogs.fetch({ provider });
+        items = await (utils.organizations as any).searchMyBillingItems.fetch({
+          query: productSearchQuery.trim(),
+          provider,
+        });
       } else {
-        data = await (utils.settings as any).billingListPlatformCatalogs.fetch({ provider });
+        const cat = await (utils.settings as any).billingListPlatformCatalogs.fetch({ provider });
+        items = (cat?.items || []).filter((i: any) =>
+          i.name?.toLowerCase().includes(productSearchQuery.toLowerCase()) ||
+          i.code?.toLowerCase().includes(productSearchQuery.toLowerCase())
+        );
       }
-      if (data) {
-        setCatalogItems(data.items || []);
-        setCatalogTaxes(data.taxes || []);
-        setCatalogPaymentMethods(data.paymentMethods || []);
-        setCatalogDocTypes(data.documentTypes || []);
-        toast.success(`Catálogos de ${provider.toUpperCase()} actualizados (${data.items?.length || 0} ítems)`);
+      setSearchResults(items || []);
+      if (!items || items.length === 0) {
+        toast.info(`No se encontraron productos coincidentes en ${provider.toUpperCase()}`);
+      } else {
+        toast.success(`Se encontraron ${items.length} producto(s) en ${provider.toUpperCase()}`);
       }
     } catch (e: any) {
-      toast.error(`No se pudieron cargar los catálogos: ${e.message}`);
+      toast.error(`Error buscando productos: ${e.message}`);
     } finally {
-      setLoadingCatalogs(false);
+      setIsSearchingProduct(false);
+    }
+  };
+
+  const handleSelectProduct = (item: any) => {
+    if (mode === "tenant") {
+      syncProductMutation.mutate({ productId: item.id, provider });
+    } else {
+      setSelectedProductId(item.id);
+      setSelectedProductName(item.name);
+      setSelectedProductCode(item.code || "");
+      setSelectedProductPrice(item.price || 0);
+      setSelectedProductTaxes(item.taxName ? `${item.taxName} (${item.taxPercentage || 0}%)` : "Predeterminado");
+      setSelectedProductUnit(item.unit || "unidad");
+      setSearchResults([]);
+      toast.success(`Producto "${item.name}" seleccionado para facturación global.`);
     }
   };
 
@@ -234,9 +287,15 @@ export default function ElectronicBillingConfigCard({ mode = "tenant" }: Props) 
       autoInvoice,
       autoSendEmail,
       resolutionNumber: resolutionNumber || undefined,
+      selectedProductId: selectedProductId || undefined,
+      selectedProductName: selectedProductName || undefined,
+      selectedProductCode: selectedProductCode || undefined,
+      selectedProductPrice: selectedProductPrice !== null ? selectedProductPrice : undefined,
+      selectedProductTaxes: selectedProductTaxes || undefined,
+      selectedProductUnit: selectedProductUnit || undefined,
       alegraEmail: alegraEmail || undefined,
       alegraToken: alegraToken || undefined,
-      alegraDefaultItemId: alegraDefaultItemId || undefined,
+      alegraDefaultItemId: selectedProductId || undefined,
       alegraDefaultTaxId: alegraDefaultTaxId || undefined,
       alegraPaymentMethodId: alegraPaymentMethodId || undefined,
       alegraPaymentAccountId: alegraPaymentAccountId || undefined,
@@ -247,8 +306,7 @@ export default function ElectronicBillingConfigCard({ mode = "tenant" }: Props) 
       siigoDocumentId: siigoDocumentId || undefined,
       siigoSellerId: siigoSellerId || undefined,
       siigoPaymentTypeId: siigoPaymentTypeId || undefined,
-      siigoProductCode: siigoProductCode || undefined,
-      siigoTaxId: siigoTaxId || undefined,
+      siigoProductCode: selectedProductCode || "EV-KWH-01",
       siigoStamp: siigoStamp,
       siigoMail: siigoMail,
       worldOfficeToken: worldOfficeToken || undefined,
@@ -256,8 +314,7 @@ export default function ElectronicBillingConfigCard({ mode = "tenant" }: Props) 
       worldOfficeDocumentTypeId: worldOfficeDocumentTypeId || undefined,
       worldOfficePrefixId: worldOfficePrefixId || undefined,
       worldOfficePaymentMethodId: worldOfficePaymentMethodId || undefined,
-      worldOfficeItemId: worldOfficeItemId || undefined,
-      worldOfficeTaxId: worldOfficeTaxId || undefined,
+      worldOfficeItemId: selectedProductId || undefined,
     };
 
     if (mode === "tenant") {
@@ -295,7 +352,7 @@ export default function ElectronicBillingConfigCard({ mode = "tenant" }: Props) 
                 Facturación Electrónica DIAN
               </CardTitle>
               <CardDescription>
-                Emite automáticamente la factura de venta en Colombia al culminar cada recarga según los kWh vendidos.
+                Conecta tu software contable. Solo buscas tu producto de energía una vez y la plataforma inyecta automáticamente los kWh vendidos.
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
@@ -319,9 +376,8 @@ export default function ElectronicBillingConfigCard({ mode = "tenant" }: Props) 
         <CardContent className="space-y-6">
           {/* Selector visual de Proveedor */}
           <div className="space-y-3">
-            <Label className="text-sm font-semibold">Selecciona tu Proveedor de Facturación Electrónica</Label>
+            <Label className="text-sm font-semibold">1. Selecciona tu Proveedor de Facturación Electrónica</Label>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {/* Opción 1: Alegra */}
               <div
                 onClick={() => setProvider("alegra")}
                 className={`cursor-pointer rounded-xl border p-4 transition-all duration-200 ${
@@ -335,11 +391,10 @@ export default function ElectronicBillingConfigCard({ mode = "tenant" }: Props) 
                   {provider === "alegra" && <CheckCircle2 className="h-4 w-4 text-green-500" />}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Líder cloud en Colombia. Facturas directas, timbrado DIAN y catálogo de productos.
+                  Líder en Colombia. Facturas directas, timbrado DIAN y webhook de emisión en tiempo real.
                 </p>
               </div>
 
-              {/* Opción 2: Siigo Nube */}
               <div
                 onClick={() => setProvider("siigo")}
                 className={`cursor-pointer rounded-xl border p-4 transition-all duration-200 ${
@@ -357,7 +412,6 @@ export default function ElectronicBillingConfigCard({ mode = "tenant" }: Props) 
                 </p>
               </div>
 
-              {/* Opción 3: World Office Cloud */}
               <div
                 onClick={() => setProvider("world_office")}
                 className={`cursor-pointer rounded-xl border p-4 transition-all duration-200 ${
@@ -377,20 +431,211 @@ export default function ElectronicBillingConfigCard({ mode = "tenant" }: Props) 
             </div>
           </div>
 
-          {/* Opciones Generales de Automatización */}
+          {/* Credenciales del Proveedor */}
+          <div className="space-y-4">
+            <Label className="text-sm font-semibold">2. Credenciales de Acceso API</Label>
+
+            {provider === "alegra" && (
+              <div className="space-y-3 p-4 rounded-xl border border-green-500/20 bg-green-500/5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-green-400 flex items-center gap-1.5">
+                    <KeyRound className="h-3.5 w-3.5" /> Autenticación básica Alegra API
+                  </span>
+                  <a
+                    href="https://app.alegra.com/configuration/api"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-green-500 hover:underline flex items-center gap-1"
+                  >
+                    Obtener token de Alegra <ExternalLink className="h-3 w-3" />
+                  </a>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs">Correo de Usuario en Alegra *</Label>
+                    <Input
+                      placeholder="correo@empresa.com"
+                      value={alegraEmail}
+                      onChange={(e) => setAlegraEmail(e.target.value)}
+                      className="h-9"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Token de API de Alegra *</Label>
+                    <Input
+                      type="password"
+                      placeholder={alegraTokenSaved ? "•••••••• (Guardado)" : "Token de API"}
+                      value={alegraToken}
+                      onChange={(e) => setAlegraToken(e.target.value)}
+                      className="h-9"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {provider === "siigo" && (
+              <div className="space-y-3 p-4 rounded-xl border border-blue-500/20 bg-blue-500/5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs">Usuario de API Siigo (Email) *</Label>
+                    <Input
+                      placeholder="usuario@empresa.com"
+                      value={siigoUsername}
+                      onChange={(e) => setSiigoUsername(e.target.value)}
+                      className="h-9"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Access Key (API Key) *</Label>
+                    <Input
+                      type="password"
+                      placeholder={siigoAccessKeySaved ? "•••••••• (Guardado)" : "Clave de acceso API"}
+                      value={siigoAccessKey}
+                      onChange={(e) => setSiigoAccessKey(e.target.value)}
+                      className="h-9"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {provider === "world_office" && (
+              <div className="space-y-3 p-4 rounded-xl border border-amber-500/20 bg-amber-500/5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs">Token de API World Office *</Label>
+                    <Input
+                      type="password"
+                      placeholder={worldOfficeTokenSaved ? "•••••••• (Guardado)" : "Token de acceso"}
+                      value={worldOfficeToken}
+                      onChange={(e) => setWorldOfficeToken(e.target.value)}
+                      className="h-9"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">ID de Empresa (idEmpresa) *</Label>
+                    <Input
+                      placeholder="1"
+                      value={worldOfficeCompanyId}
+                      onChange={(e) => setWorldOfficeCompanyId(e.target.value)}
+                      className="h-9"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* SECCIÓN CLAVE: Buscar y Seleccionar Producto del Proveedor */}
+          <div className="space-y-3 p-4 rounded-xl border border-border/60 bg-muted/20">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="text-sm font-semibold flex items-center gap-1.5">
+                  <Sparkles className="h-4 w-4 text-green-500" />
+                  3. Producto o Servicio de Energía en {provider.toUpperCase()}
+                </Label>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Escribe el nombre del ítem creado en tu software contable (ej: "Servicio de recarga de energia") para buscarlo y seleccionarlo.
+                </p>
+              </div>
+            </div>
+
+            {/* Buscador interactivo */}
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar producto... ej: Servicio de recarga de energia"
+                  value={productSearchQuery}
+                  onChange={(e) => setProductSearchQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSearchProduct()}
+                  className="pl-9 h-9"
+                />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleSearchProduct}
+                disabled={isSearchingProduct}
+                className="gap-1.5 h-9"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${isSearchingProduct ? "animate-spin text-green-500" : ""}`} />
+                {isSearchingProduct ? "Buscando..." : "Buscar en API"}
+              </Button>
+            </div>
+
+            {/* Resultados de la búsqueda */}
+            {searchResults.length > 0 && (
+              <div className="rounded-lg border border-border/50 bg-background p-2 space-y-1.5 max-h-56 overflow-y-auto">
+                <span className="text-[11px] font-medium text-muted-foreground px-2">Selecciona un producto del catálogo:</span>
+                {searchResults.map((item) => (
+                  <div
+                    key={item.id}
+                    onClick={() => handleSelectProduct(item)}
+                    className="flex items-center justify-between p-2 rounded-md hover:bg-muted/40 cursor-pointer text-xs border border-transparent hover:border-border/40 transition-colors"
+                  >
+                    <div>
+                      <span className="font-semibold text-foreground">{item.name}</span>
+                      {item.code && <span className="text-muted-foreground ml-2">({item.code})</span>}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono text-green-500 font-medium">
+                        ${(item.price || 0).toLocaleString("es-CO")}/{item.unit || "kWh"}
+                      </span>
+                      {item.taxName && <Badge variant="outline" className="text-[10px]">{item.taxName}</Badge>}
+                      <Button size="sm" variant="secondary" className="h-6 text-[11px] px-2">
+                        Seleccionar
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Tarjeta del Producto Actualmente Seleccionado y Sincronizado */}
+            {selectedProductId ? (
+              <div className="p-3 rounded-lg border border-green-500/30 bg-green-500/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-green-500" />
+                    <span className="font-semibold text-xs text-foreground">
+                      {selectedProductName || "Servicio de recarga de energía"}
+                    </span>
+                    <Badge variant="outline" className="text-[10px] text-green-400 border-green-500/30">
+                      ID: #{selectedProductId}
+                    </Badge>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    Tarifa base: ${selectedProductPrice?.toLocaleString("es-CO") || "1"} COP / {selectedProductUnit || "kWh"} · Impuesto: {selectedProductTaxes || "Configurado en proveedor"}
+                  </p>
+                </div>
+                <div className="text-[11px] text-green-400 font-medium bg-green-500/20 px-2.5 py-1 rounded-md self-start sm:self-auto">
+                  EVGreen solo enviará cantidad = kWh
+                </div>
+              </div>
+            ) : (
+              <div className="p-3 rounded-lg border border-dashed border-border/60 text-center text-xs text-muted-foreground">
+                Ningún producto seleccionado aún. Realiza una búsqueda arriba para enlazar tu ítem de energía.
+              </div>
+            )}
+          </div>
+
+          {/* Opciones de Automatización e Integración */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded-xl bg-muted/20 border border-border/40">
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
-                <Label className="text-sm font-medium">Habilitar Facturación Electrónica</Label>
-                <p className="text-xs text-muted-foreground">Activa el motor de facturación para este tenant</p>
+                <Label className="text-sm font-medium">Habilitar Facturación</Label>
+                <p className="text-xs text-muted-foreground">Activa el servicio para este tenant</p>
               </div>
               <Switch checked={enabled} onCheckedChange={setEnabled} />
             </div>
 
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
-                <Label className="text-sm font-medium">Facturación Automática al Finalizar Carga</Label>
-                <p className="text-xs text-muted-foreground">Emite la factura sin intervención manual al parar el conector</p>
+                <Label className="text-sm font-medium">Emisión Automática al Finalizar Carga</Label>
+                <p className="text-xs text-muted-foreground">Genera y timbra la factura en el conector</p>
               </div>
               <Switch checked={autoInvoice} onCheckedChange={setAutoInvoice} />
             </div>
@@ -398,7 +643,7 @@ export default function ElectronicBillingConfigCard({ mode = "tenant" }: Props) 
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label className="text-sm font-medium">Enviar Factura por Correo</Label>
-                <p className="text-xs text-muted-foreground">Envía el PDF y comprobante DIAN al cliente automáticamente</p>
+                <p className="text-xs text-muted-foreground">Envía el PDF y comprobante al cliente</p>
               </div>
               <Switch checked={autoSendEmail} onCheckedChange={setAutoSendEmail} />
             </div>
@@ -417,321 +662,34 @@ export default function ElectronicBillingConfigCard({ mode = "tenant" }: Props) 
             </div>
           </div>
 
-          {/* Campos Específicos de ALEGRA */}
-          {provider === "alegra" && (
-            <div className="space-y-4 p-4 rounded-xl border border-green-500/20 bg-green-500/5">
-              <div className="flex items-center justify-between">
-                <h3 className="font-semibold text-sm flex items-center gap-2">
-                  <KeyRound className="h-4 w-4 text-green-500" />
-                  Credenciales y Parámetros de Alegra
-                </h3>
-                <a
-                  href="https://app.alegra.com/configuration/api"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-green-500 hover:underline flex items-center gap-1"
-                >
-                  Obtener token de Alegra <ExternalLink className="h-3 w-3" />
-                </a>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <Label className="text-xs">Correo de Usuario en Alegra *</Label>
-                  <Input
-                    placeholder="micorreo@empresa.com"
-                    value={alegraEmail}
-                    onChange={(e) => setAlegraEmail(e.target.value)}
-                    className="h-9"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs">Token de API de Alegra *</Label>
-                  <Input
-                    type="password"
-                    placeholder={alegraTokenSaved ? "•••••••• (Guardado)" : "Token de API"}
-                    value={alegraToken}
-                    onChange={(e) => setAlegraToken(e.target.value)}
-                    className="h-9"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-border/30">
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs">Producto / Servicio de Energía</Label>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={handleLoadCatalogs}
-                      disabled={loadingCatalogs || !alegraEmail}
-                      className="h-6 text-xs text-green-500 px-2"
-                    >
-                      <RefreshCw className={`h-3 w-3 mr-1 ${loadingCatalogs ? "animate-spin" : ""}`} />
-                      Cargar de Alegra
-                    </Button>
-                  </div>
-                  {catalogItems.length > 0 ? (
-                    <Select value={alegraDefaultItemId} onValueChange={setAlegraDefaultItemId}>
-                      <SelectTrigger className="h-9">
-                        <SelectValue placeholder="Selecciona el producto..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {catalogItems.map((item) => (
-                          <SelectItem key={item.id} value={item.id}>
-                            {item.name} {item.code ? `(${item.code})` : ""} - ${item.price?.toLocaleString("es-CO") || 0}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <Input
-                      placeholder="ID del ítem en Alegra (ej: 1)"
-                      value={alegraDefaultItemId}
-                      onChange={(e) => setAlegraDefaultItemId(e.target.value)}
-                      className="h-9"
-                    />
-                  )}
-                  <p className="text-[11px] text-muted-foreground">
-                    Corresponde a "Servicio de recarga de energía" en tu cuenta de Alegra.
-                  </p>
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs">Impuesto Asociado (IVA)</Label>
-                  {catalogTaxes.length > 0 ? (
-                    <Select value={alegraDefaultTaxId} onValueChange={setAlegraDefaultTaxId}>
-                      <SelectTrigger className="h-9">
-                        <SelectValue placeholder="Selecciona el impuesto..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Ninguno (0%)</SelectItem>
-                        {catalogTaxes.map((tax) => (
-                          <SelectItem key={tax.id} value={tax.id}>
-                            {tax.name} ({tax.percentage}%)
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <Input
-                      placeholder="ID de impuesto (ej: Ninguno)"
-                      value={alegraDefaultTaxId}
-                      onChange={(e) => setAlegraDefaultTaxId(e.target.value)}
-                      className="h-9"
-                    />
-                  )}
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs">Método de Pago Predeterminado</Label>
-                  {catalogPaymentMethods.length > 0 ? (
-                    <Select value={alegraPaymentMethodId} onValueChange={setAlegraPaymentMethodId}>
-                      <SelectTrigger className="h-9">
-                        <SelectValue placeholder="Selecciona método de pago..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {catalogPaymentMethods.map((pm) => (
-                          <SelectItem key={pm.id} value={pm.id}>
-                            {pm.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <Input
-                      placeholder="Método de pago (ej: credit-card, cash)"
-                      value={alegraPaymentMethodId}
-                      onChange={(e) => setAlegraPaymentMethodId(e.target.value)}
-                      className="h-9"
-                    />
-                  )}
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs">ID de Plantilla de Numeración / Resolución</Label>
-                  <Input
-                    placeholder="ID plantilla resolución DIAN en Alegra"
-                    value={resolutionNumber}
-                    onChange={(e) => setResolutionNumber(e.target.value)}
-                    className="h-9"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between pt-2">
-                <div className="space-y-0.5">
-                  <Label className="text-xs font-medium">Timbrado Electrónico DIAN Automático</Label>
-                  <p className="text-[11px] text-muted-foreground">Genera el XML firmado y CUFE ante la DIAN al instante</p>
-                </div>
-                <Switch checked={alegraUseElectronicStamp} onCheckedChange={setAlegraUseElectronicStamp} />
-              </div>
+          {/* Webhook para Confirmación DIAN */}
+          <div className="p-4 rounded-xl border border-border/40 bg-muted/10 space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs font-semibold flex items-center gap-1.5">
+                <Link className="h-3.5 w-3.5 text-green-500" />
+                4. Webhook de Confirmación y Timbrado DIAN
+              </Label>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  navigator.clipboard.writeText(webhookUrl);
+                  toast.success("URL de webhook copiada al portapapeles");
+                }}
+                className="h-6 text-xs gap-1"
+              >
+                <Copy className="h-3 w-3" /> Copiar URL
+              </Button>
             </div>
-          )}
-
-          {/* Campos Específicos de SIIGO */}
-          {provider === "siigo" && (
-            <div className="space-y-4 p-4 rounded-xl border border-blue-500/20 bg-blue-500/5">
-              <div className="flex items-center justify-between">
-                <h3 className="font-semibold text-sm flex items-center gap-2">
-                  <KeyRound className="h-4 w-4 text-blue-500" />
-                  Credenciales y Parámetros de Siigo Nube
-                </h3>
-                <a
-                  href="https://siigonube.portaldeclientes.siigo.com/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-blue-500 hover:underline flex items-center gap-1"
-                >
-                  Portal Siigo <ExternalLink className="h-3 w-3" />
-                </a>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <Label className="text-xs">Usuario de API Siigo (Email) *</Label>
-                  <Input
-                    placeholder="usuario@empresa.com"
-                    value={siigoUsername}
-                    onChange={(e) => setSiigoUsername(e.target.value)}
-                    className="h-9"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs">Access Key (API Key) *</Label>
-                  <Input
-                    type="password"
-                    placeholder={siigoAccessKeySaved ? "•••••••• (Guardado)" : "Clave de acceso API de Siigo"}
-                    value={siigoAccessKey}
-                    onChange={(e) => setSiigoAccessKey(e.target.value)}
-                    className="h-9"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-border/30">
-                <div className="space-y-1">
-                  <Label className="text-xs">Partner-ID</Label>
-                  <Input
-                    value={siigoPartnerId}
-                    onChange={(e) => setSiigoPartnerId(e.target.value)}
-                    placeholder="EVGreenSaaS"
-                    className="h-9"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs">Código de Producto de Energía</Label>
-                  <Input
-                    value={siigoProductCode}
-                    onChange={(e) => setSiigoProductCode(e.target.value)}
-                    placeholder="EV-KWH-01"
-                    className="h-9"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs">ID de Tipo de Documento (Factura de Venta)</Label>
-                  <Input
-                    value={siigoDocumentId}
-                    onChange={(e) => setSiigoDocumentId(e.target.value)}
-                    placeholder="Ej: 24 (Factura de venta)"
-                    className="h-9"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs">ID de Vendedor / Asesor</Label>
-                  <Input
-                    value={siigoSellerId}
-                    onChange={(e) => setSiigoSellerId(e.target.value)}
-                    placeholder="ID del usuario asesor en Siigo"
-                    className="h-9"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between pt-2">
-                <div className="space-y-0.5">
-                  <Label className="text-xs font-medium">Timbrar ante la DIAN (Stamp: true)</Label>
-                  <p className="text-[11px] text-muted-foreground">Emite la factura electrónica certificada con CUFE</p>
-                </div>
-                <Switch checked={siigoStamp} onCheckedChange={setSiigoStamp} />
-              </div>
+            <p className="text-[11px] text-muted-foreground">
+              Configura esta URL en los webhooks de tu software contable (evento: <code>invoices.emissionFinished</code> en Alegra) para recibir la confirmación de timbrado, CUFE y XML en tiempo real:
+            </p>
+            <div className="p-2 rounded bg-background border font-mono text-xs text-foreground truncate select-all">
+              {webhookUrl}
             </div>
-          )}
+          </div>
 
-          {/* Campos Específicos de WORLD OFFICE */}
-          {provider === "world_office" && (
-            <div className="space-y-4 p-4 rounded-xl border border-amber-500/20 bg-amber-500/5">
-              <div className="flex items-center justify-between">
-                <h3 className="font-semibold text-sm flex items-center gap-2">
-                  <KeyRound className="h-4 w-4 text-amber-500" />
-                  Credenciales y Parámetros de World Office Cloud
-                </h3>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <Label className="text-xs">Token de API World Office *</Label>
-                  <Input
-                    type="password"
-                    placeholder={worldOfficeTokenSaved ? "•••••••• (Guardado)" : "Token de acceso World Office"}
-                    value={worldOfficeToken}
-                    onChange={(e) => setWorldOfficeToken(e.target.value)}
-                    className="h-9"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs">ID de Empresa (idEmpresa) *</Label>
-                  <Input
-                    placeholder="1"
-                    value={worldOfficeCompanyId}
-                    onChange={(e) => setWorldOfficeCompanyId(e.target.value)}
-                    className="h-9"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 border-t border-border/30">
-                <div className="space-y-1">
-                  <Label className="text-xs">Tipo de Documento</Label>
-                  <Input
-                    value={worldOfficeDocumentTypeId}
-                    onChange={(e) => setWorldOfficeDocumentTypeId(e.target.value)}
-                    placeholder="1 (Factura)"
-                    className="h-9"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs">Prefijo de Factura</Label>
-                  <Input
-                    value={worldOfficePrefixId}
-                    onChange={(e) => setWorldOfficePrefixId(e.target.value)}
-                    placeholder="EVG"
-                    className="h-9"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs">ID de Ítem de Inventario (Energía)</Label>
-                  <Input
-                    value={worldOfficeItemId}
-                    onChange={(e) => setWorldOfficeItemId(e.target.value)}
-                    placeholder="1"
-                    className="h-9"
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Barra de Acciones */}
+          {/* Botones de Acción */}
           <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-border/40">
             <div className="flex items-center gap-2">
               <Button

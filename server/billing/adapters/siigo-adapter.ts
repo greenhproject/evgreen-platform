@@ -135,18 +135,52 @@ export class SiigoAdapter implements BillingAdapter {
 
   async listItems(settings: Record<string, any>, search?: string): Promise<CatalogItem[]> {
     try {
-      const query = search ? `?name=${encodeURIComponent(search)}` : "";
+      const query = search ? `?code=${encodeURIComponent(search)}` : "?page_size=30";
       const raw = await this.request<{ results: any[] }>(settings, "GET", `/products${query}`);
       const list = raw?.results || (Array.isArray(raw) ? raw : []);
-      return list.map((p) => ({
-        id: String(p.id),
-        name: p.name,
-        code: p.code,
-        price: Array.isArray(p.prices) ? p.prices[0]?.price_list?.[0]?.value : undefined,
-      }));
+      return list.map((p: any) => {
+        const firstTax = Array.isArray(p.taxes) && p.taxes.length > 0 ? p.taxes[0] : null;
+        const priceVal = Array.isArray(p.prices) ? p.prices[0]?.price_list?.[0]?.value : undefined;
+        return {
+          id: String(p.id),
+          name: p.name,
+          code: p.code,
+          price: typeof priceVal === "number" ? priceVal : (priceVal ? parseFloat(priceVal) : 0),
+          taxId: firstTax?.id ? String(firstTax.id) : undefined,
+          taxName: firstTax?.name || undefined,
+          taxPercentage: firstTax?.percentage !== undefined ? parseFloat(String(firstTax.percentage)) : undefined,
+          unit: p.unit?.name || p.unit?.code || "Unidad",
+          taxIncluded: !!p.tax_included,
+          raw: p,
+        };
+      });
     } catch (e: any) {
       console.warn("[SiigoAdapter] Error listing products:", e.message);
       return [];
+    }
+  }
+
+  async getItemById(settings: Record<string, any>, itemId: string): Promise<CatalogItem | null> {
+    try {
+      const p = await this.request<any>(settings, "GET", `/products/${encodeURIComponent(itemId)}`);
+      if (!p || !p.id) return null;
+      const firstTax = Array.isArray(p.taxes) && p.taxes.length > 0 ? p.taxes[0] : null;
+      const priceVal = Array.isArray(p.prices) ? p.prices[0]?.price_list?.[0]?.value : undefined;
+      return {
+        id: String(p.id),
+        name: p.name,
+        code: p.code,
+        price: typeof priceVal === "number" ? priceVal : (priceVal ? parseFloat(priceVal) : 0),
+        taxId: firstTax?.id ? String(firstTax.id) : undefined,
+        taxName: firstTax?.name || undefined,
+        taxPercentage: firstTax?.percentage !== undefined ? parseFloat(String(firstTax.percentage)) : undefined,
+        unit: p.unit?.name || p.unit?.code || "Unidad",
+        taxIncluded: !!p.tax_included,
+        raw: p,
+      };
+    } catch (e: any) {
+      console.warn(`[SiigoAdapter] Error fetching product ${itemId}:`, e.message);
+      return null;
     }
   }
 
@@ -265,33 +299,38 @@ export class SiigoAdapter implements BillingAdapter {
       const customerIdentification = await this.syncCustomer(settings, input);
 
       // 2. Líneas de factura
-      const items: any[] = [];
-      const itemCode = settings.siigoProductCode || "EV-KWH-01";
-      const taxArray = settings.siigoTaxId ? [{ id: parseInt(settings.siigoTaxId) }] : [];
+      const targetCode = settings.selectedProductCode || settings.siigoProductCode || "EV-KWH-01";
+      let itemPrice = input.appliedPricePerKwh;
+      let itemTaxId = settings.siigoTaxId;
+      let itemName = settings.selectedProductName || "Servicio de recarga de energía";
 
-      if (input.energyDelivered > 0 || input.energyCost > 0) {
-        items.push({
-          code: itemCode,
-          description: `Servicio de recarga de energía - ${input.stationName}. ${input.energyDelivered.toFixed(2)} kWh a $${input.appliedPricePerKwh.toLocaleString("es-CO")}/kWh`,
-          quantity: parseFloat(input.energyDelivered.toFixed(2)),
-          price: input.appliedPricePerKwh,
-          taxes: taxArray,
-        });
+      // Intentar obtener el producto configurado en Siigo Nube
+      if (settings.selectedProductId || targetCode) {
+        try {
+          const liveProduct = await this.getItemById(settings, String(settings.selectedProductId || targetCode));
+          if (liveProduct) {
+            if (liveProduct.name) itemName = liveProduct.name;
+            if (liveProduct.price !== undefined && liveProduct.price > 0) itemPrice = liveProduct.price;
+            if (liveProduct.taxId) itemTaxId = liveProduct.taxId;
+          }
+        } catch (siigoItemErr: any) {
+          console.warn("[SiigoAdapter] Usando snapshot para producto:", siigoItemErr.message);
+        }
       }
 
-      if (input.sessionCost > 0) {
-        items.push({
-          code: "EV-CONN-01",
-          description: `Tarifa de conexión en ${input.stationName}`,
-          quantity: 1,
-          price: input.sessionCost,
-          taxes: taxArray,
-        });
+      const taxArray = itemTaxId ? [{ id: parseInt(itemTaxId) }] : [];
+      const energyQuantity = parseFloat(input.energyDelivered.toFixed(2));
+      if (energyQuantity <= 0) {
+        return { success: false, error: "La cantidad de energía (kWh) debe ser mayor a cero" };
       }
 
-      if (items.length === 0) {
-        return { success: false, error: "No hay conceptos facturables en la transacción" };
-      }
+      const items = [{
+        code: targetCode,
+        description: `${itemName} - Estación: ${input.stationName}. Cantidad: ${energyQuantity} kWh`,
+        quantity: energyQuantity,
+        price: itemPrice,
+        taxes: taxArray,
+      }];
 
       const todayStr = new Date().toISOString().split("T")[0];
       const docId = settings.siigoDocumentId ? parseInt(settings.siigoDocumentId) : 1;

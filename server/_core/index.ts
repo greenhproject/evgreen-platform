@@ -36,6 +36,7 @@ import { ensureContractDocumentStorage } from "../contracts/ensure-contract-docu
 import { registerStorageProxy } from "./storageProxy";
 import { calculateSocEstimation } from "../charging/soc-estimation";
 import { estimatePowerFromEnergySamples, shouldAdvanceTelemetrySample } from "../../shared/charging-telemetry";
+import { handleBillingWebhook } from "../billing/webhook";
 
 // Grace period para desconexiones temporales del legacy CSMS
 // Evita notificaciones por reconexiones intermitentes (WiFi inestable, reinicios breves)
@@ -181,6 +182,8 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   // Wompi webhook
   app.post("/api/wompi/webhook", express.json(), handleWompiWebhook);
+  // Webhook de facturación electrónica multi-proveedor (Alegra / Siigo / World Office / DIAN)
+  app.post("/api/billing/webhook", express.json(), handleBillingWebhook);
 
   // ─── Heartbeat: Renovación automática de suscripciones (diario 6am Colombia) ───
   app.post("/api/scheduled/billing", express.json(), async (req, res) => {

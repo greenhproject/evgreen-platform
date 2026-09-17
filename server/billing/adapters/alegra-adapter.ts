@@ -101,17 +101,51 @@ export class AlegraAdapter implements BillingAdapter {
   async listItems(settings: Record<string, any>, search?: string): Promise<CatalogItem[]> {
     try {
       const credentials = { email: settings.alegraEmail, token: settings.alegraToken };
-      const query = search ? `?name=${encodeURIComponent(search)}` : "";
+      const query = search ? `?query=${encodeURIComponent(search)}&limit=30` : "?limit=30";
       const raw = await alegraRequest<any[]>(credentials, "GET", `/items${query}`);
-      return (raw || []).map((it) => ({
-        id: String(it.id),
-        name: it.name,
-        code: it.reference || undefined,
-        price: Array.isArray(it.price) ? it.price[0]?.price : it.price,
-      }));
+      const itemsList = Array.isArray(raw) ? raw : (raw as any)?.data || [];
+      return (itemsList || []).map((it: any) => {
+        const firstTax = Array.isArray(it.tax) && it.tax.length > 0 ? it.tax[0] : null;
+        const unitPrice = Array.isArray(it.price) ? it.price[0]?.price : it.price;
+        return {
+          id: String(it.id),
+          name: it.name,
+          code: it.reference || undefined,
+          price: typeof unitPrice === "number" ? unitPrice : (unitPrice ? parseFloat(unitPrice) : 0),
+          taxId: firstTax?.id ? String(firstTax.id) : undefined,
+          taxName: firstTax?.name || undefined,
+          taxPercentage: firstTax?.percentage !== undefined ? parseFloat(String(firstTax.percentage)) : undefined,
+          unit: it.inventory?.unit || "unidad",
+          raw: it,
+        };
+      });
     } catch (e: any) {
       console.warn("[AlegraAdapter] Error listing items:", e.message);
       return [];
+    }
+  }
+
+  async getItemById(settings: Record<string, any>, itemId: string): Promise<CatalogItem | null> {
+    try {
+      const credentials = { email: settings.alegraEmail, token: settings.alegraToken };
+      const it = await alegraRequest<any>(credentials, "GET", `/items/${encodeURIComponent(itemId)}`);
+      if (!it || !it.id) return null;
+      const firstTax = Array.isArray(it.tax) && it.tax.length > 0 ? it.tax[0] : null;
+      const unitPrice = Array.isArray(it.price) ? it.price[0]?.price : it.price;
+      return {
+        id: String(it.id),
+        name: it.name,
+        code: it.reference || undefined,
+        price: typeof unitPrice === "number" ? unitPrice : (unitPrice ? parseFloat(unitPrice) : 0),
+        taxId: firstTax?.id ? String(firstTax.id) : undefined,
+        taxName: firstTax?.name || undefined,
+        taxPercentage: firstTax?.percentage !== undefined ? parseFloat(String(firstTax.percentage)) : undefined,
+        unit: it.inventory?.unit || "unidad",
+        raw: it,
+      };
+    } catch (e: any) {
+      console.warn(`[AlegraAdapter] Error fetching item ${itemId}:`, e.message);
+      return null;
     }
   }
 
@@ -219,53 +253,49 @@ export class AlegraAdapter implements BillingAdapter {
       }
 
       // 2. Construir ítems discriminados
-      const items: any[] = [];
-      const taxArray = settings.alegraDefaultTaxId ? [{ id: parseInt(settings.alegraDefaultTaxId) }] : [];
+      const targetItemId = settings.selectedProductId || settings.alegraDefaultItemId;
+      let itemPrice = input.appliedPricePerKwh;
+      let itemTaxId = settings.alegraDefaultTaxId;
+      let itemName = settings.selectedProductName || "Servicio de recarga de energía";
 
-      // Ítem 1: Servicio de recarga de energía (kWh)
-      if (input.energyDelivered > 0 || input.energyCost > 0) {
-        const energyLine: any = {
-          price: input.appliedPricePerKwh,
-          quantity: parseFloat(input.energyDelivered.toFixed(2)),
-          description: `Servicio de recarga de energía - ${input.stationName}. ${input.energyDelivered.toFixed(2)} kWh a $${input.appliedPricePerKwh.toLocaleString("es-CO")}/kWh.`,
-          tax: taxArray,
-        };
-        if (settings.alegraDefaultItemId) {
-          energyLine.id = parseInt(settings.alegraDefaultItemId);
-        } else {
-          energyLine.name = "Servicio de recarga de energía";
+      // Consultar el producto configurado en Alegra para tomar su precio e impuesto reales
+      if (targetItemId) {
+        try {
+          const liveItem = await this.getItemById(settings, String(targetItemId));
+          if (liveItem) {
+            if (liveItem.name) itemName = liveItem.name;
+            if (liveItem.price !== undefined && liveItem.price > 0) {
+              itemPrice = liveItem.price;
+            }
+            if (liveItem.taxId) {
+              itemTaxId = liveItem.taxId;
+            }
+          }
+        } catch (itemErr: any) {
+          console.warn(`[AlegraAdapter] Usando snapshot local para item ${targetItemId}:`, itemErr.message);
         }
-        items.push(energyLine);
       }
 
-      // Ítems adicionales (cargo por sesión, tiempo, sobreestadía) si existen
-      if (input.sessionCost > 0) {
-        items.push({
-          name: "Tarifa de conexión",
-          description: `Tarifa de conexión en ${input.stationName}`,
-          price: input.sessionCost,
-          quantity: 1,
-          tax: taxArray,
-        });
+      const taxArray = itemTaxId ? [{ id: parseInt(itemTaxId) }] : [];
+      const energyQuantity = parseFloat(input.energyDelivered.toFixed(2));
+      if (energyQuantity <= 0) {
+        return { success: false, error: "La cantidad de energía (kWh) debe ser mayor a cero" };
       }
-      if (input.timeCost > 0) {
-        items.push({
-          name: "Cargo por tiempo",
-          description: `Cargo por tiempo de uso (${input.durationMinutes} min)`,
-          price: input.timeCost,
-          quantity: 1,
-          tax: taxArray,
-        });
+
+      const energyLine: any = {
+        price: itemPrice,
+        quantity: energyQuantity,
+        description: `${itemName} - Estación: ${input.stationName}. Cantidad: ${energyQuantity} kWh`,
+        tax: taxArray,
+      };
+
+      if (targetItemId) {
+        energyLine.id = parseInt(String(targetItemId));
+      } else {
+        energyLine.name = itemName;
       }
-      if (input.overstayCost > 0) {
-        items.push({
-          name: "Penalización por sobreestadía",
-          description: `Permanencia excesiva en conector de ${input.stationName}`,
-          price: input.overstayCost,
-          quantity: 1,
-          tax: taxArray,
-        });
-      }
+
+      const items = [energyLine];
 
       if (items.length === 0) {
         return { success: false, error: "No hay conceptos facturables en la transacción" };

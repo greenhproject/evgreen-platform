@@ -4276,6 +4276,16 @@ const settingsRouter = router({
         worldOfficePaymentMethodId: "",
         worldOfficeItemId: "",
         worldOfficeTaxId: "",
+        selectedProductId: "",
+        selectedProductName: "",
+        selectedProductCode: "",
+        selectedProductPrice: null,
+        selectedProductTaxes: null,
+        selectedProductUnit: "",
+        selectedProductTaxIncluded: null,
+        selectedProductSyncedAt: null,
+        webhookSecret: "",
+        webhookConfiguredAt: null,
         lastTestStatus: "none" as const,
         lastTestMessage: null,
         lastTestedAt: null,
@@ -4293,6 +4303,7 @@ const settingsRouter = router({
       alegraToken: tenantConfig.alegraToken ? "****" + tenantConfig.alegraToken.slice(-4) : "",
       siigoAccessKey: tenantConfig.siigoAccessKey ? "****" + tenantConfig.siigoAccessKey.slice(-4) : "",
       worldOfficeToken: tenantConfig.worldOfficeToken ? "****" + tenantConfig.worldOfficeToken.slice(-4) : "",
+      webhookSecret: tenantConfig.webhookSecret ? "****" + tenantConfig.webhookSecret.slice(-4) : "",
     };
   }),
 
@@ -4329,6 +4340,14 @@ const settingsRouter = router({
         worldOfficePaymentMethodId: z.string().optional(),
         worldOfficeItemId: z.string().optional(),
         worldOfficeTaxId: z.string().optional(),
+        selectedProductId: z.string().optional(),
+        selectedProductName: z.string().optional(),
+        selectedProductCode: z.string().optional(),
+        selectedProductPrice: z.number().optional().nullable(),
+        selectedProductTaxes: z.string().optional().nullable(),
+        selectedProductUnit: z.string().optional().nullable(),
+        selectedProductTaxIncluded: z.boolean().optional().nullable(),
+        selectedProductSyncedAt: z.string().optional().nullable(),
       })
     )
     .mutation(async ({ ctx, input }: any) => {
@@ -4360,6 +4379,14 @@ const settingsRouter = router({
         worldOfficePaymentMethodId: input.worldOfficePaymentMethodId || null,
         worldOfficeItemId: input.worldOfficeItemId || null,
         worldOfficeTaxId: input.worldOfficeTaxId || null,
+        selectedProductId: input.selectedProductId || null,
+        selectedProductName: input.selectedProductName || null,
+        selectedProductCode: input.selectedProductCode || null,
+        selectedProductPrice: input.selectedProductPrice !== undefined && input.selectedProductPrice !== null ? String(input.selectedProductPrice) : null,
+        selectedProductTaxes: input.selectedProductTaxes || null,
+        selectedProductUnit: input.selectedProductUnit || null,
+        selectedProductTaxIncluded: input.selectedProductTaxIncluded === true ? 1 : input.selectedProductTaxIncluded === false ? 0 : null,
+        selectedProductSyncedAt: input.selectedProductSyncedAt || null,
         updatedBy: ctx.user.id,
       };
 
