@@ -4391,3 +4391,22 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Regenerar PDF de control con nota de ampliación extensa, métricas simples y transformador de 300 kVA; revisión visual confirmó texto completo, sin hoja adicional vacía ni desbordamientos.
 - [x] Incorporar automáticamente en el prospecto el transformador propuesto almacenado en `technicalNotes`, para que el alcance de ampliación no dependa de un texto manual incompleto. Pruebas cubren JSON estructurado y notas históricas libres.
 - [x] Publicación y comprobación: checkpoint `fd17a1a3`, GitHub fast-forward no forzado y Railway `Success - app.evgreen.lat`. El bundle productivo de Espacios contiene el control de ampliación; los logs posteriores no reportan errores de Espacios, prospectos, PDF o escenarios. No se generó ni modificó ningún documento, espacio o proyecto real en producción durante esta comprobación.
+
+## Investment Teaser institucional — despliegue EVGreen Colombia (2026-09-15)
+- [ ] Inventariar, extraer y clasificar toda cifra de los soportes aportados como histórico, contratado, negociación, pipeline, proyección de management, supuesto o fuente externa.
+- [ ] Reconciliar CAPEX, capacidad, número de estaciones y uso de fondos; documentar explícitamente cualquier inconsistencia y dato faltante para validación.
+- [ ] Investigar el mercado de movilidad eléctrica, infraestructura de carga y marco regulatorio colombiano con fuentes públicas verificables y fecha de corte identificada.
+- [ ] Auditar el modelo Excel y construir métricas reproducibles de economía unitaria, proyecciones, break-even, retorno y sensibilidad sin inventar resultados.
+- [ ] Redactar la narrativa de un teaser institucional de 10–15 láminas, separando hechos, contratos, negociaciones, pipeline y proyecciones.
+- [ ] Crear una presentación premium, minimalista y auditable, con visualizaciones de datos citadas y divulgaciones de due diligence.
+- [ ] Revisar el teaser desde la perspectiva de un comité de inversión, documentar riesgos, mitigantes, vacíos del data room y preparar la entrega final.
+- [ ] Generar un teaser institucional pre-NDA de EVGreen con imágenes de alta calidad, visualizaciones trazables y exclusión explícita de retornos no reconciliados.
+
+## Ebe Assistant — alertas de disponibilidad por Push y WhatsApp (2026-09-16)
+- [x] Auditoría de promesa: la alerta se persistía y OCPP 1.6/2.0.1 invocaba el despachador, pero el flujo anterior podía marcarla `SENT` aunque ambos canales fallaran; Push dependía sólo de FCM y WhatsApp intentaba texto libre con `skipConfigCheck`, improcedente fuera de la ventana de 24 horas.
+- [x] Consentimiento y canales: Ebe ahora exige elección expresa `PUSH`, `WHATSAPP` o `BOTH`; la alerta queda visible internamente, Push requiere suscripción válida del dispositivo y WhatsApp requiere número del usuario, interruptor global activo y plantilla aprobada. No se expusieron credenciales ni se enviaron mensajes reales durante QA.
+- [x] Diseño idempotente: claim atómico `PENDING→PROCESSING`, resultados separados por canal, errores trazables, deduplicación usuario+estación+conector, preservación de canales ya enviados, backoff de fallos transitorios y reintento periódico sólo si el conector continúa `AVAILABLE`.
+- [x] Plantilla Meta: creada vía API como utilidad `evgreen_estacion_disponible_v1`, ID `1586000253258258`, estado actual `IN_REVIEW`; no se usará ni se marcará como entregada hasta recibir estado `APPROVED`.
+- [x] Interfaz, backend y eventos: Ebe deja de afirmar envío antes del resultado real y muestra estado programado, permiso Push requerido o WhatsApp pendiente de plantilla. Admin dispone de interruptor, estado verificable y creación/actualización protegida de la plantilla. La aplicación usa Web Push→FCM y una ruta Heartbeat autenticada cada cinco minutos.
+- [x] Validación no destructiva: TypeScript limpio, 2 suites nuevas/6 pruebas de política y despacho aprobadas, suite completa y build productivo aprobados. Se verificó que los eventos OCPP invocan el despachador tras la actualización de `AVAILABLE`, la ruta programada rechaza llamadas sin token (401), el job ya está registrado y el bundle contiene los estados reales de Ebe/Admin.
+- [ ] Guardar checkpoint, sincronizar GitHub, comprobar Railway y solicitar confirmación específica antes de enviar una prueba real por WhatsApp.

@@ -142,6 +142,7 @@ import { ENV } from "./_core/env";
 import { ConnectorStatus, TriggeredBy } from "./charging/connector-state.service";
 import { toUtcIso } from "./utils/dates";
 import { mapInheritedSpacePhotos } from "./spaces/crowdfunding-inheritance";
+import { resolveAvailabilityAttempt, type AvailabilityPushStatus, type AvailabilityWhatsAppStatus } from "./notifications/availability-alert-policy";
 
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -8698,11 +8699,16 @@ export async function createAvailabilityAlert(data: {
   const database = await getDb();
   if (!database) return null;
 
-  // Verificar si ya existe una alerta PENDING para este usuario+estación
+  // Verificar si ya existe una alerta PENDING para este usuario+estación+conector.
+  // Un mismo usuario puede esperar conectores compatibles distintos en una estación.
+  const connectorCondition = data.connectorType
+    ? eq(stationAvailabilityAlerts.connectorType, data.connectorType)
+    : isNull(stationAvailabilityAlerts.connectorType);
   const existing = await database.select().from(stationAvailabilityAlerts)
     .where(and(
       eq(stationAvailabilityAlerts.userId, data.userId),
       eq(stationAvailabilityAlerts.stationId, data.stationId),
+      connectorCondition,
       eq(stationAvailabilityAlerts.alertReqStatus, "PENDING"),
     ))
     .limit(1);
@@ -8722,6 +8728,13 @@ export async function createAvailabilityAlert(data: {
     sendPush: data.sendPush !== false ? 1 : 0,
     sendWhatsapp: data.sendWhatsapp !== false ? 1 : 0,
     alertReqStatus: "PENDING",
+    pushStatus: data.sendPush === false ? "NOT_REQUESTED" : "PENDING",
+    whatsappStatus: data.sendWhatsapp === false
+      ? "NOT_REQUESTED"
+      : data.userPhone
+        ? "PENDING"
+        : "NO_PHONE",
+    nextAttemptAt: new Date(),
     expiresAt: expiresAt,
   } as any);
 
@@ -8745,20 +8758,106 @@ export async function getPendingAlertsByStation(stationId: number): Promise<type
     .where(and(
       eq(stationAvailabilityAlerts.stationId, stationId),
       eq(stationAvailabilityAlerts.alertReqStatus, "PENDING"),
+      gt(stationAvailabilityAlerts.expiresAt, new Date().toISOString()),
     ))
     .orderBy(asc(stationAvailabilityAlerts.createdAt));
 }
 
 /**
- * Marca una alerta como enviada.
+ * Reclama atómicamente una alerta lista para enviarse. El claim evita que dos
+ * eventos OCPP o instancias concurrentes dupliquen los mensajes.
  */
-export async function markAlertSent(alertId: number): Promise<void> {
+export async function claimAvailabilityAlert(alertId: number): Promise<typeof stationAvailabilityAlerts.$inferSelect | null> {
+  const database = await getDb();
+  if (!database) return null;
+  const now = new Date().toISOString();
+
+  const [claim] = await database.update(stationAvailabilityAlerts)
+    .set({
+      alertReqStatus: "PROCESSING",
+      processingStartedAt: now,
+      lastAttemptAt: now,
+      attemptCount: sql`${stationAvailabilityAlerts.attemptCount} + 1`,
+    } as any)
+    .where(and(
+      eq(stationAvailabilityAlerts.id, alertId),
+      eq(stationAvailabilityAlerts.alertReqStatus, "PENDING"),
+      gt(stationAvailabilityAlerts.expiresAt, now),
+      or(
+        isNull(stationAvailabilityAlerts.nextAttemptAt),
+        lte(stationAvailabilityAlerts.nextAttemptAt, now),
+      ),
+    ));
+
+  if (!(claim as any).affectedRows) return null;
+  const [alert] = await database.select().from(stationAvailabilityAlerts)
+    .where(eq(stationAvailabilityAlerts.id, alertId));
+  return alert || null;
+}
+
+/**
+ * Guarda el resultado de cada canal. La alerta sólo queda SENT cuando no tiene
+ * un canal solicitado pendiente de reintento; así un fallo no se disfraza como
+ * entrega exitosa y un Push ya enviado no se repite al reintentar WhatsApp.
+ */
+export async function completeAvailabilityAlertAttempt(input: {
+  alertId: number;
+  pushStatus: AvailabilityPushStatus;
+  whatsappStatus: AvailabilityWhatsAppStatus;
+  pushError?: string | null;
+  whatsappError?: string | null;
+}): Promise<void> {
   const database = await getDb();
   if (!database) return;
 
+  const [current] = await database.select().from(stationAvailabilityAlerts)
+    .where(eq(stationAvailabilityAlerts.id, input.alertId));
+  if (!current || current.alertReqStatus !== "PROCESSING") return;
+
+  const attemptCount = Number(current.attemptCount || 0);
+  const outcome = resolveAvailabilityAttempt({ attemptCount, pushStatus: input.pushStatus, whatsappStatus: input.whatsappStatus });
+  const nextAttemptAt = outcome.nextDelayMinutes === null
+    ? null
+    : new Date(Date.now() + outcome.nextDelayMinutes * 60 * 1000);
+
   await database.update(stationAvailabilityAlerts)
-    .set({ alertReqStatus: "SENT", sentAt: new Date().toISOString() } as any)
-    .where(eq(stationAvailabilityAlerts.id, alertId));
+    .set({
+      alertReqStatus: outcome.alertStatus,
+      pushStatus: input.pushStatus,
+      whatsappStatus: input.whatsappStatus,
+      pushError: input.pushError || null,
+      whatsappError: input.whatsappError || null,
+      nextAttemptAt,
+      processingStartedAt: null,
+      sentAt: outcome.alertStatus === "SENT" ? new Date().toISOString() : null,
+    } as any)
+    .where(and(
+      eq(stationAvailabilityAlerts.id, input.alertId),
+      eq(stationAvailabilityAlerts.alertReqStatus, "PROCESSING"),
+    ));
+}
+
+/** Restablece claims interrumpidos y devuelve alertas reintentables agrupadas por estación. */
+export async function getRetryableAvailabilityAlertStationIds(): Promise<number[]> {
+  const database = await getDb();
+  if (!database) return [];
+  const now = new Date().toISOString();
+  const staleBefore = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  await database.update(stationAvailabilityAlerts)
+    .set({ alertReqStatus: "PENDING", processingStartedAt: null } as any)
+    .where(and(
+      eq(stationAvailabilityAlerts.alertReqStatus, "PROCESSING"),
+      lt(stationAvailabilityAlerts.processingStartedAt, staleBefore),
+    ));
+
+  const rows = await database.select({ stationId: stationAvailabilityAlerts.stationId })
+    .from(stationAvailabilityAlerts)
+    .where(and(
+      eq(stationAvailabilityAlerts.alertReqStatus, "PENDING"),
+      lte(stationAvailabilityAlerts.nextAttemptAt, now),
+      gt(stationAvailabilityAlerts.expiresAt, now),
+    ));
+  return [...new Set(rows.map((row) => Number(row.stationId)))];
 }
 
 /**

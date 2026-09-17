@@ -80,6 +80,14 @@ const NOTIFICATION_TYPES = [
     color: "text-indigo-400",
     event: "monthly_summary",
   },
+  {
+    key: "notifyStationAvailable",
+    label: "Conector disponible",
+    description: "Alerta solicitada por el usuario cuando un conector compatible queda libre",
+    icon: Bell,
+    color: "text-cyan-400",
+    event: "station_available",
+  },
 ];
 
 export default function WhatsAppConfig() {
@@ -93,6 +101,23 @@ export default function WhatsAppConfig() {
     onError: (e) => toast.error(e.message),
   });
   const { data: logs, refetch: refetchLogs } = trpc.whatsapp.getLogs.useQuery({ limit: 50 });
+  const { data: availabilityTemplate, refetch: refetchAvailabilityTemplate } = trpc.whatsapp.getStationAvailabilityTemplate.useQuery();
+  const refreshAvailabilityTemplate = trpc.whatsapp.refreshStationAvailabilityTemplate.useMutation({
+    onSuccess: (template) => {
+      toast.success(template.status === "APPROVED" ? "Plantilla aprobada y lista para usar" : `Estado de plantilla: ${template.status}`);
+      refetchAvailabilityTemplate();
+      refetch();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const createAvailabilityTemplate = trpc.whatsapp.createStationAvailabilityTemplate.useMutation({
+    onSuccess: (template) => {
+      toast.success(template.status === "APPROVED" ? "Plantilla aprobada y lista para usar" : "Plantilla enviada a revisión de Meta");
+      refetchAvailabilityTemplate();
+      refetch();
+    },
+    onError: (error) => toast.error(error.message),
+  });
 
   const [form, setForm] = useState({
     phoneNumberId: "",
@@ -367,7 +392,7 @@ export default function WhatsAppConfig() {
 
       {/* Tab: Notificaciones */}
       {activeTab === "notifications" && (
-        <Card className="p-6">
+        <Card className="p-4 sm:p-6">
           <div className="mb-6">
             <h3 className="font-semibold text-lg">Tipos de Notificación</h3>
             <p className="text-sm text-muted-foreground mt-1">
@@ -399,6 +424,38 @@ export default function WhatsAppConfig() {
                 </div>
               );
             })}
+          </div>
+
+          <Separator className="my-6" />
+          <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h4 className="font-semibold">Plantilla de disponibilidad</h4>
+                <Badge variant={availabilityTemplate?.status === "APPROVED" ? "default" : availabilityTemplate?.status === "IN_REVIEW" ? "secondary" : "outline"}>
+                  {availabilityTemplate?.status === "APPROVED" ? "Aprobada por Meta" : availabilityTemplate?.status === "IN_REVIEW" ? "En revisión" : availabilityTemplate?.status || "Sin verificar"}
+                </Badge>
+              </div>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                Las alertas fuera de la ventana de conversación se envían únicamente mediante una plantilla de utilidad aprobada. La aplicación siempre conserva la alerta interna; no marca WhatsApp como entregado si Meta no lo acepta.
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <code className="max-w-full break-all rounded bg-zinc-900 px-2 py-1 font-mono">{availabilityTemplate?.name || config?.stationAvailableTemplateName || "evgreen_estacion_disponible_v1"}</code>
+                {availabilityTemplate?.checkedAt && <span>Verificado: {new Date(availabilityTemplate.checkedAt).toLocaleString("es-CO")}</span>}
+              </div>
+              {availabilityTemplate?.reason && <p className="mt-2 text-xs leading-5 text-amber-500">{availabilityTemplate.reason}</p>}
+            </div>
+            <div className="flex flex-wrap gap-2 lg:justify-end">
+              <Button variant="outline" size="sm" onClick={() => refreshAvailabilityTemplate.mutate()} disabled={refreshAvailabilityTemplate.isPending}>
+                {refreshAvailabilityTemplate.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                Verificar estado
+              </Button>
+              {availabilityTemplate?.status === "NOT_CONFIGURED" && (
+                <Button size="sm" onClick={() => createAvailabilityTemplate.mutate()} disabled={createAvailabilityTemplate.isPending || !config?.enabled} className="bg-green-600 hover:bg-green-700">
+                  {createAvailabilityTemplate.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MessageCircle className="mr-2 h-4 w-4" />}
+                  Crear plantilla
+                </Button>
+              )}
+            </div>
           </div>
         </Card>
       )}

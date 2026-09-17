@@ -199,6 +199,46 @@ async function startServer() {
     }
   });
 
+  // ─── Heartbeat: reintento seguro de alertas de disponibilidad ───────────────
+  // Sólo procesa solicitudes explícitas pendientes; nunca crea alertas nuevas.
+  app.post("/api/scheduled/availability-alerts", express.json(), async (req, res) => {
+    const authHeader = req.headers.authorization || "";
+    const expectedToken = process.env.BUILT_IN_FORGE_API_KEY || "";
+    if (expectedToken && authHeader !== `Bearer ${expectedToken}`) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    try {
+      const { getRetryableAvailabilityAlertStationIds, getEvsesByStationId } = await import("../db");
+      const { dispatchAvailabilityAlerts } = await import("../notifications/availability-alert-dispatcher");
+      const stationIds = await getRetryableAvailabilityAlertStationIds();
+      if (stationIds.length > 0) {
+        // La aprobación ocurre asíncronamente en Meta; refrescar antes de los
+        // reintentos evita requerir una acción manual para habilitar el canal.
+        const { refreshStationAvailabilityTemplateStatus } = await import("../whatsapp/whatsapp-service");
+        await refreshStationAvailabilityTemplateStatus();
+      }
+      let processedConnectors = 0;
+      for (const candidateStationId of stationIds) {
+        const stationEvses = await getEvsesByStationId(candidateStationId);
+        const availableConnectorTypes = [...new Set(
+          stationEvses
+            .filter((evse: any) => String(evse.connectorStatus || evse.status || "").toUpperCase() === "AVAILABLE")
+            .map((evse: any) => evse.connectorType)
+            .filter(Boolean),
+        )];
+        // Evita avisar tarde: el reintento sólo ocurre si el conector continúa libre.
+        for (const availableConnectorType of availableConnectorTypes) {
+          await dispatchAvailabilityAlerts(candidateStationId, String(availableConnectorType));
+          processedConnectors++;
+        }
+      }
+      return res.json({ ok: true, candidateStations: stationIds.length, processedConnectors });
+    } catch (err: any) {
+      console.error("[Heartbeat] Error reintentando alertas de disponibilidad:", err);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
   // Wompi native redirect relay: Chrome Custom Tab bloquea 302 a custom schemes,
   // pero SÍ permite window.location.href desde JavaScript.
   app.get("/api/wompi/redirect", (req, res) => {
@@ -638,8 +678,22 @@ async function startServer() {
         } else {
           console.log("[Heartbeat] Job de billing ya existe, omitiendo registro.");
         }
+
+        const availabilityJobExists = existing.jobs?.some((j: any) => j.name === "evgreen-availability-alerts");
+        if (!availabilityJobExists) {
+          const job = await createHeartbeatJob({
+            name: "evgreen-availability-alerts",
+            cron: "0 */5 * * * *",
+            path: "/api/scheduled/availability-alerts",
+            method: "POST",
+            description: "Reintentos idempotentes de alertas de disponibilidad EVGreen; sólo notifica si el conector continúa Available",
+          }, "");
+          console.log(`[Heartbeat] Job de alertas de disponibilidad registrado: ${job.taskUid}`);
+        } else {
+          console.log("[Heartbeat] Job de alertas de disponibilidad ya existe, omitiendo registro.");
+        }
       } catch (err) {
-        console.warn("[Heartbeat] No se pudo registrar el job de billing (no crítico):", err);
+        console.warn("[Heartbeat] No se pudieron registrar jobs operativos (no crítico):", err);
       }
     })();
     

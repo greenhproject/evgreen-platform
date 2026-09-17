@@ -134,6 +134,13 @@
       "when": 1789068832498,
       "tag": "0018_crowdfunding_financial_projection",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "5",
+      "when": 1789620518833,
+      "tag": "0019_availability_alert_delivery",
+      "breakpoints": true
     }
   ]
 }

@@ -562,15 +562,26 @@ function BatteryUpdateHandler({ content }: { content: string }) {
 // ============================================================================
 
 function AvailabilityAlertHandler({ content }: { content: string }) {
-  const [registered, setRegistered] = useState(false);
+  const [registered, setRegistered] = useState<{
+    push: "SCHEDULED" | "NEEDS_PERMISSION" | "NOT_REQUESTED";
+    whatsapp: "SCHEDULED" | "WAITING_TEMPLATE" | "NOT_REQUESTED";
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const registerAlert = trpc.ai.registerAvailabilityAlert.useMutation({
-    onSuccess: () => setRegistered(true),
+    onSuccess: (result) => setRegistered({
+      push: result.channels.push === "SCHEDULED" || result.channels.push === "NEEDS_PERMISSION"
+        ? result.channels.push
+        : "NOT_REQUESTED",
+      whatsapp: result.channels.whatsapp === "SCHEDULED" || result.channels.whatsapp === "WAITING_TEMPLATE"
+        ? result.channels.whatsapp
+        : "NOT_REQUESTED",
+    }),
     onError: (err) => setError(err.message),
   });
 
-  // Detectar tag [NOTIFY:stationId,stationName,connectorType]
-  const notifyRegex = /\[NOTIFY:(\d+),([^,\]]+),([^\]]+)\]/;
+  // Detectar tag [NOTIFY:stationId,stationName,connectorType,channels].
+  // El formato legado sin channels conserva BOTH para alertas ya confirmadas.
+  const notifyRegex = /\[NOTIFY:(\d+),([^,\]]+),([^,\]]+)(?:,(PUSH|WHATSAPP|BOTH))?\]/i;
   const match = content.match(notifyRegex);
 
   useEffect(() => {
@@ -578,9 +589,16 @@ function AvailabilityAlertHandler({ content }: { content: string }) {
       const stationId = parseInt(match[1], 10);
       const stationName = match[2].trim();
       const connectorType = match[3].trim();
-      registerAlert.mutate({ stationId, stationName, connectorType });
+      const channels = (match[4] || "BOTH").toUpperCase();
+      registerAlert.mutate({
+        stationId,
+        stationName,
+        connectorType,
+        sendPush: channels === "PUSH" || channels === "BOTH",
+        sendWhatsapp: channels === "WHATSAPP" || channels === "BOTH",
+      });
     }
-  }, [match?.[1]]);
+  }, [match?.[0]]);
 
   if (!match) return null;
 
@@ -591,7 +609,9 @@ function AvailabilityAlertHandler({ content }: { content: string }) {
       <Bell className="w-4 h-4 text-blue-500 shrink-0" />
       <span className="text-muted-foreground">
         {registered ? (
-          <span className="text-blue-500 font-medium">✅ Alerta activada para {stationName} — te notificaremos por Push y WhatsApp</span>
+          <span className="text-blue-500 font-medium">
+            Alerta activada para {stationName}. {registered.push === "SCHEDULED" ? "Push programado." : registered.push === "NEEDS_PERMISSION" ? "Activa Push en tu dispositivo para recibirlo." : ""} {registered.whatsapp === "SCHEDULED" ? "WhatsApp programado." : registered.whatsapp === "WAITING_TEMPLATE" ? "WhatsApp quedará pendiente hasta que la plantilla esté aprobada." : ""}
+          </span>
         ) : registerAlert.isPending ? (
           'Registrando alerta...'
         ) : error ? (

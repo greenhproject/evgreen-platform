@@ -7628,6 +7628,8 @@ const whatsappRouter = router({
       notifyChargerOffline: z.boolean().optional(),
       notifyReservation: z.boolean().optional(),
       notifyMonthlySummary: z.boolean().optional(),
+      notifyStationAvailable: z.boolean().optional(),
+      stationAvailableTemplateName: z.string().regex(/^[a-z0-9_]{1,100}$/).optional(),
     }))
     .mutation(async ({ input }) => {
       const dbInst = await getDb();
@@ -7653,6 +7655,8 @@ const whatsappRouter = router({
           ...(input.notifyChargerOffline !== undefined && { notifyChargerOffline: input.notifyChargerOffline }),
           ...(input.notifyReservation !== undefined && { notifyReservation: input.notifyReservation }),
           ...(input.notifyMonthlySummary !== undefined && { notifyMonthlySummary: input.notifyMonthlySummary }),
+          ...(input.notifyStationAvailable !== undefined && { notifyStationAvailable: input.notifyStationAvailable }),
+          ...(input.stationAvailableTemplateName !== undefined && { stationAvailableTemplateName: input.stationAvailableTemplateName }),
           updatedAt: new Date().toISOString(),
         }).where(eq(whatsappConfig.id, 1));
       } else {
@@ -7671,10 +7675,27 @@ const whatsappRouter = router({
           notifyChargerOffline: input.notifyChargerOffline ?? false,
           notifyReservation: input.notifyReservation ?? true,
           notifyMonthlySummary: input.notifyMonthlySummary ?? false,
+          notifyStationAvailable: input.notifyStationAvailable ?? true,
+          stationAvailableTemplateName: input.stationAvailableTemplateName ?? "evgreen_estacion_disponible_v1",
         } as any);
       }
       return { success: true };
     }),
+
+  getStationAvailabilityTemplate: adminProcedure.query(async () => {
+    const { getConfiguredStationAvailabilityTemplate } = await import("./whatsapp/whatsapp-service");
+    return getConfiguredStationAvailabilityTemplate();
+  }),
+
+  refreshStationAvailabilityTemplate: adminProcedure.mutation(async () => {
+    const { refreshStationAvailabilityTemplateStatus } = await import("./whatsapp/whatsapp-service");
+    return refreshStationAvailabilityTemplateStatus();
+  }),
+
+  createStationAvailabilityTemplate: adminProcedure.mutation(async () => {
+    const { createStationAvailabilityTemplate } = await import("./whatsapp/whatsapp-service");
+    return createStationAvailabilityTemplate();
+  }),
 
   sendTest: adminProcedure
     .input(z.object({ toPhone: z.string(), message: z.string().optional() }))
