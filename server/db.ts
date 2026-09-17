@@ -65,6 +65,12 @@ import {
   priceHistory,
   InsertPriceHistory,
   PriceHistory,
+  tenantBillingSettings,
+  TenantBillingSettings,
+  InsertTenantBillingSettings,
+  electronicInvoices,
+  ElectronicInvoice,
+  InsertElectronicInvoice,
   platformSettings,
   PlatformSettings,
   InsertPlatformSettings,
@@ -8906,4 +8912,174 @@ export async function expireOldAvailabilityAlerts(): Promise<number> {
       lt(stationAvailabilityAlerts.expiresAt, new Date().toISOString()),
     ));
   return (result as any).affectedRows || 0;
+}
+
+// ============================================================================
+// FACTURACIÓN ELECTRÓNICA MULTI-PROVEEDOR (Alegra, Siigo, World Office)
+// ============================================================================
+
+/**
+ * Obtiene la configuración de facturación para una organización o la configuración por defecto de la plataforma.
+ */
+export async function getTenantBillingSettings(organizationId?: number | null): Promise<TenantBillingSettings | null> {
+  const database = await getDb();
+  if (!database) return null;
+
+  // Si se especifica una organización, buscar su configuración específica
+  if (organizationId) {
+    const orgSettings = await database.select().from(tenantBillingSettings)
+      .where(eq(tenantBillingSettings.organizationId, organizationId))
+      .limit(1);
+    if (orgSettings.length > 0) return orgSettings[0];
+  }
+
+  // Fallback: configuración global / plataforma (organizationId IS NULL o 1)
+  const globalSettings = await database.select().from(tenantBillingSettings)
+    .where(or(isNull(tenantBillingSettings.organizationId), eq(tenantBillingSettings.organizationId, 1)))
+    .orderBy(desc(tenantBillingSettings.updatedAt))
+    .limit(1);
+
+  return globalSettings.length > 0 ? globalSettings[0] : null;
+}
+
+/**
+ * Guarda o actualiza la configuración de facturación para una organización.
+ */
+export async function upsertTenantBillingSettings(
+  organizationId: number | null,
+  data: Partial<InsertTenantBillingSettings>
+): Promise<TenantBillingSettings> {
+  const database = await getDb();
+  if (!database) throw new Error("Base de datos no disponible");
+
+  const condition = organizationId !== null && organizationId !== undefined
+    ? eq(tenantBillingSettings.organizationId, organizationId)
+    : isNull(tenantBillingSettings.organizationId);
+
+  const existing = await database.select().from(tenantBillingSettings)
+    .where(condition)
+    .limit(1);
+
+  if (existing.length > 0) {
+    await database.update(tenantBillingSettings)
+      .set({
+        ...data,
+        updatedAt: new Date().toISOString(),
+      } as any)
+      .where(eq(tenantBillingSettings.id, existing[0].id));
+
+    const updated = await database.select().from(tenantBillingSettings)
+      .where(eq(tenantBillingSettings.id, existing[0].id))
+      .limit(1);
+    return updated[0];
+  } else {
+    const [inserted] = await database.insert(tenantBillingSettings)
+      .values({
+        ...data,
+        organizationId: organizationId || null,
+      } as any);
+
+    const insertId = (inserted as any)?.insertId;
+    const created = await database.select().from(tenantBillingSettings)
+      .where(eq(tenantBillingSettings.id, insertId))
+      .limit(1);
+    return created[0] || ({} as TenantBillingSettings);
+  }
+}
+
+/**
+ * Registra un intento de factura electrónica con idempotencia.
+ */
+export async function createElectronicInvoiceRecord(data: InsertElectronicInvoice): Promise<number> {
+  const database = await getDb();
+  if (!database) throw new Error("Base de datos no disponible");
+
+  const [result] = await database.insert(electronicInvoices).values(data as any);
+  return (result as any).insertId;
+}
+
+/**
+ * Actualiza un registro de factura electrónica.
+ */
+export async function updateElectronicInvoiceRecord(id: number, data: Partial<InsertElectronicInvoice>): Promise<void> {
+  const database = await getDb();
+  if (!database) return;
+
+  await database.update(electronicInvoices)
+    .set({
+      ...data,
+      updatedAt: new Date().toISOString(),
+    } as any)
+    .where(eq(electronicInvoices.id, id));
+}
+
+/**
+ * Obtiene el registro de factura electrónica por transacción.
+ */
+export async function getElectronicInvoiceByTransactionId(transactionId: number): Promise<ElectronicInvoice | null> {
+  const database = await getDb();
+  if (!database) return null;
+
+  const rows = await database.select().from(electronicInvoices)
+    .where(eq(electronicInvoices.transactionId, transactionId))
+    .limit(1);
+
+  return rows.length > 0 ? rows[0] : null;
+}
+
+/**
+ * Obtiene una factura electrónica por ID.
+ */
+export async function getElectronicInvoiceById(id: number): Promise<ElectronicInvoice | null> {
+  const database = await getDb();
+  if (!database) return null;
+
+  const rows = await database.select().from(electronicInvoices)
+    .where(eq(electronicInvoices.id, id))
+    .limit(1);
+
+  return rows.length > 0 ? rows[0] : null;
+}
+
+/**
+ * Lista facturas electrónicas con filtros y paginación para una organización o global.
+ */
+export async function getElectronicInvoicesByOrg(options?: {
+  organizationId?: number | null;
+  status?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{ data: ElectronicInvoice[]; total: number }> {
+  const database = await getDb();
+  if (!database) return { data: [], total: 0 };
+
+  const conditions: any[] = [];
+
+  if (options?.organizationId !== undefined && options.organizationId !== null) {
+    conditions.push(eq(electronicInvoices.organizationId, options.organizationId));
+  }
+
+  if (options?.status) {
+    conditions.push(eq(electronicInvoices.status, options.status as any));
+  }
+
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const [countResult] = await database.select({ count: count() })
+    .from(electronicInvoices)
+    .where(whereClause);
+
+  const limit = options?.limit || 20;
+  const offset = options?.offset || 0;
+
+  const data = await database.select().from(electronicInvoices)
+    .where(whereClause)
+    .orderBy(desc(electronicInvoices.createdAt))
+    .limit(limit)
+    .offset(offset);
+
+  return {
+    data,
+    total: Number(countResult?.count || 0),
+  };
 }

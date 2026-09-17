@@ -1,0 +1,96 @@
+/**
+ * Tipos e Interfaces de Facturación Electrónica Multi-Proveedor para EVGreen
+ * Proveedores soportados: Alegra, Siigo Nube, World Office Cloud
+ */
+
+export type BillingProviderType = "alegra" | "siigo" | "world_office";
+
+export interface CanonicalInvoiceInput {
+  transactionId: number;
+  // Datos del usuario / tercero fiscal
+  userId?: number;
+  userName: string;
+  userEmail: string;
+  userPhone?: string;
+  userDocumentType?: string; // 'CC', 'NIT', 'CE', 'PASAPORTE', 'TI', 'PEP'
+  userDocumentNumber?: string;
+  userFiscalAddress?: string;
+  userFiscalCity?: string;
+  userFiscalDepartment?: string;
+  userKindOfPerson?: "PERSON_ENTITY" | "LEGAL_ENTITY" | string;
+  userRegime?: "SIMPLIFIED_REGIME" | "COMMON_REGIME" | "NOT_RESPONSIBLE_FOR_IVA" | string;
+  userExternalContactId?: string;
+  // Datos de la sesión de recarga
+  energyDelivered: number;     // kWh consumidos
+  appliedPricePerKwh: number;  // COP/kWh aplicado en la sesión
+  energyCost: number;          // COP energía
+  timeCost: number;            // COP tiempo
+  sessionCost: number;         // COP tarifa de conexión
+  overstayCost: number;        // COP sobreestadía
+  totalAmount: number;         // COP total
+  // Datos de la estación y conector
+  stationName: string;
+  stationAddress?: string;
+  stationCity?: string;
+  connectorType?: string;
+  chargeType?: string;
+  // Tiempos
+  startTime: Date;
+  endTime: Date;
+  durationMinutes: number;
+}
+
+export interface InvoiceResult {
+  success: boolean;
+  invoiceId?: string;
+  invoiceNumber?: string;
+  cufe?: string;
+  externalContactId?: string;
+  pdfUrl?: string;
+  xmlUrl?: string;
+  error?: string;
+  rawResponse?: any;
+}
+
+export interface ConnectionTestResult {
+  success: boolean;
+  companyName?: string;
+  identification?: string;
+  message?: string;
+  error?: string;
+}
+
+export interface CatalogItem {
+  id: string;
+  name: string;
+  code?: string;
+  price?: number;
+}
+
+export interface CatalogTax {
+  id: string;
+  name: string;
+  percentage?: string | number;
+}
+
+export interface CatalogPaymentMethod {
+  id: string;
+  name: string;
+}
+
+export interface CatalogDocumentType {
+  id: string;
+  name: string;
+  prefix?: string;
+  isElectronic?: boolean;
+}
+
+export interface BillingAdapter {
+  provider: BillingProviderType;
+  testConnection(settings: Record<string, any>): Promise<ConnectionTestResult>;
+  createInvoice(settings: Record<string, any>, input: CanonicalInvoiceInput): Promise<InvoiceResult>;
+  listItems?(settings: Record<string, any>, search?: string): Promise<CatalogItem[]>;
+  listTaxes?(settings: Record<string, any>): Promise<CatalogTax[]>;
+  listPaymentMethods?(settings: Record<string, any>): Promise<CatalogPaymentMethod[]>;
+  listDocumentTypes?(settings: Record<string, any>): Promise<CatalogDocumentType[]>;
+}

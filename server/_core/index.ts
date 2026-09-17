@@ -1829,6 +1829,13 @@ async function handleOCPP16Message(
           } catch (emailErr: any) {
             console.error(`[Email] receipt (legacy) exception:`, emailErr?.message);
           }
+          // Facturación electrónica multi-proveedor (Alegra, Siigo, World Office)
+          try {
+            const { queueChargingInvoice } = await import("../billing/billing-service");
+            await queueChargingInvoice(transaction.id);
+          } catch (billingErr: any) {
+            console.error(`[OCPP] Electronic invoice queue error:`, billingErr?.message);
+          }
         } catch (notifErr) {
           console.error(`[OCPP] Error sending charge complete notification:`, notifErr);
         }

@@ -2295,11 +2295,13 @@ export const users = mysqlTable("users", {
 	fiscalAddress: varchar({ length: 500 }),
 	fiscalCity: varchar({ length: 100 }),
 	fiscalDepartment: varchar({ length: 100 }),
-	kindOfPerson: mysqlEnum("kind_of_person", ['PERSON_ENTITY','LEGAL_ENTITY']),
-	regime: mysqlEnum(['SIMPLIFIED_REGIME','COMMON_REGIME','NOT_RESPONSIBLE_FOR_IVA']),
-	alegraContactId: varchar({ length: 50 }),
-	electronicInvoiceOptIn: tinyint("electronic_invoice_opt_in").default(0).notNull(),
-	investorTypes: json(),
+		kindOfPerson: mysqlEnum("kind_of_person", ['PERSON_ENTITY','LEGAL_ENTITY']),
+		regime: mysqlEnum(['SIMPLIFIED_REGIME','COMMON_REGIME','NOT_RESPONSIBLE_FOR_IVA']),
+		alegraContactId: varchar({ length: 50 }),
+		siigoCustomerId: varchar({ length: 100 }),
+		worldOfficeCustomerId: varchar({ length: 100 }),
+		electronicInvoiceOptIn: tinyint("electronic_invoice_opt_in").default(0).notNull(),
+		investorTypes: json(),
 	onboardingCompleted: tinyint().default(0),
 	onboardingStep: int().default(0),
 	onboardingStartedAt: timestamp({ mode: 'string' }),
@@ -2744,3 +2746,92 @@ export type InsertAdCampaign = typeof adCampaigns.$inferInsert;
 export type AdCampaign = typeof adCampaigns.$inferSelect;
 export type InsertAdCampaignCreative = typeof adCampaignCreatives.$inferInsert;
 export type AdCampaignCreative = typeof adCampaignCreatives.$inferSelect;
+
+// ============================================================================
+// Facturación Electrónica Multi-Proveedor (Alegra, Siigo, World Office)
+// ============================================================================
+
+export const tenantBillingSettings = mysqlTable("tenant_billing_settings", {
+	id: int().autoincrement().notNull(),
+	organizationId: int("organization_id"),
+	provider: mysqlEnum("billing_provider", ['alegra', 'siigo', 'world_office']).default('alegra').notNull(),
+	enabled: tinyint().default(0).notNull(),
+	environment: mysqlEnum("billing_environment", ['sandbox', 'production']).default('production').notNull(),
+	autoInvoice: tinyint("auto_invoice").default(1).notNull(),
+	autoSendEmail: tinyint("auto_send_email").default(1).notNull(),
+	resolutionNumber: varchar("resolution_number", { length: 100 }),
+
+	// Configuración Alegra
+	alegraEmail: varchar("alegra_email", { length: 255 }),
+	alegraToken: text("alegra_token"),
+	alegraDefaultItemId: varchar("alegra_default_item_id", { length: 50 }),
+	alegraDefaultTaxId: varchar("alegra_default_tax_id", { length: 50 }),
+	alegraPaymentMethodId: varchar("alegra_payment_method_id", { length: 50 }),
+	alegraPaymentAccountId: varchar("alegra_payment_account_id", { length: 50 }),
+	alegraUseElectronicStamp: tinyint("alegra_use_electronic_stamp").default(1).notNull(),
+
+	// Configuración Siigo Nube
+	siigoUsername: varchar("siigo_username", { length: 255 }),
+	siigoAccessKey: text("siigo_access_key"),
+	siigoPartnerId: varchar("siigo_partner_id", { length: 100 }),
+	siigoDocumentId: varchar("siigo_document_id", { length: 50 }),
+	siigoSellerId: varchar("siigo_seller_id", { length: 50 }),
+	siigoPaymentTypeId: varchar("siigo_payment_type_id", { length: 50 }),
+	siigoProductCode: varchar("siigo_product_code", { length: 100 }),
+	siigoTaxId: varchar("siigo_tax_id", { length: 50 }),
+	siigoStamp: tinyint("siigo_stamp").default(1).notNull(),
+	siigoMail: tinyint("siigo_mail").default(1).notNull(),
+
+	// Configuración World Office Cloud
+	worldOfficeToken: text("world_office_token"),
+	worldOfficeCompanyId: varchar("world_office_company_id", { length: 50 }),
+	worldOfficeDocumentTypeId: varchar("world_office_document_type_id", { length: 50 }),
+	worldOfficePrefixId: varchar("world_office_prefix_id", { length: 50 }),
+	worldOfficePaymentMethodId: varchar("world_office_payment_method_id", { length: 50 }),
+	worldOfficeItemId: varchar("world_office_item_id", { length: 50 }),
+	worldOfficeTaxId: varchar("world_office_tax_id", { length: 50 }),
+
+	// Auditoría y estado operativo
+	lastTestStatus: mysqlEnum("billing_last_test_status", ['none', 'success', 'error']).default('none').notNull(),
+	lastTestMessage: text("last_test_message"),
+	lastTestedAt: timestamp("last_tested_at", { mode: 'string' }),
+	updatedBy: int("updated_by"),
+	createdAt: timestamp("created_at", { mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
+	updatedAt: timestamp("updated_at", { mode: 'string' }).defaultNow().onUpdateNow().notNull(),
+},
+(table) => [
+	index("idx_tenant_billing_org").on(table.organizationId),
+]);
+
+export const electronicInvoices = mysqlTable("electronic_invoices", {
+	id: int().autoincrement().notNull(),
+	organizationId: int("organization_id"),
+	transactionId: int("transaction_id").notNull(),
+	provider: mysqlEnum("electronic_invoice_provider", ['alegra', 'siigo', 'world_office']).notNull(),
+	status: mysqlEnum("electronic_invoice_status", ['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'RETRYABLE_ERROR']).default('PENDING').notNull(),
+	externalInvoiceId: varchar("external_invoice_id", { length: 100 }),
+	invoiceNumber: varchar("invoice_number", { length: 100 }),
+	cufe: text(),
+	totalAmount: decimal("total_amount", { precision: 12, scale: 2 }).default('0').notNull(),
+	energyKwh: decimal("energy_kwh", { precision: 10, scale: 4 }).default('0').notNull(),
+	customerName: varchar("customer_name", { length: 255 }),
+	customerIdentification: varchar("customer_identification", { length: 50 }),
+	customerEmail: varchar("customer_email", { length: 255 }),
+	externalContactId: varchar("external_contact_id", { length: 100 }),
+	pdfUrl: text("pdf_url"),
+	xmlUrl: text("xml_url"),
+	errorMessage: text("error_message"),
+	attempts: int().default(0).notNull(),
+	lastAttemptAt: timestamp("last_attempt_at", { mode: 'string' }),
+	createdAt: timestamp("created_at", { mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
+	updatedAt: timestamp("updated_at", { mode: 'string' }).defaultNow().onUpdateNow().notNull(),
+},
+(table) => [
+	index("idx_elec_inv_org").on(table.organizationId),
+	index("idx_elec_inv_tx").on(table.transactionId),
+]);
+
+export type InsertTenantBillingSettings = typeof tenantBillingSettings.$inferInsert;
+export type TenantBillingSettings = typeof tenantBillingSettings.$inferSelect;
+export type InsertElectronicInvoice = typeof electronicInvoices.$inferInsert;
+export type ElectronicInvoice = typeof electronicInvoices.$inferSelect;
