@@ -1,6 +1,7 @@
 /**
  * Componente de Historial de Facturas Electrónicas
- * Muestra el registro de emisiones DIAN, estado, CUFE, enlace a PDF y botón de reintento
+ * Muestra el registro de emisiones DIAN, desglose de tarifa unitaria calculada,
+ * estado, CUFE, enlace a PDF y botón de resincronización forzada bajo demanda.
  */
 
 import { useState } from "react";
@@ -19,13 +20,16 @@ import {
   RotateCcw,
   ExternalLink,
   RefreshCw,
+  Sparkles,
+  HelpCircle,
 } from "lucide-react";
 
 interface Props {
   mode?: "tenant" | "admin";
+  organizationId?: number | null;
 }
 
-export default function ElectronicInvoicesHistory({ mode = "tenant" }: Props) {
+export default function ElectronicInvoicesHistory({ mode = "tenant", organizationId }: Props) {
   const utils = trpc.useUtils();
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [page, setPage] = useState(0);
@@ -42,6 +46,7 @@ export default function ElectronicInvoicesHistory({ mode = "tenant" }: Props) {
 
   const adminInvoicesQuery = (trpc.settings as any).billingListInvoices.useQuery(
     {
+      organizationId: organizationId || undefined,
       status: statusFilter === "ALL" ? undefined : statusFilter,
       limit,
       offset: page * limit,
@@ -54,36 +59,36 @@ export default function ElectronicInvoicesHistory({ mode = "tenant" }: Props) {
   const total = query.data?.total || 0;
   const totalPages = Math.ceil(total / limit);
 
-  // Mutación de reintento
+  // Mutación de reintento / resincronización bajo demanda
   const retryTenantMutation = (trpc.organizations as any).retryMyElectronicInvoice.useMutation({
     onSuccess: (data: any) => {
       if (data.success) {
-        toast.success(`Factura emitida: #${data.invoiceNumber || data.invoiceId}`);
+        toast.success(`Factura emitida/resincronizada: #${data.invoiceNumber || data.invoiceId}`);
       } else {
-        toast.error(`Fallo al reintentar: ${data.error}`);
+        toast.error(`Fallo en resincronización: ${data.error}`);
       }
       (utils.organizations as any).getMyElectronicInvoices.invalidate();
     },
-    onError: (err: any) => toast.error(`Error al reintentar: ${err.message}`),
+    onError: (err: any) => toast.error(`Error al resincronizar: ${err.message}`),
   });
 
   const retryAdminMutation = (trpc.settings as any).billingRetryInvoice.useMutation({
     onSuccess: (data: any) => {
       if (data.success) {
-        toast.success(`Factura emitida: #${data.invoiceNumber || data.invoiceId}`);
+        toast.success(`Factura emitida/resincronizada: #${data.invoiceNumber || data.invoiceId}`);
       } else {
-        toast.error(`Fallo al reintentar: ${data.error}`);
+        toast.error(`Fallo en resincronización: ${data.error}`);
       }
       (utils.settings as any).billingListInvoices.invalidate();
     },
-    onError: (err: any) => toast.error(`Error al reintentar: ${err.message}`),
+    onError: (err: any) => toast.error(`Error al resincronizar: ${err.message}`),
   });
 
-  const handleRetry = (invoiceId: number) => {
+  const handleResync = (invoiceId: number, forceSync: boolean = false) => {
     if (mode === "tenant") {
-      retryTenantMutation.mutate({ invoiceRecordId: invoiceId });
+      retryTenantMutation.mutate({ invoiceRecordId: invoiceId, forceSync });
     } else {
-      retryAdminMutation.mutate({ invoiceRecordId: invoiceId });
+      retryAdminMutation.mutate({ invoiceRecordId: invoiceId, forceSync });
     }
   };
 
@@ -100,7 +105,7 @@ export default function ElectronicInvoicesHistory({ mode = "tenant" }: Props) {
       case "PROCESSING":
         return (
           <Badge variant="outline" className="text-amber-500 border-amber-500/30 bg-amber-500/10 flex items-center gap-1">
-            <Clock className="h-3 w-3" /> Procesando
+            <Clock className="h-3 w-3" /> Procesando DIAN
           </Badge>
         );
       case "FAILED":
@@ -134,10 +139,10 @@ export default function ElectronicInvoicesHistory({ mode = "tenant" }: Props) {
           <div>
             <CardTitle className="text-lg flex items-center gap-2">
               <FileText className="h-5 w-5 text-green-500" />
-              Historial de Facturación Electrónica
+              Historial de Facturas y Tarifas Aplicadas
             </CardTitle>
             <CardDescription>
-              Seguimiento de facturas generadas por recargas de energía, timbrado DIAN y CUFE.
+              Seguimiento de facturas generadas por recargas, tarifa unitaria inyectada, estado de timbrado DIAN y resincronización bajo demanda.
             </CardDescription>
           </div>
 
@@ -191,7 +196,8 @@ export default function ElectronicInvoicesHistory({ mode = "tenant" }: Props) {
                     <TableHead>Fecha</TableHead>
                     <TableHead>Cliente</TableHead>
                     <TableHead className="text-right">Energía</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
+                    <TableHead className="text-right">Tarifa Dinámica</TableHead>
+                    <TableHead className="text-right">Total Facturado</TableHead>
                     <TableHead>Proveedor</TableHead>
                     <TableHead>Estado</TableHead>
                     <TableHead>Factura / CUFE</TableHead>
@@ -199,72 +205,100 @@ export default function ElectronicInvoicesHistory({ mode = "tenant" }: Props) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {invoices.map((inv: any) => (
-                    <TableRow key={inv.id}>
-                      <TableCell className="font-mono text-xs font-semibold">#{inv.transactionId}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                        {inv.createdAt ? new Date(inv.createdAt).toLocaleString("es-CO", { dateStyle: "short", timeStyle: "short" }) : "-"}
-                      </TableCell>
-                      <TableCell>
-                        <div className="text-xs font-medium text-foreground">{inv.customerName || "Cliente"}</div>
-                        <div className="text-[11px] text-muted-foreground">{inv.customerIdentification || inv.customerEmail || "-"}</div>
-                      </TableCell>
-                      <TableCell className="text-right text-xs font-mono">
-                        {parseFloat(inv.energyKwh || 0).toFixed(2)} kWh
-                      </TableCell>
-                      <TableCell className="text-right text-xs font-semibold font-mono text-green-400">
-                        ${Math.round(parseFloat(inv.totalAmount || 0)).toLocaleString("es-CO")}
-                      </TableCell>
-                      <TableCell>{providerBadge(inv.provider)}</TableCell>
-                      <TableCell>{statusBadge(inv.status)}</TableCell>
-                      <TableCell>
-                        {inv.invoiceNumber ? (
-                          <div className="space-y-0.5">
-                            <span className="font-mono text-xs font-medium text-foreground">{inv.invoiceNumber}</span>
-                            {inv.cufe && (
-                              <div className="text-[10px] text-muted-foreground truncate max-w-[120px]" title={inv.cufe}>
-                                CUFE: {inv.cufe.slice(0, 10)}...
-                              </div>
+                  {invoices.map((inv: any) => {
+                    const kwh = parseFloat(inv.energyKwh || 0);
+                    const totalAmount = Math.round(parseFloat(inv.totalAmount || 0));
+                    const unitPrice = parseFloat(inv.billedUnitPrice || 0);
+
+                    return (
+                      <TableRow key={inv.id}>
+                        <TableCell className="font-mono text-xs font-semibold">#{inv.transactionId}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                          {inv.createdAt ? new Date(inv.createdAt).toLocaleString("es-CO", { dateStyle: "short", timeStyle: "short" }) : "-"}
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-xs font-medium text-foreground">{inv.customerName || "Cliente"}</div>
+                          <div className="text-[11px] text-muted-foreground">{inv.customerIdentification || inv.customerEmail || "-"}</div>
+                        </TableCell>
+                        <TableCell className="text-right text-xs font-mono">
+                          {kwh.toFixed(2)} kWh
+                        </TableCell>
+                        <TableCell className="text-right text-xs font-mono">
+                          {unitPrice > 0 ? (
+                            <span className="text-foreground" title="Tarifa unitaria efectiva inyectada">
+                              ${unitPrice.toLocaleString("es-CO")}/kWh
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right text-xs font-semibold font-mono text-green-400">
+                          ${totalAmount.toLocaleString("es-CO")}
+                        </TableCell>
+                        <TableCell>{providerBadge(inv.provider)}</TableCell>
+                        <TableCell>{statusBadge(inv.status)}</TableCell>
+                        <TableCell>
+                          {inv.invoiceNumber ? (
+                            <div className="space-y-0.5">
+                              <span className="font-mono text-xs font-medium text-foreground">{inv.invoiceNumber}</span>
+                              {inv.cufe && (
+                                <div className="text-[10px] text-muted-foreground truncate max-w-[120px]" title={inv.cufe}>
+                                  CUFE: {inv.cufe.slice(0, 10)}...
+                                </div>
+                              )}
+                            </div>
+                          ) : inv.errorMessage ? (
+                            <span className="text-xs text-red-400 truncate max-w-[150px] inline-block" title={inv.errorMessage}>
+                              {inv.errorMessage}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            {inv.pdfUrl && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 text-xs text-green-400 hover:text-green-300 gap-1 px-2"
+                                asChild
+                              >
+                                <a href={inv.pdfUrl} target="_blank" rel="noopener noreferrer">
+                                  <ExternalLink className="h-3 w-3" /> PDF
+                                </a>
+                              </Button>
+                            )}
+                            {inv.status === "FAILED" ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleResync(inv.id, false)}
+                                disabled={isRetrying}
+                                className="h-7 text-xs text-amber-400 border-amber-400/30 hover:bg-amber-400/10 gap-1 px-2"
+                                title="Reintentar emisión de factura fallida"
+                              >
+                                <RotateCcw className={`h-3 w-3 ${isRetrying ? "animate-spin" : ""}`} />
+                                Reintentar
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleResync(inv.id, true)}
+                                disabled={isRetrying}
+                                className="h-7 text-xs text-muted-foreground hover:text-foreground gap-1 px-2"
+                                title="Resincronizar bajo demanda en caso de discrepancia en el valor total"
+                              >
+                                <RefreshCw className={`h-3 w-3 ${isRetrying ? "animate-spin" : ""}`} />
+                                Resincronizar
+                              </Button>
                             )}
                           </div>
-                        ) : inv.errorMessage ? (
-                          <span className="text-xs text-red-400 truncate max-w-[150px] inline-block" title={inv.errorMessage}>
-                            {inv.errorMessage}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          {inv.pdfUrl && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 text-xs text-green-400 hover:text-green-300 gap-1 px-2"
-                              asChild
-                            >
-                              <a href={inv.pdfUrl} target="_blank" rel="noopener noreferrer">
-                                <ExternalLink className="h-3 w-3" /> PDF
-                              </a>
-                            </Button>
-                          )}
-                          {inv.status === "FAILED" && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleRetry(inv.id)}
-                              disabled={isRetrying}
-                              className="h-7 text-xs text-amber-400 border-amber-400/30 hover:bg-amber-400/10 gap-1 px-2"
-                            >
-                              <RotateCcw className={`h-3 w-3 ${isRetrying ? "animate-spin" : ""}`} />
-                              Reintentar
-                            </Button>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>

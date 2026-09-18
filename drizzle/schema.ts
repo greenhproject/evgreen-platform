@@ -2758,8 +2758,9 @@ export const tenantBillingSettings = mysqlTable("tenant_billing_settings", {
 	enabled: tinyint().default(0).notNull(),
 	environment: mysqlEnum("billing_environment", ['sandbox', 'production']).default('production').notNull(),
 	autoInvoice: tinyint("auto_invoice").default(1).notNull(),
-	autoSendEmail: tinyint("auto_send_email").default(1).notNull(),
-	resolutionNumber: varchar("resolution_number", { length: 100 }),
+		autoSendEmail: tinyint("auto_send_email").default(1).notNull(),
+		billingRoundingMode: mysqlEnum("billing_rounding_mode", ['nearest_integer', 'two_decimals']).default('two_decimals').notNull(),
+		resolutionNumber: varchar("resolution_number", { length: 100 }),
 
 	// Configuración Alegra
 	alegraEmail: varchar("alegra_email", { length: 255 }),

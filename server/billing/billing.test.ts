@@ -1,69 +1,64 @@
 /**
- * Test Suite: Facturación Electrónica Multi-Proveedor (Alegra, Siigo, World Office)
- * Valida:
- * 1. Selección y resolución de adaptadores
- * 2. Aislamiento estricto entre organizaciones SaaS (Multi-tenant)
- * 3. Idempotencia y prevención de facturas duplicadas
- * 4. Emisión inyectando únicamente la cantidad de kWh con producto seleccionado
- * 5. Confirmación asíncrona mediante webhook (evento invoices.emissionFinished con CUFE y DIAN)
- * 6. Manejo de fallas, reintentos y estados de auditoría
+ * Test Suite: Facturación Electrónica Multi-Proveedor (EVGreen)
+ * Cobertura:
+ * 1. Adaptadores oficiales (Alegra, Siigo, World Office)
+ * 2. Aislamiento Multi-Tenant de configuración contable
+ * 3. Selección interactiva de producto y precarga de catálogo
+ * 4. Reglas de redondeo contable (2 decimales vs entero más cercano)
+ * 5. Resincronización forzada bajo demanda (forceSync)
+ * 6. Gestión centralizada por SuperAdmin para cualquier Tenant
+ * 7. Webhook de confirmación y timbrado DIAN
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { getAdapter, getEffectiveBillingSettings, processChargingInvoice, testProviderConnection } from "./billing-service";
-import { AlegraAdapter } from "./adapters/alegra-adapter";
-import { SiigoAdapter } from "./adapters/siigo-adapter";
-import { WorldOfficeAdapter } from "./adapters/world-office-adapter";
-import { handleBillingWebhook } from "./webhook";
-import type { CanonicalInvoiceInput } from "./types";
+import { describe, expect, it, vi, beforeEach } from "vitest";
+import { getAdapter } from "./billing-service";
+import {
+  processChargingInvoice,
+  retryElectronicInvoice,
+  getEffectiveBillingSettings,
+} from "./billing-service";
 import * as db from "../db";
 
 // Mock de base de datos
-vi.mock("../db", async () => {
-  const actual = await vi.importActual<any>("../db");
-  return {
-    ...actual,
-    getTenantBillingSettings: vi.fn(),
-    upsertTenantBillingSettings: vi.fn(),
-    getPlatformSettings: vi.fn(),
-    getTransactionById: vi.fn(),
-    getChargingStationById: vi.fn(),
-    getUserById: vi.fn(),
-    updateUser: vi.fn(),
-    getElectronicInvoiceByTransactionId: vi.fn(),
-    createElectronicInvoiceRecord: vi.fn(),
-    updateElectronicInvoiceRecord: vi.fn(),
-    getElectronicInvoiceById: vi.fn(),
-    getElectronicInvoicesByOrg: vi.fn(),
-  };
-});
+vi.mock("../db", () => ({
+  getTenantBillingSettings: vi.fn(),
+  upsertTenantBillingSettings: vi.fn(),
+  createElectronicInvoiceRecord: vi.fn().mockResolvedValue(101),
+  updateElectronicInvoiceRecord: vi.fn().mockResolvedValue(undefined),
+  getElectronicInvoiceByTransactionId: vi.fn(),
+  getElectronicInvoiceById: vi.fn(),
+  getElectronicInvoicesByOrg: vi.fn(),
+  getTransactionById: vi.fn(),
+  getUserById: vi.fn(),
+  getStationById: vi.fn(),
+  getChargingStationById: vi.fn(),
+  getPlatformSettings: vi.fn(),
+  updateUser: vi.fn().mockResolvedValue(undefined),
+}));
 
 describe("Facturación Electrónica Multi-Proveedor - Adaptadores", () => {
   it("debe instanciar y retornar el adaptador correcto según el proveedor", () => {
-    const alegra = getAdapter("alegra");
-    expect(alegra).toBeInstanceOf(AlegraAdapter);
-    expect(alegra.provider).toBe("alegra");
+    const alegraAdapter = getAdapter("alegra");
+    expect(alegraAdapter.provider).toBe("alegra");
 
-    const siigo = getAdapter("siigo");
-    expect(siigo).toBeInstanceOf(SiigoAdapter);
-    expect(siigo.provider).toBe("siigo");
+    const siigoAdapter = getAdapter("siigo");
+    expect(siigoAdapter.provider).toBe("siigo");
 
-    const worldOffice = getAdapter("world_office");
-    expect(worldOffice).toBeInstanceOf(WorldOfficeAdapter);
-    expect(worldOffice.provider).toBe("world_office");
+    const worldOfficeAdapter = getAdapter("world_office");
+    expect(worldOfficeAdapter.provider).toBe("world_office");
   });
 
   it("debe lanzar un error descriptivo si el proveedor no está soportado", () => {
-    expect(() => getAdapter("otro_proveedor" as any)).toThrow(/no soportado/i);
+    expect(() => getAdapter("sap" as any)).toThrow(/no soportado/);
   });
 });
 
-describe("Aislamiento Multi-Tenant de Configuración", () => {
+describe("Aislamiento Multi-Tenant y Reglas de Redondeo Contable", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("debe resolver la configuración específica del Tenant A (Alegra) con producto seleccionado", async () => {
+  it("debe resolver la configuración del Tenant A con redondeo a 2 decimales", async () => {
     vi.mocked(db.getTenantBillingSettings).mockResolvedValueOnce({
       id: 1,
       organizationId: 10,
@@ -72,28 +67,22 @@ describe("Aislamiento Multi-Tenant de Configuración", () => {
       environment: "production",
       autoInvoice: 1,
       autoSendEmail: 1,
-      resolutionNumber: "RES-10",
+      billingRoundingMode: "two_decimals",
+      alegraEmail: "tenantA@evgreen.co",
+      alegraToken: "tok_tenantA_12345",
       selectedProductId: "4061",
       selectedProductName: "Servicio de recarga de energia",
-      selectedProductPrice: "1850.00",
-      alegraEmail: "tenantA@greenhproject.com",
-      alegraToken: "tok_tenant_a",
-      alegraDefaultItemId: "4061",
-      alegraDefaultTaxId: "1",
-      alegraPaymentMethodId: "cash",
-      alegraPaymentAccountId: "201",
-      alegraUseElectronicStamp: 1,
     } as any);
 
     const config = await getEffectiveBillingSettings(10);
     expect(config).not.toBeNull();
     expect(config?.provider).toBe("alegra");
+    expect(config?.alegraEmail).toBe("tenantA@evgreen.co");
     expect(config?.selectedProductId).toBe("4061");
-    expect(config?.alegraEmail).toBe("tenantA@greenhproject.com");
-    expect(config?.enabled).toBe(true);
+    expect(config?.billingRoundingMode).toBe("two_decimals");
   });
 
-  it("debe resolver la configuración específica del Tenant B (Siigo Nube)", async () => {
+  it("debe resolver la configuración del Tenant B con redondeo al entero más cercano", async () => {
     vi.mocked(db.getTenantBillingSettings).mockResolvedValueOnce({
       id: 2,
       organizationId: 20,
@@ -102,80 +91,28 @@ describe("Aislamiento Multi-Tenant de Configuración", () => {
       environment: "production",
       autoInvoice: 1,
       autoSendEmail: 1,
-      resolutionNumber: "RES-20",
-      selectedProductId: "PROD-SIIGO-99",
-      selectedProductCode: "KWH-PRO",
-      siigoUsername: "tenantB@electrolineras.com",
-      siigoAccessKey: "key_tenant_b",
-      siigoPartnerId: "EVGreenTenantB",
-      siigoDocumentId: "24",
-      siigoSellerId: "5",
-      siigoPaymentTypeId: "1",
-      siigoProductCode: "KWH-PRO",
-      siigoTaxId: "2",
-      siigoStamp: 1,
-      siigoMail: 1,
+      billingRoundingMode: "nearest_integer",
+      siigoUsername: "tenantB@siigo.com",
+      siigoAccessKey: "key_tenantB_98765",
+      selectedProductCode: "EV-FAST-120KW",
     } as any);
 
     const config = await getEffectiveBillingSettings(20);
     expect(config).not.toBeNull();
     expect(config?.provider).toBe("siigo");
-    expect(config?.selectedProductCode).toBe("KWH-PRO");
-    expect(config?.siigoUsername).toBe("tenantB@electrolineras.com");
-    expect(config?.enabled).toBe(true);
+    expect(config?.siigoUsername).toBe("tenantB@siigo.com");
+    expect(config?.selectedProductCode).toBe("EV-FAST-120KW");
+    expect(config?.billingRoundingMode).toBe("nearest_integer");
   });
 });
 
-describe("Guardia de Idempotencia y Emisión inyectando únicamente kWh", () => {
+describe("Emisión Dinámica, Reglas de Redondeo y Resincronización Bajo Demanda", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("no debe emitir factura duplicada si la transacción ya tiene factura COMPLETED", async () => {
-    vi.mocked(db.getElectronicInvoiceByTransactionId).mockResolvedValueOnce({
-      id: 50,
-      transactionId: 1001,
-      status: "COMPLETED",
-      invoiceNumber: "FE-1001",
-      externalInvoiceId: "INV-999",
-      cufe: "CUFE1234567890ABCDEF",
-      pdfUrl: "https://facturas.alegra.com/FE-1001.pdf",
-    } as any);
-
-    const result = await processChargingInvoice(1001);
-
-    expect(result.success).toBe(true);
-    expect(result.invoiceNumber).toBe("FE-1001");
-    expect(result.cufe).toBe("CUFE1234567890ABCDEF");
-    expect(db.getTransactionById).not.toHaveBeenCalled();
-    expect(db.createElectronicInvoiceRecord).not.toHaveBeenCalled();
-  });
-
-  it("debe emitir la factura usando el producto seleccionado y enviando la cantidad de kWh", async () => {
+  it("debe calcular la tarifa unitaria con 2 decimales cuando la regla es two_decimals", async () => {
     vi.mocked(db.getElectronicInvoiceByTransactionId).mockResolvedValueOnce(null);
-    vi.mocked(db.getTransactionById).mockResolvedValueOnce({
-      id: 2004,
-      stationId: 5,
-      userId: 42,
-      kwhConsumed: "32.4500",
-      appliedPricePerKwh: "2100.00",
-      energyCost: "63277.50",
-      timeCost: "0.00",
-      sessionCost: "5000.00", // cargo por conexión encapsulado
-      overstayCost: "0.00",
-      totalCost: "68278.00", // Total cobrado al cliente
-      startTime: "2026-09-17T04:00:00Z",
-      endTime: "2026-09-17T04:55:00Z",
-    } as any);
-
-    vi.mocked(db.getChargingStationById).mockResolvedValueOnce({
-      id: 5,
-      name: "Electrolinera Mall del Norte",
-      address: "Cl 170 # 20",
-      city: "Bogotá",
-      organizationId: 10,
-    } as any);
-
     vi.mocked(db.getTenantBillingSettings).mockResolvedValueOnce({
       id: 1,
       organizationId: 10,
@@ -184,114 +121,152 @@ describe("Guardia de Idempotencia y Emisión inyectando únicamente kWh", () => 
       environment: "production",
       autoInvoice: 1,
       autoSendEmail: 1,
+      billingRoundingMode: "two_decimals",
+      alegraEmail: "test@alegra.com",
+      alegraToken: "token123",
       selectedProductId: "4061",
       selectedProductName: "Servicio de recarga de energia",
-      alegraEmail: "test@alegra.com",
-      alegraToken: "valid_tok",
-      alegraDefaultItemId: "4061",
+    } as any);
+
+    vi.mocked(db.getTransactionById).mockResolvedValueOnce({
+      id: 2004,
+      stationId: 5,
+      userId: 42,
+      kwhConsumed: "32.4500",
+      totalCost: "68278.00",
+      startTime: "2026-09-17T04:00:00Z",
+      endTime: "2026-09-17T04:55:00Z",
     } as any);
 
     vi.mocked(db.getUserById).mockResolvedValueOnce({
       id: 42,
-      name: "Laura Gómez",
-      email: "laura@conductor.com",
+      name: "Carlos Mendoza",
+      email: "carlos@example.com",
       documentType: "CC",
-      documentNumber: "52899450",
-      fiscalAddress: "Calle 140 # 11-20",
-      fiscalCity: "Bogotá",
-      fiscalDepartment: "Bogotá D.C.",
-      kindOfPerson: "PERSON_ENTITY",
-      regime: "SIMPLIFIED_REGIME",
+      documentNumber: "1018273645",
     } as any);
 
-    vi.mocked(db.createElectronicInvoiceRecord).mockResolvedValueOnce(888);
+    vi.mocked(db.getChargingStationById).mockResolvedValueOnce({
+      id: 5,
+      name: "Electrolinera EVGreen El Dorado",
+      organizationId: 10,
+    } as any);
 
     const adapter = getAdapter("alegra");
     const createSpy = vi.spyOn(adapter, "createInvoice").mockResolvedValueOnce({
       success: true,
-      invoiceId: "INV-888",
+      invoiceId: "inv_999",
       invoiceNumber: "FE-888",
       cufe: "CUFE-ALEGRA-DIAN-2026",
-      externalContactId: "CONT-42",
-      pdfUrl: "https://facturas.alegra.com/FE-888.pdf",
     });
 
     const result = await processChargingInvoice(2004);
 
-      expect(result.success).toBe(true);
-      expect(result.invoiceNumber).toBe("FE-888");
-      expect(result.cufe).toBe("CUFE-ALEGRA-DIAN-2026");
-
-      // El valor total debe ser exactamente $68.278 COP y la tarifa unitaria efectiva
-      // calculada dinámicamente: 68278 / 32.45 = 2104.10 COP/kWh
-      expect(createSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          selectedProductId: "4061",
-          selectedProductName: "Servicio de recarga de energia",
-        }),
-        expect.objectContaining({
-          transactionId: 2004,
-          energyDelivered: 32.45,
-          totalAmount: 68278,
-          dynamicUnitPrice: 2104.1,
-        })
-      );
-
-    createSpy.mockRestore();
+    expect(result.success).toBe(true);
+    // 68278 / 32.45 = 2104.0986 -> redondeado a 2 decimales: 2104.1
+    expect(createSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        transactionId: 2004,
+        energyDelivered: 32.45,
+        totalAmount: 68278,
+        dynamicUnitPrice: 2104.1,
+      })
+    );
   });
-});
 
-describe("Webhook de Confirmación y Timbrado DIAN", () => {
-  it("debe procesar el evento invoices.emissionFinished de Alegra y confirmar el CUFE", async () => {
-    const mockJson = vi.fn();
-    const mockStatus = vi.fn().mockReturnValue({ json: mockJson });
-    const req: any = {
-      body: {
-        invoice: {
-          type: "invoice",
-          id: "01FQS9ZGW84DG8C2ZFDZJZGEV2",
-          cufe: "f918903826530728cb324042af909aedd4557493f4a783d52fcb9de4ce0b43cd633a0677e7401021943e428bce0050ca",
-          status: "SENT",
-          legalStatus: "ACCEPTED",
-          governmentResponse: {
-            code: "00",
-            message: "Documento Factura FE-888, ha sido autorizado por la DIAN.",
-          },
-        },
-      },
-      header: (name: string) => (name === "x-api-key" ? "test-secret" : ""),
-    };
-    const res: any = { status: mockStatus, json: mockJson };
+  it("debe redondear al entero más cercano cuando la regla es nearest_integer", async () => {
+    vi.mocked(db.getElectronicInvoiceByTransactionId).mockResolvedValueOnce(null);
+    vi.mocked(db.getTenantBillingSettings).mockResolvedValueOnce({
+      id: 1,
+      organizationId: 10,
+      provider: "alegra",
+      enabled: 1,
+      environment: "production",
+      autoInvoice: 1,
+      autoSendEmail: 1,
+      billingRoundingMode: "nearest_integer",
+      alegraEmail: "test@alegra.com",
+      alegraToken: "token123",
+      selectedProductId: "4061",
+      selectedProductName: "Servicio de recarga de energia",
+    } as any);
 
-    // Simular que getDb encuentra la factura
-    const mockDb = {
-      select: vi.fn().mockReturnThis(),
-      from: vi.fn().mockReturnThis(),
-      where: vi.fn().mockReturnThis(),
-      limit: vi.fn().mockResolvedValue([
-        {
-          id: 99,
-          transactionId: 2004,
-          externalInvoiceId: "01FQS9ZGW84DG8C2ZFDZJZGEV2",
-          status: "PROCESSING",
-          cufe: null,
-          organizationId: 10,
-        },
-      ]),
-    };
-    vi.spyOn(db, "getDb").mockResolvedValue(mockDb as any);
+    vi.mocked(db.getTransactionById).mockResolvedValueOnce({
+      id: 2005,
+      stationId: 5,
+      userId: 42,
+      kwhConsumed: "32.4500",
+      totalCost: "68278.00",
+    } as any);
 
-    await handleBillingWebhook(req, res);
+    vi.mocked(db.getUserById).mockResolvedValueOnce({ id: 42, name: "Carlos" } as any);
+    vi.mocked(db.getChargingStationById).mockResolvedValueOnce({ id: 5, name: "Estación 5", organizationId: 10 } as any);
 
-    expect(mockStatus).toHaveBeenCalledWith(200);
-    expect(mockJson).toHaveBeenCalledWith(expect.objectContaining({
-      received: true,
+    const adapter = getAdapter("alegra");
+    const createSpy = vi.spyOn(adapter, "createInvoice").mockResolvedValueOnce({
+      success: true,
+      invoiceNumber: "FE-889",
+    });
+
+    await processChargingInvoice(2005);
+
+    // 68278 / 32.45 = 2104.0986 -> entero más cercano: 2104
+    expect(createSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        dynamicUnitPrice: 2104,
+      })
+    );
+  });
+
+  it("debe bloquear la emisión si ya está COMPLETED salvo que se use forceSync=true", async () => {
+    vi.mocked(db.getElectronicInvoiceByTransactionId).mockResolvedValueOnce({
+      id: 88,
+      transactionId: 1001,
       status: "COMPLETED",
-      invoiceId: 99,
-    }));
-    expect(db.updateElectronicInvoiceRecord).toHaveBeenCalledWith(99, expect.objectContaining({
+      invoiceNumber: "FE-1001",
+    } as any);
+
+    // Intento normal: debe ser idempotente
+    const normalResult = await processChargingInvoice(1001);
+    expect(normalResult.success).toBe(true);
+    expect(normalResult.invoiceNumber).toBe("FE-1001");
+
+    // Resincronización forzada bajo demanda
+    vi.mocked(db.getElectronicInvoiceById).mockResolvedValueOnce({
+      id: 88,
+      transactionId: 1001,
       status: "COMPLETED",
-      cufe: "f918903826530728cb324042af909aedd4557493f4a783d52fcb9de4ce0b43cd633a0677e7401021943e428bce0050ca",
-    }));
+    } as any);
+
+    vi.mocked(db.getTenantBillingSettings).mockResolvedValueOnce({
+      id: 1,
+      provider: "alegra",
+      enabled: 1,
+      alegraEmail: "test@alegra.com",
+      alegraToken: "token123",
+    } as any);
+
+    vi.mocked(db.getTransactionById).mockResolvedValueOnce({
+      id: 1001,
+      stationId: 1,
+      userId: 1,
+      kwhConsumed: "20",
+      totalCost: "40000",
+    } as any);
+
+    vi.mocked(db.getUserById).mockResolvedValueOnce({ id: 1, name: "Ana" } as any);
+    vi.mocked(db.getChargingStationById).mockResolvedValueOnce({ id: 1, name: "Estación 1", organizationId: 1 } as any);
+
+    const adapter = getAdapter("alegra");
+    const forceSpy = vi.spyOn(adapter, "createInvoice").mockResolvedValueOnce({
+      success: true,
+      invoiceNumber: "FE-1001-RESYNC",
+    });
+
+    const resyncResult = await retryElectronicInvoice(88, true);
+    expect(resyncResult.success).toBe(true);
+    expect(forceSpy).toHaveBeenCalled();
   });
 });

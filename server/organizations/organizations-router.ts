@@ -1554,6 +1554,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
           selectedProductUnit: "",
           selectedProductTaxIncluded: null,
           selectedProductSyncedAt: null,
+          billingRoundingMode: "two_decimals" as const,
           webhookSecret: "",
           webhookConfiguredAt: null,
           lastTestStatus: "none" as const,
@@ -1565,6 +1566,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
       return {
         ...settings,
         enabled: !!settings.enabled,
+        billingRoundingMode: (settings.billingRoundingMode as any) || "two_decimals",
         autoInvoice: settings.autoInvoice !== 0,
         autoSendEmail: settings.autoSendEmail !== 0,
         alegraUseElectronicStamp: settings.alegraUseElectronicStamp !== 0,
@@ -1622,6 +1624,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
           selectedProductUnit: z.string().optional().nullable(),
           selectedProductTaxIncluded: z.boolean().optional().nullable(),
           selectedProductSyncedAt: z.string().optional().nullable(),
+          billingRoundingMode: z.enum(["nearest_integer", "two_decimals"]).default("two_decimals"),
         })
       )
       .mutation(async ({ ctx, input }: any) => {
@@ -1662,6 +1665,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
           selectedProductUnit: input.selectedProductUnit || null,
           selectedProductTaxIncluded: input.selectedProductTaxIncluded === true ? 1 : input.selectedProductTaxIncluded === false ? 0 : null,
           selectedProductSyncedAt: input.selectedProductSyncedAt || null,
+          billingRoundingMode: input.billingRoundingMode || "two_decimals",
           updatedBy: ctx.user.id,
         };
 
@@ -1828,14 +1832,191 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
       }),
 
     retryMyElectronicInvoice: tenantProcedure
-      .input(z.object({ invoiceRecordId: z.number() }))
+      .input(z.object({ invoiceRecordId: z.number(), forceSync: z.boolean().optional() }))
       .mutation(async ({ ctx, input }: any) => {
         const orgId = ctx.tenant.organizationId;
         const invoice = await getElectronicInvoiceById(input.invoiceRecordId);
         if (!invoice || invoice.organizationId !== orgId) {
           throw new TRPCError({ code: "NOT_FOUND", message: "Factura no encontrada o no pertenece a esta organización" });
         }
-        return retryElectronicInvoice(input.invoiceRecordId);
+        return retryElectronicInvoice(input.invoiceRecordId, !!input.forceSync);
+      }),
+
+    // Procedimientos SuperAdmin para consultar y actualizar la facturación de CUALQUIER Tenant
+    getTenantBillingConfigAdmin: adminProcedure
+      .input(z.object({ organizationId: z.number() }))
+      .query(async ({ input }: any) => {
+        const settings = await getTenantBillingSettings(input.organizationId);
+        if (!settings) {
+          return {
+            organizationId: input.organizationId,
+            provider: "alegra" as const,
+            enabled: false,
+            environment: "production" as const,
+            autoInvoice: true,
+            autoSendEmail: true,
+            billingRoundingMode: "two_decimals" as const,
+            resolutionNumber: "",
+            alegraEmail: "",
+            alegraToken: "",
+            alegraDefaultItemId: "",
+            alegraDefaultTaxId: "",
+            alegraPaymentMethodId: "",
+            alegraPaymentAccountId: "",
+            alegraUseElectronicStamp: true,
+            siigoUsername: "",
+            siigoAccessKey: "",
+            siigoPartnerId: "EVGreenSaaS",
+            siigoDocumentId: "",
+            siigoSellerId: "",
+            siigoPaymentTypeId: "",
+            siigoProductCode: "",
+            siigoTaxId: "",
+            siigoStamp: true,
+            siigoMail: true,
+            worldOfficeToken: "",
+            worldOfficeCompanyId: "",
+            worldOfficeDocumentTypeId: "",
+            worldOfficePrefixId: "",
+            worldOfficePaymentMethodId: "",
+            worldOfficeItemId: "",
+            worldOfficeTaxId: "",
+            selectedProductId: "",
+            selectedProductName: "",
+            selectedProductCode: "",
+            selectedProductPrice: null,
+            selectedProductTaxes: null,
+            selectedProductUnit: "",
+            selectedProductTaxIncluded: null,
+            selectedProductSyncedAt: null,
+            webhookSecret: "",
+            webhookConfiguredAt: null,
+            lastTestStatus: "none" as const,
+            lastTestMessage: null,
+            lastTestedAt: null,
+          };
+        }
+        return {
+          ...settings,
+          organizationId: input.organizationId,
+          enabled: !!settings.enabled,
+          autoInvoice: settings.autoInvoice !== 0,
+          autoSendEmail: settings.autoSendEmail !== 0,
+          billingRoundingMode: (settings.billingRoundingMode as any) || "two_decimals",
+          alegraUseElectronicStamp: settings.alegraUseElectronicStamp !== 0,
+          siigoStamp: settings.siigoStamp !== 0,
+          siigoMail: settings.siigoMail !== 0,
+          alegraToken: settings.alegraToken ? "****" + settings.alegraToken.slice(-4) : "",
+          siigoAccessKey: settings.siigoAccessKey ? "****" + settings.siigoAccessKey.slice(-4) : "",
+          worldOfficeToken: settings.worldOfficeToken ? "****" + settings.worldOfficeToken.slice(-4) : "",
+          webhookSecret: settings.webhookSecret ? "****" + settings.webhookSecret.slice(-4) : "",
+        };
+      }),
+
+    saveTenantBillingConfigAdmin: adminProcedure
+      .input(
+        z.object({
+          organizationId: z.number(),
+          provider: z.enum(["alegra", "siigo", "world_office"]).default("alegra"),
+          enabled: z.boolean(),
+          environment: z.enum(["sandbox", "production"]).default("production"),
+          autoInvoice: z.boolean().default(true),
+          autoSendEmail: z.boolean().default(true),
+          billingRoundingMode: z.enum(["nearest_integer", "two_decimals"]).default("two_decimals"),
+          resolutionNumber: z.string().optional(),
+          alegraEmail: z.string().optional(),
+          alegraToken: z.string().optional(),
+          alegraDefaultItemId: z.string().optional(),
+          alegraDefaultTaxId: z.string().optional(),
+          alegraPaymentMethodId: z.string().optional(),
+          alegraPaymentAccountId: z.string().optional(),
+          alegraUseElectronicStamp: z.boolean().optional(),
+          siigoUsername: z.string().optional(),
+          siigoAccessKey: z.string().optional(),
+          siigoPartnerId: z.string().optional(),
+          siigoDocumentId: z.string().optional(),
+          siigoSellerId: z.string().optional(),
+          siigoPaymentTypeId: z.string().optional(),
+          siigoProductCode: z.string().optional(),
+          siigoTaxId: z.string().optional(),
+          siigoStamp: z.boolean().optional(),
+          siigoMail: z.boolean().optional(),
+          worldOfficeToken: z.string().optional(),
+          worldOfficeCompanyId: z.string().optional(),
+          worldOfficeDocumentTypeId: z.string().optional(),
+          worldOfficePrefixId: z.string().optional(),
+          worldOfficePaymentMethodId: z.string().optional(),
+          worldOfficeItemId: z.string().optional(),
+          worldOfficeTaxId: z.string().optional(),
+          selectedProductId: z.string().optional(),
+          selectedProductName: z.string().optional(),
+          selectedProductCode: z.string().optional(),
+          selectedProductPrice: z.number().optional().nullable(),
+          selectedProductTaxes: z.string().optional().nullable(),
+          selectedProductUnit: z.string().optional().nullable(),
+          selectedProductTaxIncluded: z.boolean().optional().nullable(),
+          selectedProductSyncedAt: z.string().optional().nullable(),
+        })
+      )
+      .mutation(async ({ ctx, input }: any) => {
+        const payload: any = {
+          provider: input.provider,
+          enabled: input.enabled ? 1 : 0,
+          environment: input.environment,
+          autoInvoice: input.autoInvoice ? 1 : 0,
+          autoSendEmail: input.autoSendEmail ? 1 : 0,
+          billingRoundingMode: input.billingRoundingMode || "two_decimals",
+          resolutionNumber: input.resolutionNumber || null,
+          alegraEmail: input.alegraEmail || null,
+          alegraDefaultItemId: input.alegraDefaultItemId || null,
+          alegraDefaultTaxId: input.alegraDefaultTaxId || null,
+          alegraPaymentMethodId: input.alegraPaymentMethodId || null,
+          alegraPaymentAccountId: input.alegraPaymentAccountId || null,
+          alegraUseElectronicStamp: input.alegraUseElectronicStamp !== false ? 1 : 0,
+          siigoUsername: input.siigoUsername || null,
+          siigoPartnerId: input.siigoPartnerId || "EVGreenSaaS",
+          siigoDocumentId: input.siigoDocumentId || null,
+          siigoSellerId: input.siigoSellerId || null,
+          siigoPaymentTypeId: input.siigoPaymentTypeId || null,
+          siigoProductCode: input.siigoProductCode || null,
+          siigoTaxId: input.siigoTaxId || null,
+          siigoStamp: input.siigoStamp !== false ? 1 : 0,
+          siigoMail: input.siigoMail !== false ? 1 : 0,
+          worldOfficeCompanyId: input.worldOfficeCompanyId || null,
+          worldOfficeDocumentTypeId: input.worldOfficeDocumentTypeId || null,
+          worldOfficePrefixId: input.worldOfficePrefixId || null,
+          worldOfficePaymentMethodId: input.worldOfficePaymentMethodId || null,
+          worldOfficeItemId: input.worldOfficeItemId || null,
+          worldOfficeTaxId: input.worldOfficeTaxId || null,
+          selectedProductId: input.selectedProductId || null,
+          selectedProductName: input.selectedProductName || null,
+          selectedProductCode: input.selectedProductCode || null,
+          selectedProductPrice: input.selectedProductPrice !== undefined && input.selectedProductPrice !== null ? String(input.selectedProductPrice) : null,
+          selectedProductTaxes: input.selectedProductTaxes || null,
+          selectedProductUnit: input.selectedProductUnit || null,
+          selectedProductTaxIncluded: input.selectedProductTaxIncluded === true ? 1 : input.selectedProductTaxIncluded === false ? 0 : null,
+          selectedProductSyncedAt: input.selectedProductSyncedAt || null,
+          updatedBy: ctx.user.id,
+        };
+
+        if (input.alegraToken && !input.alegraToken.startsWith("****")) {
+          payload.alegraToken = input.alegraToken;
+        }
+        if (input.siigoAccessKey && !input.siigoAccessKey.startsWith("****")) {
+          payload.siigoAccessKey = input.siigoAccessKey;
+        }
+        if (input.worldOfficeToken && !input.worldOfficeToken.startsWith("****")) {
+          payload.worldOfficeToken = input.worldOfficeToken;
+        }
+
+        const existing = await getTenantBillingSettings(input.organizationId);
+        if (!existing?.webhookSecret) {
+          payload.webhookSecret = crypto.randomBytes(24).toString("hex");
+          payload.webhookConfiguredAt = new Date().toISOString();
+        }
+
+        await upsertTenantBillingSettings(input.organizationId, payload);
+        return { success: true, message: "Configuración del tenant guardada por superadmin" };
       }),
 
     // ==========================================

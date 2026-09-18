@@ -4251,6 +4251,7 @@ const settingsRouter = router({
         environment: legacy?.alegraTestMode ? "sandbox" : "production",
         autoInvoice: legacy?.alegraAutoInvoice !== 0,
         autoSendEmail: true,
+        billingRoundingMode: "two_decimals" as const,
         resolutionNumber: legacy?.alegraResolutionNumber || "",
         alegraEmail: legacy?.alegraEmail || "",
         alegraToken: legacy?.alegraToken ? "****" + legacy.alegraToken.slice(-4) : "",
@@ -4297,6 +4298,7 @@ const settingsRouter = router({
       enabled: !!tenantConfig.enabled,
       autoInvoice: tenantConfig.autoInvoice !== 0,
       autoSendEmail: tenantConfig.autoSendEmail !== 0,
+      billingRoundingMode: (tenantConfig.billingRoundingMode as any) || "two_decimals",
       alegraUseElectronicStamp: tenantConfig.alegraUseElectronicStamp !== 0,
       siigoStamp: tenantConfig.siigoStamp !== 0,
       siigoMail: tenantConfig.siigoMail !== 0,
@@ -4315,6 +4317,7 @@ const settingsRouter = router({
         environment: z.enum(["sandbox", "production"]).default("production"),
         autoInvoice: z.boolean().default(true),
         autoSendEmail: z.boolean().default(true),
+        billingRoundingMode: z.enum(["nearest_integer", "two_decimals"]).default("two_decimals"),
         resolutionNumber: z.string().optional(),
         alegraEmail: z.string().optional(),
         alegraToken: z.string().optional(),
@@ -4357,6 +4360,7 @@ const settingsRouter = router({
         environment: input.environment,
         autoInvoice: input.autoInvoice ? 1 : 0,
         autoSendEmail: input.autoSendEmail ? 1 : 0,
+        billingRoundingMode: input.billingRoundingMode || "two_decimals",
         resolutionNumber: input.resolutionNumber || null,
         alegraEmail: input.alegraEmail || null,
         alegraDefaultItemId: input.alegraDefaultItemId || null,
@@ -4488,10 +4492,10 @@ const settingsRouter = router({
     }),
 
   billingRetryInvoice: adminProcedure
-    .input(z.object({ invoiceRecordId: z.number() }))
+    .input(z.object({ invoiceRecordId: z.number(), forceSync: z.boolean().optional() }))
     .mutation(async ({ input }) => {
       const { retryElectronicInvoice } = await import("./billing/billing-service");
-      return retryElectronicInvoice(input.invoiceRecordId);
+      return retryElectronicInvoice(input.invoiceRecordId, !!input.forceSync);
     }),
   // Resend: Test connection
   testResendConnection: adminProcedure

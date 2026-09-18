@@ -63,6 +63,7 @@ export async function getEffectiveBillingSettings(organizationId?: number | null
       autoInvoice: tenantConfig.autoInvoice !== 0,
       autoSendEmail: tenantConfig.autoSendEmail !== 0,
       resolutionNumber: tenantConfig.resolutionNumber || undefined,
+      billingRoundingMode: (tenantConfig.billingRoundingMode as any) || "two_decimals",
     };
   }
 
@@ -83,6 +84,7 @@ export async function getEffectiveBillingSettings(organizationId?: number | null
       alegraPaymentMethodId: legacy.alegraPaymentMethodId || undefined,
       alegraPaymentAccountId: legacy.alegraPaymentAccountId || undefined,
       alegraUseElectronicStamp: 1,
+      billingRoundingMode: "two_decimals",
     };
   }
 
@@ -106,13 +108,18 @@ export async function queueChargingInvoice(transactionId: number): Promise<void>
 /**
  * Procesa la factura electrónica para una transacción completada.
  * Implementa guardia de idempotencia estricta para evitar duplicaciones.
+ * Si options.forceSync es verdadero, permite re-emitir o actualizar el registro
+ * incluso si existía un intento previo.
  */
-export async function processChargingInvoice(transactionId: number): Promise<InvoiceResult> {
-  console.log(`[BillingService] Procesando factura para transacción #${transactionId}...`);
+export async function processChargingInvoice(
+  transactionId: number,
+  options?: { forceSync?: boolean }
+): Promise<InvoiceResult> {
+  console.log(`[BillingService] Procesando factura para transacción #${transactionId} (forceSync=${!!options?.forceSync})...`);
 
   // 1. Guardia de idempotencia: verificar si ya existe un registro
   const existingRecord = await db.getElectronicInvoiceByTransactionId(transactionId);
-  if (existingRecord) {
+  if (existingRecord && !options?.forceSync) {
     if (existingRecord.status === "COMPLETED") {
       console.log(`[BillingService] Transacción #${transactionId} ya tiene factura completada: ${existingRecord.invoiceNumber}`);
       return {
@@ -175,10 +182,13 @@ export async function processChargingInvoice(transactionId: number): Promise<Inv
 	  // (Art. 424 E.T. y Concepto DIAN 7354 de 2025), EVGreen encapsula todo el servicio cobrado
 	  // en un único concepto fiscal. La tarifa del catálogo en el software contable es solo referencial;
 	  // el valor final inyectado corresponde exactamente al cobro total de la sesión.
-	  const roundedTotal = Math.round(totalCost);
-	  const effectivePricePerKwh = kwh > 0
-	    ? Number((roundedTotal / kwh).toFixed(2))
-	    : (tx.appliedPricePerKwh ? parseFloat(String(tx.appliedPricePerKwh)) : roundedTotal);
+  const roundedTotal = Math.round(totalCost);
+  const rawUnitPrice = kwh > 0
+    ? (roundedTotal / kwh)
+    : (tx.appliedPricePerKwh ? parseFloat(String(tx.appliedPricePerKwh)) : roundedTotal);
+  const effectivePricePerKwh = settings.billingRoundingMode === "nearest_integer"
+    ? Math.round(rawUnitPrice)
+    : Number(rawUnitPrice.toFixed(2));
 
   const startTime = tx.startTime ? new Date(tx.startTime) : new Date();
   const endTime = tx.endTime ? new Date(tx.endTime) : new Date();
@@ -314,12 +324,12 @@ export async function processChargingInvoice(transactionId: number): Promise<Inv
 /**
  * Reintenta manualmente la emisión de una factura electrónica fallida.
  */
-export async function retryElectronicInvoice(invoiceRecordId: number): Promise<InvoiceResult> {
+export async function retryElectronicInvoice(invoiceRecordId: number, forceSync: boolean = false): Promise<InvoiceResult> {
   const record = await db.getElectronicInvoiceById(invoiceRecordId);
   if (!record) {
     return { success: false, error: "Registro de factura no encontrado" };
   }
-  return processChargingInvoice(record.transactionId);
+  return processChargingInvoice(record.transactionId, { forceSync });
 }
 
 /**
