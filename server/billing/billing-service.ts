@@ -171,9 +171,14 @@ export async function processChargingInvoice(transactionId: number): Promise<Inv
   const userDocType = (user as any)?.documentType || "CC";
   const userDocNumber = (user as any)?.documentNumber || undefined;
 
-  const appliedPricePerKwh = tx.appliedPricePerKwh
-    ? parseFloat(String(tx.appliedPricePerKwh))
-    : (kwh > 0 ? Math.round(energyCost / kwh) : 1800);
+	  // Como en Colombia la venta de energía para vehículos eléctricos está excluida de IVA
+	  // (Art. 424 E.T. y Concepto DIAN 7354 de 2025), EVGreen encapsula todo el servicio cobrado
+	  // en un único concepto fiscal. La tarifa del catálogo en el software contable es solo referencial;
+	  // el valor final inyectado corresponde exactamente al cobro total de la sesión.
+	  const roundedTotal = Math.round(totalCost);
+	  const effectivePricePerKwh = kwh > 0
+	    ? Number((roundedTotal / kwh).toFixed(2))
+	    : (tx.appliedPricePerKwh ? parseFloat(String(tx.appliedPricePerKwh)) : roundedTotal);
 
   const startTime = tx.startTime ? new Date(tx.startTime) : new Date();
   const endTime = tx.endTime ? new Date(tx.endTime) : new Date();
@@ -195,14 +200,16 @@ export async function processChargingInvoice(transactionId: number): Promise<Inv
     userExternalContactId: settings.provider === "alegra" ? (user as any)?.alegraContactId
       : settings.provider === "siigo" ? (user as any)?.siigoCustomerId
       : (user as any)?.worldOfficeCustomerId || undefined,
-    energyDelivered: kwh,
-    appliedPricePerKwh,
-    energyCost,
-    timeCost,
-    sessionCost,
-    overstayCost,
-    totalAmount: Math.round(totalCost),
-    stationName: station?.name || "Estación EVGreen",
+	    energyDelivered: kwh,
+	    appliedPricePerKwh: effectivePricePerKwh,
+	    dynamicUnitPrice: effectivePricePerKwh,
+	    energyCost,
+	    timeCost,
+	    sessionCost,
+	    overstayCost,
+	    totalAmount: roundedTotal,
+	    billedConceptDescription: `Servicio de recarga de energía - ${station?.name || "Estación EVGreen"}. Total cobrado: $${roundedTotal.toLocaleString("es-CO")} COP.`,
+	    stationName: station?.name || "Estación EVGreen",
     stationAddress: station?.address || undefined,
     stationCity: station?.city || "Colombia",
     connectorType: (tx as any).connectorType || undefined,
@@ -214,23 +221,30 @@ export async function processChargingInvoice(transactionId: number): Promise<Inv
 
   // 6. Crear o actualizar registro en base de datos como PROCESSING
   let recordId: number;
-  if (existingRecord) {
-    recordId = existingRecord.id;
-    await db.updateElectronicInvoiceRecord(recordId, {
-      status: "PROCESSING",
-      provider: settings.provider,
-      attempts: (existingRecord.attempts || 0) + 1,
-      lastAttemptAt: new Date().toISOString(),
-    });
-  } else {
-    recordId = await db.createElectronicInvoiceRecord({
-      organizationId,
-      transactionId,
-      provider: settings.provider,
-      status: "PROCESSING",
-      totalAmount: String(canonicalInput.totalAmount),
-      energyKwh: String(canonicalInput.energyDelivered),
-      customerName: userName,
+	  if (existingRecord) {
+	    recordId = existingRecord.id;
+	    await db.updateElectronicInvoiceRecord(recordId, {
+	      status: "PROCESSING",
+	      provider: settings.provider,
+	      totalAmount: String(canonicalInput.totalAmount),
+	      billedUnitPrice: String(canonicalInput.dynamicUnitPrice),
+	      billedProductId: settings.selectedProductId || null,
+	      billedProductName: settings.selectedProductName || "Servicio de recarga de energía",
+	      attempts: (existingRecord.attempts || 0) + 1,
+	      lastAttemptAt: new Date().toISOString(),
+	    });
+	  } else {
+	    recordId = await db.createElectronicInvoiceRecord({
+	      organizationId,
+	      transactionId,
+	      provider: settings.provider,
+	      status: "PROCESSING",
+	      totalAmount: String(canonicalInput.totalAmount),
+	      billedUnitPrice: String(canonicalInput.dynamicUnitPrice),
+	      billedProductId: settings.selectedProductId || null,
+	      billedProductName: settings.selectedProductName || "Servicio de recarga de energía",
+	      energyKwh: String(canonicalInput.energyDelivered),
+	      customerName: userName,
       customerIdentification: userDocNumber || null,
       customerEmail: userEmail || null,
       attempts: 1,
@@ -246,8 +260,11 @@ export async function processChargingInvoice(transactionId: number): Promise<Inv
     if (result.success) {
       console.log(`[BillingService] Factura emitida exitosamente (${settings.provider}): #${result.invoiceNumber}`);
 
+      // Si el proveedor retornó CUFE de inmediato (modo síncrono), marcamos COMPLETED;
+      // de lo contrario permanece en PROCESSING hasta que el webhook reciba la aprobación DIAN
+      const isConfirmed = !!result.cufe;
       await db.updateElectronicInvoiceRecord(recordId, {
-        status: "COMPLETED",
+        status: isConfirmed ? "COMPLETED" : "PROCESSING",
         externalInvoiceId: result.invoiceId || null,
         invoiceNumber: result.invoiceNumber || null,
         cufe: result.cufe || null,

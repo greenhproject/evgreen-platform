@@ -254,19 +254,15 @@ export class AlegraAdapter implements BillingAdapter {
 
       // 2. Construir ítems discriminados
       const targetItemId = settings.selectedProductId || settings.alegraDefaultItemId;
-      let itemPrice = input.appliedPricePerKwh;
       let itemTaxId = settings.alegraDefaultTaxId;
       let itemName = settings.selectedProductName || "Servicio de recarga de energía";
 
-      // Consultar el producto configurado en Alegra para tomar su precio e impuesto reales
+      // Consultar el producto configurado en Alegra para tomar su nombre e impuesto
       if (targetItemId) {
         try {
           const liveItem = await this.getItemById(settings, String(targetItemId));
           if (liveItem) {
             if (liveItem.name) itemName = liveItem.name;
-            if (liveItem.price !== undefined && liveItem.price > 0) {
-              itemPrice = liveItem.price;
-            }
             if (liveItem.taxId) {
               itemTaxId = liveItem.taxId;
             }
@@ -278,14 +274,20 @@ export class AlegraAdapter implements BillingAdapter {
 
       const taxArray = itemTaxId ? [{ id: parseInt(itemTaxId) }] : [];
       const energyQuantity = parseFloat(input.energyDelivered.toFixed(2));
-      if (energyQuantity <= 0) {
-        return { success: false, error: "La cantidad de energía (kWh) debe ser mayor a cero" };
-      }
+
+      // Tarifa dinámica: EVGreen encapsula todo el servicio cobrado en un solo concepto.
+      // Si hay kWh registrados, inyectamos cantidad = kWh y precio = total / kWh para respetar
+      // la unidad física y dar la suma exacta cobrada. Si no hay kWh, cantidad = 1 y precio = total.
+      const hasKwh = energyQuantity > 0;
+      const billedQuantity = hasKwh ? energyQuantity : 1;
+      const billedPrice = hasKwh
+        ? Number((input.totalAmount / energyQuantity).toFixed(2))
+        : input.totalAmount;
 
       const energyLine: any = {
-        price: itemPrice,
-        quantity: energyQuantity,
-        description: `${itemName} - Estación: ${input.stationName}. Cantidad: ${energyQuantity} kWh`,
+        price: billedPrice,
+        quantity: billedQuantity,
+        description: input.billedConceptDescription || `${itemName} - Estación: ${input.stationName}. Cantidad: ${billedQuantity} kWh`,
         tax: taxArray,
       };
 

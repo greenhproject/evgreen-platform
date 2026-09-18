@@ -158,12 +158,12 @@ describe("Guardia de Idempotencia y Emisión inyectando únicamente kWh", () => 
       stationId: 5,
       userId: 42,
       kwhConsumed: "32.4500",
-      appliedPricePerKwh: "1950.00",
+      appliedPricePerKwh: "2100.00",
       energyCost: "63277.50",
       timeCost: "0.00",
-      sessionCost: "0.00",
+      sessionCost: "5000.00", // cargo por conexión encapsulado
       overstayCost: "0.00",
-      totalCost: "63277.50",
+      totalCost: "68278.00", // Total cobrado al cliente
       startTime: "2026-09-17T04:00:00Z",
       endTime: "2026-09-17T04:55:00Z",
     } as any);
@@ -218,21 +218,24 @@ describe("Guardia de Idempotencia y Emisión inyectando únicamente kWh", () => 
 
     const result = await processChargingInvoice(2004);
 
-    expect(result.success).toBe(true);
-    expect(result.invoiceNumber).toBe("FE-888");
-    expect(result.cufe).toBe("CUFE-ALEGRA-DIAN-2026");
+      expect(result.success).toBe(true);
+      expect(result.invoiceNumber).toBe("FE-888");
+      expect(result.cufe).toBe("CUFE-ALEGRA-DIAN-2026");
 
-    expect(createSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        selectedProductId: "4061",
-        selectedProductName: "Servicio de recarga de energia",
-      }),
-      expect.objectContaining({
-        transactionId: 2004,
-        energyDelivered: 32.45,
-        appliedPricePerKwh: 1950,
-      })
-    );
+      // El valor total debe ser exactamente $68.278 COP y la tarifa unitaria efectiva
+      // calculada dinámicamente: 68278 / 32.45 = 2104.10 COP/kWh
+      expect(createSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          selectedProductId: "4061",
+          selectedProductName: "Servicio de recarga de energia",
+        }),
+        expect.objectContaining({
+          transactionId: 2004,
+          energyDelivered: 32.45,
+          totalAmount: 68278,
+          dynamicUnitPrice: 2104.1,
+        })
+      );
 
     createSpy.mockRestore();
   });

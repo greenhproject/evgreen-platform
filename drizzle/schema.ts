@@ -2791,8 +2791,9 @@ export const tenantBillingSettings = mysqlTable("tenant_billing_settings", {
 	worldOfficeItemId: varchar("world_office_item_id", { length: 50 }),
 	worldOfficeTaxId: varchar("world_office_tax_id", { length: 50 }),
 
-	// Producto/servicio único que EVGreen factura por cantidad de kWh.
-	// El precio e impuestos se sincronizan desde el catálogo del proveedor.
+	// Producto/servicio único que EVGreen utiliza como concepto fiscal.
+	// El precio del catálogo es referencial; el valor de cada línea se congela
+	// con el total real de la sesión al momento de facturar.
 	selectedProductId: varchar("selected_product_id", { length: 150 }),
 	selectedProductName: varchar("selected_product_name", { length: 255 }),
 	selectedProductCode: varchar("selected_product_code", { length: 150 }),
@@ -2828,6 +2829,9 @@ export const electronicInvoices = mysqlTable("electronic_invoices", {
 	invoiceNumber: varchar("invoice_number", { length: 100 }),
 	cufe: text(),
 	totalAmount: decimal("total_amount", { precision: 12, scale: 2 }).default('0').notNull(),
+	billedUnitPrice: decimal("billed_unit_price", { precision: 14, scale: 2 }).default('0').notNull(),
+	billedProductId: varchar("billed_product_id", { length: 150 }),
+	billedProductName: varchar("billed_product_name", { length: 255 }),
 	energyKwh: decimal("energy_kwh", { precision: 10, scale: 4 }).default('0').notNull(),
 	customerName: varchar("customer_name", { length: 255 }),
 	customerIdentification: varchar("customer_identification", { length: 50 }),

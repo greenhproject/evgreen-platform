@@ -300,7 +300,6 @@ export class SiigoAdapter implements BillingAdapter {
 
       // 2. Líneas de factura
       const targetCode = settings.selectedProductCode || settings.siigoProductCode || "EV-KWH-01";
-      let itemPrice = input.appliedPricePerKwh;
       let itemTaxId = settings.siigoTaxId;
       let itemName = settings.selectedProductName || "Servicio de recarga de energía";
 
@@ -310,7 +309,6 @@ export class SiigoAdapter implements BillingAdapter {
           const liveProduct = await this.getItemById(settings, String(settings.selectedProductId || targetCode));
           if (liveProduct) {
             if (liveProduct.name) itemName = liveProduct.name;
-            if (liveProduct.price !== undefined && liveProduct.price > 0) itemPrice = liveProduct.price;
             if (liveProduct.taxId) itemTaxId = liveProduct.taxId;
           }
         } catch (siigoItemErr: any) {
@@ -320,15 +318,18 @@ export class SiigoAdapter implements BillingAdapter {
 
       const taxArray = itemTaxId ? [{ id: parseInt(itemTaxId) }] : [];
       const energyQuantity = parseFloat(input.energyDelivered.toFixed(2));
-      if (energyQuantity <= 0) {
-        return { success: false, error: "La cantidad de energía (kWh) debe ser mayor a cero" };
-      }
+
+      const hasKwh = energyQuantity > 0;
+      const billedQuantity = hasKwh ? energyQuantity : 1;
+      const billedPrice = hasKwh
+        ? Number((input.totalAmount / energyQuantity).toFixed(2))
+        : input.totalAmount;
 
       const items = [{
         code: targetCode,
-        description: `${itemName} - Estación: ${input.stationName}. Cantidad: ${energyQuantity} kWh`,
-        quantity: energyQuantity,
-        price: itemPrice,
+        description: input.billedConceptDescription || `${itemName} - Estación: ${input.stationName}. Cantidad: ${billedQuantity} kWh`,
+        quantity: billedQuantity,
+        price: billedPrice,
         taxes: taxArray,
       }];
 

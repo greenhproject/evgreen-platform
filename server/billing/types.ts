@@ -20,7 +20,7 @@ export interface CanonicalInvoiceInput {
   userKindOfPerson?: "PERSON_ENTITY" | "LEGAL_ENTITY" | string;
   userRegime?: "SIMPLIFIED_REGIME" | "COMMON_REGIME" | "NOT_RESPONSIBLE_FOR_IVA" | string;
   userExternalContactId?: string;
-  // Datos de la sesión de recarga
+  // Datos de la sesión de recarga y tarifa dinámica
   energyDelivered: number;     // kWh consumidos
   appliedPricePerKwh: number;  // COP/kWh aplicado en la sesión
   energyCost: number;          // COP energía
@@ -28,6 +28,8 @@ export interface CanonicalInvoiceInput {
   sessionCost: number;         // COP tarifa de conexión
   overstayCost: number;        // COP sobreestadía
   totalAmount: number;         // COP total
+  dynamicUnitPrice: number;    // Tarifa efectiva facturada (total / cantidad o total directo)
+  billedConceptDescription?: string;
   // Datos de la estación y conector
   stationName: string;
   stationAddress?: string;

@@ -202,7 +202,6 @@ export class WorldOfficeAdapter implements BillingAdapter {
 
       // 2. Construir renglones de venta
       const itemId = settings.selectedProductId || settings.worldOfficeItemId || "1";
-      let itemPrice = input.appliedPricePerKwh;
       let itemTaxId = settings.worldOfficeTaxId;
       let itemName = settings.selectedProductName || "Servicio de recarga de energía";
 
@@ -211,7 +210,6 @@ export class WorldOfficeAdapter implements BillingAdapter {
           const liveItem = await this.getItemById(settings, String(itemId));
           if (liveItem) {
             if (liveItem.name) itemName = liveItem.name;
-            if (liveItem.price !== undefined && liveItem.price > 0) itemPrice = liveItem.price;
             if (liveItem.taxId) itemTaxId = liveItem.taxId;
           }
         } catch (woErr: any) {
@@ -220,15 +218,18 @@ export class WorldOfficeAdapter implements BillingAdapter {
       }
 
       const energyQuantity = parseFloat(input.energyDelivered.toFixed(2));
-      if (energyQuantity <= 0) {
-        return { success: false, error: "La cantidad de energía (kWh) debe ser mayor a cero" };
-      }
+
+      const hasKwh = energyQuantity > 0;
+      const billedQuantity = hasKwh ? energyQuantity : 1;
+      const billedPrice = hasKwh
+        ? Number((input.totalAmount / energyQuantity).toFixed(2))
+        : input.totalAmount;
 
       const renglones = [{
         idInventario: itemId,
-        cantidad: energyQuantity,
-        valorUnitario: itemPrice,
-        concepto: `${itemName} - Estación: ${input.stationName}. Cantidad: ${energyQuantity} kWh`,
+        cantidad: billedQuantity,
+        valorUnitario: billedPrice,
+        concepto: input.billedConceptDescription || `${itemName} - Estación: ${input.stationName}. Cantidad: ${billedQuantity} kWh`,
         idImpuesto: itemTaxId || undefined,
       }];
 
