@@ -21,7 +21,7 @@ import {
 import { eq, desc, and, sql, like, or, inArray, count, gte, lte, isNull, isNotNull } from "drizzle-orm";
 import { randomBytes } from "crypto";
 import { storagePut } from "../storage";
-import { invokeLLM } from "../_core/llm";
+import { scoreSpaceInvestment } from "./space-ai-scoring";
 import { buildEmailParams } from "../utils/email-helper";
 import { optionalFormInteger, optionalFormNumber } from "./space-input-normalization";
 import { canManageCommercialPipeline, canManageSpaceAdministration } from "./pipeline-access";
@@ -36,6 +36,7 @@ import {
   resolveProspectoTechnicalCondition,
 } from "../../shared/prospecto-financial-scenario";
 import { buildProspectoGridUpgradeNote } from "./prospecto-grid-upgrade-note";
+import { getRevenueDistributionForSpaceType } from "../../shared/space-investment-scoring-policy";
 
 // ============================================================================
 // ROLE GUARDS
@@ -93,22 +94,19 @@ function parseProjectionSnapshot(value: unknown): CrowdfundingProjectionSnapshot
 async function buildSpaceCrowdfundingProjection(input: {
   investmentCop: number;
   totalPowerKw: number;
+  spaceType?: string | null;
   currentProject?: any;
 }) {
   if (input.investmentCop <= 0 || input.totalPowerKw <= 0) return null;
 
   const settings = await getPlatformSettings();
   const stored = parseProjectionSnapshot(input.currentProject?.financialProjectionSnapshot);
+  const distribution = getRevenueDistributionForSpaceType(input.spaceType);
   const investorSharePercent = Number(
-    input.currentProject?.investorSharePercent
-      ?? stored?.assumptions.investorSharePercent
-      ?? settings?.investorPercentage
-      ?? 70,
+    distribution.investorSharePercent,
   );
   const evgreenSharePercent = Number(
-    input.currentProject?.evgreenSharePercent
-      ?? stored?.assumptions.evgreenSharePercent
-      ?? (100 - investorSharePercent),
+    distribution.evgreenSharePercent,
   );
   const selectedScenario = stored?.selectedScenario ?? "REALISTIC";
   const snapshot = buildCrowdfundingProjectionSnapshot({
@@ -900,7 +898,7 @@ export const spacesRouter = router({
 		minimumInvestmentCop: z.number().optional(),
 		estimatedRoiPercent: z.string().optional(),
 		estimatedPaybackMonths: z.number().int().optional(),
-        estimatedPowerKw: z.number().int().optional(),
+        estimatedPowerKw: z.number().int().min(120, "EVGreen solo instala cargadores rápidos DC desde 120 kW.").optional(),
         estimatedChargerCount: z.number().int().optional(),
         recommendedChargerType: z.string().optional(),
       }))
@@ -973,7 +971,7 @@ export const spacesRouter = router({
 				const inherited = getCrowdfundingInheritanceSnapshot(submission, inheritedPhotos);
 				const targetAmount = inherited.targetAmount ?? 0;
 				const totalPowerKw = inherited.totalPowerKw ?? 0;
-				const projection = await buildSpaceCrowdfundingProjection({ investmentCop: targetAmount, totalPowerKw });
+          const projection = await buildSpaceCrowdfundingProjection({ investmentCop: targetAmount, totalPowerKw, spaceType: submission.spaceType });
 	            const [cfResult] = await db.insert(crowdfundingProjects).values({
 				name: inherited.name,
 				description: inherited.description,
@@ -1176,96 +1174,46 @@ export const spacesRouter = router({
           throw new TRPCError({ code: "NOT_FOUND", message: "Postulación no encontrada" });
         }
 
-        const prompt = `Eres un analista experto en infraestructura de carga de vehículos eléctricos en Colombia. Evalúa el siguiente espacio postulado para instalar cargadores EV y genera un puntaje de 0 a 100 junto con un análisis detallado.
+        const photos = await db
+          .select({ photoUrl: spacePhotos.photoUrl, photoType: spacePhotos.photoType, caption: spacePhotos.caption })
+          .from(spacePhotos)
+          .where(eq(spacePhotos.submissionId, input.id))
+          .orderBy(spacePhotos.sortOrder);
 
-DATOS DEL ESPACIO:
-- Nombre: ${submission.spaceName}
-- Tipo: ${SPACE_TYPE_LABELS[submission.spaceType] || submission.spaceType}
-- Ciudad: ${submission.city}${submission.department ? `, ${submission.department}` : ""}
-- Dirección: ${submission.address}
-- Área disponible: ${submission.availableAreaM2 || "No especificada"} m²
-- Puestos de parqueo: ${submission.parkingSpots || "No especificado"}
-- Capacidad del transformador: ${submission.transformerCapacityKva || "No especificada"} kVA
-- Tablero eléctrico accesible: ${submission.hasElectricalPanel ? "Sí" : "No"}
-- Distancia tablero-punto de carga: ${submission.electricalDistance || "No especificada"} metros
-- Internet disponible: ${submission.hasInternet ? "Sí" : "No"}
-- Horario: ${submission.is24Hours ? "24 horas" : `${submission.operatingHoursStart} - ${submission.operatingHoursEnd}`}
-- Vehículos diarios estimados: ${submission.estimatedDailyVehicles || "No especificado"}
-- % vehículos eléctricos estimado: ${submission.estimatedEvPercent || "No especificado"}%
-- Estrato socioeconómico: ${submission.socioeconomicStratum || "No especificado"}
-- Puntos de interés cercanos: ${submission.nearbyAttractions || "No especificados"}
-- Notas adicionales: ${submission.additionalNotes || "Ninguna"}
-
-CRITERIOS DE EVALUACIÓN:
-1. Viabilidad eléctrica (capacidad del transformador, acceso al tablero)
-2. Potencial de tráfico vehicular y demanda de carga EV
-3. Ubicación estratégica (estrato, tipo de zona, puntos de interés)
-4. Infraestructura existente (internet, área, parqueo)
-5. Horario de operación y accesibilidad
-6. Potencial de retorno de inversión para inversionistas
-
-Responde en formato JSON con la siguiente estructura:`;
-
-        const response = await invokeLLM({
-          messages: [
-            { role: "system", content: "Eres un analista experto en infraestructura de carga de vehículos eléctricos en Colombia. Responde siempre en español." },
-            { role: "user", content: prompt },
-          ],
-          response_format: {
-            type: "json_schema",
-            json_schema: {
-              name: "space_analysis",
-              strict: true,
-              schema: {
-                type: "object",
-                properties: {
-                  score: { type: "integer", description: "Puntaje general de 0 a 100" },
-                  summary: { type: "string", description: "Resumen ejecutivo de 2-3 oraciones" },
-                  strengths: {
-                    type: "array",
-                    items: { type: "string" },
-                    description: "Lista de fortalezas del espacio",
-                  },
-                  weaknesses: {
-                    type: "array",
-                    items: { type: "string" },
-                    description: "Lista de debilidades o riesgos",
-                  },
-                  recommendation: { type: "string", description: "Recomendación de tipo de cargador y potencia" },
-                  estimatedChargers: { type: "integer", description: "Número estimado de cargadores recomendados" },
-                  estimatedPowerKw: { type: "integer", description: "Potencia total estimada en kW" },
-                  investmentAppeal: { type: "string", description: "Atractivo para inversionistas (alto/medio/bajo)" },
-                  electricalViability: { type: "string", description: "Viabilidad eléctrica: viable, requires_upgrade, not_viable" },
-                },
-                required: ["score", "summary", "strengths", "weaknesses", "recommendation", "estimatedChargers", "estimatedPowerKw", "investmentAppeal", "electricalViability"],
-                additionalProperties: false,
-              },
-            },
-          },
-        });
-
-        const content = response.choices[0]?.message?.content;
-        let analysis: any;
-
+        let analysis;
         try {
-          analysis = JSON.parse(typeof content === "string" ? content : JSON.stringify(content));
-        } catch {
+          analysis = await scoreSpaceInvestment({ space: submission, photos });
+        } catch (error) {
+          console.error("[Spaces] Error generating multimodal AI scoring:", error);
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",
-            message: "Error al parsear respuesta de IA",
+            message: "No fue posible completar el análisis visual y técnico. Inténtalo de nuevo.",
           });
         }
+
+        let technicalNotes: Record<string, unknown>;
+        try {
+          technicalNotes = submission.technicalNotes ? JSON.parse(submission.technicalNotes) : {};
+        } catch {
+          technicalNotes = submission.technicalNotes ? { legacyText: submission.technicalNotes } : {};
+        }
+        technicalNotes.requiresNewTransformer = true;
+        technicalNotes.proposedTransformerKva = analysis.dcInfrastructure.requiredTransformerKva;
+        technicalNotes.dcPowerFactor = analysis.dcInfrastructure.transformerPowerFactor;
+        technicalNotes.dcMinimumChargerPowerKw = analysis.dcInfrastructure.minimumChargerPowerKw;
+        technicalNotes.dcScoringVersion = analysis.version;
 
         // Guardar en BD
         await db.update(spaceSubmissions)
           .set({
-            aiScore: Math.min(100, Math.max(0, analysis.score)),
+            aiScore: analysis.score,
             aiAnalysis: JSON.stringify(analysis),
             aiScoredAt: new Date().toISOString().slice(0, 19).replace("T", " "),
-            // Auto-llenar datos de inversión estimados si no existen
-            ...(submission.estimatedPowerKw ? {} : { estimatedPowerKw: analysis.estimatedPowerKw }),
-            ...(submission.estimatedChargerCount ? {} : { estimatedChargerCount: analysis.estimatedChargers }),
-            ...(submission.electricalViability ? {} : { electricalViability: analysis.electricalViability as any }),
+            technicalNotes: JSON.stringify(technicalNotes),
+            // Una recomendación antigua inferior a 120 kW no puede persistir como una oferta DC EVGreen válida.
+            ...(Number(submission.estimatedPowerKw) >= 120 ? {} : { estimatedPowerKw: analysis.estimatedPowerKw }),
+            ...(Number(submission.estimatedChargerCount) > 0 ? {} : { estimatedChargerCount: analysis.estimatedChargers }),
+            electricalViability: analysis.electricalViability,
           })
           .where(eq(spaceSubmissions.id, input.id));
 
@@ -1320,6 +1268,7 @@ Responde en formato JSON con la siguiente estructura:`;
 			const projection = await buildSpaceCrowdfundingProjection({
 				investmentCop: targetAmount,
 				totalPowerKw,
+				spaceType: submission.spaceType,
 				currentProject,
 			});
 			if (!projection) {
@@ -1539,6 +1488,9 @@ Responde en formato JSON con la siguiente estructura:`;
         }
         if (cleanFields.electricalDistance === undefined && electricalDistanceM !== undefined) {
           cleanFields.electricalDistance = electricalDistanceM;
+        }
+        if (cleanFields.estimatedPowerKw !== undefined && cleanFields.estimatedPowerKw < 120) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "EVGreen solo instala cargadores rápidos DC desde 120 kW." });
         }
         if (
           cleanFields.estimatedInvestmentCop !== undefined ||
@@ -1967,6 +1919,7 @@ Responde en formato JSON con la siguiente estructura:`;
 	        submission.technicalNotes,
 	        input.technicalConditionNote,
 	      );
+	      const revenueDistribution = getRevenueDistributionForSpaceType(submission.spaceType);
 	      try {
 	        assertProspectoFinancialScenarioIsDocumented({
 	          technicalCondition,
@@ -2007,8 +1960,8 @@ Responde en formato JSON con la siguiente estructura:`;
         estimatedPowerKw: submission.estimatedPowerKw ? parseFloat(String(submission.estimatedPowerKw)) : null,
         estimatedChargerCount: submission.estimatedChargerCount,
         allySharePercent: input.allySharePercent,
-        investorSharePercent: input.investorSharePercent,
-        platformSharePercent: input.platformSharePercent,
+	        investorSharePercent: revenueDistribution.investorSharePercent,
+	        platformSharePercent: revenueDistribution.evgreenSharePercent,
 	        installedPowerKw: requestedPowerKw,
 	        tarifaKwhCop: input.tarifaKwhCop ?? Number(platformSettings?.precioVentaDefault ?? 1800),
 	        energyCostPerKwhCop: input.energyCostPerKwhCop ?? Number(platformSettings?.costoEnergiaRed ?? 850),

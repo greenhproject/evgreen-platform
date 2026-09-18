@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { getSpacePipelineAction } from "@shared/space-pipeline-actions";
+import { getRevenueDistributionForSpaceType, resolveDcInfrastructureRequirement } from "@shared/space-investment-scoring-policy";
 import {
   MapPin, Search, Filter, Eye, Zap, Star, Send, Globe, Brain,
   CheckCircle2, XCircle, Clock, FileText, Loader2, ChevronLeft,
@@ -76,6 +77,16 @@ function toOptionalInteger(value: unknown): number | undefined {
   if (value === undefined || value === null || value === "") return undefined;
   const numberValue = typeof value === "number" ? value : Number(String(value).trim());
   return Number.isInteger(numberValue) ? numberValue : undefined;
+}
+
+function parseAiAnalysis(value: string | null | undefined): Record<string, any> | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 // ============================================================================
@@ -1121,26 +1132,33 @@ function SpaceDetailDialog({
 
   const statusInfo = STATUS_LABELS[space.spaceStatus as string] || STATUS_LABELS.pending;
   const StatusIcon = statusInfo.icon;
-  const aiAnalysis = space.aiAnalysis ? JSON.parse(space.aiAnalysis) : null;
+  const aiAnalysis = parseAiAnalysis(space.aiAnalysis);
   const commercialNextStep = COMMERCIAL_NEXT_STEPS[space.spaceStatus as string];
   const pipelineAction = getSpacePipelineAction(space.spaceStatus as string);
   const canManageAdministrativeDetails = user?.role === "admin" || user?.role === "staff";
 
   const requestedProspectoPowerKw = prospectoConfig.installedPowerKw || Number(space.estimatedPowerKw || 0);
   const transformerCapacityKva = Number(space.transformerCapacityKva || 0);
-  const prospectoRequiresGridUpgrade = space.electricalViability === "requires_upgrade"
+  const dcInfrastructure = resolveDcInfrastructureRequirement({
+    requestedPowerKw: requestedProspectoPowerKw,
+    chargerCount: Number(space.estimatedChargerCount || 1),
+    transformerCapacityKva,
+  });
+  const revenueDistribution = aiAnalysis?.revenueDistribution || getRevenueDistributionForSpaceType(space.spaceType);
+  const prospectoRequiresGridUpgrade = dcInfrastructure.requiresGridUpgrade
+    || space.electricalViability === "requires_upgrade"
     || space.electricalViability === "not_viable"
     || (transformerCapacityKva > 0 && requestedProspectoPowerKw > transformerCapacityKva);
   const prospectoTechnicalReady = !prospectoRequiresGridUpgrade
-    || (prospectoConfig.capexIncludesGridUpgrade && prospectoConfig.technicalConditionNote.trim().length >= 10);
+    || (dcInfrastructure.meetsDcMinimum && prospectoConfig.capexIncludesGridUpgrade && prospectoConfig.technicalConditionNote.trim().length >= 10);
 
   const handleOpenProspectoDialog = () => {
-    const investorSharePercent = Number(calculatorParams?.investorPercentage ?? 70);
+    const distribution = getRevenueDistributionForSpaceType(space.spaceType);
     setProspectoConfig({
       allySharePercent: 10,
-      investorSharePercent,
-      platformSharePercent: 100 - investorSharePercent,
-      installedPowerKw: Number(space.estimatedPowerKw || 0) || undefined,
+      investorSharePercent: distribution.investorSharePercent,
+      platformSharePercent: distribution.evgreenSharePercent,
+      installedPowerKw: Math.max(120, Number(space.estimatedPowerKw || 0)) || 120,
       tarifaKwhCop: Number(calculatorParams?.precioVentaDefault ?? 1800),
       energyCostPerKwhCop: Number(calculatorParams?.costoEnergiaRed ?? 850),
       fixedMonthlyExpensesCop: 0,
@@ -1526,6 +1544,22 @@ function SpaceDetailDialog({
                 {aiAnalysis && (
                   <DetailSection title={`Análisis IA — Score: ${space.aiScore}/100`} icon={<Brain className="w-4 h-4 text-purple-400" />}>
                     <p className="text-xs sm:text-sm text-gray-300 mb-3 leading-relaxed">{aiAnalysis.summary}</p>
+                    {aiAnalysis.scoreComponents && (
+                      <div className="mb-3 grid grid-cols-2 gap-1.5 text-[11px] sm:grid-cols-5">
+                        {[
+                          ["Técnica", aiAnalysis.scoreComponents.technical, 25],
+                          ["Tráfico", aiAnalysis.scoreComponents.traffic, 30],
+                          ["Predio", aiAnalysis.scoreComponents.visualSite, 20],
+                          ["Demanda", aiAnalysis.scoreComponents.demandContext, 15],
+                          ["Acceso", aiAnalysis.scoreComponents.operatingAccess, 10],
+                        ].map(([label, value, maximum]) => (
+                          <div key={String(label)} className="rounded-md border border-purple-400/20 bg-purple-500/5 px-2 py-1.5 text-center">
+                            <p className="text-purple-200/75">{label}</p>
+                            <p className="font-semibold text-purple-100">{String(value)}/{String(maximum)}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     {aiAnalysis.strengths?.length > 0 && (
                       <div className="mb-2">
                         <p className="text-xs text-gray-500 mb-1">Fortalezas:</p>
@@ -1556,6 +1590,29 @@ function SpaceDetailDialog({
                         <DetailRow label="Viabilidad" value={aiAnalysis.electricalViability || "—"} />
                       </div>
                     </div>
+                    {aiAnalysis.visualAnalysis && (
+                      <div className="mt-3 rounded-lg border border-sky-400/20 bg-sky-500/5 p-2.5">
+                        <p className="mb-1.5 text-xs font-medium text-sky-200">Lectura visual del predio <span className="font-normal text-sky-200/65">(confianza {aiAnalysis.visualAnalysis.confidence || "media"})</span></p>
+                        <div className="space-y-1 text-[11px] leading-relaxed text-slate-300">
+                          <p><span className="text-slate-500">Área:</span> {aiAnalysis.visualAnalysis.usableArea}</p>
+                          <p><span className="text-slate-500">Accesos:</span> {aiAnalysis.visualAnalysis.accessRoads}</p>
+                          <p><span className="text-slate-500">Circulación:</span> {aiAnalysis.visualAnalysis.circulationSafety}</p>
+                          <p><span className="text-slate-500">Evidencia eléctrica:</span> {aiAnalysis.visualAnalysis.electricalEvidence}</p>
+                        </div>
+                      </div>
+                    )}
+                    {aiAnalysis.dcInfrastructure && (
+                      <div className="mt-3 rounded-lg border border-amber-400/25 bg-amber-400/10 p-2.5 text-[11px] leading-relaxed text-amber-100">
+                        <p className="font-semibold text-amber-200">Diseño técnico EVGreen: DC desde 120 kW</p>
+                        <p className="mt-1">{aiAnalysis.dcInfrastructure.estimatedPowerKw || aiAnalysis.estimatedPowerKw} kW DC · transformador dedicado mínimo {aiAnalysis.dcInfrastructure.requiredTransformerKva} kVA (FP {aiAnalysis.dcInfrastructure.transformerPowerFactor}) · ampliación y aprobación del operador de red requeridas.</p>
+                      </div>
+                    )}
+                    {aiAnalysis.revenueDistribution && (
+                      <div className="mt-3 rounded-lg border border-emerald-400/20 bg-emerald-500/5 p-2.5 text-[11px] text-emerald-100">
+                        <p className="font-semibold text-emerald-200">Distribución aplicable sobre margen neto</p>
+                        <p className="mt-1">{aiAnalysis.revenueDistribution.summary}</p>
+                      </div>
+                    )}
                   </DetailSection>
                 )}
 
@@ -2356,6 +2413,7 @@ function SpaceDetailDialog({
                 <Settings2 className="w-4 h-4" /> Modelo de Reparto de Ingresos
               </h4>
               <p className="text-gray-500 text-xs leading-relaxed">Ingreso bruto − energía − gastos fijos = margen bruto. El aliado participa sobre ese margen; Inversor y EVGreen se reparten exclusivamente el margen neto resultante.</p>
+              <p className="rounded-md border border-emerald-400/20 bg-emerald-500/5 px-2.5 py-2 text-xs leading-relaxed text-emerald-100">Política aplicada: <strong>{revenueDistribution.investorSharePercent}% inversionista / {revenueDistribution.evgreenSharePercent}% EVGreen</strong> sobre margen neto ({revenueDistribution.basis === "EDS" ? "EDS" : "otros negocios"}). La comisión del dueño del sitio, cuando aplique, permanece separada como porcentaje del aliado sobre el margen bruto.</p>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">Aliado (% margen bruto)</Label>
@@ -2374,11 +2432,9 @@ function SpaceDetailDialog({
                   <Input
                     type="number" min={1} max={99}
                     value={prospectoConfig.investorSharePercent}
-                    onChange={e => {
-                      const v = Math.min(99, Math.max(1, parseInt(e.target.value) || 70));
-                      setProspectoConfig(c => ({ ...c, investorSharePercent: v, platformSharePercent: 100 - v }));
-                    }}
-                    className="bg-[#111827] border-[#374151] text-white h-8 text-sm"
+                    readOnly
+                    aria-readonly="true"
+                    className="bg-[#111827] border-[#374151] text-white h-8 text-sm opacity-80"
                   />
                 </div>
                 <div>
@@ -2386,11 +2442,9 @@ function SpaceDetailDialog({
                   <Input
                     type="number" min={1} max={99}
                     value={prospectoConfig.platformSharePercent}
-                    onChange={e => {
-                      const v = Math.min(99, Math.max(1, parseInt(e.target.value) || 30));
-                      setProspectoConfig(c => ({ ...c, platformSharePercent: v, investorSharePercent: 100 - v }));
-                    }}
-                    className="bg-[#111827] border-[#374151] text-white h-8 text-sm"
+                    readOnly
+                    aria-readonly="true"
+                    className="bg-[#111827] border-[#374151] text-white h-8 text-sm opacity-80"
                   />
                 </div>
               </div>
@@ -2468,8 +2522,9 @@ function SpaceDetailDialog({
                   <div>
                     <p className="text-sm font-semibold">La potencia proyectada requiere ampliación eléctrica</p>
                     <p className="text-xs leading-relaxed text-amber-100/80 mt-1">
-                      {requestedProspectoPowerKw} kW proyectados frente a {transformerCapacityKva > 0 ? `${transformerCapacityKva} kVA declarados` : "capacidad de transformador no confirmada"}. El PDF solo mostrará ROI y payback como escenario condicionado si el CAPEX total incorpora la ampliación.
+                      {requestedProspectoPowerKw} kW DC proyectados requieren un transformador dedicado de al menos {dcInfrastructure.requiredTransformerKva} kVA con factor de potencia de {dcInfrastructure.transformerPowerFactor}. {transformerCapacityKva > 0 ? `El transformador declarado es de ${transformerCapacityKva} kVA y no se presume capacidad libre.` : "No hay transformador declarado."} El PDF solo mostrará ROI y payback como escenario condicionado si el CAPEX total incorpora la ampliación.
                     </p>
+                    {!dcInfrastructure.meetsDcMinimum && <p className="mt-2 text-xs font-medium text-amber-200">EVGreen solo proyecta cargadores rápidos DC desde 120 kW. Ajusta la potencia para continuar.</p>}
                   </div>
                 </div>
                 <label className="flex items-start gap-2 text-xs text-gray-200 cursor-pointer">

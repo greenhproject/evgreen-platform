@@ -3,12 +3,16 @@ import {
   type CrowdfundingProjectionInput,
   type CrowdfundingProjectionSnapshot,
 } from "./crowdfunding-financial-projection";
+import { resolveDcInfrastructureRequirement } from "./space-investment-scoring-policy";
 
 export type ProspectoTechnicalCondition = {
   requiresGridUpgrade: boolean;
   reason: string | null;
   transformerCapacityKva: number | null;
   requestedPowerKw: number;
+  requiredTransformerKva: number;
+  transformerPowerFactor: number;
+  meetsDcMinimum: boolean;
 };
 
 export type ProspectoFinancialScenarioInput = CrowdfundingProjectionInput & {
@@ -23,39 +27,38 @@ export type ProspectoFinancialScenarioInput = CrowdfundingProjectionInput & {
  * factor de potencia, protecciones y estudio del operador de red.
  */
 export function resolveProspectoTechnicalCondition(input: Pick<ProspectoFinancialScenarioInput, "totalPowerKw" | "transformerCapacityKva" | "electricalViability">): ProspectoTechnicalCondition {
-  const transformerCapacityKva = Number(input.transformerCapacityKva);
-  const hasTransformerReading = Number.isFinite(transformerCapacityKva) && transformerCapacityKva > 0;
   const requestedPowerKw = Number(input.totalPowerKw);
+  const dcRequirement = resolveDcInfrastructureRequirement({
+    requestedPowerKw,
+    transformerCapacityKva: input.transformerCapacityKva,
+  });
+  const transformerCapacityKva = dcRequirement.declaredTransformerKva;
   const declaredUpgrade = input.electricalViability === "requires_upgrade";
   const declaredNotViable = input.electricalViability === "not_viable";
-  const exceedsDeclaredCapacity = hasTransformerReading && requestedPowerKw > transformerCapacityKva;
 
   if (declaredNotViable) {
     return {
       requiresGridUpgrade: true,
-      reason: "El espacio fue clasificado como no viable eléctricamente; requiere rediseño y validación técnica antes de proyectar retornos.",
-      transformerCapacityKva: hasTransformerReading ? transformerCapacityKva : null,
+      reason: `El espacio fue clasificado como no viable eléctricamente; requiere rediseño y validación técnica antes de proyectar retornos. ${dcRequirement.reason}`,
+      transformerCapacityKva,
       requestedPowerKw,
+      requiredTransformerKva: dcRequirement.requiredTransformerKva,
+      transformerPowerFactor: dcRequirement.transformerPowerFactor,
+      meetsDcMinimum: dcRequirement.meetsDcMinimum,
     };
   }
 
-  if (declaredUpgrade || exceedsDeclaredCapacity) {
-    const capacityDetail = hasTransformerReading
-      ? `La potencia proyectada (${requestedPowerKw} kW) supera la capacidad nominal declarada del transformador (${transformerCapacityKva} kVA).`
-      : "El espacio fue marcado como sujeto a ampliación eléctrica.";
-    return {
-      requiresGridUpgrade: true,
-      reason: `${capacityDetail} La potencia disponible definitiva debe confirmarse mediante estudio eléctrico y aprobación del operador de red.`,
-      transformerCapacityKva: hasTransformerReading ? transformerCapacityKva : null,
-      requestedPowerKw,
-    };
-  }
-
+  const declaredDetail = declaredUpgrade
+    ? "El espacio además fue marcado manualmente como sujeto a ampliación eléctrica. "
+    : "";
   return {
-    requiresGridUpgrade: false,
-    reason: null,
-    transformerCapacityKva: hasTransformerReading ? transformerCapacityKva : null,
+    requiresGridUpgrade: true,
+    reason: `${declaredDetail}${dcRequirement.reason}`,
+    transformerCapacityKva,
     requestedPowerKw,
+    requiredTransformerKva: dcRequirement.requiredTransformerKva,
+    transformerPowerFactor: dcRequirement.transformerPowerFactor,
+    meetsDcMinimum: dcRequirement.meetsDcMinimum,
   };
 }
 
@@ -64,6 +67,9 @@ export function assertProspectoFinancialScenarioIsDocumented(input: {
   capexIncludesGridUpgrade: boolean;
   technicalConditionNote?: string | null;
 }): void {
+  if (!input.technicalCondition.meetsDcMinimum) {
+    throw new Error("EVGreen solo proyecta cargadores rápidos DC desde 120 kW; ajusta la potencia antes de presentar ROI y payback.");
+  }
   if (!input.technicalCondition.requiresGridUpgrade) return;
   if (!input.capexIncludesGridUpgrade) {
     throw new Error("Este escenario requiere ampliación eléctrica. Confirma que el CAPEX total la incluye antes de presentar ROI y payback.");
