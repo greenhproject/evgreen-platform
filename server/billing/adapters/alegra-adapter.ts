@@ -193,7 +193,9 @@ export class AlegraAdapter implements BillingAdapter {
         return {
           id: String(it.id),
           name: it.name,
-          code: it.reference || undefined,
+          // Alegra expone el código UNSPSC como productKey; reference es solo
+          // una referencia interna y no resuelve la validación DIAN FAZ09.
+          code: it.productKey || it.code || it.reference || undefined,
           price: typeof unitPrice === "number" ? unitPrice : (unitPrice ? parseFloat(unitPrice) : 0),
           taxId: firstTax?.id ? String(firstTax.id) : undefined,
           taxName: firstTax?.name || undefined,
@@ -218,7 +220,7 @@ export class AlegraAdapter implements BillingAdapter {
       return {
         id: String(it.id),
         name: it.name,
-        code: it.reference || undefined,
+        code: it.productKey || it.code || it.reference || undefined,
         price: typeof unitPrice === "number" ? unitPrice : (unitPrice ? parseFloat(unitPrice) : 0),
         taxId: firstTax?.id ? String(firstTax.id) : undefined,
         taxName: firstTax?.name || undefined,
@@ -548,6 +550,12 @@ export class AlegraAdapter implements BillingAdapter {
             if (liveItem.name) itemName = liveItem.name;
             if (liveItem.taxId) {
               itemTaxId = liveItem.taxId;
+            }
+            if (settings.provider === "alegra" && !liveItem.code) {
+              return {
+                success: false,
+                error: `Alegra no puede emitir todavía: el producto "${liveItem.name || itemName}" (#${targetItemId}) no tiene código UNSPSC (productKey). Edítalo en Alegra y vuelve a sincronizarlo para resolver FAZ09.`,
+              };
             }
           }
         } catch (itemErr: any) {

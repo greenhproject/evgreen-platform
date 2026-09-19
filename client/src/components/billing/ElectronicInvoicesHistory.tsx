@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import {
   FileText,
@@ -32,6 +33,70 @@ interface Props {
   organizationId?: number | null;
 }
 
+type BillingErrorDetail = {
+  title: string;
+  summary: string;
+  guidance: string;
+  codes: string[];
+  raw: string;
+  transactionId?: number;
+};
+
+function cleanBillingError(raw: unknown): string {
+  let text = String(raw ?? "Error desconocido");
+  const jsonStart = text.indexOf("{");
+  if (jsonStart >= 0) {
+    try {
+      const parsed = JSON.parse(text.slice(jsonStart));
+      text = parsed?.error?.message || parsed?.message || parsed?.error || text;
+    } catch {
+      // Alegra ocasionalmente devuelve JSON escapado dentro de otro mensaje.
+      text = text.slice(jsonStart);
+    }
+  }
+  return text
+    .replace(/\\u003c/gi, "<")
+    .replace(/\\u003e/gi, ">")
+    .replace(/<\/?li>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/\\n/g, "\n")
+    .replace(/\\"/g, '"')
+    .replace(/\s*\n\s*/g, "\n")
+    .trim();
+}
+
+function parseBillingError(raw: unknown, transactionId?: number): BillingErrorDetail {
+  const cleaned = cleanBillingError(raw);
+  const codes = Array.from(new Set(cleaned.match(/\b(?:FAZ|FAB|RUT)\d+[A-Za-z]?\b|\b20\d{3}\b/gi) || []));
+  const codeSet = new Set(codes.map((code) => code.toUpperCase()));
+  const guidance: string[] = [];
+
+  if (codeSet.has("FAB05C")) {
+    guidance.push("En DIAN, asocia el prefijo FV al proveedor tecnológico/software de Alegra; EVGreen no puede hacer esa asociación por API.");
+  }
+  if (codeSet.has("FAZ09")) {
+    guidance.push("En Alegra, edita el producto 1900 y agrega su código UNSPSC/productKey. Luego vuelve a sincronizarlo en EVGreen.");
+  }
+  if (codeSet.has("RUT01")) {
+    guidance.push("RUT01 es una notificación informativa de Alegra sobre la validación futura del RUT; no es la causa principal del rechazo.");
+  }
+  if (codeSet.has("2035")) {
+    guidance.push("El contacto facturado no tiene tipo de identificación; completa CC/NIT u otro tipo válido.");
+  }
+  if (cleaned.toLowerCase().includes("forma de pago")) {
+    guidance.push("Verifica que la forma de pago esté guardada en la configuración de Alegra y vuelve a guardar la configuración.");
+  }
+
+  return {
+    title: codes.length ? `Alegra rechazó la factura (${codes.join(" · ")})` : "Alegra rechazó la factura",
+    summary: codes.length ? `Códigos detectados: ${codes.join(" · ")}` : "El proveedor devolvió un rechazo de validación.",
+    guidance: guidance.join(" ") || "Revisa el detalle técnico y la configuración del proveedor antes de reintentar.",
+    codes,
+    raw: cleaned,
+    transactionId,
+  };
+}
+
 export default function ElectronicInvoicesHistory({ mode = "tenant", organizationId }: Props) {
   const utils = trpc.useUtils();
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
@@ -40,7 +105,21 @@ export default function ElectronicInvoicesHistory({ mode = "tenant", organizatio
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [isBulkProcessing, setIsBulkProcessing] = useState(false);
   const [retryingInvoiceId, setRetryingInvoiceId] = useState<number | null>(null);
+  const [errorDetail, setErrorDetail] = useState<BillingErrorDetail | null>(null);
   const limit = 15;
+
+  const showBillingError = (raw: unknown, transactionId?: number) => {
+    const detail = parseBillingError(raw, transactionId);
+    setErrorDetail(detail);
+    toast.error(detail.title, {
+      description: detail.summary,
+      duration: 9000,
+      action: {
+        label: "Ver detalle",
+        onClick: () => setErrorDetail(detail),
+      },
+    });
+  };
 
   const tenantInvoicesQuery = (trpc.organizations as any).getMyElectronicInvoices.useQuery(
     {
@@ -106,7 +185,9 @@ export default function ElectronicInvoicesHistory({ mode = "tenant", organizatio
         toast.success(`Procesadas ${successes} factura(s) exitosamente.`);
       }
       if (failures > 0) {
-        toast.error(`${failures} factura(s) no pudieron emitirse.`);
+        toast.error(`${failures} factura(s) no pudieron emitirse.`, {
+          description: "Selecciona una factura fallida para consultar el rechazo específico.",
+        });
       }
       setSelectedIds([]);
       query.refetch();
@@ -122,13 +203,13 @@ export default function ElectronicInvoicesHistory({ mode = "tenant", organizatio
       if (data.success) {
         toast.success(`Factura emitida/resincronizada: #${data.invoiceNumber || data.invoiceId}`);
       } else {
-        toast.error(`Fallo en resincronización: ${data.error}`);
+        showBillingError(data.error);
       }
       (utils.organizations as any).getMyElectronicInvoices.invalidate();
     },
     onError: (err: any) => {
       setRetryingInvoiceId(null);
-      toast.error(`Error al resincronizar: ${err.message}`);
+      showBillingError(err.message);
     },
   });
 
@@ -138,13 +219,13 @@ export default function ElectronicInvoicesHistory({ mode = "tenant", organizatio
       if (data.success) {
         toast.success(`Factura emitida/resincronizada: #${data.invoiceNumber || data.invoiceId}`);
       } else {
-        toast.error(`Fallo en resincronización: ${data.error}`);
+        showBillingError(data.error);
       }
       (utils.settings as any).billingListInvoices.invalidate();
     },
     onError: (err: any) => {
       setRetryingInvoiceId(null);
-      toast.error(`Error al resincronizar: ${err.message}`);
+      showBillingError(err.message);
     },
   });
 
@@ -382,9 +463,25 @@ export default function ElectronicInvoicesHistory({ mode = "tenant", organizatio
                               )}
                             </div>
                           ) : inv.errorMessage ? (
-                            <span className="text-xs text-red-400 truncate max-w-[150px] inline-block" title={inv.errorMessage}>
-                              {inv.errorMessage}
-                            </span>
+                            (() => {
+                              const detail = parseBillingError(inv.errorMessage, inv.transactionId);
+                              return (
+                                <div className="flex items-center gap-1.5 max-w-[190px]">
+                                  <span className="text-[10px] text-red-400 truncate" title={detail.guidance}>
+                                    {detail.codes.length ? detail.codes.join(" · ") : "Rechazo Alegra"}
+                                  </span>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 px-1.5 text-[10px] text-red-300 hover:text-red-200 shrink-0"
+                                    onClick={() => setErrorDetail(detail)}
+                                  >
+                                    Ver detalle
+                                  </Button>
+                                </div>
+                              );
+                            })()
                           ) : (
                             <span className="text-xs text-muted-foreground">-</span>
                           )}
@@ -471,6 +568,26 @@ export default function ElectronicInvoicesHistory({ mode = "tenant", organizatio
           </div>
         )}
       </CardContent>
+
+      <Dialog open={!!errorDetail} onOpenChange={(open) => !open && setErrorDetail(null)}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="text-red-400">{errorDetail?.title || "Rechazo de factura"}</DialogTitle>
+            <DialogDescription>{errorDetail?.summary}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 overflow-y-auto pr-1">
+            <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+              <strong>Qué hacer:</strong> {errorDetail?.guidance}
+            </div>
+            <div>
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Respuesta técnica de Alegra</p>
+              <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/50 p-3 text-xs text-muted-foreground">
+                {errorDetail?.raw}
+              </pre>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

@@ -1896,6 +1896,13 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
           throw new TRPCError({ code: "NOT_FOUND", message: `Producto #${input.productId} no encontrado en ${provider}` });
         }
 
+        if (provider === "alegra" && !product.code) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `El producto "${product.name}" no tiene código UNSPSC en Alegra. Agrégalo en Inventario > Ítems de venta y vuelve a sincronizarlo para evitar el rechazo DIAN FAZ09.`,
+          });
+        }
+
         const taxesPayload = product.taxPercentage !== undefined || product.taxName
           ? JSON.stringify([{ id: product.taxId, name: product.taxName, percentage: product.taxPercentage }])
           : null;

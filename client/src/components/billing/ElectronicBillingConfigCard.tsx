@@ -501,6 +501,16 @@ export default function ElectronicBillingConfigCard({ mode = "tenant", organizat
       alegraPaymentMethodId: alegraPaymentMethodId || "transfer",
       alegraPaymentAccountId,
       alegraUseElectronicStamp,
+      alegraNumberTemplateId: alegraNumberTemplateId || undefined,
+      alegraNumberTemplateName: alegraNumberTemplateName || undefined,
+      alegraNumberTemplatePrefix: alegraNumberTemplatePrefix || undefined,
+      alegraNumberTemplateResolution: alegraNumberTemplateResolution || undefined,
+      alegraNumberTemplateStartDate: alegraNumberTemplateStartDate || undefined,
+      alegraNumberTemplateEndDate: alegraNumberTemplateEndDate || undefined,
+      alegraNumberTemplateStartNumber,
+      alegraNumberTemplateEndNumber,
+      alegraNumberTemplateCurrentNumber,
+      alegraNumberTemplateSyncedAt: alegraNumberTemplateId ? new Date().toISOString() : undefined,
       siigoUsername,
       siigoAccessKey: siigoAccessKey.startsWith("****") ? undefined : siigoAccessKey,
       siigoPartnerId,
@@ -808,6 +818,18 @@ export default function ElectronicBillingConfigCard({ mode = "tenant", organizat
                 <span className="text-muted-foreground block text-[10px] uppercase">Mecanismo de Cobro</span>
                 <span className="text-green-500 font-medium">Inyección Dinámica (Total/kWh)</span>
               </div>
+              {provider === "alegra" && (
+                <div className="col-span-2 sm:col-span-4 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">
+                  {selectedProductCode ? (
+                    <span><strong>Código UNSPSC:</strong> <span className="font-mono">{selectedProductCode}</span></span>
+                  ) : (
+                    <span className="flex items-start gap-2">
+                      <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-400" />
+                      <span><strong>Falta el código UNSPSC.</strong> Alegra rechazará la factura con FAZ09. Agrega el código del producto en Alegra y vuelve a buscarlo aquí para sincronizarlo.</span>
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           ) : (
             <div className="rounded-lg border border-dashed border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-500 flex items-center gap-2">
