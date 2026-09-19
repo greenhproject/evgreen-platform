@@ -2043,6 +2043,10 @@ export const transactions = mysqlTable("transactions", {
 	manualBatteryCapacityKwh: decimal({ precision: 6, scale: 2 }),
 	manualSocCalibrationKwh: decimal({ precision: 10, scale: 4 }),
 	manualSocCalibratedAt: timestamp({ mode: 'string' }),
+	// Modelo adaptativo exclusivo de la sesión AC: conserva la ficha declarada
+	// del vehículo y aprende una capacidad energética efectiva entre anclas SOC.
+	manualSocEffectiveCapacityKwh: decimal({ precision: 6, scale: 2 }),
+	manualSocCalibrationCount: int().default(0).notNull(),
 	chargeMode: varchar({ length: 20 }).default('full_charge'),
 	targetValue: decimal({ precision: 12, scale: 2 }).default('0'),
 	appliedPricePerKwh: decimal({ precision: 10, scale: 2 }),

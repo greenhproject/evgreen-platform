@@ -8358,6 +8358,13 @@ const nocRouter = router({
               ?? (tx.manualBatteryCapacityKwh !== null && tx.manualBatteryCapacityKwh !== undefined
                 ? parseFloat(String(tx.manualBatteryCapacityKwh))
                 : null);
+            const manualSocEffectiveCapacityKwh = liveData?.manualSocEffectiveCapacityKwh
+              ?? (tx.manualSocEffectiveCapacityKwh !== null && tx.manualSocEffectiveCapacityKwh !== undefined
+                ? parseFloat(String(tx.manualSocEffectiveCapacityKwh))
+                : null);
+            const manualSocCalibrationCount = liveData?.manualSocCalibrationCount
+              ?? tx.manualSocCalibrationCount
+              ?? 0;
             const manualSocCalibrationKwh = liveData?.manualSocCalibrationKwh
               ?? (tx.manualSocCalibrationKwh !== null && tx.manualSocCalibrationKwh !== undefined
                 ? parseFloat(String(tx.manualSocCalibrationKwh))
@@ -8368,7 +8375,7 @@ const nocRouter = router({
               chargeType: e.chargeType,
               chargerSoc,
               manualSoc,
-              batteryCapacityKwh: manualBatteryCapacityKwh,
+              batteryCapacityKwh: manualSocEffectiveCapacityKwh ?? manualBatteryCapacityKwh,
               currentEnergyKwh: currentKwh,
               calibrationEnergyKwh: manualSocCalibrationKwh,
               chargeCompleteDetected: liveData?.chargeCompleteDetected ?? false,
@@ -8383,6 +8390,8 @@ const nocRouter = router({
               socSource: operationalSoc.source,
               manualSoc,
               manualBatteryCapacityKwh,
+              manualSocEffectiveCapacityKwh,
+              manualSocCalibrationCount,
               manualSocCalibrationKwh,
               manualSocCalibratedAt,
               energySinceCalibrationKwh: operationalSoc.energySinceCalibrationKwh,

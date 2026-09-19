@@ -24,6 +24,8 @@ export type OperationalSocSession = {
   currentPower?: number | null;
   manualSoc?: number | null;
   manualBatteryCapacityKwh?: number | null;
+  manualSocEffectiveCapacityKwh?: number | null;
+  manualSocCalibrationCount?: number | null;
   energySinceCalibrationKwh?: number | null;
   manualSocCalibratedAt?: Date | string | null;
   manualSocAvailable?: boolean;
@@ -66,7 +68,10 @@ export function OperationalSocPanel({
 
   const recalibrate = trpc.noc.recalibrateManualSoc.useMutation({
     onSuccess: async result => {
-      toast.success(`SOC recalibrado a ${result.soc}% como valor absoluto`);
+      const learningMessage = result.learningApplied
+        ? ` Modelo ajustado a ${result.effectiveBatteryCapacityKwh} kWh efectivos.`
+        : " Se reinició la referencia absoluta.";
+      toast.success(`SOC recalibrado a ${result.soc}% como valor absoluto.${learningMessage}`);
       setDialogOpen(false);
       await utils.noc.getNetworkSnapshot.invalidate();
       await onUpdated?.();
@@ -78,6 +83,8 @@ export function OperationalSocPanel({
   const currentKwh = parseNumber(session.currentKwh);
   const currentPower = parseNumber(session.currentPower);
   const energySinceCalibration = parseNumber(session.energySinceCalibrationKwh);
+  const effectiveCapacity = parseNumber(session.manualSocEffectiveCapacityKwh);
+  const calibrationCount = Number(session.manualSocCalibrationCount ?? 0);
   const sourceLabel = SOC_SOURCE_LABEL[session.socSource] ?? "Fuente desconocida";
   const unavailableReason = session.manualSocUnavailableReason
     ?? session.calibrationPermissionReason
@@ -149,6 +156,11 @@ export function OperationalSocPanel({
                   +{energySinceCalibration.toFixed(2)} kWh desde la última calibración
                 </p>
               )}
+              {session.socSource === "manual" && effectiveCapacity > 0 && calibrationCount > 0 && (
+                <p className={cn("mt-0.5 text-[10px]", dark ? "text-cyan-300" : "text-cyan-700 dark:text-cyan-400")}>
+                  Modelo adaptativo: {effectiveCapacity.toFixed(1)} kWh efectivos · {calibrationCount} ajuste{calibrationCount === 1 ? "" : "s"}
+                </p>
+              )}
             </div>
           </div>
 
@@ -204,7 +216,7 @@ export function OperationalSocPanel({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor={`capacity-${session.transactionId}`}>Capacidad de batería (opcional)</Label>
+              <Label htmlFor={`capacity-${session.transactionId}`}>Capacidad declarada de batería (opcional)</Label>
               <div className="relative">
                 <Input
                   id={`capacity-${session.transactionId}`}
@@ -215,7 +227,7 @@ export function OperationalSocPanel({
                   step={0.1}
                   value={batteryCapacity}
                   onChange={event => setBatteryCapacity(event.target.value)}
-                  placeholder="Se conserva la capacidad conocida"
+                  placeholder="Se conserva la ficha conocida"
                   className="pr-12"
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">kWh</span>
@@ -225,7 +237,7 @@ export function OperationalSocPanel({
             <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 text-xs text-muted-foreground">
               <div className="flex items-start gap-2">
                 <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-                <p>La estimación continuará únicamente con la energía entregada después de esta calibración. En DC y cuando exista SOC OCPP real, la edición permanece bloqueada.</p>
+                <p>La estimación continúa sólo con la energía posterior a esta lectura. Las siguientes recalibraciones comparan el avance real del vehículo y ajustan gradualmente la capacidad efectiva de esta sesión, sin cambiar la ficha declarada. En DC y cuando exista SOC OCPP real, la edición permanece bloqueada.</p>
               </div>
             </div>
           </div>

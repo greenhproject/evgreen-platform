@@ -36,6 +36,8 @@ const baseTransaction = {
   manualBatteryCapacityKwh: "60.00",
   manualSocCalibrationKwh: null,
   manualSocCalibratedAt: null,
+  manualSocEffectiveCapacityKwh: null,
+  manualSocCalibrationCount: 0,
 } as any;
 
 function seedSession(transactionId: number, soc: number | null = null) {
@@ -133,5 +135,41 @@ describe("Operational SOC recalibration", () => {
     })).rejects.toThrow("SOC real por OCPP");
 
     expect(mocks.updateTransaction).not.toHaveBeenCalled();
+  });
+
+  it("learns a session-specific effective capacity from subsequent vehicle observations", async () => {
+    mocks.getEvseById.mockResolvedValue({ id: 12, chargeType: "AC" });
+    seedSession(baseTransaction.id);
+
+    await recalibrateManualSocTransaction({
+      transaction: baseTransaction,
+      soc: 35,
+      actorUserId: 7,
+    });
+    const session = getActiveSessionById(baseTransaction.id)!;
+    session.currentKwh = 15;
+
+    const result = await recalibrateManualSocTransaction({
+      transaction: {
+        ...baseTransaction,
+        manualSoc: 35,
+        manualSocCalibrationKwh: "12.0000",
+        manualSocEffectiveCapacityKwh: "60.00",
+      } as any,
+      soc: 39,
+      actorUserId: 7,
+    });
+
+    expect(result).toMatchObject({ learningApplied: true, calibrationCount: 1 });
+    expect(result.effectiveBatteryCapacityKwh).toBeGreaterThan(60);
+    expect(getActiveSessionById(baseTransaction.id)).toMatchObject({
+      manualSoc: 39,
+      manualSocCalibrationKwh: 15,
+      manualSocCalibrationCount: 1,
+    });
+    expect(mocks.updateTransaction).toHaveBeenLastCalledWith(baseTransaction.id, expect.objectContaining({
+      manualSocEffectiveCapacityKwh: result.effectiveBatteryCapacityKwh.toFixed(2),
+      manualSocCalibrationCount: 1,
+    }));
   });
 });

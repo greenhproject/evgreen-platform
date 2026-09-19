@@ -2164,6 +2164,10 @@ async function handleOCPP16Message(
                 manualSocCalibratedAt: (transaction as any).manualSocCalibratedAt
                   ? new Date((transaction as any).manualSocCalibratedAt)
                   : null,
+                manualSocEffectiveCapacityKwh: (transaction as any).manualSocEffectiveCapacityKwh !== null && (transaction as any).manualSocEffectiveCapacityKwh !== undefined
+                  ? parseFloat(String((transaction as any).manualSocEffectiveCapacityKwh))
+                  : null,
+                manualSocCalibrationCount: (transaction as any).manualSocCalibrationCount ?? 0,
                 lowPowerSince: null,
                 chargeCompleteDetected: false,
                 chargeCompleteNotified: false,
@@ -2297,6 +2301,10 @@ async function handleOCPP16Message(
               manualSocCalibratedAt: (transaction as any).manualSocCalibratedAt
                 ? new Date((transaction as any).manualSocCalibratedAt)
                 : null,
+              manualSocEffectiveCapacityKwh: (transaction as any).manualSocEffectiveCapacityKwh !== null && (transaction as any).manualSocEffectiveCapacityKwh !== undefined
+                ? parseFloat(String((transaction as any).manualSocEffectiveCapacityKwh))
+                : null,
+              manualSocCalibrationCount: (transaction as any).manualSocCalibrationCount ?? 0,
               lowPowerSince: null,
               chargeCompleteDetected: false,
               chargeCompleteNotified: false,

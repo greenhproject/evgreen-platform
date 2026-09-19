@@ -20,6 +20,7 @@ import { sendUserPush } from "../push/unified-push";
 import { dispatchOrganizationWebhookEvent } from "../api/webhook-dispatcher";
 import { calculateSocEstimation, getManualSocAvailability, resolveOperationalSoc } from "./soc-estimation";
 import { resolveChargingTelemetryFreshness, shouldAdvanceTelemetrySample } from "../../shared/charging-telemetry";
+import { learnEffectiveSocCapacity } from "../../shared/soc-calibration-learning";
 
 // Helper: buscar conexión por stationId en dualCSMS primero, luego fallback a legacy
 // Si ocppIdentity se provee, también busca en dualCSMS por identidad cuando stationId=null
@@ -114,6 +115,8 @@ const activeChargeSessions = new Map<number, {
   manualBatteryCapacityKwh: number | null;
   manualSocCalibrationKwh?: number | null;
   manualSocCalibratedAt?: Date | null;
+  manualSocEffectiveCapacityKwh?: number | null;
+  manualSocCalibrationCount?: number;
   // Detección de batería llena por caída de potencia
   lowPowerSince: Date | null; // Timestamp desde cuando la potencia está < umbral
   chargeCompleteDetected: boolean; // Si se detectó que la batería está llena
@@ -182,6 +185,26 @@ export async function recalibrateManualSocTransaction(input: {
       : 60;
   }
 
+  const previousEffectiveCapacityKwh = session?.manualSocEffectiveCapacityKwh
+    ?? (transaction.manualSocEffectiveCapacityKwh !== null && transaction.manualSocEffectiveCapacityKwh !== undefined
+      ? parseFloat(String(transaction.manualSocEffectiveCapacityKwh))
+      : null);
+  const previousCalibrationCount = session?.manualSocCalibrationCount
+    ?? transaction.manualSocCalibrationCount
+    ?? 0;
+  const learning = learnEffectiveSocCapacity({
+    previousSoc: session?.manualSoc ?? (transaction.manualSoc !== null && transaction.manualSoc !== undefined ? Number(transaction.manualSoc) : null),
+    previousEnergyKwh: session?.manualSocCalibrationKwh
+      ?? (transaction.manualSocCalibrationKwh !== null && transaction.manualSocCalibrationKwh !== undefined
+        ? parseFloat(String(transaction.manualSocCalibrationKwh))
+        : null),
+    observedSoc: input.soc,
+    currentEnergyKwh: currentKwh,
+    declaredCapacityKwh: batteryCapacityKwh,
+    effectiveCapacityKwh: previousEffectiveCapacityKwh,
+    calibrationCount: previousCalibrationCount,
+    capacityWasExplicitlyProvided: input.batteryCapacityKwh !== undefined,
+  });
   const calibratedAt = new Date();
 
   if (!session) {
@@ -216,6 +239,8 @@ export async function recalibrateManualSocTransaction(input: {
       manualBatteryCapacityKwh: batteryCapacityKwh,
       manualSocCalibrationKwh: currentKwh,
       manualSocCalibratedAt: calibratedAt,
+      manualSocEffectiveCapacityKwh: learning.effectiveCapacityKwh,
+      manualSocCalibrationCount: learning.calibrationCount,
       lowPowerSince: null,
       chargeCompleteDetected: false,
       chargeCompleteNotified: false,
@@ -228,6 +253,8 @@ export async function recalibrateManualSocTransaction(input: {
     session.manualBatteryCapacityKwh = batteryCapacityKwh;
     session.manualSocCalibrationKwh = currentKwh;
     session.manualSocCalibratedAt = calibratedAt;
+    session.manualSocEffectiveCapacityKwh = learning.effectiveCapacityKwh;
+    session.manualSocCalibrationCount = learning.calibrationCount;
     session.energyBasedSoc = input.soc;
   }
 
@@ -236,15 +263,21 @@ export async function recalibrateManualSocTransaction(input: {
     manualBatteryCapacityKwh: batteryCapacityKwh.toFixed(2),
     manualSocCalibrationKwh: currentKwh.toFixed(4),
     manualSocCalibratedAt: calibratedAt.toISOString().slice(0, 19).replace("T", " "),
+    manualSocEffectiveCapacityKwh: learning.effectiveCapacityKwh.toFixed(2),
+    manualSocCalibrationCount: learning.calibrationCount,
   });
 
-  console.log(`[setManualSoc] Actor ${input.actorUserId} recalibrated transaction ${transaction.id} to ${input.soc}% at ${currentKwh.toFixed(4)} kWh`);
+  console.log(`[setManualSoc] Actor ${input.actorUserId} recalibrated transaction ${transaction.id} to ${input.soc}% at ${currentKwh.toFixed(4)} kWh; effective capacity=${learning.effectiveCapacityKwh}kWh (${learning.reason})`);
 
   return {
     success: true,
     transactionId: transaction.id,
     soc: input.soc,
     batteryCapacityKwh,
+    effectiveBatteryCapacityKwh: learning.effectiveCapacityKwh,
+    calibrationCount: learning.calibrationCount,
+    learningApplied: learning.learned,
+    learningReason: learning.reason,
     calibrationEnergyKwh: currentKwh,
     calibratedAt,
   };
@@ -1372,6 +1405,8 @@ export const chargingRouter = router({
       let manualBatteryCapacity = activeSessionInfo?.manualBatteryCapacityKwh ?? null;
       let manualSocCalibrationKwh = activeSessionInfo?.manualSocCalibrationKwh ?? null;
       let manualSocCalibratedAt = activeSessionInfo?.manualSocCalibratedAt ?? null;
+      let manualSocEffectiveCapacityKwh = activeSessionInfo?.manualSocEffectiveCapacityKwh ?? null;
+      let manualSocCalibrationCount = activeSessionInfo?.manualSocCalibrationCount ?? 0;
       
       // Si no hay manualSoc en memoria, intentar restaurar desde la DB (transacción activa)
       if (manualSoc === null && activeTransaction.manualSoc !== null && activeTransaction.manualSoc !== undefined) {
@@ -1404,6 +1439,16 @@ export const chargingRouter = router({
           activeSessionInfo.manualSocCalibratedAt = manualSocCalibratedAt;
         }
       }
+
+      if (manualSocEffectiveCapacityKwh === null && activeTransaction.manualSocEffectiveCapacityKwh !== null && activeTransaction.manualSocEffectiveCapacityKwh !== undefined) {
+        manualSocEffectiveCapacityKwh = parseFloat(String(activeTransaction.manualSocEffectiveCapacityKwh));
+        if (activeSessionInfo) activeSessionInfo.manualSocEffectiveCapacityKwh = manualSocEffectiveCapacityKwh;
+      }
+
+      if (!manualSocCalibrationCount && activeTransaction.manualSocCalibrationCount) {
+        manualSocCalibrationCount = activeTransaction.manualSocCalibrationCount;
+        if (activeSessionInfo) activeSessionInfo.manualSocCalibrationCount = manualSocCalibrationCount;
+      }
       
       // Si no hay capacidad de batería en la sesión ni en DB, intentar cargar del vehículo del usuario
       if (manualBatteryCapacity === null) {
@@ -1431,7 +1476,7 @@ export const chargingRouter = router({
         chargeType,
         chargerSoc: soc,
         manualSoc,
-        batteryCapacityKwh: manualBatteryCapacity,
+        batteryCapacityKwh: manualSocEffectiveCapacityKwh ?? manualBatteryCapacity,
         currentEnergyKwh: currentKwh,
         calibrationEnergyKwh: manualSocCalibrationKwh,
         chargeCompleteDetected,
@@ -1523,6 +1568,8 @@ export const chargingRouter = router({
         socSource: operationalSoc.source,
         manualSoc: manualSoc, // SoC original ingresado por el usuario
         manualBatteryCapacityKwh: manualBatteryCapacity,
+        manualSocEffectiveCapacityKwh,
+        manualSocCalibrationCount,
         chargeType,
         manualSocAvailable: operationalSoc.manualSocAvailable,
         manualSocUnavailableReason: operationalSoc.manualSocUnavailableReason,
@@ -2177,6 +2224,8 @@ export type ActiveSessionOperationalSnapshot = {
   manualBatteryCapacityKwh: number | null;
   manualSocCalibrationKwh: number | null;
   manualSocCalibratedAt: Date | null;
+  manualSocEffectiveCapacityKwh: number | null;
+  manualSocCalibrationCount: number;
   chargeCompleteDetected: boolean;
 };
 
@@ -2193,6 +2242,8 @@ export function getAllActiveSessionsPower(): Map<number, ActiveSessionOperationa
       manualBatteryCapacityKwh: session.manualBatteryCapacityKwh ?? null,
       manualSocCalibrationKwh: session.manualSocCalibrationKwh ?? null,
       manualSocCalibratedAt: session.manualSocCalibratedAt ?? null,
+      manualSocEffectiveCapacityKwh: session.manualSocEffectiveCapacityKwh ?? null,
+      manualSocCalibrationCount: session.manualSocCalibrationCount ?? 0,
       chargeCompleteDetected: session.chargeCompleteDetected ?? false,
     });
   }
