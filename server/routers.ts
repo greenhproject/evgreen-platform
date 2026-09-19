@@ -2691,7 +2691,11 @@ const reservationsRouter = router({
     const enriched = await Promise.all(
       reservations.map(async (r) => {
         const station = await db.getChargingStationById(r.stationId);
-        return { ...r, stationName: station?.name || `Estación #${r.stationId}` };
+        return {
+          ...r,
+          stationName: station?.name || `Estación #${r.stationId}`,
+          stationAddress: station?.address || null,
+        };
       })
     );
     return enriched;
@@ -2884,35 +2888,25 @@ const reservationsRouter = router({
       }
             // Para reservas futuras (>15 min), un job periódico se encargará de marcar RESERVED cuando se acerque la hora
 
-      // WhatsApp: notificar reserva confirmada
+      // Reserva confirmada: alerta interna siempre y WhatsApp únicamente cuando
+      // Meta haya aprobado la plantilla transaccional correspondiente.
       try {
-        const userForWa = await db.getUserById(ctx.user.id);
-        if (userForWa?.phone) {
-          const station = await db.getChargingStationById(input.stationId);
-          const { sendWhatsAppMessage, WaTemplates } = await import("./whatsapp/whatsapp-service");
-          const startDate = new Date(input.startTime);
-          const endDate = new Date(input.endTime);
-          const { getStationTimezone, formatDateInTz, formatTimeRangeInTz } = await import("./utils/timezone");
-          const stationTz = getStationTimezone(station ?? {});
-          const dateStr = formatDateInTz(startDate, stationTz);
-          const timeStr = formatTimeRangeInTz(startDate, endDate, stationTz);
-          sendWhatsAppMessage({
-            toPhone: userForWa.phone,
-            message: WaTemplates.reservationConfirmed({
-              stationName: station?.name ?? `Estación #${input.stationId}`,
-              date: dateStr,
-              time: timeStr,
-              connectorId: input.evseId,
-              userName: userForWa.name?.split(" ")[0],
-            }),
-            eventType: "reservation_confirmed",
-            userId: ctx.user.id,
-            referenceId: id,
-            referenceType: "reservation",
-          }).catch((e: Error) => console.error("[WhatsApp] reservation_confirmed error:", e.message));
-        }
+        const [userForReservation, station] = await Promise.all([
+          db.getUserById(ctx.user.id),
+          db.getChargingStationById(input.stationId),
+        ]);
+        const { sendReservationConfirmation } = await import("./notifications/reservation-notifications");
+        await sendReservationConfirmation(
+          ctx.user.id,
+          id,
+          station?.name ?? `Estación #${input.stationId}`,
+          new Date(input.startTime),
+          dynamicPrice.reservationFee,
+          userForReservation,
+          evse.connectorId ?? input.evseId,
+        );
       } catch (waErr) {
-        console.error("[WhatsApp] reservation_confirmed trigger error:", waErr);
+        console.error("[Reservation] confirmation notification error:", waErr);
       }
 
       return { 
@@ -2950,6 +2944,30 @@ const reservationsRouter = router({
       }
       
       const result = await db.cancelReservationWithRefund(input.id, refundPercent);
+      if (result.success) {
+        try {
+          const [reservationUser, station, evse] = await Promise.all([
+            db.getUserById(reservation.userId),
+            db.getChargingStationById(reservation.stationId),
+            db.getEvseById(reservation.evseId),
+          ]);
+          const { sendReservationLifecycleNotification } = await import("./notifications/reservation-notifications");
+          await sendReservationLifecycleNotification({
+            userId: reservation.userId,
+            reservationId: reservation.id,
+            userName: reservationUser?.name,
+            userPhone: reservationUser?.phone,
+            event: "cancelled",
+            context: {
+              stationName: station?.name ?? `Estación #${reservation.stationId}`,
+              connectorLabel: evse?.connectorId ?? reservation.evseId,
+              refundAmount: result.refundAmount,
+            },
+          });
+        } catch (notificationError) {
+          console.error("[Reservation] cancellation notification error:", notificationError);
+        }
+      }
       
       return { 
         success: result.success, 
@@ -5882,6 +5900,7 @@ const userConfigRouter = router({
         waNotifyChargeStart: true,
         waNotifyChargeEnd: true,
         waNotifyReminder: false,
+        waNotifyReservations: true,
         waNotifyPenalty: true,
         waNotifyWallet: true,
       };
@@ -5891,6 +5910,7 @@ const userConfigRouter = router({
         waNotifyChargeStart: users.waNotifyChargeStart,
         waNotifyChargeEnd: users.waNotifyChargeEnd,
         waNotifyReminder: users.waNotifyReminder,
+        waNotifyReservations: users.waNotifyReservations,
         waNotifyPenalty: users.waNotifyPenalty,
         waNotifyWallet: users.waNotifyWallet,
       })
@@ -5902,6 +5922,7 @@ const userConfigRouter = router({
       waNotifyChargeStart: user?.waNotifyChargeStart ?? true,
       waNotifyChargeEnd: user?.waNotifyChargeEnd ?? true,
       waNotifyReminder: user?.waNotifyReminder ?? false,
+      waNotifyReservations: user?.waNotifyReservations ?? true,
       waNotifyPenalty: user?.waNotifyPenalty ?? true,
       waNotifyWallet: user?.waNotifyWallet ?? true,
     };
@@ -5913,6 +5934,7 @@ const userConfigRouter = router({
       waNotifyChargeStart: z.boolean().optional(),
       waNotifyChargeEnd: z.boolean().optional(),
       waNotifyReminder: z.boolean().optional(),
+      waNotifyReservations: z.boolean().optional(),
       waNotifyPenalty: z.boolean().optional(),
       waNotifyWallet: z.boolean().optional(),
     }))
@@ -5926,6 +5948,7 @@ const userConfigRouter = router({
       if (input.waNotifyChargeStart !== undefined) updateData.waNotifyChargeStart = input.waNotifyChargeStart;
       if (input.waNotifyChargeEnd !== undefined) updateData.waNotifyChargeEnd = input.waNotifyChargeEnd;
       if (input.waNotifyReminder !== undefined) updateData.waNotifyReminder = input.waNotifyReminder;
+      if (input.waNotifyReservations !== undefined) updateData.waNotifyReservations = input.waNotifyReservations;
       if (input.waNotifyPenalty !== undefined) updateData.waNotifyPenalty = input.waNotifyPenalty;
       if (input.waNotifyWallet !== undefined) updateData.waNotifyWallet = input.waNotifyWallet;
 
@@ -7864,11 +7887,15 @@ const whatsappRouter = router({
   getConfig: adminProcedure.query(async () => {
     const { getWhatsAppConfig } = await import("./whatsapp/whatsapp-service");
     const cfg = await getWhatsAppConfig();
-    // Mask the access token for security
-    if (cfg?.accessToken) {
-      return { ...cfg, accessToken: cfg.accessToken.slice(0, 8) + "*".repeat(20) + cfg.accessToken.slice(-4) };
-    }
-    return cfg;
+    if (!cfg) return cfg;
+    // Los secretos nunca vuelven al navegador; la UI sólo conoce si están configurados.
+    const { accessToken, appSecret, verifyToken, ...safeConfig } = cfg;
+    return {
+      ...safeConfig,
+      accessToken: accessToken ? accessToken.slice(0, 8) + "*".repeat(20) + accessToken.slice(-4) : "",
+      appSecretConfigured: Boolean(appSecret),
+      verifyTokenConfigured: Boolean(verifyToken),
+    };
   }),
 
   saveConfig: adminProcedure
@@ -7879,6 +7906,8 @@ const whatsappRouter = router({
       wabaId: z.string().optional(),
       fromPhone: z.string().optional(),
       adminPhone: z.string().optional(),
+      appSecret: z.string().min(16).optional(),
+      verifyToken: z.string().min(16).optional(),
       notifyChargeStart: z.boolean().optional(),
       notifyChargeEnd: z.boolean().optional(),
       notifyChargeProgress: z.boolean().optional(),
@@ -7906,6 +7935,8 @@ const whatsappRouter = router({
           ...(input.wabaId && { wabaId: input.wabaId }),
           ...(input.fromPhone && { displayPhone: input.fromPhone }),
           ...(input.adminPhone !== undefined && { adminPhone: input.adminPhone }),
+          ...(input.appSecret && { appSecret: input.appSecret }),
+          ...(input.verifyToken && { verifyToken: input.verifyToken }),
           ...(input.notifyChargeStart !== undefined && { notifyChargeStart: input.notifyChargeStart }),
           ...(input.notifyChargeEnd !== undefined && { notifyChargeEnd: input.notifyChargeEnd }),
           ...(input.notifyChargeProgress !== undefined && { notifyChargeProgress: input.notifyChargeProgress }),
@@ -7926,6 +7957,8 @@ const whatsappRouter = router({
           accessToken: tokenToSave ?? "",
           wabaId: input.wabaId ?? "",
           displayPhone: input.fromPhone ?? "",
+          appSecret: input.appSecret ?? "",
+          verifyToken: input.verifyToken ?? "",
           notifyChargeStart: input.notifyChargeStart ?? true,
           notifyChargeEnd: input.notifyChargeEnd ?? true,
           notifyChargeProgress: input.notifyChargeProgress ?? false,
@@ -7954,6 +7987,21 @@ const whatsappRouter = router({
   createStationAvailabilityTemplate: adminProcedure.mutation(async () => {
     const { createStationAvailabilityTemplate } = await import("./whatsapp/whatsapp-service");
     return createStationAvailabilityTemplate();
+  }),
+
+  getReservationTemplate: adminProcedure.query(async () => {
+    const { getConfiguredReservationTemplate } = await import("./whatsapp/whatsapp-service");
+    return getConfiguredReservationTemplate();
+  }),
+
+  refreshReservationTemplate: adminProcedure.mutation(async () => {
+    const { refreshReservationTemplateStatus } = await import("./whatsapp/whatsapp-service");
+    return refreshReservationTemplateStatus();
+  }),
+
+  createReservationTemplate: adminProcedure.mutation(async () => {
+    const { createReservationTemplate } = await import("./whatsapp/whatsapp-service");
+    return createReservationTemplate();
   }),
 
   sendTest: adminProcedure

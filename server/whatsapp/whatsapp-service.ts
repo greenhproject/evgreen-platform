@@ -17,6 +17,10 @@ export type WaEventType =
   | "wallet_recharge"
   | "charger_offline"
   | "reservation_confirmed"
+  | "reservation_reminder"
+  | "reservation_started"
+  | "reservation_cancelled"
+  | "reservation_no_show"
   | "monthly_summary"
   | "card_removed"
   | "card_added"
@@ -58,6 +62,7 @@ export const WA_TEMPLATE_NAMES = {
   overstay_gracia: "evgreen_overstay_gracia_v1",        // params: nombre, minutos_gracia, estacion, tarifa_por_min
   overstay_penalizacion: "evgreen_overstay_penalizacion_v1", // params: nombre, estacion, acumulado_cop, tarifa_por_min
   station_available: "evgreen_estacion_disponible_v1",  // params: nombre, conector, estacion
+  reservation_status: "evgreen_reserva_actualizacion_v1", // params: nombre, estado, estacion
 } as const;
 
 export type StationAvailabilityTemplateState =
@@ -78,7 +83,7 @@ export type StationAvailabilityTemplateInfo = {
   reason?: string;
 };
 
-const AVAILABILITY_TEMPLATE_LANGUAGE = "es";
+const WHATSAPP_TEMPLATE_LANGUAGE = "es";
 
 function mapMetaTemplateStatus(status?: string): StationAvailabilityTemplateState {
   const normalized = String(status ?? "").trim().toUpperCase();
@@ -141,7 +146,7 @@ export async function refreshStationAvailabilityTemplateStatus(): Promise<Statio
     if (!response.ok) {
       throw new Error(data.error?.message || `HTTP ${response.status}`);
     }
-    const found = data.data?.find((template) => template.name === name && (!template.language || template.language === AVAILABILITY_TEMPLATE_LANGUAGE))
+    const found = data.data?.find((template) => template.name === name && (!template.language || template.language === WHATSAPP_TEMPLATE_LANGUAGE))
       ?? data.data?.find((template) => template.name === name);
     const status = found ? mapMetaTemplateStatus(found.status) : "NOT_CONFIGURED";
     const database = await getDb();
@@ -191,7 +196,7 @@ export async function createStationAvailabilityTemplate(): Promise<StationAvaila
     body: JSON.stringify({
       name,
       category: "UTILITY",
-      language: AVAILABILITY_TEMPLATE_LANGUAGE,
+      language: WHATSAPP_TEMPLATE_LANGUAGE,
       parameter_format: "POSITIONAL",
       components: [{
         type: "BODY",
@@ -226,6 +231,147 @@ export async function createStationAvailabilityTemplate(): Promise<StationAvaila
   };
 }
 
+export type ReservationTemplateInfo = {
+  name: string;
+  id: string | null;
+  status: StationAvailabilityTemplateState;
+  canSend: boolean;
+  checkedAt: string | null;
+  reason?: string;
+};
+
+/**
+ * La reserva usa una sola plantilla Utility con un estado y detalle explícitos.
+ * Así se puede notificar confirmación, recordatorios y resultados sin depender
+ * de la ventana de conversación de 24 horas.
+ */
+export async function getConfiguredReservationTemplate(): Promise<ReservationTemplateInfo> {
+  const cfg = await getWhatsAppConfig();
+  const name = cfg?.reservationTemplateName || WA_TEMPLATE_NAMES.reservation_status;
+  const configured = Boolean(cfg?.enabled && cfg?.notifyReservation && cfg?.phoneNumberId && cfg?.accessToken);
+  const status = (cfg?.reservationTemplateStatus || "NOT_CONFIGURED") as StationAvailabilityTemplateState;
+  return {
+    name,
+    id: cfg?.reservationTemplateId || null,
+    status,
+    canSend: configured && status === "APPROVED",
+    checkedAt: cfg?.reservationTemplateCheckedAt || null,
+    reason: !configured
+      ? "WhatsApp no está habilitado para avisos de reserva"
+      : status !== "APPROVED"
+        ? "La plantilla de reservas aún no está aprobada por Meta"
+        : undefined,
+  };
+}
+
+export async function refreshReservationTemplateStatus(): Promise<ReservationTemplateInfo> {
+  const cfg = await getWhatsAppConfig();
+  const name = cfg?.reservationTemplateName || WA_TEMPLATE_NAMES.reservation_status;
+  const checkedAt = new Date().toISOString();
+  if (!cfg?.enabled || !cfg.wabaId || !cfg.accessToken) {
+    return {
+      name,
+      id: cfg?.reservationTemplateId || null,
+      status: "NOT_CONFIGURED",
+      canSend: false,
+      checkedAt,
+      reason: "La configuración de WhatsApp Business no está completa o está deshabilitada",
+    };
+  }
+
+  try {
+    const response = await fetch(
+      `https://graph.facebook.com/v23.0/${cfg.wabaId}/message_templates?name=${encodeURIComponent(name)}&fields=id,name,status,language`,
+      { headers: { Authorization: `Bearer ${cfg.accessToken}` } },
+    );
+    const data = (await response.json()) as {
+      data?: Array<{ id?: string; name?: string; status?: string; language?: string }>;
+      error?: { message?: string };
+    };
+    if (!response.ok) throw new Error(data.error?.message || `HTTP ${response.status}`);
+
+    const found = data.data?.find((template) => template.name === name && (!template.language || template.language === WHATSAPP_TEMPLATE_LANGUAGE))
+      ?? data.data?.find((template) => template.name === name);
+    const status = found ? mapMetaTemplateStatus(found.status) : "NOT_CONFIGURED";
+    const database = await getDb();
+    if (database) {
+      await database.update(whatsappConfig).set({
+        reservationTemplateName: name,
+        reservationTemplateId: found?.id || null,
+        reservationTemplateStatus: status,
+        reservationTemplateCheckedAt: checkedAt,
+      } as any).where(eq(whatsappConfig.id, 1));
+    }
+    return {
+      name,
+      id: found?.id || null,
+      status,
+      canSend: Boolean(cfg.notifyReservation && status === "APPROVED"),
+      checkedAt,
+      reason: status === "NOT_CONFIGURED" ? "La plantilla no existe aún en Meta" : undefined,
+    };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    console.error("[WhatsApp] Error consultando plantilla de reservas:", reason);
+    return { name, id: cfg?.reservationTemplateId || null, status: "ERROR", canSend: false, checkedAt, reason };
+  }
+}
+
+/** Crea la plantilla Utility una sola vez y espera aprobación explícita de Meta. */
+export async function createReservationTemplate(): Promise<ReservationTemplateInfo> {
+  const cfg = await getWhatsAppConfig();
+  const name = cfg?.reservationTemplateName || WA_TEMPLATE_NAMES.reservation_status;
+  if (!cfg?.enabled || !cfg.wabaId || !cfg.accessToken) {
+    throw new Error("Configura y activa WhatsApp Business antes de crear la plantilla");
+  }
+
+  const existing = await refreshReservationTemplateStatus();
+  if (existing.status !== "NOT_CONFIGURED") return existing;
+
+  const response = await fetch(`https://graph.facebook.com/v23.0/${cfg.wabaId}/message_templates`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${cfg.accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      name,
+      category: "UTILITY",
+      language: WHATSAPP_TEMPLATE_LANGUAGE,
+      parameter_format: "POSITIONAL",
+      components: [{
+        type: "BODY",
+        text: "Hola {{1}}. Tu reserva EVGreen está: {{2}}. Estación: {{3}}. Abre la app para ver los detalles.",
+        example: { body_text: [["Luis", "Confirmada", "EVG Diamante"]] },
+      }],
+    }),
+  });
+  const data = (await response.json()) as { id?: string; status?: string; error?: { message?: string } };
+  if (!response.ok || !data.id) {
+    throw new Error(data.error?.message || `Meta no aceptó la creación de la plantilla (HTTP ${response.status})`);
+  }
+
+  const checkedAt = new Date().toISOString();
+  const status = mapMetaTemplateStatus(data.status || "IN_REVIEW");
+  const database = await getDb();
+  if (database) {
+    await database.update(whatsappConfig).set({
+      reservationTemplateName: name,
+      reservationTemplateId: data.id,
+      reservationTemplateStatus: status,
+      reservationTemplateCheckedAt: checkedAt,
+    } as any).where(eq(whatsappConfig.id, 1));
+  }
+  return {
+    name,
+    id: data.id,
+    status,
+    canSend: false,
+    checkedAt,
+    reason: "La plantilla fue enviada a revisión de Meta y se habilitará al quedar APPROVED",
+  };
+}
+
 // ─── Enviar mensaje con plantilla aprobada (funciona sin ventana de 24h) ─────
 
 export interface SendWhatsAppTemplateOptions {
@@ -244,6 +390,11 @@ function eventTypeToUserPrefKey(eventType: WaEventType): keyof typeof users.$inf
     charge_start:      "waNotifyChargeStart",
     charge_end:        "waNotifyChargeEnd",
     charging_reminder: "waNotifyReminder",
+    reservation_confirmed: "waNotifyReservations",
+    reservation_reminder: "waNotifyReservations",
+    reservation_started: "waNotifyReservations",
+    reservation_cancelled: "waNotifyReservations",
+    reservation_no_show: "waNotifyReservations",
     penalty:           "waNotifyPenalty",
     wallet_recharge:   "waNotifyWallet",
     card_added:        "waNotifyWallet",
@@ -461,6 +612,10 @@ function eventTypeToConfigKey(eventType: WaEventType): string | null {
     wallet_recharge: "notifyWalletRecharge",
     charger_offline: "notifyChargerOffline",
     reservation_confirmed: "notifyReservation",
+    reservation_reminder: "notifyReservation",
+    reservation_started: "notifyReservation",
+    reservation_cancelled: "notifyReservation",
+    reservation_no_show: "notifyReservation",
     monthly_summary: "notifyMonthlySummary",
     station_available: "notifyStationAvailable",
     card_removed: "notifyWalletRecharge",    // reutiliza el flag de billetera

@@ -8,8 +8,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { useState } from "react";
 import { Calendar, Clock, MapPin, Zap, X, AlertTriangle, Loader2, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
+import { useLocation } from "wouter";
 
 export default function UserReservations() {
+  const [, setLocation] = useLocation();
   const { data: reservations, isLoading, refetch } = trpc.reservations.myReservations.useQuery();
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [selectedReservation, setSelectedReservation] = useState<any>(null);
@@ -85,13 +87,11 @@ export default function UserReservations() {
 
   const getRefundEstimate = (reservation: any) => {
     const now = new Date();
-    const start = reservation.startTime;
+    const start = new Date(reservation.startTime);
     const hoursUntil = (start.getTime() - now.getTime()) / (1000 * 60 * 60);
     
-    if (hoursUntil >= 24) {
+    if (hoursUntil >= 0.5) {
       return { percentage: 100, message: "Reembolso completo" };
-    } else if (hoursUntil >= 2) {
-      return { percentage: 50, message: "Reembolso parcial (50%)" };
     } else {
       return { percentage: 0, message: "Sin reembolso" };
     }
@@ -123,7 +123,7 @@ export default function UserReservations() {
             {reservations && reservations.filter(r => r.reservationStatus === "ACTIVE").length > 0 && (
               <div className="space-y-3">
                 <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">
-                  Próximas reservas
+                  Reservas activas
                 </h3>
                 {reservations
                   // @ts-ignore
@@ -140,10 +140,10 @@ export default function UserReservations() {
                         <Card className="p-4 bg-card/50 backdrop-blur border-primary/30">
                           <div className="flex items-start justify-between mb-3">
                             <div>
-                              <h4 className="font-semibold">{(reservation as any).station?.name || "Estación"}</h4>
+                              <h4 className="font-semibold">{(reservation as any).stationName || "Estación"}</h4>
                               <p className="text-sm text-muted-foreground flex items-center gap-1">
                                 <MapPin className="w-3 h-3" />
-                                {(reservation as any).station?.address || "Dirección"}
+                                {(reservation as any).stationAddress || "Dirección pendiente"}
                               </p>
                             </div>
                             <div className="text-right">
@@ -201,6 +201,7 @@ export default function UserReservations() {
                             <Button
                               size="sm"
                               className="flex-1 gradient-primary text-white"
+                              onClick={() => setLocation(`/station/${reservation.stationId}`)}
                             >
                               <Navigation className="w-4 h-4 mr-1" />
                               Ir a estación
@@ -233,7 +234,7 @@ export default function UserReservations() {
                         <div className="flex items-start justify-between">
                           <div>
                             <h4 className="font-medium text-muted-foreground">
-                              {(reservation as any).station?.name || "Estación"}
+                              {(reservation as any).stationName || "Estación"}
                             </h4>
                             <p className="text-sm text-muted-foreground/70 flex items-center gap-1">
                               <Calendar className="w-3 h-3" />
@@ -272,7 +273,7 @@ export default function UserReservations() {
             <div className="py-4 space-y-4">
               <Card className="p-3 bg-muted/30">
                 <div className="text-sm">
-                  <div className="font-medium">{(selectedReservation as any).station?.name}</div>
+                  <div className="font-medium">{(selectedReservation as any).stationName || "Estación"}</div>
                   <div className="text-muted-foreground">
                     {selectedReservation.startTime.toLocaleDateString("es-CO", {
                       weekday: "long",
@@ -315,9 +316,8 @@ export default function UserReservations() {
               <div className="text-xs text-muted-foreground">
                 <p>Política de cancelación:</p>
                 <ul className="list-disc list-inside mt-1 space-y-1">
-                  <li>Más de 24h antes: reembolso completo</li>
-                  <li>Entre 2-24h antes: reembolso del 50%</li>
-                  <li>Menos de 2h antes: sin reembolso</li>
+                  <li>30 minutos o más antes: reembolso completo</li>
+                  <li>Menos de 30 minutos antes: sin reembolso</li>
                 </ul>
               </div>
             </div>

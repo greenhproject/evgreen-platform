@@ -4,7 +4,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Bell, BellRing, Mail, MessageSquare, Zap, DollarSign, AlertTriangle, Send, Loader2, MapPin, Navigation, Wallet, ShieldAlert, FileText, TrendingUp, Tag } from "lucide-react";
+import { ArrowLeft, Bell, BellRing, Mail, MessageSquare, Zap, DollarSign, AlertTriangle, Send, Loader2, MapPin, Navigation, Wallet, ShieldAlert, FileText, TrendingUp, Tag, Calendar } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
@@ -59,7 +59,7 @@ export default function UserNotifications() {
     },
   });
 
-  const handleWaToggle = (key: "waNotifyChargeStart" | "waNotifyChargeEnd" | "waNotifyReminder" | "waNotifyPenalty" | "waNotifyWallet") => {
+  const handleWaToggle = (key: "waNotifyChargeStart" | "waNotifyChargeEnd" | "waNotifyReminder" | "waNotifyReservations" | "waNotifyPenalty" | "waNotifyWallet") => {
     if (!waPrefs.data) return;
     updateWaMut.mutate({ [key]: !waPrefs.data[key] });
   };
@@ -346,6 +346,23 @@ export default function UserNotifications() {
                         disabled={updateWaMut.isPending}
                       />
                     </div>
+                  </div>
+
+                  <div className="flex items-center justify-between py-3">
+                    <div className="flex items-center gap-3">
+                      <Calendar className="w-4 h-4 text-green-500" />
+                      <div>
+                        <Label htmlFor="waReservations" className="text-sm cursor-pointer">Reservas</Label>
+                        <p className="text-xs text-muted-foreground">Confirmación, recordatorios, uso, cancelación y no presentación</p>
+                      </div>
+                    </div>
+                    <Switch
+                      id="waReservations"
+                      // @ts-ignore
+                      checked={waPrefs.data?.waNotifyReservations ?? true}
+                      onCheckedChange={() => handleWaToggle("waNotifyReservations")}
+                      disabled={updateWaMut.isPending}
+                    />
                   </div>
 
                   <div className="flex items-center justify-between py-3">

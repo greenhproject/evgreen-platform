@@ -37,6 +37,7 @@ import { registerStorageProxy } from "./storageProxy";
 import { calculateSocEstimation } from "../charging/soc-estimation";
 import { estimatePowerFromEnergySamples, shouldAdvanceTelemetrySample } from "../../shared/charging-telemetry";
 import { handleBillingWebhook } from "../billing/webhook";
+import { handleWhatsAppWebhook, verifyWhatsAppWebhook } from "../whatsapp/webhook";
 
 // Grace period para desconexiones temporales del legacy CSMS
 // Evita notificaciones por reconexiones intermitentes (WiFi inestable, reinicios breves)
@@ -175,6 +176,10 @@ async function startServer() {
   app.post("/api/resend/webhook", express.text({ type: "application/json", limit: "1mb" }), handleResendWebhook);
   // DocuSign Connect firma el cuerpo JSON exacto con HMAC; nunca debe pasar primero por express.json().
   app.post("/api/docusign/webhook", express.text({ type: ["application/json", "application/*+json"], limit: "2mb" }), handleDocusignWebhook);
+  // Meta firma el cuerpo crudo con X-Hub-Signature-256. Esta ruta debe montarse
+  // antes del parser JSON global para preservar exactamente el payload firmado.
+  app.get("/api/whatsapp/webhook", verifyWhatsAppWebhook);
+  app.post("/api/whatsapp/webhook", express.text({ type: ["application/json", "application/*+json"], limit: "3mb" }), handleWhatsAppWebhook);
   // PDF contractual manual: token opaco, revocable y con vencimiento; el archivo se entrega mediante URL temporal de almacenamiento.
   app.get("/api/contracts/manual/:token", handleManualContractDownload);
   // Configure body parser with larger size limit for file uploads
@@ -214,10 +219,11 @@ async function startServer() {
       const { getRetryableAvailabilityAlertStationIds, getEvsesByStationId } = await import("../db");
       const { dispatchAvailabilityAlerts } = await import("../notifications/availability-alert-dispatcher");
       const stationIds = await getRetryableAvailabilityAlertStationIds();
+      // La aprobación ocurre asíncronamente en Meta; este Heartbeat autenticado
+      // evita depender de un timer en memoria para habilitar plantillas Utility.
+      const { refreshStationAvailabilityTemplateStatus, refreshReservationTemplateStatus } = await import("../whatsapp/whatsapp-service");
+      await refreshReservationTemplateStatus();
       if (stationIds.length > 0) {
-        // La aprobación ocurre asíncronamente en Meta; refrescar antes de los
-        // reintentos evita requerir una acción manual para habilitar el canal.
-        const { refreshStationAvailabilityTemplateStatus } = await import("../whatsapp/whatsapp-service");
         await refreshStationAvailabilityTemplateStatus();
       }
       let processedConnectors = 0;
@@ -238,6 +244,27 @@ async function startServer() {
       return res.json({ ok: true, candidateStations: stationIds.length, processedConnectors });
     } catch (err: any) {
       console.error("[Heartbeat] Error reintentando alertas de disponibilidad:", err);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // ─── Heartbeat: reintento de avisos de reserva pendientes de Meta ──────────
+  app.post("/api/scheduled/reservation-whatsapp", express.json(), async (req, res) => {
+    const authHeader = req.headers.authorization || "";
+    const expectedToken = process.env.BUILT_IN_FORGE_API_KEY || "";
+    if (expectedToken && authHeader !== `Bearer ${expectedToken}`) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    try {
+      const { refreshReservationTemplateStatus } = await import("../whatsapp/whatsapp-service");
+      const { retryPendingReservationWhatsAppNotifications } = await import("../notifications/reservation-notifications");
+      const template = await refreshReservationTemplateStatus();
+      const result = template.canSend
+        ? await retryPendingReservationWhatsAppNotifications()
+        : { attempted: 0, skipped: 0 };
+      return res.json({ ok: true, template: { status: template.status, canSend: template.canSend }, ...result });
+    } catch (err: any) {
+      console.error("[Heartbeat] Error reintentando avisos de reserva:", err);
       return res.status(500).json({ ok: false, error: err.message });
     }
   });
@@ -694,6 +721,20 @@ async function startServer() {
           console.log(`[Heartbeat] Job de alertas de disponibilidad registrado: ${job.taskUid}`);
         } else {
           console.log("[Heartbeat] Job de alertas de disponibilidad ya existe, omitiendo registro.");
+        }
+
+        const reservationWhatsAppJobExists = existing.jobs?.some((j: any) => j.name === "evgreen-reservation-whatsapp");
+        if (!reservationWhatsAppJobExists) {
+          const job = await createHeartbeatJob({
+            name: "evgreen-reservation-whatsapp",
+            cron: "30 */5 * * * *",
+            path: "/api/scheduled/reservation-whatsapp",
+            method: "POST",
+            description: "Reintentos idempotentes de avisos de reserva EVGreen una vez Meta apruebe la plantilla Utility",
+          }, "");
+          console.log(`[Heartbeat] Job de avisos de reserva registrado: ${job.taskUid}`);
+        } else {
+          console.log("[Heartbeat] Job de avisos de reserva ya existe, omitiendo registro.");
         }
       } catch (err) {
         console.warn("[Heartbeat] No se pudieron registrar jobs operativos (no crítico):", err);

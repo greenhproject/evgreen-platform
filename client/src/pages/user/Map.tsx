@@ -167,21 +167,17 @@ export default function UserMap() {
   // Obtener reservas del usuario para mostrar banner de reserva activa
   const { data: myReservations } = trpc.reservations.myReservations.useQuery(
     undefined,
-    { enabled: isAuthenticated }
+    { enabled: isAuthenticated, refetchInterval: 30_000 }
   );
 
-  // Filtrar reserva activa próxima (dentro de las próximas 2 horas o en curso)
+  // Mostrar la próxima reserva activa aunque sea para otro día. El campo
+  // persistido es `reservationStatus`; el legado `status` ocultaba el banner.
   const activeReservation = useMemo(() => {
     if (!myReservations) return null;
     const now = Date.now();
-    const twoHoursFromNow = now + 2 * 60 * 60 * 1000;
-    return myReservations.find((r: any) => {
-      if (r.status !== 'ACTIVE') return false;
-      const startTime = new Date(r.startTime).getTime();
-      const endTime = new Date(r.endTime).getTime();
-      // Mostrar si la reserva está en curso o empieza dentro de 2 horas
-      return (startTime <= twoHoursFromNow && endTime > now);
-    }) || null;
+    return myReservations
+      .filter((r: any) => r.reservationStatus === "ACTIVE" && new Date(r.endTime).getTime() > now)
+      .sort((a: any, b: any) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())[0] || null;
   }, [myReservations]);
 
   // Tracking GPS en tiempo real con watchPosition
@@ -640,10 +636,10 @@ export default function UserMap() {
                     <Button
                       size="sm"
                       className="h-8 px-2.5 text-xs bg-purple-500 hover:bg-purple-400 text-white"
-                      onClick={() => setLocation(`/start-charge?code=${activeReservation.stationId}`)}
+                      onClick={() => setLocation(`/station/${activeReservation.stationId}`)}
                     >
                       <QrCode className="w-3.5 h-3.5 mr-1" />
-                      Cargar
+                      Llegar
                     </Button>
                   </div>
                 </div>

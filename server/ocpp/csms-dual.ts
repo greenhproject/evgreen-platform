@@ -1182,16 +1182,6 @@ export class DualCSMS {
     try {
       const station = await db.getChargingStationById(conn.stationId);
       const stationName = station?.name || conn.ocppIdentity;
-      if (fulfilledReservationId) {
-        await db.createNotification({
-          userId,
-          title: "Reserva utilizada correctamente",
-          message: `Tu reserva fue vinculada a la carga iniciada en ${stationName}.`,
-          type: "RESERVATION_CHECKIN",
-          referenceId: fulfilledReservationId,
-          referenceType: "reservation",
-        });
-      }
       // Usar precio dinámico efectivo para la notificación
       const formattedPrice = Math.round(pricePerKwh).toLocaleString("es-CO");
       await db.createNotification({
@@ -1208,6 +1198,17 @@ export class DualCSMS {
       if (userId) {
         const userForWa = await db.getUserById(userId);
         console.log(`[WhatsApp] charge_start: user found=${!!userForWa}, phone=${userForWa?.phone || 'NULL'}`);
+        if (fulfilledReservationId) {
+          const { sendReservationLifecycleNotification } = await import("../notifications/reservation-notifications");
+          await sendReservationLifecycleNotification({
+            userId,
+            reservationId: fulfilledReservationId,
+            userName: userForWa?.name,
+            userPhone: userForWa?.phone,
+            event: "check_in",
+            context: { stationName, connectorLabel: req.connectorId },
+          });
+        }
         if (userForWa?.phone) {
           const { sendWhatsAppTemplate, WA_TEMPLATE_NAMES } = await import("../whatsapp/whatsapp-service");
           const { getStationTimezone, formatTimeInTz } = await import("../utils/timezone");
@@ -2232,6 +2233,26 @@ export class DualCSMS {
           : null;
         if (fulfilledReservationId) {
           console.log(`[CSMS-DUAL] OCPP 2.0.1: Reservation ${fulfilledReservationId} linked to transaction ${transactionId}`);
+          try {
+            const [reservationUser, station] = await Promise.all([
+              db.getUserById(userId),
+              db.getChargingStationById(conn.stationId),
+            ]);
+            const { sendReservationLifecycleNotification } = await import("../notifications/reservation-notifications");
+            await sendReservationLifecycleNotification({
+              userId,
+              reservationId: fulfilledReservationId,
+              userName: reservationUser?.name,
+              userPhone: reservationUser?.phone,
+              event: "check_in",
+              context: {
+                stationName: station?.name || conn.ocppIdentity,
+                connectorLabel: req.evse?.connectorId || evse.connectorId,
+              },
+            });
+          } catch (notificationError) {
+            console.error("[CSMS-DUAL] OCPP 2.0.1 reservation check-in notification failed:", notificationError);
+          }
         }
 
         await db.updateEvseStatus(evse.id, "CHARGING", { triggeredBy: "OCPP" });
