@@ -2838,6 +2838,19 @@ export const tenantBillingSettings = mysqlTable("tenant_billing_settings", {
 	alegraPaymentAccountId: varchar("alegra_payment_account_id", { length: 50 }),
 	alegraUseElectronicStamp: tinyint("alegra_use_electronic_stamp").default(1).notNull(),
 
+	// Cliente mostrador/fallback cuando el usuario no ha informado sus datos fiscales.
+	fallbackCustomerEnabled: tinyint("fallback_customer_enabled").default(0).notNull(),
+	fallbackCustomerId: varchar("fallback_customer_id", { length: 100 }),
+	fallbackCustomerName: varchar("fallback_customer_name", { length: 255 }),
+	fallbackCustomerDocumentType: varchar("fallback_customer_document_type", { length: 30 }),
+	fallbackCustomerDocumentNumber: varchar("fallback_customer_document_number", { length: 50 }),
+	fallbackCustomerEmail: varchar("fallback_customer_email", { length: 320 }),
+	fallbackCustomerAddress: varchar("fallback_customer_address", { length: 500 }),
+	fallbackCustomerCity: varchar("fallback_customer_city", { length: 100 }),
+	fallbackCustomerDepartment: varchar("fallback_customer_department", { length: 100 }),
+	fallbackCustomerKindOfPerson: varchar("fallback_customer_kind_of_person", { length: 30 }),
+	fallbackCustomerRegime: varchar("fallback_customer_regime", { length: 40 }),
+
 	// Configuración Siigo Nube
 	siigoUsername: varchar("siigo_username", { length: 255 }),
 	siigoAccessKey: text("siigo_access_key"),
@@ -2904,6 +2917,7 @@ export const electronicInvoices = mysqlTable("electronic_invoices", {
 	customerName: varchar("customer_name", { length: 255 }),
 	customerIdentification: varchar("customer_identification", { length: 50 }),
 	customerEmail: varchar("customer_email", { length: 255 }),
+	customerSource: mysqlEnum("customer_source", ['USER', 'FALLBACK']).default('USER').notNull(),
 	externalContactId: varchar("external_contact_id", { length: 100 }),
 	pdfUrl: text("pdf_url"),
 	xmlUrl: text("xml_url"),

@@ -4343,9 +4343,20 @@ const settingsRouter = router({
       alegraEProviderToken: tenantConfig.alegraEProviderToken ? "****" + tenantConfig.alegraEProviderToken.slice(-4) : "",
       siigoAccessKey: tenantConfig.siigoAccessKey ? "****" + tenantConfig.siigoAccessKey.slice(-4) : "",
       worldOfficeToken: tenantConfig.worldOfficeToken ? "****" + tenantConfig.worldOfficeToken.slice(-4) : "",
-      webhookSecret: tenantConfig.webhookSecret ? "****" + tenantConfig.webhookSecret.slice(-4) : "",
-    };
-  }),
+        webhookSecret: tenantConfig.webhookSecret ? "****" + tenantConfig.webhookSecret.slice(-4) : "",
+        fallbackCustomerEnabled: tenantConfig.fallbackCustomerEnabled !== 0,
+        fallbackCustomerId: tenantConfig.fallbackCustomerId || "",
+        fallbackCustomerName: tenantConfig.fallbackCustomerName || "",
+        fallbackCustomerDocumentType: tenantConfig.fallbackCustomerDocumentType || "CC",
+        fallbackCustomerDocumentNumber: tenantConfig.fallbackCustomerDocumentNumber || "",
+        fallbackCustomerEmail: tenantConfig.fallbackCustomerEmail || "",
+        fallbackCustomerAddress: tenantConfig.fallbackCustomerAddress || "",
+        fallbackCustomerCity: tenantConfig.fallbackCustomerCity || "",
+        fallbackCustomerDepartment: tenantConfig.fallbackCustomerDepartment || "",
+        fallbackCustomerKindOfPerson: tenantConfig.fallbackCustomerKindOfPerson || "PERSON_ENTITY",
+        fallbackCustomerRegime: tenantConfig.fallbackCustomerRegime || "SIMPLIFIED_REGIME",
+      };
+    }),
 
   billingSavePlatformConfig: adminProcedure
     .input(
@@ -4390,6 +4401,17 @@ const settingsRouter = router({
         selectedProductUnit: z.string().optional().nullable(),
         selectedProductTaxIncluded: z.boolean().optional().nullable(),
         selectedProductSyncedAt: z.string().optional().nullable(),
+        fallbackCustomerEnabled: z.boolean().optional(),
+        fallbackCustomerId: z.string().optional(),
+        fallbackCustomerName: z.string().optional(),
+        fallbackCustomerDocumentType: z.string().optional(),
+        fallbackCustomerDocumentNumber: z.string().optional(),
+        fallbackCustomerEmail: z.string().optional(),
+        fallbackCustomerAddress: z.string().optional(),
+        fallbackCustomerCity: z.string().optional(),
+        fallbackCustomerDepartment: z.string().optional(),
+        fallbackCustomerKindOfPerson: z.string().optional(),
+        fallbackCustomerRegime: z.string().optional(),
       })
     )
     .mutation(async ({ ctx, input }: any) => {
@@ -4430,6 +4452,17 @@ const settingsRouter = router({
         selectedProductUnit: input.selectedProductUnit || null,
         selectedProductTaxIncluded: input.selectedProductTaxIncluded === true ? 1 : input.selectedProductTaxIncluded === false ? 0 : null,
         selectedProductSyncedAt: input.selectedProductSyncedAt || null,
+        fallbackCustomerEnabled: input.fallbackCustomerEnabled ? 1 : 0,
+        fallbackCustomerId: input.fallbackCustomerId || null,
+        fallbackCustomerName: input.fallbackCustomerName || null,
+        fallbackCustomerDocumentType: input.fallbackCustomerDocumentType || null,
+        fallbackCustomerDocumentNumber: input.fallbackCustomerDocumentNumber || null,
+        fallbackCustomerEmail: input.fallbackCustomerEmail || null,
+        fallbackCustomerAddress: input.fallbackCustomerAddress || null,
+        fallbackCustomerCity: input.fallbackCustomerCity || null,
+        fallbackCustomerDepartment: input.fallbackCustomerDepartment || null,
+        fallbackCustomerKindOfPerson: input.fallbackCustomerKindOfPerson || null,
+        fallbackCustomerRegime: input.fallbackCustomerRegime || null,
         updatedBy: ctx.user.id,
       };
 

@@ -182,6 +182,46 @@ export async function processChargingInvoice(
   const userDocType = (user as any)?.documentType || "CC";
   const userDocNumber = (user as any)?.documentNumber || undefined;
 
+  // 5.1 Resolver datos fiscales: usuario real vs. cliente mostrador/fallback
+  let finalCustomerName = userName;
+  let finalCustomerEmail = userEmail;
+  let finalCustomerPhone = userPhone;
+  let finalCustomerDocType = userDocType;
+  let finalCustomerDocNumber = userDocNumber;
+  let finalCustomerFiscalAddress = (user as any)?.fiscalAddress || undefined;
+  let finalCustomerFiscalCity = (user as any)?.fiscalCity || undefined;
+  let finalCustomerFiscalDepartment = (user as any)?.fiscalDepartment || undefined;
+  let finalCustomerKindOfPerson = (user as any)?.kindOfPerson || "PERSON_ENTITY";
+  let finalCustomerRegime = (user as any)?.regime || "SIMPLIFIED_REGIME";
+  let finalCustomerExternalContactId = settings.provider === "alegra" ? (user as any)?.alegraContactId
+    : settings.provider === "siigo" ? (user as any)?.siigoCustomerId
+    : (user as any)?.worldOfficeCustomerId || undefined;
+  let customerSource: "USER" | "FALLBACK" = "USER";
+
+  const userHasFiscalData = !!(userDocNumber && String(userDocNumber).trim().length > 0);
+  if (!userHasFiscalData) {
+    if (settings.fallbackCustomerEnabled && settings.fallbackCustomerDocumentNumber) {
+      console.log(`[BillingService] Usuario #${tx.userId || 0} sin datos fiscales. Usando cliente mostrador configurado.`);
+      customerSource = "FALLBACK";
+      finalCustomerName = settings.fallbackCustomerName || "Consumidor Final (Mostrador)";
+      finalCustomerEmail = settings.fallbackCustomerEmail || userEmail || "";
+      finalCustomerDocType = settings.fallbackCustomerDocumentType || "CC";
+      finalCustomerDocNumber = settings.fallbackCustomerDocumentNumber;
+      finalCustomerFiscalAddress = settings.fallbackCustomerAddress || "Venta mostrador";
+      finalCustomerFiscalCity = settings.fallbackCustomerCity || "Colombia";
+      finalCustomerFiscalDepartment = settings.fallbackCustomerDepartment || "Colombia";
+      finalCustomerKindOfPerson = settings.fallbackCustomerKindOfPerson || "PERSON_ENTITY";
+      finalCustomerRegime = settings.fallbackCustomerRegime || "SIMPLIFIED_REGIME";
+      finalCustomerExternalContactId = settings.fallbackCustomerId || undefined;
+    } else {
+      console.warn(`[BillingService] Usuario #${tx.userId || 0} no tiene datos fiscales y el tenant no tiene cliente mostrador activo.`);
+      return {
+        success: false,
+        error: "El usuario no ha registrado sus datos fiscales en la app y el tenant no tiene activo un cliente mostrador de respaldo.",
+      };
+    }
+  }
+
 	  // Como en Colombia la venta de energía para vehículos eléctricos está excluida de IVA
 	  // (Art. 424 E.T. y Concepto DIAN 7354 de 2025), EVGreen encapsula todo el servicio cobrado
 	  // en un único concepto fiscal. La tarifa del catálogo en el software contable es solo referencial;
@@ -201,20 +241,19 @@ export async function processChargingInvoice(
   const canonicalInput: CanonicalInvoiceInput = {
     transactionId,
     userId: tx.userId || undefined,
-    userName,
-    userEmail,
-    userPhone,
-    userDocumentType: userDocType,
-    userDocumentNumber: userDocNumber,
-    userFiscalAddress: (user as any)?.fiscalAddress || undefined,
-    userFiscalCity: (user as any)?.fiscalCity || undefined,
-    userFiscalDepartment: (user as any)?.fiscalDepartment || undefined,
-    userKindOfPerson: (user as any)?.kindOfPerson || "PERSON_ENTITY",
-    userRegime: (user as any)?.regime || "SIMPLIFIED_REGIME",
-    userExternalContactId: settings.provider === "alegra" ? (user as any)?.alegraContactId
-      : settings.provider === "siigo" ? (user as any)?.siigoCustomerId
-      : (user as any)?.worldOfficeCustomerId || undefined,
-	    energyDelivered: kwh,
+    userName: finalCustomerName,
+    userEmail: finalCustomerEmail,
+    userPhone: finalCustomerPhone,
+    userDocumentType: finalCustomerDocType,
+    userDocumentNumber: finalCustomerDocNumber,
+    userFiscalAddress: finalCustomerFiscalAddress,
+    userFiscalCity: finalCustomerFiscalCity,
+    userFiscalDepartment: finalCustomerFiscalDepartment,
+    userKindOfPerson: finalCustomerKindOfPerson,
+    userRegime: finalCustomerRegime,
+    userExternalContactId: finalCustomerExternalContactId,
+    customerSource,
+    energyDelivered: kwh,
 	    appliedPricePerKwh: effectivePricePerKwh,
 	    dynamicUnitPrice: effectivePricePerKwh,
 	    energyCost,
@@ -244,6 +283,10 @@ export async function processChargingInvoice(
 	      billedUnitPrice: String(canonicalInput.dynamicUnitPrice),
 	      billedProductId: settings.selectedProductId || null,
 	      billedProductName: settings.selectedProductName || "Servicio de recarga de energía",
+	      customerSource,
+	      customerName: finalCustomerName,
+	      customerIdentification: finalCustomerDocNumber || null,
+	      customerEmail: finalCustomerEmail || null,
 	      attempts: (existingRecord.attempts || 0) + 1,
 	      lastAttemptAt: new Date().toISOString(),
 	    });
@@ -258,10 +301,11 @@ export async function processChargingInvoice(
 	      billedProductId: settings.selectedProductId || null,
 	      billedProductName: settings.selectedProductName || "Servicio de recarga de energía",
 	      energyKwh: String(canonicalInput.energyDelivered),
-	      customerName: userName,
-      customerIdentification: userDocNumber || null,
-      customerEmail: userEmail || null,
-      attempts: 1,
+	      customerName: finalCustomerName,
+	      customerIdentification: finalCustomerDocNumber || null,
+	      customerEmail: finalCustomerEmail || null,
+	      customerSource,
+	      attempts: 1,
       lastAttemptAt: new Date().toISOString(),
     });
   }

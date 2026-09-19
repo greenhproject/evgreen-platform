@@ -27,6 +27,7 @@ import {
   Link,
   Copy,
   Calculator,
+  Users,
 } from "lucide-react";
 
 const ALEGRA_PAYMENT_METHODS = [
@@ -179,6 +180,19 @@ export default function ElectronicBillingConfigCard({ mode = "tenant", organizat
   const [worldOfficePrefixId, setWorldOfficePrefixId] = useState("");
   const [worldOfficePaymentMethodId, setWorldOfficePaymentMethodId] = useState("1");
 
+  // Cliente Mostrador (Fallback fiscal cuando el usuario no tiene datos en la app)
+  const [fallbackCustomerEnabled, setFallbackCustomerEnabled] = useState(false);
+  const [fallbackCustomerId, setFallbackCustomerId] = useState("");
+  const [fallbackCustomerName, setFallbackCustomerName] = useState("Consumidor Final (Venta Mostrador)");
+  const [fallbackCustomerDocumentType, setFallbackCustomerDocumentType] = useState("CC");
+  const [fallbackCustomerDocumentNumber, setFallbackCustomerDocumentNumber] = useState("222222222222");
+  const [fallbackCustomerEmail, setFallbackCustomerEmail] = useState("");
+  const [fallbackCustomerAddress, setFallbackCustomerAddress] = useState("Venta Mostrador");
+  const [fallbackCustomerCity, setFallbackCustomerCity] = useState("Bogotá");
+  const [fallbackCustomerDepartment, setFallbackCustomerDepartment] = useState("Cundinamarca");
+  const [fallbackCustomerKindOfPerson, setFallbackCustomerKindOfPerson] = useState("PERSON_ENTITY");
+  const [fallbackCustomerRegime, setFallbackCustomerRegime] = useState("SIMPLIFIED_REGIME");
+
   const tenantCatalogsQuery = (trpc.organizations as any).listMyBillingCatalogs.useQuery(
     { provider },
     { enabled: mode === "tenant" }
@@ -287,6 +301,19 @@ export default function ElectronicBillingConfigCard({ mode = "tenant", organizat
       setWorldOfficeDocumentTypeId(config.worldOfficeDocumentTypeId || "1");
       setWorldOfficePrefixId(config.worldOfficePrefixId || "");
       setWorldOfficePaymentMethodId(config.worldOfficePaymentMethodId || "1");
+
+      // Cliente Mostrador
+      setFallbackCustomerEnabled(config.fallbackCustomerEnabled !== false && !!config.fallbackCustomerEnabled);
+      setFallbackCustomerId(config.fallbackCustomerId || "");
+      setFallbackCustomerName(config.fallbackCustomerName || "Consumidor Final (Venta Mostrador)");
+      setFallbackCustomerDocumentType(config.fallbackCustomerDocumentType || "CC");
+      setFallbackCustomerDocumentNumber(config.fallbackCustomerDocumentNumber || "222222222222");
+      setFallbackCustomerEmail(config.fallbackCustomerEmail || "");
+      setFallbackCustomerAddress(config.fallbackCustomerAddress || "Venta Mostrador");
+      setFallbackCustomerCity(config.fallbackCustomerCity || "Bogotá");
+      setFallbackCustomerDepartment(config.fallbackCustomerDepartment || "Cundinamarca");
+      setFallbackCustomerKindOfPerson(config.fallbackCustomerKindOfPerson || "PERSON_ENTITY");
+      setFallbackCustomerRegime(config.fallbackCustomerRegime || "SIMPLIFIED_REGIME");
     }
   }, [config]);
 
@@ -385,6 +412,17 @@ export default function ElectronicBillingConfigCard({ mode = "tenant", organizat
       worldOfficePrefixId,
       worldOfficePaymentMethodId,
       worldOfficeItemId: selectedProductId || undefined,
+      fallbackCustomerEnabled,
+      fallbackCustomerId: fallbackCustomerId || undefined,
+      fallbackCustomerName: fallbackCustomerName || undefined,
+      fallbackCustomerDocumentType: fallbackCustomerDocumentType || undefined,
+      fallbackCustomerDocumentNumber: fallbackCustomerDocumentNumber || undefined,
+      fallbackCustomerEmail: fallbackCustomerEmail || undefined,
+      fallbackCustomerAddress: fallbackCustomerAddress || undefined,
+      fallbackCustomerCity: fallbackCustomerCity || undefined,
+      fallbackCustomerDepartment: fallbackCustomerDepartment || undefined,
+      fallbackCustomerKindOfPerson: fallbackCustomerKindOfPerson || undefined,
+      fallbackCustomerRegime: fallbackCustomerRegime || undefined,
     };
 
     if (isSuperadminTargetingTenant) {
@@ -940,6 +978,112 @@ export default function ElectronicBillingConfigCard({ mode = "tenant", organizat
               </Label>
             </div>
           </div>
+        </div>
+
+        {/* Cliente Mostrador / Fallback Fiscal */}
+        <div className="rounded-xl border border-border/50 bg-card p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Users className="h-4 w-4 text-green-500" />
+              <div>
+                <h4 className="text-xs font-semibold text-foreground">
+                  Cliente Tipo Mostrador (Fallback Fiscal para Usuarios sin Datos)
+                </h4>
+                <p className="text-[11px] text-muted-foreground">
+                  Si un usuario recarga y aún no ha registrado su RUT o cédula en la app, EVGreen emitirá la factura a este cliente genérico configurado en tu software contable.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={fallbackCustomerEnabled}
+                onCheckedChange={setFallbackCustomerEnabled}
+                id="fallback-customer-switch"
+              />
+              <Label htmlFor="fallback-customer-switch" className="text-xs font-medium cursor-pointer">
+                {fallbackCustomerEnabled ? "Activo" : "Inactivo"}
+              </Label>
+            </div>
+          </div>
+
+          {fallbackCustomerEnabled && (
+            <div className="pt-2 border-t border-border/30 grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-[11px]">Razón Social / Nombre Mostrador</Label>
+                <Input
+                  value={fallbackCustomerName}
+                  onChange={(e) => setFallbackCustomerName(e.target.value)}
+                  placeholder="Consumidor Final"
+                  className="h-8 text-xs"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-[11px]">Tipo de Documento</Label>
+                <Select value={fallbackCustomerDocumentType} onValueChange={setFallbackCustomerDocumentType}>
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="CC">Cédula de Ciudadanía (CC)</SelectItem>
+                    <SelectItem value="NIT">NIT Empresa</SelectItem>
+                    <SelectItem value="CE">Cédula de Extranjería (CE)</SelectItem>
+                    <SelectItem value="PASAPORTE">Pasaporte</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-[11px]">Número de Documento / NIT</Label>
+                <Input
+                  value={fallbackCustomerDocumentNumber}
+                  onChange={(e) => setFallbackCustomerDocumentNumber(e.target.value)}
+                  placeholder="222222222222"
+                  className="h-8 text-xs font-mono"
+                />
+                <p className="text-[9px] text-muted-foreground">Para cuantías menores o cliente genérico ante la DIAN usa 222222222222.</p>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-[11px]">Correo Electrónico (Receptor PDF/XML)</Label>
+                <Input
+                  type="email"
+                  value={fallbackCustomerEmail}
+                  onChange={(e) => setFallbackCustomerEmail(e.target.value)}
+                  placeholder="facturacion@tuempresa.com"
+                  className="h-8 text-xs"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-[11px]">Dirección Fiscal Mostrador</Label>
+                <Input
+                  value={fallbackCustomerAddress}
+                  onChange={(e) => setFallbackCustomerAddress(e.target.value)}
+                  placeholder="Venta Mostrador"
+                  className="h-8 text-xs"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-[11px]">Ciudad y Departamento</Label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <Input
+                    value={fallbackCustomerCity}
+                    onChange={(e) => setFallbackCustomerCity(e.target.value)}
+                    placeholder="Ciudad"
+                    className="h-8 text-xs"
+                  />
+                  <Input
+                    value={fallbackCustomerDepartment}
+                    onChange={(e) => setFallbackCustomerDepartment(e.target.value)}
+                    placeholder="Depto"
+                    className="h-8 text-xs"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Webhook para confirmación DIAN */}

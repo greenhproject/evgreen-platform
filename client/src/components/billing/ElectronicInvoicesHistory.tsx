@@ -36,6 +36,7 @@ export default function ElectronicInvoicesHistory({ mode = "tenant", organizatio
   const [page, setPage] = useState(0);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [isBulkProcessing, setIsBulkProcessing] = useState(false);
+  const [retryingInvoiceId, setRetryingInvoiceId] = useState<number | null>(null);
   const limit = 15;
 
   const tenantInvoicesQuery = (trpc.organizations as any).getMyElectronicInvoices.useQuery(
@@ -112,6 +113,7 @@ export default function ElectronicInvoicesHistory({ mode = "tenant", organizatio
   // Mutación de reintento / resincronización bajo demanda
   const retryTenantMutation = (trpc.organizations as any).retryMyElectronicInvoice.useMutation({
     onSuccess: (data: any) => {
+      setRetryingInvoiceId(null);
       if (data.success) {
         toast.success(`Factura emitida/resincronizada: #${data.invoiceNumber || data.invoiceId}`);
       } else {
@@ -119,11 +121,15 @@ export default function ElectronicInvoicesHistory({ mode = "tenant", organizatio
       }
       (utils.organizations as any).getMyElectronicInvoices.invalidate();
     },
-    onError: (err: any) => toast.error(`Error al resincronizar: ${err.message}`),
+    onError: (err: any) => {
+      setRetryingInvoiceId(null);
+      toast.error(`Error al resincronizar: ${err.message}`);
+    },
   });
 
   const retryAdminMutation = (trpc.settings as any).billingRetryInvoice.useMutation({
     onSuccess: (data: any) => {
+      setRetryingInvoiceId(null);
       if (data.success) {
         toast.success(`Factura emitida/resincronizada: #${data.invoiceNumber || data.invoiceId}`);
       } else {
@@ -131,10 +137,14 @@ export default function ElectronicInvoicesHistory({ mode = "tenant", organizatio
       }
       (utils.settings as any).billingListInvoices.invalidate();
     },
-    onError: (err: any) => toast.error(`Error al resincronizar: ${err.message}`),
+    onError: (err: any) => {
+      setRetryingInvoiceId(null);
+      toast.error(`Error al resincronizar: ${err.message}`);
+    },
   });
 
   const handleResync = (invoiceId: number, forceSync: boolean = false) => {
+    setRetryingInvoiceId(invoiceId);
     if (mode === "tenant") {
       retryTenantMutation.mutate({ invoiceRecordId: invoiceId, forceSync });
     } else {
@@ -352,11 +362,11 @@ export default function ElectronicInvoicesHistory({ mode = "tenant", organizatio
                                 variant="outline"
                                 size="sm"
                                 onClick={() => handleResync(inv.id, false)}
-                                disabled={isRetrying}
+                                disabled={retryingInvoiceId === inv.id || isBulkProcessing}
                                 className="h-7 text-xs text-amber-400 border-amber-400/30 hover:bg-amber-400/10 gap-1 px-2"
                                 title="Reintentar emisión de factura fallida"
                               >
-                                <RotateCcw className={`h-3 w-3 ${isRetrying ? "animate-spin" : ""}`} />
+                                <RotateCcw className={`h-3 w-3 ${retryingInvoiceId === inv.id ? "animate-spin text-amber-300" : ""}`} />
                                 Reintentar
                               </Button>
                             ) : (
@@ -364,11 +374,11 @@ export default function ElectronicInvoicesHistory({ mode = "tenant", organizatio
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => handleResync(inv.id, true)}
-                                disabled={isRetrying}
+                                disabled={retryingInvoiceId === inv.id || isBulkProcessing}
                                 className="h-7 text-xs text-muted-foreground hover:text-foreground gap-1 px-2"
                                 title="Resincronizar bajo demanda en caso de discrepancia en el valor total"
                               >
-                                <RefreshCw className={`h-3 w-3 ${isRetrying ? "animate-spin" : ""}`} />
+                                <RefreshCw className={`h-3 w-3 ${retryingInvoiceId === inv.id ? "animate-spin text-foreground" : ""}`} />
                                 Resincronizar
                               </Button>
                             )}

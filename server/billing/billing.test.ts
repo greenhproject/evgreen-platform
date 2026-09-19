@@ -200,7 +200,13 @@ describe("Emisión Dinámica, Reglas de Redondeo y Resincronización Bajo Demand
       totalCost: "68278.00",
     } as any);
 
-    vi.mocked(db.getUserById).mockResolvedValueOnce({ id: 42, name: "Carlos" } as any);
+    vi.mocked(db.getUserById).mockResolvedValueOnce({
+      id: 42,
+      name: "Carlos",
+      documentType: "CC",
+      documentNumber: "1018273645",
+      email: "carlos@example.com",
+    } as any);
     vi.mocked(db.getChargingStationById).mockResolvedValueOnce({ id: 5, name: "Estación 5", organizationId: 10 } as any);
 
     const adapter = getAdapter("alegra");
@@ -256,7 +262,13 @@ describe("Emisión Dinámica, Reglas de Redondeo y Resincronización Bajo Demand
       totalCost: "40000",
     } as any);
 
-    vi.mocked(db.getUserById).mockResolvedValueOnce({ id: 1, name: "Ana" } as any);
+    vi.mocked(db.getUserById).mockResolvedValueOnce({
+      id: 1,
+      name: "Ana",
+      documentType: "CC",
+      documentNumber: "52182930",
+      email: "ana@example.com",
+    } as any);
     vi.mocked(db.getChargingStationById).mockResolvedValueOnce({ id: 1, name: "Estación 1", organizationId: 1 } as any);
 
     const adapter = getAdapter("alegra");

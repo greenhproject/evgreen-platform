@@ -20,6 +20,7 @@ export interface CanonicalInvoiceInput {
   userKindOfPerson?: "PERSON_ENTITY" | "LEGAL_ENTITY" | string;
   userRegime?: "SIMPLIFIED_REGIME" | "COMMON_REGIME" | "NOT_RESPONSIBLE_FOR_IVA" | string;
   userExternalContactId?: string;
+  customerSource?: "USER" | "FALLBACK";
   // Datos de la sesión de recarga y tarifa dinámica
   energyDelivered: number;     // kWh consumidos
   appliedPricePerKwh: number;  // COP/kWh aplicado en la sesión
