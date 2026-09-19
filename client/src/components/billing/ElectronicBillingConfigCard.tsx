@@ -29,6 +29,15 @@ import {
   Calculator,
 } from "lucide-react";
 
+const ALEGRA_PAYMENT_METHODS = [
+  { value: "transfer", label: "Transferencia / pago electrónico" },
+  { value: "cash", label: "Efectivo" },
+  { value: "deposit", label: "Consignación" },
+  { value: "debit-card", label: "Tarjeta débito" },
+  { value: "credit-card", label: "Tarjeta crédito" },
+  { value: "check", label: "Cheque" },
+];
+
 interface Props {
   mode?: "tenant" | "admin";
   organizationId?: number | null;
@@ -49,18 +58,6 @@ export default function ElectronicBillingConfigCard({ mode = "tenant", organizat
     { organizationId: organizationId! },
     { enabled: isSuperadminTargetingTenant }
   );
-
-  const config = isSuperadminTargetingTenant
-    ? adminTenantQuery.data
-    : mode === "tenant"
-    ? tenantConfigQuery.data
-    : adminPlatformQuery.data;
-
-  const isLoading = isSuperadminTargetingTenant
-    ? adminTenantQuery.isLoading
-    : mode === "tenant"
-    ? tenantConfigQuery.isLoading
-    : adminPlatformQuery.isLoading;
 
   // Mutaciones
   const saveTenantMutation = (trpc.organizations as any).saveMyElectronicBillingConfig.useMutation({
@@ -156,6 +153,8 @@ export default function ElectronicBillingConfigCard({ mode = "tenant", organizat
   const [alegraEmail, setAlegraEmail] = useState("");
   const [alegraToken, setAlegraToken] = useState("");
   const [alegraTokenSaved, setAlegraTokenSaved] = useState(false);
+  const [alegraEProviderToken, setAlegraEProviderToken] = useState("");
+  const [alegraEProviderTokenSaved, setAlegraEProviderTokenSaved] = useState(false);
   const [alegraDefaultTaxId, setAlegraDefaultTaxId] = useState("");
   const [alegraPaymentMethodId, setAlegraPaymentMethodId] = useState("");
   const [alegraPaymentAccountId, setAlegraPaymentAccountId] = useState("");
@@ -179,6 +178,63 @@ export default function ElectronicBillingConfigCard({ mode = "tenant", organizat
   const [worldOfficeDocumentTypeId, setWorldOfficeDocumentTypeId] = useState("1");
   const [worldOfficePrefixId, setWorldOfficePrefixId] = useState("");
   const [worldOfficePaymentMethodId, setWorldOfficePaymentMethodId] = useState("1");
+
+  const tenantCatalogsQuery = (trpc.organizations as any).listMyBillingCatalogs.useQuery(
+    { provider },
+    { enabled: mode === "tenant" }
+  );
+  const adminPlatformCatalogsQuery = (trpc.settings as any).billingListPlatformCatalogs.useQuery(
+    { provider },
+    { enabled: mode === "admin" && !organizationId }
+  );
+  const adminTenantCatalogsQuery = (trpc.organizations as any).getTenantBillingCatalogsAdmin.useQuery(
+    { organizationId: organizationId!, provider },
+    { enabled: isSuperadminTargetingTenant }
+  );
+
+  const config = isSuperadminTargetingTenant
+    ? adminTenantQuery.data
+    : mode === "tenant"
+    ? tenantConfigQuery.data
+    : adminPlatformQuery.data;
+
+  const catalogs = isSuperadminTargetingTenant
+    ? adminTenantCatalogsQuery.data
+    : mode === "tenant"
+    ? tenantCatalogsQuery.data
+    : adminPlatformCatalogsQuery.data;
+
+  const isLoading = isSuperadminTargetingTenant
+    ? adminTenantQuery.isLoading
+    : mode === "tenant"
+    ? tenantConfigQuery.isLoading
+    : adminPlatformQuery.isLoading;
+
+  const alegraBankAccounts = (catalogs?.bankAccounts || []) as Array<{ id: string; name: string; status?: string }>;
+
+  useEffect(() => {
+    if (provider !== "alegra" || !catalogs) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const validTemplates = ((catalogs.documentTypes || []) as any[]).filter((template) => {
+      if (!template.isElectronic || template.isActive === false) return false;
+      if (template.startDate && today < String(template.startDate).slice(0, 10)) return false;
+      if (template.endDate && today > String(template.endDate).slice(0, 10)) return false;
+      return true;
+    });
+    const configured = String(resolutionNumber || "").trim();
+    const selected = validTemplates.find((template) =>
+      String(template.id) === configured || String(template.resolutionNumber || "") === configured
+    )
+      || validTemplates.find((template) => template.isDefault)
+      || [...validTemplates].sort((a, b) => String(b.startDate || "").localeCompare(String(a.startDate || "")))[0];
+    if (selected?.resolutionNumber && selected.resolutionNumber !== resolutionNumber) {
+      setResolutionNumber(selected.resolutionNumber);
+    }
+    if (alegraBankAccounts.length > 0 && !alegraBankAccounts.some((account) => account.id === alegraPaymentAccountId)) {
+      const cajaGeneral = alegraBankAccounts.find((account) => /caja\s*general|principal/i.test(account.name));
+      setAlegraPaymentAccountId(cajaGeneral?.id || alegraBankAccounts[0].id);
+    }
+  }, [provider, catalogs, resolutionNumber, alegraPaymentAccountId, alegraBankAccounts.length]);
 
   // Webhook
   const webhookUrl = typeof window !== "undefined" ? `${window.location.origin}/api/billing/webhook` : "/api/billing/webhook";
@@ -206,6 +262,8 @@ export default function ElectronicBillingConfigCard({ mode = "tenant", organizat
       setAlegraEmail(config.alegraEmail || "");
       setAlegraTokenSaved(!!config.alegraToken);
       setAlegraToken(config.alegraToken || "");
+      setAlegraEProviderTokenSaved(!!config.alegraEProviderToken);
+      setAlegraEProviderToken(config.alegraEProviderToken || "");
       setAlegraDefaultTaxId(config.alegraDefaultTaxId || "");
       setAlegraPaymentMethodId(config.alegraPaymentMethodId || "");
       setAlegraPaymentAccountId(config.alegraPaymentAccountId || "");
@@ -247,12 +305,17 @@ export default function ElectronicBillingConfigCard({ mode = "tenant", organizat
           provider,
         });
       } else {
-        const catalogs = await (utils.client as any).settings.billingListPlatformCatalogs.query({ provider });
-        const list = catalogs?.items || [];
-        const q = productSearchQuery.toLowerCase();
-        items = list.filter((it: any) =>
-          it.name?.toLowerCase().includes(q) || it.code?.toLowerCase().includes(q) || String(it.id).includes(q)
-        );
+        const result = isSuperadminTargetingTenant
+          ? await (utils.client as any).organizations.getTenantBillingCatalogsAdmin.query({
+              organizationId: organizationId!,
+              provider,
+              query: productSearchQuery.trim(),
+            })
+          : await (utils.client as any).settings.billingListPlatformCatalogs.query({
+              provider,
+              query: productSearchQuery.trim(),
+            });
+        items = result?.items || [];
       }
       setSearchResults(items || []);
       if (!items || items.length === 0) {
@@ -301,6 +364,7 @@ export default function ElectronicBillingConfigCard({ mode = "tenant", organizat
       selectedProductUnit,
       alegraEmail,
       alegraToken: alegraToken.startsWith("****") ? undefined : alegraToken,
+      alegraEProviderToken: alegraEProviderToken.startsWith("****") ? undefined : alegraEProviderToken,
       alegraDefaultItemId: selectedProductId || undefined,
       alegraDefaultTaxId,
       alegraPaymentMethodId,
@@ -355,6 +419,52 @@ export default function ElectronicBillingConfigCard({ mode = "tenant", organizat
 
   const isSaving = saveTenantMutation.isPending || saveAdminPlatformMutation.isPending || saveAdminTenantMutation.isPending;
   const isTesting = testTenantMutation.isPending || testAdminPlatformMutation.isPending;
+  const [isConfiguringWebhook, setIsConfiguringWebhook] = useState(false);
+
+  const configureTenantWebhookMutation = (trpc.organizations as any).configureMyBillingWebhook.useMutation({
+    onSuccess: (data: any) => {
+      if (data.success) {
+        toast.success(data.message || "Webhook configurado exitosamente");
+        (utils.organizations as any).getMyElectronicBillingConfig.invalidate();
+      } else {
+        toast.error(`Error configurando webhook: ${data.error}`);
+      }
+    },
+    onError: (err: any) => toast.error(`Error: ${err.message}`),
+  });
+
+  const configurePlatformWebhookMutation = (trpc.settings as any).billingConfigurePlatformWebhook.useMutation({
+    onSuccess: (data: any) => {
+      if (data.success) {
+        toast.success(data.message || "Webhook configurado exitosamente");
+        (utils.settings as any).billingGetPlatformConfig.invalidate();
+      } else {
+        toast.error(`Error configurando webhook: ${data.error}`);
+      }
+    },
+    onError: (err: any) => toast.error(`Error: ${err.message}`),
+  });
+
+  const handleConfigureWebhook = async () => {
+    setIsConfiguringWebhook(true);
+    try {
+      if (mode === "tenant") {
+        await configureTenantWebhookMutation.mutateAsync({
+          webhookUrl,
+          provider,
+          alegraEProviderToken: alegraEProviderToken.startsWith("****") ? undefined : (alegraEProviderToken || undefined),
+        });
+      } else {
+        await configurePlatformWebhookMutation.mutateAsync({
+          webhookUrl,
+          provider,
+          alegraEProviderToken: alegraEProviderToken.startsWith("****") ? undefined : (alegraEProviderToken || undefined),
+        });
+      }
+    } finally {
+      setIsConfiguringWebhook(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -596,24 +706,49 @@ export default function ElectronicBillingConfigCard({ mode = "tenant", organizat
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <Label className="text-xs">Método de Pago DIAN (Opcional)</Label>
+              <div className="space-y-1.5 md:col-span-2">
+                <Label className="text-xs">Token de Proveedor Electrónico Alegra (Opcional para Webhook Automático)</Label>
                 <Input
-                  placeholder="Ej: 1 (Efectivo) o 10"
-                  value={alegraPaymentMethodId}
-                  onChange={(e) => setAlegraPaymentMethodId(e.target.value)}
-                  className="h-9 text-xs"
+                  type="password"
+                  placeholder={alegraEProviderTokenSaved ? "Token de Proveedor guardado" : "Bearer Token emitido por Alegra Proveedor Electrónico"}
+                  value={alegraEProviderToken}
+                  onChange={(e) => setAlegraEProviderToken(e.target.value)}
+                  className="h-9 text-xs font-mono"
                 />
+                <p className="text-[10px] text-muted-foreground">
+                  Permite a EVGreen registrar el webhook directamente por API sin buscar menús manuales en Alegra.
+                </p>
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs">Cuenta Bancaria / Caja Alegra (Opcional)</Label>
-                <Input
-                  placeholder="ID de cuenta contable"
-                  value={alegraPaymentAccountId}
-                  onChange={(e) => setAlegraPaymentAccountId(e.target.value)}
-                  className="h-9 text-xs"
-                />
+                <Label className="text-xs">Método de pago Alegra</Label>
+                <Select value={alegraPaymentMethodId || "transfer"} onValueChange={setAlegraPaymentMethodId}>
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue placeholder="Selecciona un método" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ALEGRA_PAYMENT_METHODS.map((method) => (
+                      <SelectItem key={method.value} value={method.value}>{method.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground">Alegra exige el código textual, no el número interno 1/2/3.</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs">Cuenta de ingreso en Alegra</Label>
+                <Select value={alegraPaymentAccountId || "none"} onValueChange={(value) => setAlegraPaymentAccountId(value === "none" ? "" : value)}>
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue placeholder="Selecciona una cuenta" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Usar cuenta predeterminada</SelectItem>
+                    {alegraBankAccounts.map((account) => (
+                      <SelectItem key={account.id} value={account.id}>{account.name} (#{account.id})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground">Se guarda el ID interno de la cuenta, no el código PUC.</p>
               </div>
             </div>
           )}
@@ -819,9 +954,9 @@ export default function ElectronicBillingConfigCard({ mode = "tenant", organizat
             </Badge>
           </div>
           <p className="text-xs text-muted-foreground">
-            Registra esta URL en tu panel de {provider.toUpperCase()} (evento <code>invoices.emissionFinished</code>) para recibir automáticamente el CUFE y confirmar la aprobación de la DIAN:
+            Alegra no tiene un campo visible en su panel web para registrar esta URL. Se vincula por API hacia el evento <code>invoices.emissionFinished</code> usando el Token de Proveedor Electrónico:
           </p>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
             <Input readOnly value={webhookUrl} className="h-8 text-xs font-mono bg-background" />
             <Button
               type="button"
@@ -834,6 +969,17 @@ export default function ElectronicBillingConfigCard({ mode = "tenant", organizat
               className="h-8 gap-1 px-3 text-xs"
             >
               <Copy className="h-3.5 w-3.5" /> Copiar
+            </Button>
+            <Button
+              type="button"
+              variant="default"
+              size="sm"
+              onClick={handleConfigureWebhook}
+              disabled={isConfiguringWebhook}
+              className="h-8 gap-1 px-3 text-xs bg-green-600 hover:bg-green-700 text-white"
+            >
+              {isConfiguringWebhook ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+              Registrar Webhook por API
             </Button>
           </div>
         </div>

@@ -6,6 +6,7 @@
 import type {
   BillingAdapter,
   CanonicalInvoiceInput,
+  CatalogBankAccount,
   CatalogDocumentType,
   CatalogItem,
   CatalogPaymentMethod,
@@ -59,11 +60,60 @@ function mapDocumentType(docType?: string): string {
     case "CC": return "CC";
     case "NIT": return "NIT";
     case "CE": return "CE";
-    case "PASAPORTE": return "PA";
+    case "PASAPORTE": return "PP";
     case "TI": return "TI";
     case "PEP": return "PEP";
     default: return "CC";
   }
+}
+
+function splitNaturalPersonName(name: string): { firstName: string; lastName: string; secondName?: string } {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return { firstName: "Cliente", lastName: "EVGreen" };
+  if (parts.length === 1) return { firstName: parts[0], lastName: "EVGreen" };
+  if (parts.length === 2) return { firstName: parts[0], lastName: parts[1] };
+  if (parts.length === 3) {
+    // En Colombia: [Primer Nombre] [Primer Apellido] [Segundo Apellido]
+    // Alegra requiere firstName y lastName; secondName es opcional
+    return {
+      firstName: parts[0],
+      secondName: undefined,
+      lastName: `${parts[1]} ${parts[2]}`,
+    };
+  }
+  return {
+    firstName: parts[0],
+    secondName: parts[1],
+    lastName: parts.slice(2).join(" "),
+  };
+}
+
+function normalizePaymentMethod(value: unknown): string {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  const aliases: Record<string, string> = {
+    "1": "cash",
+    "2": "transfer",
+    "3": "deposit",
+    "4": "check",
+    "5": "credit-card",
+    "6": "debit-card",
+    "efectivo": "cash",
+    "consignacion": "deposit",
+    "consignación": "deposit",
+    "transferencia": "transfer",
+    "cheque": "check",
+    "tarjeta de credito": "credit-card",
+    "tarjeta de crédito": "credit-card",
+    "tarjeta de debito": "debit-card",
+    "tarjeta de débito": "debit-card",
+    "transefer": "transfer",
+  };
+  return aliases[normalized] || (['cash', 'check', 'transfer', 'deposit', 'credit-card', 'debit-card'].includes(normalized) ? normalized : "transfer");
+}
+
+function parsePositiveInteger(value: unknown): number | undefined {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 export class AlegraAdapter implements BillingAdapter {
@@ -169,11 +219,29 @@ export class AlegraAdapter implements BillingAdapter {
       const credentials = { email: settings.alegraEmail, token: settings.alegraToken };
       const raw = await alegraRequest<any[]>(credentials, "GET", "/payment-methods");
       return (raw || []).map((pm) => ({
-        id: String(pm.id),
+        id: String(pm.type || pm.id),
         name: pm.name,
       }));
     } catch (e: any) {
       console.warn("[AlegraAdapter] Error listing payment methods:", e.message);
+      return [];
+    }
+  }
+
+  async listBankAccounts(settings: Record<string, any>): Promise<CatalogBankAccount[]> {
+    try {
+      const credentials = { email: settings.alegraEmail, token: settings.alegraToken };
+      const raw = await alegraRequest<any[]>(credentials, "GET", "/bank-accounts");
+      return (raw || []).map((account) => ({
+        id: String(account.id),
+        name: account.name,
+        type: account.type,
+        status: account.status,
+        number: account.number || undefined,
+        raw: account,
+      }));
+    } catch (e: any) {
+      console.warn("[AlegraAdapter] Error listing bank accounts:", e.message);
       return [];
     }
   }
@@ -187,11 +255,127 @@ export class AlegraAdapter implements BillingAdapter {
         name: nt.name,
         prefix: nt.prefix || undefined,
         isElectronic: !!nt.isElectronic,
+        isActive: nt.status === "active",
+        isDefault: !!nt.isDefault,
+        startDate: nt.startDate || undefined,
+        endDate: nt.endDate || undefined,
+        resolutionNumber: nt.resolutionNumber || undefined,
       }));
     } catch (e: any) {
       console.warn("[AlegraAdapter] Error listing number templates:", e.message);
       return [];
     }
+  }
+
+  async configureWebhook(
+    settings: Record<string, any>,
+    webhookUrl: string,
+    secret?: string
+  ): Promise<{ success: boolean; message?: string; error?: string }> {
+    const eProviderToken = settings.alegraEProviderToken || settings.alegraToken;
+    if (!eProviderToken) {
+      return {
+        success: false,
+        error: "Se requiere el Token de Proveedor Electrónico de Alegra para configurar el webhook por API.",
+      };
+    }
+
+    const isSandbox = settings.environment === "sandbox" || settings.alegraTestMode === 1;
+    const base = isSandbox
+      ? "https://sandbox-api.alegra.com/e-provider/col/v1"
+      : "https://api.alegra.com/e-provider/col/v1";
+
+    const payload = {
+      webhooks: {
+        invoices: {
+          emissionFinished: {
+            url: webhookUrl,
+            headers: secret ? { "x-api-key": secret } : {},
+            status: "active",
+          },
+        },
+      },
+    };
+
+    try {
+      const response = await fetch(`${base}/company`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${eProviderToken}`,
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Alegra e-provider error (${response.status}): ${text}`);
+      }
+
+      return {
+        success: true,
+        message: "Webhook de facturación electrónica registrado exitosamente en Alegra.",
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        error: err.message || "No se pudo registrar el webhook en Alegra.",
+      };
+    }
+  }
+
+  private async resolveNumberTemplateId(credentials: AlegraCredentials, configuredValue?: unknown): Promise<string | undefined> {
+    try {
+      const raw = await alegraRequest<any[]>(credentials, "GET", "/number-templates");
+      const today = new Date().toISOString().slice(0, 10);
+      const validElectronic = (raw || []).filter((template) => {
+        if (template.documentType !== "invoice" || !template.isElectronic || template.status !== "active") return false;
+        if (template.startDate && today < String(template.startDate).slice(0, 10)) return false;
+        if (template.endDate && today > String(template.endDate).slice(0, 10)) return false;
+        return true;
+      });
+
+      const configured = String(configuredValue ?? "").trim();
+      const explicit = configured
+        ? validElectronic.find((template) => String(template.id) === configured || String(template.resolutionNumber || "") === configured)
+        : undefined;
+      const selected = explicit
+        || validElectronic.find((template) => template.isDefault)
+        || [...validElectronic].sort((a, b) => String(b.startDate || "").localeCompare(String(a.startDate || "")))[0];
+
+      if (selected?.id) {
+        console.log(`[AlegraAdapter] Resolución electrónica seleccionada: ${selected.id} (${selected.name || selected.prefix || "sin nombre"})`);
+        return String(selected.id);
+      }
+    } catch (error: any) {
+      console.warn("[AlegraAdapter] No se pudo consultar la numeración electrónica:", error.message);
+    }
+    return undefined;
+  }
+
+  private async resolvePaymentAccountId(credentials: AlegraCredentials, configuredValue?: unknown): Promise<number | undefined> {
+    try {
+      const raw = await alegraRequest<any[]>(credentials, "GET", "/bank-accounts");
+      const configured = String(configuredValue ?? "").trim();
+      const exact = configured
+        ? (raw || []).find((account) => [account.id, account.number, account.code, account.accounting?.code].some((value) => String(value ?? "") === configured))
+        : undefined;
+      const fallback = exact
+        || (raw || []).find((account) => account.status === "active" && account.isDefault)
+        || (raw || []).find((account) => account.status === "active" && /caja\s*general|principal/i.test(String(account.name || "")))
+        || (raw || []).find((account) => account.status === "active");
+      const accountId = parsePositiveInteger(fallback?.id);
+      if (accountId) {
+        if (configured && String(fallback.id) !== configured) {
+          console.warn(`[AlegraAdapter] Cuenta configurada '${configured}' no es un ID válido; se usará '${fallback.name}' (#${fallback.id}).`);
+        }
+        return accountId;
+      }
+    } catch (error: any) {
+      console.warn("[AlegraAdapter] No se pudo resolver la cuenta de pago:", error.message);
+    }
+    return undefined;
   }
 
   private async syncContact(credentials: AlegraCredentials, input: CanonicalInvoiceInput): Promise<string> {
@@ -219,6 +403,9 @@ export class AlegraAdapter implements BillingAdapter {
       phonePrimary: input.userPhone,
       kindOfPerson: input.userKindOfPerson || "PERSON_ENTITY",
       regime: input.userRegime || "SIMPLIFIED_REGIME",
+      ...((input.userKindOfPerson || "PERSON_ENTITY") === "PERSON_ENTITY"
+        ? { nameObject: splitNaturalPersonName(input.userName || "Cliente EVGreen") }
+        : {}),
       identificationObject: identification ? {
         type: mapDocumentType(input.userDocumentType),
         number: identification,
@@ -272,7 +459,8 @@ export class AlegraAdapter implements BillingAdapter {
         }
       }
 
-      const taxArray = itemTaxId ? [{ id: parseInt(itemTaxId) }] : [];
+      const parsedTaxId = parsePositiveInteger(itemTaxId);
+      const taxArray = parsedTaxId ? [{ id: parsedTaxId }] : [];
       const energyQuantity = parseFloat(input.energyDelivered.toFixed(2));
 
       // Tarifa dinámica: EVGreen encapsula todo el servicio cobrado en un solo concepto.
@@ -308,7 +496,7 @@ export class AlegraAdapter implements BillingAdapter {
       const invoicePayload: any = {
         date: todayStr,
         dueDate: todayStr,
-        client: parseInt(contactId),
+        client: parsePositiveInteger(contactId) ?? contactId,
         items,
         status: "open",
         stamp: { generateStamp: settings.alegraUseElectronicStamp !== 0 },
@@ -316,16 +504,18 @@ export class AlegraAdapter implements BillingAdapter {
         observations: `Transacción EVGreen #${input.transactionId}.`,
       };
 
-      if (settings.resolutionNumber) {
-        invoicePayload.numberTemplate = { id: settings.resolutionNumber };
+      const numberTemplateId = await this.resolveNumberTemplateId(credentials, settings.resolutionNumber);
+      if (numberTemplateId) {
+        invoicePayload.numberTemplate = { id: numberTemplateId };
       }
 
-      if (settings.alegraPaymentMethodId && input.totalAmount > 0) {
+      if (input.totalAmount > 0) {
+        const paymentAccountId = await this.resolvePaymentAccountId(credentials, settings.alegraPaymentAccountId);
         invoicePayload.payments = [{
           date: todayStr,
           amount: input.totalAmount,
-          paymentMethod: settings.alegraPaymentMethodId,
-          ...(settings.alegraPaymentAccountId ? { account: { id: parseInt(settings.alegraPaymentAccountId) } } : {}),
+          paymentMethod: normalizePaymentMethod(settings.alegraPaymentMethodId),
+          ...(paymentAccountId ? { account: { id: paymentAccountId } } : {}),
         }];
       }
 

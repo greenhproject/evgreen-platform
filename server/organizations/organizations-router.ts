@@ -32,6 +32,7 @@ import {
 import {
   testProviderConnection,
   getProviderCatalogs,
+  configureProviderWebhook,
   retryElectronicInvoice,
   getAdapter,
 } from "../billing/billing-service";
@@ -1574,6 +1575,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         siigoMail: settings.siigoMail !== 0,
         // Enmascarar tokens para seguridad
         alegraToken: settings.alegraToken ? "****" + settings.alegraToken.slice(-4) : "",
+        alegraEProviderToken: settings.alegraEProviderToken ? "****" + settings.alegraEProviderToken.slice(-4) : "",
         siigoAccessKey: settings.siigoAccessKey ? "****" + settings.siigoAccessKey.slice(-4) : "",
         worldOfficeToken: settings.worldOfficeToken ? "****" + settings.worldOfficeToken.slice(-4) : "",
         webhookSecret: settings.webhookSecret ? "****" + settings.webhookSecret.slice(-4) : "",
@@ -1592,6 +1594,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
           // Alegra
           alegraEmail: z.string().optional(),
           alegraToken: z.string().optional(),
+          alegraEProviderToken: z.string().optional(),
           alegraDefaultItemId: z.string().optional(),
           alegraDefaultTaxId: z.string().optional(),
           alegraPaymentMethodId: z.string().optional(),
@@ -1673,6 +1676,9 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         if (input.alegraToken && !input.alegraToken.startsWith("****")) {
           payload.alegraToken = input.alegraToken;
         }
+        if (input.alegraEProviderToken && !input.alegraEProviderToken.startsWith("****")) {
+          payload.alegraEProviderToken = input.alegraEProviderToken;
+        }
         if (input.siigoAccessKey && !input.siigoAccessKey.startsWith("****")) {
           payload.siigoAccessKey = input.siigoAccessKey;
         }
@@ -1742,7 +1748,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         const orgId = ctx.tenant.organizationId;
         const settings = await getTenantBillingSettings(orgId);
         if (!settings) {
-          return { items: [], taxes: [], paymentMethods: [], documentTypes: [] };
+          return { items: [], taxes: [], paymentMethods: [], bankAccounts: [], documentTypes: [] };
         }
         const provider = (input?.provider || settings.provider) as BillingProviderType;
         return getProviderCatalogs(provider, settings);
@@ -1811,6 +1817,44 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
           product,
           message: `Producto "${product.name}" sincronizado con éxito. EVGreen sólo enviará la cantidad de kWh.`,
         };
+      }),
+
+    configureMyBillingWebhook: tenantProcedure
+      .input(z.object({
+        webhookUrl: z.string().url(),
+        provider: z.enum(["alegra", "siigo", "world_office"]).optional(),
+        alegraEProviderToken: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }: any) => {
+        const orgId = ctx.tenant.organizationId;
+        const current = await getTenantBillingSettings(orgId);
+        if (!current) throw new TRPCError({ code: "NOT_FOUND", message: "Configuración de facturación no encontrada" });
+
+        const provider = (input.provider || current.provider) as BillingProviderType;
+        const effectiveSettings: Record<string, any> = { ...current };
+        if (input.alegraEProviderToken && !input.alegraEProviderToken.startsWith("****")) {
+          effectiveSettings.alegraEProviderToken = input.alegraEProviderToken;
+        }
+
+        let secret = current.webhookSecret;
+        if (!secret) {
+          secret = crypto.randomBytes(24).toString("hex");
+          await upsertTenantBillingSettings(orgId, {
+            webhookSecret: secret,
+            webhookConfiguredAt: new Date().toISOString(),
+          });
+        }
+
+        const result = await configureProviderWebhook(provider, effectiveSettings, input.webhookUrl, secret);
+        if (result.success) {
+          await upsertTenantBillingSettings(orgId, {
+            webhookConfiguredAt: new Date().toISOString(),
+            ...(input.alegraEProviderToken && !input.alegraEProviderToken.startsWith("****")
+              ? { alegraEProviderToken: input.alegraEProviderToken }
+              : {}),
+          });
+        }
+        return result;
       }),
 
     getMyElectronicInvoices: tenantProcedure
@@ -1907,10 +1951,24 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
           siigoStamp: settings.siigoStamp !== 0,
           siigoMail: settings.siigoMail !== 0,
           alegraToken: settings.alegraToken ? "****" + settings.alegraToken.slice(-4) : "",
+          alegraEProviderToken: settings.alegraEProviderToken ? "****" + settings.alegraEProviderToken.slice(-4) : "",
           siigoAccessKey: settings.siigoAccessKey ? "****" + settings.siigoAccessKey.slice(-4) : "",
           worldOfficeToken: settings.worldOfficeToken ? "****" + settings.worldOfficeToken.slice(-4) : "",
           webhookSecret: settings.webhookSecret ? "****" + settings.webhookSecret.slice(-4) : "",
         };
+      }),
+
+    getTenantBillingCatalogsAdmin: adminProcedure
+      .input(z.object({
+        organizationId: z.number(),
+        provider: z.enum(["alegra", "siigo", "world_office"]).optional(),
+        query: z.string().optional(),
+      }))
+      .query(async ({ input }: any) => {
+        const settings = await getTenantBillingSettings(input.organizationId);
+        if (!settings) return { items: [], taxes: [], paymentMethods: [], bankAccounts: [], documentTypes: [] };
+        const provider = (input.provider || settings.provider) as BillingProviderType;
+        return getProviderCatalogs(provider, settings, input.query);
       }),
 
     saveTenantBillingConfigAdmin: adminProcedure
@@ -1926,6 +1984,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
           resolutionNumber: z.string().optional(),
           alegraEmail: z.string().optional(),
           alegraToken: z.string().optional(),
+          alegraEProviderToken: z.string().optional(),
           alegraDefaultItemId: z.string().optional(),
           alegraDefaultTaxId: z.string().optional(),
           alegraPaymentMethodId: z.string().optional(),
@@ -2001,6 +2060,9 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
 
         if (input.alegraToken && !input.alegraToken.startsWith("****")) {
           payload.alegraToken = input.alegraToken;
+        }
+        if (input.alegraEProviderToken && !input.alegraEProviderToken.startsWith("****")) {
+          payload.alegraEProviderToken = input.alegraEProviderToken;
         }
         if (input.siigoAccessKey && !input.siigoAccessKey.startsWith("****")) {
           payload.siigoAccessKey = input.siigoAccessKey;

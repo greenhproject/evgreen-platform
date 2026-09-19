@@ -92,17 +92,20 @@ export async function getEffectiveBillingSettings(organizationId?: number | null
 }
 
 /**
- * Encola la emisión de factura electrónica de manera asíncrona y no bloqueante.
- * Diseñado para ser llamado desde CSMS StopTransaction sin retrasar la respuesta OCPP.
+ * Emite la factura de forma durable antes de cerrar el flujo de finalización.
+ *
+ * El proceso anterior usaba setImmediate y devolvía antes de iniciar la emisión.
+ * En runtimes autoscalables esto podía terminar el request y apagar el proceso,
+ * dejando la recarga sin registro de factura. El registro PROCESSING/FAILED y la
+ * idempotencia de processChargingInvoice ya permiten reintentar sin duplicar.
  */
 export async function queueChargingInvoice(transactionId: number): Promise<void> {
-  setImmediate(async () => {
-    try {
-      await processChargingInvoice(transactionId);
-    } catch (err: any) {
-      console.error(`[BillingService] Error procesando factura en background para tx=${transactionId}:`, err.message);
-    }
-  });
+  try {
+    await processChargingInvoice(transactionId);
+  } catch (err: any) {
+    console.error(`[BillingService] Error procesando factura para tx=${transactionId}:`, err.message);
+    throw err;
+  }
 }
 
 /**
@@ -344,25 +347,47 @@ export async function testProviderConnection(
 }
 
 /**
+ * Configura automáticamente el webhook en el proveedor por API si éste lo soporta.
+ */
+export async function configureProviderWebhook(
+  provider: BillingProviderType,
+  settings: Record<string, any>,
+  webhookUrl: string,
+  secret?: string
+): Promise<{ success: boolean; message?: string; error?: string }> {
+  const adapter = getAdapter(provider);
+  if (!adapter.configureWebhook) {
+    return {
+      success: false,
+      error: `El proveedor ${provider} no soporta registro automático de webhook por API.`,
+    };
+  }
+  return adapter.configureWebhook(settings, webhookUrl, secret);
+}
+
+/**
  * Obtiene los catálogos del proveedor para parametrización en interfaz.
  */
 export async function getProviderCatalogs(
   provider: BillingProviderType,
-  settings: Record<string, any>
+  settings: Record<string, any>,
+  search?: string
 ): Promise<{
   items: CatalogItem[];
   taxes: CatalogTax[];
   paymentMethods: CatalogPaymentMethod[];
+  bankAccounts: any[];
   documentTypes: CatalogDocumentType[];
 }> {
   const adapter = getAdapter(provider);
 
-  const [items, taxes, paymentMethods, documentTypes] = await Promise.all([
-    adapter.listItems ? adapter.listItems(settings).catch(() => []) : Promise.resolve([]),
+  const [items, taxes, paymentMethods, bankAccounts, documentTypes] = await Promise.all([
+    adapter.listItems ? adapter.listItems(settings, search).catch(() => []) : Promise.resolve([]),
     adapter.listTaxes ? adapter.listTaxes(settings).catch(() => []) : Promise.resolve([]),
     adapter.listPaymentMethods ? adapter.listPaymentMethods(settings).catch(() => []) : Promise.resolve([]),
+    adapter.listBankAccounts ? adapter.listBankAccounts(settings).catch(() => []) : Promise.resolve([]),
     adapter.listDocumentTypes ? adapter.listDocumentTypes(settings).catch(() => []) : Promise.resolve([]),
   ]);
 
-  return { items, taxes, paymentMethods, documentTypes };
+  return { items, taxes, paymentMethods, bankAccounts, documentTypes };
 }

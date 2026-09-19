@@ -4340,6 +4340,7 @@ const settingsRouter = router({
       siigoStamp: tenantConfig.siigoStamp !== 0,
       siigoMail: tenantConfig.siigoMail !== 0,
       alegraToken: tenantConfig.alegraToken ? "****" + tenantConfig.alegraToken.slice(-4) : "",
+      alegraEProviderToken: tenantConfig.alegraEProviderToken ? "****" + tenantConfig.alegraEProviderToken.slice(-4) : "",
       siigoAccessKey: tenantConfig.siigoAccessKey ? "****" + tenantConfig.siigoAccessKey.slice(-4) : "",
       worldOfficeToken: tenantConfig.worldOfficeToken ? "****" + tenantConfig.worldOfficeToken.slice(-4) : "",
       webhookSecret: tenantConfig.webhookSecret ? "****" + tenantConfig.webhookSecret.slice(-4) : "",
@@ -4358,6 +4359,7 @@ const settingsRouter = router({
         resolutionNumber: z.string().optional(),
         alegraEmail: z.string().optional(),
         alegraToken: z.string().optional(),
+        alegraEProviderToken: z.string().optional(),
         alegraDefaultItemId: z.string().optional(),
         alegraDefaultTaxId: z.string().optional(),
         alegraPaymentMethodId: z.string().optional(),
@@ -4434,6 +4436,9 @@ const settingsRouter = router({
       if (input.alegraToken && !input.alegraToken.startsWith("****")) {
         payload.alegraToken = input.alegraToken;
       }
+      if (input.alegraEProviderToken && !input.alegraEProviderToken.startsWith("****")) {
+        payload.alegraEProviderToken = input.alegraEProviderToken;
+      }
       if (input.siigoAccessKey && !input.siigoAccessKey.startsWith("****")) {
         payload.siigoAccessKey = input.siigoAccessKey;
       }
@@ -4503,13 +4508,54 @@ const settingsRouter = router({
     }),
 
   billingListPlatformCatalogs: adminProcedure
-    .input(z.object({ provider: z.enum(["alegra", "siigo", "world_office"]).optional() }).optional())
+    .input(z.object({
+      provider: z.enum(["alegra", "siigo", "world_office"]).optional(),
+      query: z.string().optional(),
+    }).optional())
     .query(async ({ input }) => {
       const settings = (await db.getTenantBillingSettings(null)) || (await db.getPlatformSettings());
-      if (!settings) return { items: [], taxes: [], paymentMethods: [], documentTypes: [] };
+      if (!settings) return { items: [], taxes: [], paymentMethods: [], bankAccounts: [], documentTypes: [] };
       const provider = input?.provider || (settings as any).provider || "alegra";
       const { getProviderCatalogs } = await import("./billing/billing-service");
-      return getProviderCatalogs(provider, settings as any);
+      return getProviderCatalogs(provider, settings as any, input?.query);
+    }),
+
+  billingConfigurePlatformWebhook: adminProcedure
+    .input(z.object({
+      webhookUrl: z.string().url(),
+      provider: z.enum(["alegra", "siigo", "world_office"]).optional(),
+      alegraEProviderToken: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const current = await db.getTenantBillingSettings(null);
+      const legacy = await db.getPlatformSettings();
+      const provider = input.provider || current?.provider || "alegra";
+      const effectiveSettings: Record<string, any> = { ...(legacy || {}), ...(current || {}) };
+
+      if (input.alegraEProviderToken && !input.alegraEProviderToken.startsWith("****")) {
+        effectiveSettings.alegraEProviderToken = input.alegraEProviderToken;
+      }
+
+      let secret = current?.webhookSecret;
+      if (!secret) {
+        secret = (await import("crypto")).randomBytes(24).toString("hex");
+        await db.upsertTenantBillingSettings(null, {
+          webhookSecret: secret,
+          webhookConfiguredAt: new Date().toISOString(),
+        });
+      }
+
+      const { configureProviderWebhook } = await import("./billing/billing-service");
+      const result = await configureProviderWebhook(provider, effectiveSettings, input.webhookUrl, secret);
+      if (result.success) {
+        await db.upsertTenantBillingSettings(null, {
+          webhookConfiguredAt: new Date().toISOString(),
+          ...(input.alegraEProviderToken && !input.alegraEProviderToken.startsWith("****")
+            ? { alegraEProviderToken: input.alegraEProviderToken }
+            : {}),
+        });
+      }
+      return result;
     }),
 
   billingListInvoices: adminProcedure

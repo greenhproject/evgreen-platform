@@ -2780,6 +2780,7 @@ export const tenantBillingSettings = mysqlTable("tenant_billing_settings", {
 	// Configuración Alegra
 	alegraEmail: varchar("alegra_email", { length: 255 }),
 	alegraToken: text("alegra_token"),
+	alegraEProviderToken: text("alegra_eprovider_token"),
 	alegraDefaultItemId: varchar("alegra_default_item_id", { length: 50 }),
 	alegraDefaultTaxId: varchar("alegra_default_tax_id", { length: 50 }),
 	alegraPaymentMethodId: varchar("alegra_payment_method_id", { length: 50 }),

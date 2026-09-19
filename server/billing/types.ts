@@ -86,11 +86,25 @@ export interface CatalogPaymentMethod {
   name: string;
 }
 
+export interface CatalogBankAccount {
+  id: string;
+  name: string;
+  type?: string;
+  status?: string;
+  number?: string;
+  raw?: any;
+}
+
 export interface CatalogDocumentType {
   id: string;
   name: string;
   prefix?: string;
   isElectronic?: boolean;
+  isActive?: boolean;
+  isDefault?: boolean;
+  startDate?: string;
+  endDate?: string;
+  resolutionNumber?: string;
 }
 
 export interface BillingAdapter {
@@ -101,5 +115,7 @@ export interface BillingAdapter {
   getItemById?(settings: Record<string, any>, itemId: string): Promise<CatalogItem | null>;
   listTaxes?(settings: Record<string, any>): Promise<CatalogTax[]>;
   listPaymentMethods?(settings: Record<string, any>): Promise<CatalogPaymentMethod[]>;
+  listBankAccounts?(settings: Record<string, any>): Promise<CatalogBankAccount[]>;
   listDocumentTypes?(settings: Record<string, any>): Promise<CatalogDocumentType[]>;
+  configureWebhook?(settings: Record<string, any>, webhookUrl: string, secret?: string): Promise<{ success: boolean; message?: string; error?: string }>;
 }
