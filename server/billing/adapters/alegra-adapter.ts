@@ -557,8 +557,7 @@ export class AlegraAdapter implements BillingAdapter {
 
       const parsedTaxId = parsePositiveInteger(itemTaxId);
       const taxArray = parsedTaxId ? [{ id: parsedTaxId }] : [];
-      const rawEnergy = typeof input.energyDelivered === "number" ? input.energyDelivered : input.kwhConsumed;
-      const energyQuantity = parseFloat((rawEnergy || 0).toFixed(2));
+      const energyQuantity = parseFloat((input.energyDelivered || 0).toFixed(2));
 
       // Tarifa dinámica: EVGreen encapsula todo el servicio cobrado en un solo concepto.
       // Si hay kWh registrados, inyectamos cantidad = kWh y precio = total / kWh para respetar

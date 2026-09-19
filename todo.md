@@ -4472,3 +4472,10 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] iOS/Android: se estableció presentación foreground `alert/badge/sound`, entitlement APNs de producción para Release y preflight de release. `pnpm build:android:prod`/`build:ios:prod` se bloquean si faltan los archivos Firebase o la configuración APNs de producción.
 - [x] Evidencia: FCM inicializa y rechaza correctamente un token inválido (autenticación de servidor comprobada); `pnpm check`, 42 pruebas focales, suite completa 215 archivos/2.261 pruebas y build productivo aprobados.
 - [ ] Pendiente externo obligatorio antes de afirmar recepción real en tiendas: inyectar `google-services.json` y `GoogleService-Info.plist` oficiales de `com.greenhproject.evgreen`, configurar una clave APNs válida en Firebase Cloud Messaging y publicar una nueva versión Android/iOS. El preflight detecta y bloquea estos faltantes de manera explícita.
+
+
+## Corrección urgente — Consultas Push 500 por contrato de columnas (2026-09-19)
+- [x] Diagnóstico: `push.getPreferences` y `push.getDeliveryHealth` fallaban con HTTP 500 porque la migración 0046 creó columnas `snake_case` (`user_id`, `delivery_id`, etc.) mientras el esquema Drizzle las consultaba implícitamente como `camelCase` (`userId`, `deliveryId`, etc.).
+- [x] Fix: el esquema define ahora de forma explícita cada nombre físico de `push_devices` y `push_delivery_events`, incluidos `platform`, `status` y `channel`; no se renombró ni modificó ninguna columna ni evento existente.
+- [x] QA: consultas SQL equivalentes contra ambas tablas ejecutadas sin error; prueba contractual nueva, pruebas Push focales, TypeScript, suite completa de 216 archivos / 2.264 pruebas y build productivo aprobados.
+- [x] Compatibilidad compartida: se corrigió un fallback de `kwhConsumed` obsoleto en el adaptador Alegra recientemente sincronizado; el contrato canónico requiere `energyDelivered`, por lo que se elimina una referencia inexistente que bloqueaba TypeScript.
