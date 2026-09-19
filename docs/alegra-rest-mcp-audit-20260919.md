@@ -2,18 +2,19 @@
 
 ## Decisión de arquitectura
 
-EVGreen mantiene la API REST de Alegra para la emisión automática de facturas al finalizar una sesión OCPP. El endpoint `https://mcp.alegra.com` responde como servidor MCP protegido y exige autenticación Bearer/OAuth interactiva; está orientado a clientes de asistentes y herramientas conversacionales. No sustituye la llamada determinista servidor a servidor que necesita el cierre de una recarga, y no debe recibir tokens REST de los tenants.
+EVGreen mantiene la API REST de Alegra para la emisión automática de facturas al finalizar una sesión OCPP y también para registrar suscripciones de webhook. El endpoint `https://mcp.alegra.com` responde como servidor MCP protegido y exige autenticación Bearer/OAuth interactiva; está orientado a clientes de asistentes y herramientas conversacionales. No sustituye la llamada determinista servidor a servidor que necesita el cierre de una recarga.
 
 ## Fuentes oficiales consultadas
 
 | Fuente | Hallazgo | URL |
 |---|---|---|
 | API REST — crear factura | `POST /api/v1/invoices`; `items[].id` es obligatorio, `price` no incluye impuestos, `quantity` es obligatorio y `payments[].paymentMethod` usa códigos textuales como `cash`, `transfer`, `deposit`, `check`, `credit-card` y `debit-card`. `payments[].account.id` es el identificador de la cuenta bancaria. | [Crear factura](https://developer.alegra.com/reference/post_invoices) |
+| API REST — suscripciones webhook | `POST /api/v1/webhooks/subscriptions` usa BasicAuth con las mismas credenciales REST y admite `new-invoice` y `edit-invoice`. Alegra valida la URL con un POST vacío y exige respuesta 2xx en menos de 5 segundos. | [Crear suscripción](https://developer.alegra.com/reference/post_webhooks-subscriptions.md) |
 | API REST — ítems | `GET /api/v1/items` admite `query` para buscar por nombre o referencia y `limit` máximo 30. Si no se envía `query`, no se debe asumir que el producto buscado esté en los primeros 30 registros. | [Listar ítems](https://developer.alegra.com/reference/get_items) |
 | Contactos Colombia | Para `PERSON_ENTITY`, `nameObject.firstName` y `nameObject.lastName` son obligatorios. | [Crear contacto](https://developer.alegra.com/reference/post_contacts) |
 | Proveedor electrónico — webhooks | Los webhooks se configuran por compañía mediante la API de proveedor electrónico, en `webhooks.invoices.emissionFinished`, con `url`, `headers` y `status`. | [Webhooks](https://e-provider-docs.alegra.com/docs/webhooks) |
 | Evento de emisión | Alegra envía `{ invoice: { type, id, cufe, status, legalStatus, governmentResponse, errors } }`; una factura aceptada usa `status: SENT` y `legalStatus: ACCEPTED`. | [invoices.emissionFinished](https://e-provider-docs.alegra.com/docs/webhook-invoicesemissionfinished) |
-| Configuración de webhook | La API de proveedor electrónico usa `PATCH /companies/{id}` en `https://api.alegra.com/e-provider/col/v1` o el host sandbox, con autenticación Bearer. | [Actualizar compañía](https://e-provider-docs.alegra.com/reference/updatecompany) |
+| E-Provider avanzado | La API de proveedor electrónico también ofrece `PATCH /companies/{id}` con Bearer, pero no es necesaria para el webhook REST de facturas utilizado por EVGreen. | [Actualizar compañía](https://e-provider-docs.alegra.com/reference/updatecompany) |
 
 ## Evidencia de la cuenta auditada
 
@@ -41,4 +42,4 @@ El código anterior enviaba `paymentMethod: "1"`, omitía `nameObject` al crear 
 4. El adaptador consulta `number-templates`, filtra facturas electrónicas activas dentro de su vigencia y usa la plantilla más reciente/por defecto válida. La pantalla muestra y guarda la resolución vigente, no un número inventado.
 5. La búsqueda del producto envía el término a `GET /items?query=...` en vez de descargar y filtrar solo los primeros 30.
 6. La emisión ya no depende de `setImmediate`; el cierre espera el proceso de facturación y conserva el registro `PROCESSING/FAILED` para reintentos idempotentes.
-7. El webhook continúa aceptando el payload oficial. Para configurarlo automáticamente hace falta un token separado de la API de proveedor electrónico con Bearer; el token REST estándar no autoriza ese endpoint. Por ello no se debe inventar un campo dentro de Alegra: EVGreen debe registrar el webhook por API cuando el tenant suministre ese token, o dejar una acción de configuración guiada.
+7. El webhook se registra por API REST con las mismas credenciales Basic del tenant. EVGreen crea de forma idempotente las suscripciones `new-invoice` y `edit-invoice`, agrega el secreto como query parameter y acepta el payload oficial `{ subject, message: { invoice } }`. El token Bearer E-Provider ya no se utiliza para este botón.

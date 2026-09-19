@@ -4541,7 +4541,6 @@ const settingsRouter = router({
         secret = (await import("crypto")).randomBytes(24).toString("hex");
         await db.upsertTenantBillingSettings(null, {
           webhookSecret: secret,
-          webhookConfiguredAt: new Date().toISOString(),
         });
       }
 

@@ -16,7 +16,8 @@ import { eq, or } from "drizzle-orm";
 export async function handleBillingWebhook(req: Request, res: Response) {
   try {
     const rawBody = req.body;
-    const authHeader = req.header("authorization") || req.header("x-api-key") || req.header("x-webhook-secret") || "";
+    const querySecret = typeof req.query.secret === "string" ? req.query.secret : "";
+    const authHeader = req.header("authorization") || req.header("x-api-key") || req.header("x-webhook-secret") || querySecret || "";
 
     console.log("[BillingWebhook] Notificación recibida:", {
       headers: {
@@ -27,20 +28,23 @@ export async function handleBillingWebhook(req: Request, res: Response) {
     });
 
     if (!rawBody) {
-      return res.status(400).json({ error: "Cuerpo de solicitud vacío" });
+      // Alegra envía un POST vacío al crear una suscripción para validar la URL.
+      return res.status(200).json({ received: true, validation: true });
     }
 
-    // 1. Manejo específico para Alegra: evento invoices.emissionFinished
-    // Payload estructura oficial: { invoice: { type, id, cufe, status, legalStatus, governmentResponse, errors } }
-    if (rawBody.invoice) {
-      const inv = rawBody.invoice;
+    // 1. Alegra E-Provider: { invoice: { ... } }
+    // 2. Alegra REST Webhooks: { subject: "new-invoice|edit-invoice", message: { invoice: { ... } } }
+    const inv = rawBody.invoice || rawBody.message?.invoice;
+    if (inv) {
       const externalId = String(inv.id || "");
       const cufe = inv.cufe || null;
       const legalStatus = String(inv.legalStatus || "").toUpperCase();
       const statusStr = String(inv.status || "").toUpperCase();
-      const isAccepted = legalStatus === "ACCEPTED" || statusStr === "SENT" || inv.governmentResponse?.code === "00";
+      const isAccepted = legalStatus === "ACCEPTED" || statusStr === "SENT" || inv.governmentResponse?.code === "00" || !!cufe;
+      const isRejected = legalStatus === "REJECTED" || statusStr === "REJECTED" || statusStr === "VOID" || statusStr === "VOIDED";
+      const nextStatus = isAccepted ? "COMPLETED" : isRejected ? "FAILED" : "PROCESSING";
 
-      console.log(`[BillingWebhook] Alegra invoice ${externalId} - legalStatus: ${legalStatus}, isAccepted: ${isAccepted}`);
+      console.log(`[BillingWebhook] Alegra invoice ${externalId} - status: ${statusStr}, legalStatus: ${legalStatus}, nextStatus: ${nextStatus}`);
 
       // Buscar la factura por externalInvoiceId
       const database = await getDb();
@@ -62,32 +66,30 @@ export async function handleBillingWebhook(req: Request, res: Response) {
 
       const record = matchingRecords[0];
 
-      // Validar secreto si el tenant lo configuró
-      if (record.organizationId) {
-        const settings = await db.getTenantBillingSettings(record.organizationId);
-        if (settings?.webhookSecret) {
-          const expectedSecret = settings.webhookSecret;
-          const cleanedHeader = authHeader.replace(/^Bearer\s+/i, "").trim();
-          if (cleanedHeader && cleanedHeader !== expectedSecret) {
-            console.warn(`[BillingWebhook] Firma o secreto no coincide para org ${record.organizationId}`);
-            // No bloquear bruscamente si el proveedor no envió el header exacto pero registrar advertencia
-          }
+      // Validar secreto si el tenant lo configuró. Para REST Webhooks viaja como query param;
+      // para E-Provider viaja como x-api-key/Bearer.
+      const settings = await db.getTenantBillingSettings(record.organizationId ?? null);
+      if (settings?.webhookSecret) {
+        const expectedSecret = settings.webhookSecret;
+        const cleanedHeader = authHeader.replace(/^Bearer\s+/i, "").trim();
+        if (cleanedHeader !== expectedSecret) {
+          console.warn(`[BillingWebhook] Secreto no coincide para org ${record.organizationId ?? "global"}`);
+          return res.status(401).json({ error: "Webhook no autorizado" });
         }
       }
 
       // Actualizar estado DIAN según respuesta del webhook
-      const newStatus = isAccepted ? "COMPLETED" : "FAILED";
       const govMessage = inv.governmentResponse?.message || (inv.errors && inv.errors.length > 0 ? JSON.stringify(inv.errors) : null);
 
       await db.updateElectronicInvoiceRecord(record.id, {
-        status: newStatus as any,
+        status: nextStatus as any,
         cufe: cufe || record.cufe,
-        errorMessage: isAccepted ? null : (govMessage || "Rechazada por entidad fiscal (DIAN)"),
+        errorMessage: isAccepted || nextStatus === "PROCESSING" ? null : (govMessage || "Rechazada por entidad fiscal (DIAN)"),
         lastAttemptAt: new Date().toISOString(),
       });
 
-      console.log(`[BillingWebhook] Factura #${record.id} (tx #${record.transactionId}) actualizada a ${newStatus}`);
-      return res.status(200).json({ received: true, status: newStatus, invoiceId: record.id });
+      console.log(`[BillingWebhook] Factura #${record.id} (tx #${record.transactionId}) actualizada a ${nextStatus}`);
+      return res.status(200).json({ received: true, status: nextStatus, invoiceId: record.id });
     }
 
     // 2. Manejo genérico / extensible para otros proveedores (Siigo / World Office / callbacks DIAN)

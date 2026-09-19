@@ -116,4 +116,36 @@ describe("AlegraAdapter", () => {
       expect.objectContaining({ id: 1900, quantity: 16.28, tax: [] }),
     ]);
   });
+
+  it("registra las suscripciones REST con BasicAuth y evita duplicarlas", async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      requests.push({ url, init });
+      if (url.endsWith("/webhooks/subscriptions") && init?.method === "GET") {
+        return new Response(JSON.stringify({ subscriptions: [] }), { status: 200 });
+      }
+      if (url.endsWith("/webhooks/subscriptions") && init?.method === "POST") {
+        return new Response(JSON.stringify({ message: "Suscripción creada" }), { status: 200 });
+      }
+      throw new Error(`Unexpected webhook request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const adapter = new AlegraAdapter();
+    const result = await adapter.configureWebhook({
+      alegraEmail: "billing@example.com",
+      alegraToken: "rest-token",
+    }, "https://evgreen.example/api/billing/webhook", "webhook-secret");
+
+    expect(result.success).toBe(true);
+    expect(requests.filter((request) => request.init?.method === "POST")).toHaveLength(2);
+    expect(requests[0]?.init?.headers).toMatchObject({
+      Authorization: `Basic ${Buffer.from("billing@example.com:rest-token").toString("base64")}`,
+    });
+    const postRequests = requests.filter((request) => request.init?.method === "POST");
+    expect(JSON.parse(String(postRequests[1]?.init?.body))).toEqual({
+      event: "edit-invoice",
+      url: "https://evgreen.example/api/billing/webhook?secret=webhook-secret",
+    });
+  });
 });

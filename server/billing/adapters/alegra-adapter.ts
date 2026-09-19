@@ -272,55 +272,48 @@ export class AlegraAdapter implements BillingAdapter {
     webhookUrl: string,
     secret?: string
   ): Promise<{ success: boolean; message?: string; error?: string }> {
-    const eProviderToken = settings.alegraEProviderToken || settings.alegraToken;
-    if (!eProviderToken) {
+    if (!settings.alegraEmail || !settings.alegraToken) {
       return {
         success: false,
-        error: "Se requiere el Token de Proveedor Electrónico de Alegra para configurar el webhook por API.",
+        error: "Se requieren el correo y el API Token REST de Alegra para configurar el webhook.",
       };
     }
 
-    const isSandbox = settings.environment === "sandbox" || settings.alegraTestMode === 1;
-    const base = isSandbox
-      ? "https://sandbox-api.alegra.com/e-provider/col/v1"
-      : "https://api.alegra.com/e-provider/col/v1";
-
-    const payload = {
-      webhooks: {
-        invoices: {
-          emissionFinished: {
-            url: webhookUrl,
-            headers: secret ? { "x-api-key": secret } : {},
-            status: "active",
-          },
-        },
-      },
-    };
-
     try {
-      const response = await fetch(`${base}/company`, {
-        method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${eProviderToken}`,
-          Accept: "application/json",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
+      // La API REST estándar sí permite crear suscripciones de webhook con las
+      // mismas credenciales Basic utilizadas para productos y facturas. El
+      // E-Provider Bearer no es necesario para esta operación.
+      const credentials: AlegraCredentials = {
+        email: settings.alegraEmail,
+        token: settings.alegraToken,
+      };
+      const current = await alegraRequest<any>(credentials, "GET", "/webhooks/subscriptions");
+      const subscriptions = Array.isArray(current) ? current : (current?.subscriptions || []);
+      const securedUrl = secret
+        ? `${webhookUrl}${webhookUrl.includes("?") ? "&" : "?"}secret=${encodeURIComponent(secret)}`
+        : webhookUrl;
+      const events = ["new-invoice", "edit-invoice"] as const;
+      const missingEvents = events.filter((event) => !subscriptions.some((subscription: any) =>
+        subscription.event === event && subscription.url === securedUrl
+      ));
 
-      if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`Alegra e-provider error (${response.status}): ${text}`);
+      for (const event of missingEvents) {
+        await alegraRequest<any>(credentials, "POST", "/webhooks/subscriptions", {
+          event,
+          url: securedUrl,
+        });
       }
 
       return {
         success: true,
-        message: "Webhook de facturación electrónica registrado exitosamente en Alegra.",
+        message: missingEvents.length > 0
+          ? `Webhook REST registrado en Alegra para: ${missingEvents.join(" y ")}.`
+          : "El webhook REST ya estaba registrado en Alegra.",
       };
     } catch (err: any) {
       return {
         success: false,
-        error: err.message || "No se pudo registrar el webhook en Alegra.",
+        error: err.message || "No se pudo registrar el webhook REST en Alegra.",
       };
     }
   }

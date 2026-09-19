@@ -1841,7 +1841,6 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
           secret = crypto.randomBytes(24).toString("hex");
           await upsertTenantBillingSettings(orgId, {
             webhookSecret: secret,
-            webhookConfiguredAt: new Date().toISOString(),
           });
         }
 

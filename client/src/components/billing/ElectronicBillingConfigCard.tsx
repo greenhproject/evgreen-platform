@@ -707,16 +707,16 @@ export default function ElectronicBillingConfigCard({ mode = "tenant", organizat
               </div>
 
               <div className="space-y-1.5 md:col-span-2">
-                <Label className="text-xs">Token de Proveedor Electrónico Alegra (Opcional para Webhook Automático)</Label>
+                <Label className="text-xs">Token E-Provider de Alegra (no requerido para este webhook REST)</Label>
                 <Input
                   type="password"
-                  placeholder={alegraEProviderTokenSaved ? "Token de Proveedor guardado" : "Bearer Token emitido por Alegra Proveedor Electrónico"}
+                  placeholder={alegraEProviderTokenSaved ? "Token E-Provider guardado" : "Solo necesario para funciones avanzadas del E-Provider"}
                   value={alegraEProviderToken}
                   onChange={(e) => setAlegraEProviderToken(e.target.value)}
                   className="h-9 text-xs font-mono"
                 />
                 <p className="text-[10px] text-muted-foreground">
-                  Permite a EVGreen registrar el webhook directamente por API sin buscar menús manuales en Alegra.
+                  El botón de registro usa el API REST de Alegra con el correo y API Token que ya están configurados. Este campo no es necesario para el webhook de facturas.
                 </p>
               </div>
 
@@ -954,7 +954,7 @@ export default function ElectronicBillingConfigCard({ mode = "tenant", organizat
             </Badge>
           </div>
           <p className="text-xs text-muted-foreground">
-            Alegra no tiene un campo visible en su panel web para registrar esta URL. Se vincula por API hacia el evento <code>invoices.emissionFinished</code> usando el Token de Proveedor Electrónico:
+            EVGreen registra la suscripción directamente en Alegra mediante su API REST oficial para los eventos <code>new-invoice</code> y <code>edit-invoice</code>. No necesitas buscar un campo manual en Alegra ni ingresar un token adicional:
           </p>
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
             <Input readOnly value={webhookUrl} className="h-8 text-xs font-mono bg-background" />
