@@ -852,7 +852,11 @@ export async function getEvsesByStationId(stationId: number) {
         if (currentOrImminent) {
           return { 
             ...evse, 
-            status: 'RESERVED' as typeof evse.connectorStatus, 
+            // Proyección de lectura: la reserva activa bloquea el conector para
+            // todos excepto su titular, aunque aún no haya llegado un nuevo
+            // StatusNotification desde el cargador.
+            connectorStatus: 'RESERVED' as typeof evse.connectorStatus,
+            status: 'RESERVED' as typeof evse.connectorStatus,
             activeReservationId: currentOrImminent.id, 
             activeReservationUserId: currentOrImminent.userId,
             nextReservation: null,
@@ -928,6 +932,7 @@ export async function getAllEvsesForStations(stationIds: number[]) {
         if (currentOrImminent) {
           enriched = { 
             ...evse, 
+            connectorStatus: 'RESERVED' as typeof evse.connectorStatus,
             status: 'RESERVED' as typeof evse.connectorStatus, 
             activeReservationId: currentOrImminent.id, 
             activeReservationUserId: currentOrImminent.userId,
@@ -1287,10 +1292,28 @@ export async function getReservationById(id: number) {
 export async function getActiveReservation(evseId: number) {
   const db = (await getDb())!;
   if (!db) return undefined;
+  const now = new Date();
+  const holdWindowEnd = new Date(now.getTime() + 15 * 60 * 1000);
   const result = await db.select().from(reservations)
-    .where(and(eq(reservations.evseId, evseId), eq(reservations.reservationStatus, "ACTIVE")))
+    .where(and(
+      eq(reservations.evseId, evseId),
+      eq(reservations.reservationStatus, "ACTIVE"),
+      lte(reservations.startTime, holdWindowEnd.toISOString()),
+      gt(reservations.endTime, now.toISOString()),
+    ))
+    .orderBy(reservations.startTime)
     .limit(1);
   return result.length > 0 ? result[0] : undefined;
+}
+
+/**
+ * Obtiene exclusivamente una reserva operativa del titular. No devuelve reservas
+ * futuras, vencidas ni de otro usuario, por lo que no puede desbloquear un EVSE
+ * reservado para un tercero.
+ */
+export async function getActiveReservationForUser(evseId: number, userId: number) {
+  const reservation = await getActiveReservation(evseId);
+  return reservation?.userId === userId ? reservation : undefined;
 }
 
 export async function getReservationsByUserId(userId: number) {
@@ -1409,6 +1432,35 @@ export async function fulfillReservation(reservationId: number, transactionId: n
     .where(eq(reservations.id, reservationId));
 }
 
+/**
+ * Vincula la reserva al inicio de carga confirmado por OCPP. La confirmación no
+ * se hace al pulsar el botón de la app: sólo después de crear la transacción.
+ */
+export async function fulfillActiveReservationForTransaction(
+  evseId: number,
+  userId: number,
+  transactionId: number,
+): Promise<number | null> {
+  const reservation = await getActiveReservationForUser(evseId, userId);
+  if (!reservation) return null;
+
+  const db = (await getDb())!;
+  if (!db) return null;
+
+  await db.update(reservations)
+    .set({
+      reservationStatus: "FULFILLED",
+      transactionId,
+    } as any)
+    .where(and(
+      eq(reservations.id, reservation.id),
+      eq(reservations.userId, userId),
+      eq(reservations.reservationStatus, "ACTIVE"),
+    ));
+
+  return reservation.id;
+}
+
 export async function getReservationsForStation(stationId: number, date?: Date) {
   const db = (await getDb())!;
   if (!db) return [];
@@ -1467,8 +1519,14 @@ export async function cancelReservationWithRefund(reservationId: number, refundP
     }
   }
   
-  // Liberar el EVSE
-  await updateEvseStatus(reservation.evseId, "AVAILABLE", { triggeredBy: "SYSTEM" });
+  // Liberar sólo si no existe otra reserva actualmente operativa. Esto evita que
+  // la cancelación de una reserva libere por error el turno inmediatamente siguiente.
+  const replacementReservation = await getActiveReservation(reservation.evseId);
+  await updateEvseStatus(
+    reservation.evseId,
+    replacementReservation ? "RESERVED" : "AVAILABLE",
+    { triggeredBy: "RESERVATION", reason: replacementReservation ? "Active replacement reservation" : "Reservation cancelled" },
+  );
   
   return { success: true, refundAmount };
 }

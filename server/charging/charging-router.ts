@@ -423,7 +423,7 @@ export const chargingRouter = router({
       if (ctx.user) {
         const userReservations = await db.getReservationsByUserId(ctx.user.id);
         userActiveReservation = userReservations.find(
-          (r: any) => r.stationId === station.id && r.status === 'ACTIVE'
+          (r: any) => r.stationId === station.id && r.reservationStatus === 'ACTIVE'
         ) || null;
       }
       
@@ -529,7 +529,9 @@ export const chargingRouter = router({
       const useAutoPricing = tariff?.autoPricing === true || (tariff?.autoPricing as any) === 1;
       
       // Obtener el conector seleccionado para determinar tipo AC/DC
-      const selectedConnector = evsesForPrice.find(c => c.connectorId === connectorId) || firstEvse;
+      const selectedConnector = evsesForPrice.find(
+        c => c.connectorId === connectorId || c.evseIdLocal === connectorId,
+      ) || firstEvse;
       const evseId = selectedConnector?.id || firstEvse?.id;
       
       // Obtener el precio efectivo de la estación (tarifa propia o global)
@@ -596,7 +598,7 @@ export const chargingRouter = router({
       
       // Obtener potencia del conector
       const connectors = await db.getEvsesByStationId(stationId);
-      const connector = connectors.find(c => c.connectorId === connectorId);
+      const connector = connectors.find(c => c.connectorId === connectorId || c.evseIdLocal === connectorId);
       const powerKw = connector?.powerKw ? parseFloat(connector.powerKw) : 22; // Default 22kW
       
       switch (chargeMode) {
@@ -681,7 +683,9 @@ export const chargingRouter = router({
       const useAutoPricing = tariff?.autoPricing === true || (tariff?.autoPricing as any) === 1;
       
       // Obtener el conector seleccionado para determinar tipo AC/DC
-      const selectedConnector = evsesForPrice.find(c => c.connectorId === connectorId) || firstEvse;
+      const selectedConnector = evsesForPrice.find(
+        c => c.connectorId === connectorId || c.evseIdLocal === connectorId,
+      ) || firstEvse;
       const evseId = selectedConnector?.id || firstEvse?.id;
       
       // Obtener el precio efectivo de la estación (tarifa propia o global)
@@ -755,21 +759,15 @@ export const chargingRouter = router({
         });
       }
       
-      // Check-in automático: si el usuario tiene una reserva activa para este EVSE, marcarla como FULFILLED
-      if (evseId) {
-        const activeReservation = await db.getActiveReservation(evseId);
-        if (activeReservation && activeReservation.userId === ctx.user.id) {
-          console.log(`[startCharge] Check-in automático: reserva ${activeReservation.id} para EVSE ${evseId} marcada como FULFILLED`);
-          // @ts-ignore
-          await db.updateReservation(activeReservation.id, { status: "FULFILLED" });
-          // Notificar al usuario del check-in exitoso
-          await db.createNotification({
-            userId: ctx.user.id,
-            title: "\u2705 Check-in exitoso",
-            message: `Tu reserva ha sido confirmada. Se canceló la penalización por no-show. \u00a1Disfruta tu carga!`,
-            type: "RESERVATION_CHECKIN",
-          });
-        }
+      // Una reserva se cumple sólo cuando OCPP confirme que existe una transacción.
+      // Antes de eso protege el conector para su titular, pero jamás se marca como usada.
+      const activeReservation = evseId ? await db.getActiveReservation(evseId) : undefined;
+      const isReservationOwner = !!activeReservation && activeReservation.userId === ctx.user.id;
+      if (activeReservation && !isReservationOwner) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Este conector está reservado temporalmente para otro usuario.",
+        });
       }
       
       // Verificar si es usuario de prueba o estación demo para usar simulador
@@ -783,8 +781,7 @@ export const chargingRouter = router({
       // Verificar que la estación está conectada (solo si no es simulación)
       const ocppConnection = getConnectionByStationId(stationId);
       
-      // Para estaciones reales: también permitir iniciar carga si el conector está RESERVED por el usuario actual
-      // (el check-in ya marcó la reserva como FULFILLED arriba)
+      // Para estaciones reales, RESERVED sólo puede ser iniciado por el titular.
       
       if (!useSimulation) {
         // Obtener datos de la estación y conectores de la BD
@@ -810,7 +807,10 @@ export const chargingRouter = router({
         // Verificar que el conector específico está disponible
         if (hasOcppConnection) {
           const connectorStatus = ocppConnection!.connectorStatuses.get(connectorId);
-          if (connectorStatus && connectorStatus !== "Available" && connectorStatus !== "AVAILABLE" && connectorStatus !== "Preparing" && connectorStatus !== "PREPARING") {
+          const normalizedOcppStatus = connectorStatus?.toUpperCase();
+          const isAllowedOcppStatus = ["AVAILABLE", "PREPARING"].includes(normalizedOcppStatus || "")
+            || (normalizedOcppStatus === "RESERVED" && isReservationOwner);
+          if (connectorStatus && !isAllowedOcppStatus) {
             throw new TRPCError({
               code: "BAD_REQUEST",
               message: `El conector no está disponible. Estado actual: ${connectorStatus}`,
@@ -819,10 +819,10 @@ export const chargingRouter = router({
         } else {
           const connector = connectors.find((c: any) => c.connectorId === connectorId || c.evseIdLocal === connectorId);
           if (connector) {
-                // @ts-ignore
-                const dbStatus = (connector.status || '').toUpperCase();
-            // Permitir RESERVED si es la reserva del usuario actual (ya fue marcada FULFILLED arriba)
-            if (dbStatus && dbStatus !== 'AVAILABLE' && dbStatus !== 'PREPARING' && dbStatus !== 'RESERVED') {
+            const dbStatus = (connector.connectorStatus || (connector as any).status || '').toUpperCase();
+            const isAllowedDbStatus = ['AVAILABLE', 'PREPARING'].includes(dbStatus)
+              || (dbStatus === 'RESERVED' && isReservationOwner);
+            if (dbStatus && !isAllowedDbStatus) {
               throw new TRPCError({
                 code: "BAD_REQUEST",
                 message: `El conector no está disponible. Estado actual: ${dbStatus}`,
@@ -963,6 +963,7 @@ export const chargingRouter = router({
         // Si el cargador rechazó explícitamente, limpiar y notificar
         if (remoteStartResponse?.status === "Rejected") {
           pendingChargeSessions.delete(sessionId);
+          await db.consumePendingChargeSession(sessionId);
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "El cargador rechazó la solicitud de inicio. Verifica que el vehículo esté correctamente conectado e intenta de nuevo.",

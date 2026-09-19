@@ -1100,6 +1100,15 @@ export class DualCSMS {
     // Mapear ID de transacción OCPP 1.6 a interno
     this.ocpp16Transactions.set(ocpp16TransactionId, internalTransactionId);
 
+    // Sólo el inicio confirmado por el cargador cumple la reserva. Así el
+    // inversionista y el usuario pueden auditar la relación reserva ↔ recarga.
+    const fulfilledReservationId = userId > 0
+      ? await db.fulfillActiveReservationForTransaction(evse.id, userId, transactionId)
+      : null;
+    if (fulfilledReservationId) {
+      console.log(`[CSMS-DUAL] StartTransaction: Reservation ${fulfilledReservationId} linked to transaction ${transactionId}`);
+    }
+
     // Actualizar estado del EVSE
     await db.updateEvseStatus(evse.id, "CHARGING", { triggeredBy: "OCPP" });
     
@@ -1136,6 +1145,7 @@ export class DualCSMS {
       });
       
       removePendingSession(pendingSessionData.sessionId);
+      await db.consumePendingChargeSession(pendingSessionData.sessionId);
       console.log(`[CSMS-DUAL] StartTransaction: Activated session for user ${session.userId}, transactionId: ${transactionId}`);
     } else {
       // Crear sesión activa básica incluso sin sesión pendiente (para tracking)
@@ -1172,6 +1182,16 @@ export class DualCSMS {
     try {
       const station = await db.getChargingStationById(conn.stationId);
       const stationName = station?.name || conn.ocppIdentity;
+      if (fulfilledReservationId) {
+        await db.createNotification({
+          userId,
+          title: "Reserva utilizada correctamente",
+          message: `Tu reserva fue vinculada a la carga iniciada en ${stationName}.`,
+          type: "RESERVATION_CHECKIN",
+          referenceId: fulfilledReservationId,
+          referenceType: "reservation",
+        });
+      }
       // Usar precio dinámico efectivo para la notificación
       const formattedPrice = Math.round(pricePerKwh).toLocaleString("es-CO");
       await db.createNotification({
@@ -2166,24 +2186,86 @@ export class DualCSMS {
 
     switch (req.eventType) {
       case "Started": {
-        const tariff = await db.getActiveTariffByStationId(conn.stationId);
+        const existingTransaction = await db.getTransactionByOcppId(req.transactionInfo.transactionId);
+        if (existingTransaction) {
+          await db.updateEvseStatus(evse.id, "CHARGING", { triggeredBy: "OCPP" });
+          break;
+        }
 
-        const pricePerKwh201 = tariff ? parseFloat(tariff.pricePerKwh) : 1800;
-        await db.createTransaction({
+        // Igual que OCPP 1.6: la sesión pendiente de la app es la fuente más
+        // precisa para la titularidad; el idToken es el fallback para RFID.
+        let pendingSession = findPendingSessionByOcppIdentity(conn.ocppIdentity, req.evse?.id);
+        if (!pendingSession) {
+          pendingSession = await findPendingSessionFromDb(conn.ocppIdentity, req.evse?.id);
+        }
+
+        let userId = pendingSession?.session?.userId ?? 0;
+        if (!userId && req.idToken?.idToken) {
+          try {
+            const resolved = await db.resolveUserByIdTag(req.idToken.idToken);
+            userId = resolved.user?.id ?? 0;
+          } catch (resolveError: any) {
+            console.error(`[CSMS-DUAL] OCPP 2.0.1: cannot resolve idToken: ${resolveError.message}`);
+          }
+        }
+
+        const tariff = await db.getActiveTariffByStationId(conn.stationId);
+        const effectivePrice = await db.getEffectiveStationPrice(conn.stationId);
+        const pricePerKwh201 = pendingSession?.session?.pricePerKwh
+          ?? (tariff ? parseFloat(tariff.pricePerKwh) : effectivePrice.pricePerKwh);
+        const transactionId = await db.createTransaction({
           evseId: evse.id,
-          userId: 1,
+          userId,
           stationId: conn.stationId,
           tariffId: tariff?.id,
           ocppTransactionId: req.transactionInfo.transactionId,
           // @ts-ignore
           startTime: new Date(req.timestamp),
           status: "IN_PROGRESS",
-          chargeMode: "full_charge",
-          targetValue: "0",
+          chargeMode: pendingSession?.session?.chargeMode || "full_charge",
+          targetValue: String(pendingSession?.session?.targetValue || 0),
           appliedPricePerKwh: String(pricePerKwh201),
         });
 
+        const fulfilledReservationId = userId > 0
+          ? await db.fulfillActiveReservationForTransaction(evse.id, userId, transactionId)
+          : null;
+        if (fulfilledReservationId) {
+          console.log(`[CSMS-DUAL] OCPP 2.0.1: Reservation ${fulfilledReservationId} linked to transaction ${transactionId}`);
+        }
+
         await db.updateEvseStatus(evse.id, "CHARGING", { triggeredBy: "OCPP" });
+
+        setActiveSession(transactionId, {
+          transactionId,
+          userId,
+          stationId: conn.stationId,
+          connectorId: req.evse?.id || evse.evseIdLocal,
+          chargeMode: (pendingSession?.session?.chargeMode || "full_charge") as any,
+          targetValue: Number(pendingSession?.session?.targetValue || 100),
+          startTime: new Date(req.timestamp),
+          currentKwh: 0,
+          currentCost: 0,
+          pricePerKwh: pricePerKwh201,
+          soc: null,
+          currentPower: 0,
+          voltage: null,
+          current: null,
+          lastMeterUpdate: null,
+          powerHistory: [],
+          socTargetNotified: false,
+          manualSoc: null,
+          manualBatteryCapacityKwh: null,
+          lowPowerSince: null,
+          chargeCompleteDetected: false,
+          chargeCompleteNotified: false,
+          autoStopSent: false,
+          energyBasedSoc: null,
+        });
+        if (pendingSession) {
+          removePendingSession(pendingSession.sessionId);
+          await db.consumePendingChargeSession(pendingSession.sessionId);
+        }
         break;
       }
 

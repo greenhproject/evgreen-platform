@@ -4,9 +4,11 @@
  */
 
 import { notifyOwner } from "../_core/notification";
-import { getDb } from "../db";
+import { getActiveReservation, getDb, updateEvseStatus } from "../db";
 import { reservations, users, chargingStations, notifications, evses } from "../../drizzle/schema";
 import { eq, and, lte, gte, isNull } from "drizzle-orm";
+import { dualCSMS } from "../ocpp/csms-dual";
+import { getOcppConnectorId, isOcppReservationAccepted } from "../../shared/reservation-lifecycle-policy";
 
 interface ReservationNotification {
   userId: number;
@@ -269,13 +271,18 @@ export async function processNoShows(): Promise<void> {
         } as any)
         .where(eq(reservations.id, reservation.id));
 
-      // Liberar el EVSE a AVAILABLE
+      // Liberar el EVSE a AVAILABLE, conservando una posible reserva consecutiva.
       if (reservation.evseId) {
-        await db
-          .update(evses)
-          .set({ status: "AVAILABLE" } as any)
-          .where(eq(evses.id, reservation.evseId));
-        console.log(`[NoShow] Released EVSE ${reservation.evseId} back to AVAILABLE`);
+        const replacementReservation = await getActiveReservation(reservation.evseId);
+        await updateEvseStatus(
+          reservation.evseId,
+          replacementReservation ? "RESERVED" : "AVAILABLE",
+          {
+            triggeredBy: "RESERVATION",
+            reason: replacementReservation ? "Consecutive active reservation" : "Reservation no-show",
+          },
+        );
+        console.log(`[NoShow] EVSE ${reservation.evseId} transitioned after no-show`);
       }
 
       // Aplicar penalización a la billetera (se descuenta del saldo)
@@ -328,8 +335,12 @@ async function processUpcomingReservations(): Promise<void> {
       .select({
         id: reservations.id,
         evseId: reservations.evseId,
+        stationId: reservations.stationId,
+        userId: reservations.userId,
         startTime: reservations.startTime,
         endTime: reservations.endTime,
+        expiryTime: reservations.expiryTime,
+        ocppReservationId: reservations.ocppReservationId,
       })
       .from(reservations)
       .where(
@@ -345,17 +356,63 @@ async function processUpcomingReservations(): Promise<void> {
     for (const res of upcomingReservations) {
       // Verificar estado actual del EVSE
       const [evse] = await db
-        .select({ status: evses.connectorStatus })
+        .select({
+          connectorStatus: evses.connectorStatus,
+          evseIdLocal: evses.evseIdLocal,
+          connectorId: evses.connectorId,
+        })
         .from(evses)
         .where(eq(evses.id, res.evseId));
 
-      // @ts-ignore
-      if (evse && evse.connectorStatus === "AVAILABLE") {
-        await db
-          .update(evses)
-          .set({ status: "RESERVED", lastStatusUpdate: now } as any)
-          .where(eq(evses.id, res.evseId));
-        console.log(`[ReservationActivation] EVSE ${res.evseId} marcado como RESERVED (reserva #${res.id} inicia pronto)`);
+      if (evse) {
+        // Intento OCPP idempotente: sólo se persiste el identificador cuando el
+        // cargador confirma Accepted. La reserva de plataforma permanece visible
+        // si el equipo está offline, sin declarar un bloqueo físico inexistente.
+        if (!res.ocppReservationId) {
+          const [stationRows, userRows] = await Promise.all([
+            db.select({ ocppIdentity: chargingStations.ocppIdentity })
+              .from(chargingStations)
+              .where(eq(chargingStations.id, res.stationId))
+              .limit(1),
+            db.select({ idTag: users.idTag })
+              .from(users)
+              .where(eq(users.id, res.userId))
+              .limit(1),
+          ]);
+          const station = stationRows[0];
+          const user = userRows[0];
+          const ocppIdentity = station?.ocppIdentity;
+          const idTag = user?.idTag || `USER-${res.userId}`;
+          if (ocppIdentity && dualCSMS.isStationOnline(ocppIdentity)) {
+            try {
+              const response = await dualCSMS.reserveNow(
+                ocppIdentity,
+                getOcppConnectorId(evse),
+                res.id,
+                new Date(res.expiryTime),
+                idTag,
+              );
+              if (isOcppReservationAccepted(response)) {
+                await db.update(reservations)
+                  .set({ ocppReservationId: res.id } as any)
+                  .where(eq(reservations.id, res.id));
+                console.log(`[ReservationActivation] OCPP reservation accepted for #${res.id}`);
+              } else {
+                console.warn(`[ReservationActivation] OCPP reservation rejected for #${res.id}: ${response.status}`);
+              }
+            } catch (error: any) {
+              console.warn(`[ReservationActivation] OCPP reservation pending for #${res.id}: ${error.message}`);
+            }
+          }
+        }
+
+        if (evse.connectorStatus === "AVAILABLE") {
+          await updateEvseStatus(res.evseId, "RESERVED", {
+            triggeredBy: "RESERVATION",
+            reason: `Reservation #${res.id} hold window opened`,
+          });
+          console.log(`[ReservationActivation] EVSE ${res.evseId} marcado como RESERVED (reserva #${res.id} inicia pronto)`);
+        }
       }
     }
 
@@ -376,17 +433,16 @@ async function processUpcomingReservations(): Promise<void> {
 
     for (const res of expiredReservations) {
       const [evse] = await db
-        .select({ status: evses.connectorStatus })
+        .select({ connectorStatus: evses.connectorStatus })
         .from(evses)
         .where(eq(evses.id, res.evseId));
 
       // Solo liberar si está RESERVED (no si está CHARGING u otro estado activo)
-      // @ts-ignore
       if (evse && evse.connectorStatus === "RESERVED") {
-        await db
-          .update(evses)
-          .set({ status: "AVAILABLE", lastStatusUpdate: now } as any)
-          .where(eq(evses.id, res.evseId));
+        await updateEvseStatus(res.evseId, "AVAILABLE", {
+          triggeredBy: "RESERVATION",
+          reason: `Reservation #${res.id} ended`,
+        });
         console.log(`[ReservationActivation] EVSE ${res.evseId} liberado a AVAILABLE (reserva #${res.id} terminó)`);
       }
     }
