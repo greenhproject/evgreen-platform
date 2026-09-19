@@ -5,6 +5,7 @@
  */
 
 import { useState } from "react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -33,6 +34,8 @@ export default function ElectronicInvoicesHistory({ mode = "tenant", organizatio
   const utils = trpc.useUtils();
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [page, setPage] = useState(0);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [isBulkProcessing, setIsBulkProcessing] = useState(false);
   const limit = 15;
 
   const tenantInvoicesQuery = (trpc.organizations as any).getMyElectronicInvoices.useQuery(
@@ -58,6 +61,53 @@ export default function ElectronicInvoicesHistory({ mode = "tenant", organizatio
   const invoices = query.data?.data || [];
   const total = query.data?.total || 0;
   const totalPages = Math.ceil(total / limit);
+  const currentInvoiceIds = invoices.map((inv: any) => inv.id as number);
+  const allSelectedOnPage = currentInvoiceIds.length > 0 && currentInvoiceIds.every((id: number) => selectedIds.includes(id));
+  const someSelectedOnPage = currentInvoiceIds.some((id: number) => selectedIds.includes(id));
+
+  const toggleSelectAll = () => {
+    if (allSelectedOnPage) {
+      setSelectedIds((prev) => prev.filter((id) => !currentInvoiceIds.includes(id)));
+    } else {
+      setSelectedIds((prev) => Array.from(new Set([...prev, ...currentInvoiceIds])));
+    }
+  };
+
+  const toggleSelectOne = (id: number) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleBulkRetry = async () => {
+    if (selectedIds.length === 0) return;
+    setIsBulkProcessing(true);
+    let successes = 0;
+    let failures = 0;
+    try {
+      for (const id of selectedIds) {
+        try {
+          const res = mode === "tenant"
+            ? await retryTenantMutation.mutateAsync({ invoiceRecordId: id, forceSync: true })
+            : await retryAdminMutation.mutateAsync({ invoiceRecordId: id, forceSync: true });
+          if (res?.success) successes++;
+          else failures++;
+        } catch {
+          failures++;
+        }
+      }
+      if (successes > 0) {
+        toast.success(`Procesadas ${successes} factura(s) exitosamente.`);
+      }
+      if (failures > 0) {
+        toast.error(`${failures} factura(s) no pudieron emitirse.`);
+      }
+      setSelectedIds([]);
+      query.refetch();
+    } finally {
+      setIsBulkProcessing(false);
+    }
+  };
 
   // Mutación de reintento / resincronización bajo demanda
   const retryTenantMutation = (trpc.organizations as any).retryMyElectronicInvoice.useMutation({
@@ -147,6 +197,19 @@ export default function ElectronicInvoicesHistory({ mode = "tenant", organizatio
           </div>
 
           <div className="flex items-center gap-2">
+            {selectedIds.length > 0 && (
+              <Button
+                variant="default"
+                size="sm"
+                onClick={handleBulkRetry}
+                disabled={isBulkProcessing || isRetrying}
+                className="h-8 text-xs bg-green-600 hover:bg-green-500 text-white gap-1"
+              >
+                <RotateCcw className={`h-3 w-3 ${isBulkProcessing ? "animate-spin" : ""}`} />
+                Reintentar {selectedIds.length} seleccionada(s)
+              </Button>
+            )}
+
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-36 h-8 text-xs">
                 <SelectValue placeholder="Filtrar estado" />
@@ -192,6 +255,13 @@ export default function ElectronicInvoicesHistory({ mode = "tenant", organizatio
               <Table>
                 <TableHeader className="bg-muted/30">
                   <TableRow>
+                    <TableHead className="w-10 text-center">
+                      <Checkbox
+                        checked={allSelectedOnPage ? true : someSelectedOnPage ? "indeterminate" : false}
+                        onCheckedChange={toggleSelectAll}
+                        aria-label="Seleccionar todas las facturas de la página"
+                      />
+                    </TableHead>
                     <TableHead className="w-20">Tx #</TableHead>
                     <TableHead>Fecha</TableHead>
                     <TableHead>Cliente</TableHead>
@@ -209,9 +279,17 @@ export default function ElectronicInvoicesHistory({ mode = "tenant", organizatio
                     const kwh = parseFloat(inv.energyKwh || 0);
                     const totalAmount = Math.round(parseFloat(inv.totalAmount || 0));
                     const unitPrice = parseFloat(inv.billedUnitPrice || 0);
+                    const isSelected = selectedIds.includes(inv.id);
 
                     return (
-                      <TableRow key={inv.id}>
+                      <TableRow key={inv.id} data-state={isSelected ? "selected" : undefined}>
+                        <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={() => toggleSelectOne(inv.id)}
+                            aria-label={`Seleccionar factura #${inv.transactionId}`}
+                          />
+                        </TableCell>
                         <TableCell className="font-mono text-xs font-semibold">#{inv.transactionId}</TableCell>
                         <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                           {inv.createdAt ? new Date(inv.createdAt).toLocaleString("es-CO", { dateStyle: "short", timeStyle: "short" }) : "-"}

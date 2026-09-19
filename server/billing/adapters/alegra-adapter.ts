@@ -88,6 +88,38 @@ function splitNaturalPersonName(name: string): { firstName: string; lastName: st
   };
 }
 
+function mapColombiaPaymentMethod(value: unknown): string {
+  const raw = String(value ?? "").trim().toUpperCase();
+  const mapping: Record<string, string> = {
+    "1": "CASH",
+    "2": "DEBIT_TRANSFER",
+    "3": "BANK_DEPOSIT",
+    "4": "CHECK",
+    "5": "CREDIT_CARD",
+    "6": "DEBIT_CARD",
+    "CASH": "CASH",
+    "EFECTIVO": "CASH",
+    "TRANSFER": "DEBIT_TRANSFER",
+    "DEBIT_TRANSFER": "DEBIT_TRANSFER",
+    "TRANSFERENCIA": "DEBIT_TRANSFER",
+    "DEPOSIT": "BANK_DEPOSIT",
+    "BANK_DEPOSIT": "BANK_DEPOSIT",
+    "CONSIGNACION": "BANK_DEPOSIT",
+    "CONSIGNACIÓN": "BANK_DEPOSIT",
+    "CHECK": "CHECK",
+    "CHEQUE": "CHECK",
+    "CREDIT-CARD": "CREDIT_CARD",
+    "CREDIT_CARD": "CREDIT_CARD",
+    "TARJETA DE CREDITO": "CREDIT_CARD",
+    "TARJETA DE CRÉDITO": "CREDIT_CARD",
+    "DEBIT-CARD": "DEBIT_CARD",
+    "DEBIT_CARD": "DEBIT_CARD",
+    "TARJETA DE DEBITO": "DEBIT_CARD",
+    "TARJETA DE DÉBITO": "DEBIT_CARD",
+  };
+  return mapping[raw] || "DEBIT_TRANSFER";
+}
+
 function normalizePaymentMethod(value: unknown): string {
   const normalized = String(value ?? "").trim().toLowerCase();
   const aliases: Record<string, string> = {
@@ -496,6 +528,10 @@ export class AlegraAdapter implements BillingAdapter {
         client: parsePositiveInteger(contactId) ?? contactId,
         items,
         status: "open",
+        // Requisitos DIAN Colombia (Facturación electrónica 2.1 en Alegra)
+        // 'paymentForm' (CASH = Contado, CREDIT = Crédito) es obligatorio
+        paymentForm: "CASH",
+        paymentMethod: mapColombiaPaymentMethod(settings.alegraPaymentMethodId),
         stamp: { generateStamp: settings.alegraUseElectronicStamp !== 0 },
         anotation: `Recibo de carga EVGreen #${input.transactionId}. Estación: ${input.stationName}. Energía: ${input.energyDelivered.toFixed(2)} kWh.`,
         observations: `Transacción EVGreen #${input.transactionId}.`,

@@ -63,6 +63,7 @@ export async function getEffectiveBillingSettings(organizationId?: number | null
       autoInvoice: tenantConfig.autoInvoice !== 0,
       autoSendEmail: tenantConfig.autoSendEmail !== 0,
       resolutionNumber: tenantConfig.resolutionNumber || undefined,
+      alegraPaymentMethodId: tenantConfig.alegraPaymentMethodId || "transfer",
       billingRoundingMode: (tenantConfig.billingRoundingMode as any) || "two_decimals",
     };
   }
@@ -81,7 +82,7 @@ export async function getEffectiveBillingSettings(organizationId?: number | null
       alegraToken: legacy.alegraToken,
       alegraDefaultItemId: legacy.alegraDefaultItemId || undefined,
       alegraDefaultTaxId: legacy.alegraDefaultTaxId || undefined,
-      alegraPaymentMethodId: legacy.alegraPaymentMethodId || undefined,
+      alegraPaymentMethodId: legacy.alegraPaymentMethodId || "transfer",
       alegraPaymentAccountId: legacy.alegraPaymentAccountId || undefined,
       alegraUseElectronicStamp: 1,
       billingRoundingMode: "two_decimals",

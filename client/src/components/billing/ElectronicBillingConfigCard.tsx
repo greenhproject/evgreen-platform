@@ -265,7 +265,7 @@ export default function ElectronicBillingConfigCard({ mode = "tenant", organizat
       setAlegraEProviderTokenSaved(!!config.alegraEProviderToken);
       setAlegraEProviderToken(config.alegraEProviderToken || "");
       setAlegraDefaultTaxId(config.alegraDefaultTaxId || "");
-      setAlegraPaymentMethodId(config.alegraPaymentMethodId || "");
+      setAlegraPaymentMethodId(config.alegraPaymentMethodId || "transfer");
       setAlegraPaymentAccountId(config.alegraPaymentAccountId || "");
       setAlegraUseElectronicStamp(config.alegraUseElectronicStamp !== false);
 
@@ -367,7 +367,7 @@ export default function ElectronicBillingConfigCard({ mode = "tenant", organizat
       alegraEProviderToken: alegraEProviderToken.startsWith("****") ? undefined : alegraEProviderToken,
       alegraDefaultItemId: selectedProductId || undefined,
       alegraDefaultTaxId,
-      alegraPaymentMethodId,
+      alegraPaymentMethodId: alegraPaymentMethodId || "transfer",
       alegraPaymentAccountId,
       alegraUseElectronicStamp,
       siigoUsername,

@@ -109,6 +109,8 @@ describe("AlegraAdapter", () => {
     const invoiceRequest = requests.find((request) => request.url.endsWith("/invoices"));
     expect(invoiceRequest?.body).toMatchObject({
       client: 1,
+      paymentForm: "CASH",
+      paymentMethod: "CASH",
       numberTemplate: { id: "23" },
       payments: [{ amount: 23161, paymentMethod: "cash", account: { id: 1 } }],
     });
