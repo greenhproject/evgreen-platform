@@ -289,12 +289,16 @@ export class AlegraAdapter implements BillingAdapter {
       };
       const current = await alegraRequest<any>(credentials, "GET", "/webhooks/subscriptions");
       const subscriptions = Array.isArray(current) ? current : (current?.subscriptions || []);
+      // Alegra documenta una URL HTTP completa, pero su API REST rechaza
+      // explícitamente los prefijos http:// y https:// (400). Conservamos el
+      // dominio y la ruta en el formato que acepta su endpoint.
+      const normalizedWebhookUrl = webhookUrl.trim().replace(/^https?:\/\//i, "");
       const securedUrl = secret
-        ? `${webhookUrl}${webhookUrl.includes("?") ? "&" : "?"}secret=${encodeURIComponent(secret)}`
-        : webhookUrl;
+        ? `${normalizedWebhookUrl}${normalizedWebhookUrl.includes("?") ? "&" : "?"}secret=${encodeURIComponent(secret)}`
+        : normalizedWebhookUrl;
       const events = ["new-invoice", "edit-invoice"] as const;
       const missingEvents = events.filter((event) => !subscriptions.some((subscription: any) =>
-        subscription.event === event && subscription.url === securedUrl
+        subscription.event === event && String(subscription.url || "").replace(/^https?:\/\//i, "") === securedUrl
       ));
 
       for (const event of missingEvents) {

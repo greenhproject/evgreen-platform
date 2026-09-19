@@ -145,7 +145,7 @@ describe("AlegraAdapter", () => {
     const postRequests = requests.filter((request) => request.init?.method === "POST");
     expect(JSON.parse(String(postRequests[1]?.init?.body))).toEqual({
       event: "edit-invoice",
-      url: "https://evgreen.example/api/billing/webhook?secret=webhook-secret",
+      url: "evgreen.example/api/billing/webhook?secret=webhook-secret",
     });
   });
 });
