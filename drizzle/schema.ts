@@ -2113,7 +2113,7 @@ export const userOnboardingProgress = mysqlTable("user_onboarding_progress", {
 	id: int().autoincrement().notNull(),
 	userId: int("user_id").notNull(),
 	version: varchar({ length: 30 }).default('2026-08-v1').notNull(),
-	status: mysqlEnum("user_onboarding_status", ['IN_PROGRESS', 'COMPLETED', 'SKIPPED']).default('IN_PROGRESS').notNull(),
+	status: mysqlEnum("status", ['IN_PROGRESS', 'COMPLETED', 'SKIPPED']).default('IN_PROGRESS').notNull(),
 	currentStep: int("current_step").default(1).notNull(),
 	startedAt: timestamp("started_at", { mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
 	lastSavedAt: timestamp("last_saved_at", { mode: 'string' }).defaultNow().onUpdateNow().notNull(),
