@@ -1419,6 +1419,10 @@ export class DualCSMS {
       platformFee: platformFee.toString(),
       status: "COMPLETED",
       stopReason: req.reason,
+      ...(transaction.stopRequestStatus && transaction.stopRequestStatus !== "NONE" ? {
+        stopRequestStatus: "CONFIRMED",
+        stopRequestMessage: "Finalización física confirmada por StopTransaction OCPP.",
+      } : {}),
       ...(manualSocEndValue !== null ? { manualSocEnd: manualSocEndValue } : {}),
     });
 
@@ -2371,6 +2375,10 @@ export class DualCSMS {
             platformFee: platformFee201.toString(),
             status: "COMPLETED",
             stopReason: req.transactionInfo.stoppedReason,
+            ...(transaction.stopRequestStatus && transaction.stopRequestStatus !== "NONE" ? {
+              stopRequestStatus: "CONFIRMED",
+              stopRequestMessage: "Finalización física confirmada por TransactionEvent.Ended OCPP.",
+            } : {}),
           });
 
           await db.updateEvseStatus(evse.id, "AVAILABLE", { triggeredBy: "OCPP" });

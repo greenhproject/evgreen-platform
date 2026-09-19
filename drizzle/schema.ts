@@ -2035,6 +2035,12 @@ export const transactions = mysqlTable("transactions", {
 	transactionStatus: mysqlEnum("transaction_status", ['PENDING','IN_PROGRESS','COMPLETED','FAILED','CANCELLED']).default('PENDING').notNull(),
 	startMethod: varchar({ length: 50 }),
 	stopReason: varchar({ length: 100 }),
+	// El comando remoto y el fin físico de una carga son hechos distintos.
+	// Estos campos impiden presentar un recibo o liberar un conector antes de
+	// que OCPP confirme StopTransaction / TransactionEvent.Ended.
+	stopRequestedAt: timestamp({ mode: 'string' }),
+	stopRequestStatus: mysqlEnum("stop_request_status", ['NONE','REQUESTED','ACCEPTED','REJECTED','TIMED_OUT','CONFIRMED']).default('NONE').notNull(),
+	stopRequestMessage: varchar({ length: 255 }),
 	reservationId: int(),
 	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
 	updatedAt: timestamp({ mode: 'string' }).defaultNow().onUpdateNow().notNull(),

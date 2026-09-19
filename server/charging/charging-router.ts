@@ -21,6 +21,10 @@ import { dispatchOrganizationWebhookEvent } from "../api/webhook-dispatcher";
 import { calculateSocEstimation, getManualSocAvailability, resolveOperationalSoc } from "./soc-estimation";
 import { resolveChargingTelemetryFreshness, shouldAdvanceTelemetrySample } from "../../shared/charging-telemetry";
 import { learnEffectiveSocCapacity } from "../../shared/soc-calibration-learning";
+import {
+  getChargeStopMessage,
+  isAcceptedRemoteStopResponse,
+} from "../../shared/charge-stop-confirmation-policy";
 
 // Helper: buscar conexión por stationId en dualCSMS primero, luego fallback a legacy
 // Si ocppIdentity se provee, también busca en dualCSMS por identidad cuando stationId=null
@@ -1560,6 +1564,10 @@ export const chargingRouter = router({
         hasFreshMeterData: telemetryFreshness.isFresh,
         ocppConnected,
         status: activeTransaction.status,
+        transactionStatus: activeTransaction.transactionStatus,
+        stopRequestedAt: activeTransaction.stopRequestedAt,
+        stopRequestStatus: activeTransaction.stopRequestStatus,
+        stopRequestMessage: activeTransaction.stopRequestMessage,
         chargeMode,
         targetPercentage: chargeMode === "percentage" ? targetValue : 100,
         targetAmount: chargeMode === "fixed_amount" ? targetValue : currentCost * 2,
@@ -1692,11 +1700,27 @@ export const chargingRouter = router({
         });
       }
       
-      if (transaction.status !== "IN_PROGRESS") {
+      if (transaction.status !== "IN_PROGRESS" && transaction.transactionStatus !== "IN_PROGRESS") {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "Esta carga ya ha finalizado",
         });
+      }
+
+      // Idempotencia: no duplicar RemoteStop mientras el cargador está
+      // confirmando físicamente el cierre de la misma sesión.
+      const now = new Date();
+      const wasClaimed = await db.claimChargeStopRequest(transactionId, now);
+      if (!wasClaimed) {
+        const current = await db.getTransactionById(transactionId);
+        const requestStatus = current?.stopRequestStatus || "REQUESTED";
+        return {
+          status: requestStatus === "TIMED_OUT" || requestStatus === "REJECTED" ? "retryable" : "stopping",
+          message: getChargeStopMessage(requestStatus),
+          isSimulation: false,
+          transactionId,
+          stopRequestStatus: requestStatus,
+        };
       }
       
       // Obtener ocppIdentity de la estación
@@ -1773,12 +1797,13 @@ export const chargingRouter = router({
         }
       }
       
-      // === ENVIAR RemoteStopTransaction ===
+      // === ENVIAR ORDEN DE DETENCIÓN OCPP ===
       let remoteStopSent = false;
+      let remoteStopResponse: unknown = null;
+      let commandAcknowledged = false;
       if (ocppIdentityForCommand) {
-        const messageId = uuidv4();
-        // OCPP 1.6 requiere transactionId numérico
-        // Prioridad: 1) ocppNumericTxId (guardado al crear tx), 2) transactionId de la BD
+        // Prioridad: 1) ocppNumericTxId asignado por OCPP 1.6, 2) id interno
+        // (únicamente como compatibilidad con equipos antiguos).
         const ocppTxId = (transaction as any).ocppNumericTxId 
           || transactionId;
         
@@ -1786,49 +1811,55 @@ export const chargingRouter = router({
           console.warn(`[stopCharge] ⚠️ ocppNumericTxId is NULL in DB for txId=${transactionId}. Using DB id=${transactionId} as fallback. This may not match the cargador's transactionId.`);
         }
         
-        console.log(`[stopCharge] Sending RemoteStopTransaction to "${ocppIdentityForCommand}", ocppTxId=${ocppTxId}, messageId=${messageId}`);
-        
-        // Intentar enviar por connection-manager
-        remoteStopSent = legacySendOcppCommand(
-          ocppIdentityForCommand,
-          messageId,
-          "RemoteStopTransaction",
-          { transactionId: ocppTxId }
-        );
-        
-        if (!remoteStopSent) {
-          console.log(`[stopCharge] legacySendOcppCommand failed, trying dualCSMS...`);
-          remoteStopSent = dualCSMS.sendCommandIfConnected(
-            ocppIdentityForCommand,
-            messageId,
-            "RemoteStopTransaction",
-            { transactionId: ocppTxId }
+        console.log(`[stopCharge] Requesting protocol-aware remote stop to "${ocppIdentityForCommand}", ocppTxId=${ocppTxId}`);
+
+        try {
+          // El Dual CSMS usa RemoteStopTransaction en 1.6 y
+          // RequestStopTransaction en 2.0.1, y espera el CALLRESULT del equipo.
+          remoteStopResponse = await dualCSMS.requestStopTransaction(ocppIdentityForCommand, ocppTxId);
+          commandAcknowledged = true;
+          remoteStopSent = isAcceptedRemoteStopResponse(remoteStopResponse);
+          await db.updateChargeStopRequestStatus(
+            transactionId,
+            remoteStopSent ? "ACCEPTED" : "REJECTED",
+            remoteStopSent
+              ? "El cargador aceptó la orden; esperando confirmación física de finalización."
+              : "El cargador rechazó la orden de detención.",
           );
+        } catch (requestError: any) {
+          console.warn(`[stopCharge] Protocol-aware stop acknowledgement failed: ${requestError?.message || requestError}`);
         }
-        
-        // Si aún no se envió y tenemos el ws directo, intentar enviar directamente
-        if (!remoteStopSent && connectionWs && connectionWs.readyState === 1) {
+
+        // Fallback excepcional para cargadores 1.6 que no enrutan CALLRESULT;
+        // sólo acredita que el frame salió, nunca que la carga haya terminado.
+        if (!remoteStopSent && !commandAcknowledged && connectionWs && connectionWs.readyState === 1) {
           try {
+            const messageId = uuidv4();
             const directMessage = JSON.stringify([2, messageId, "RemoteStopTransaction", { transactionId: ocppTxId }]);
             connectionWs.send(directMessage);
             remoteStopSent = true;
-            console.log(`[stopCharge] ✓ RemoteStopTransaction sent DIRECTLY via ws.send()`);
+            await db.updateChargeStopRequestStatus(
+              transactionId,
+              "REQUESTED",
+              "Orden enviada al cargador; esperando confirmación OCPP de finalización.",
+            );
+            console.log(`[stopCharge] RemoteStopTransaction sent through legacy fallback.`);
           } catch (directErr) {
-            console.error(`[stopCharge] ✗ Direct ws.send() failed:`, directErr);
+            console.error(`[stopCharge] Legacy stop fallback failed:`, directErr);
           }
         }
         
         if (remoteStopSent) {
           console.log(`[stopCharge] ✓✓ RemoteStopTransaction sent successfully to "${ocppIdentityForCommand}"`);
           
-          // Registrar log OCPP
+          // Registrar la orden emitida, diferenciándola del evento físico final.
           try {
             await db.createOcppLog({
               ocppIdentity: ocppIdentityForCommand,
               stationId: transaction.stationId,
               direction: "OUT",
-              messageType: "RemoteStopTransaction",
-              payload: { transactionId: ocppTxId },
+              messageType: "ChargeStopRequested",
+              payload: { transactionId: ocppTxId, response: remoteStopResponse },
             });
           } catch (logErr) {
             console.error(`[stopCharge] Error logging OCPP:`, logErr);
@@ -1843,36 +1874,33 @@ export const chargingRouter = router({
       
       // === COMPLETAR TRANSACCIÓN ===
       if (!remoteStopSent) {
-        console.log(`[stopCharge] Completing transaction locally (no OCPP connection). txId=${transactionId}`);
-        await completeTransactionLocally(transactionId, transaction);
-        
+        await db.updateChargeStopRequestStatus(
+          transactionId,
+          "REJECTED",
+          "No fue posible entregar la orden al cargador. La sesión continúa abierta para evitar un cobro o cierre ficticio.",
+        );
         return {
-          status: "completed",
-          message: "Carga detenida (sin conexión al cargador). El cargador puede seguir activo - desconecte el cable manualmente.",
+          status: "retryable",
+          message: "No se pudo comunicar la orden al cargador. La carga no se ha finalizado; verifica el equipo y reintenta.",
           isSimulation: false,
           transactionId: transactionId,
-          warning: "remote_stop_failed",
+          stopRequestStatus: "REJECTED",
         };
       }
       
-      // Si se envió RemoteStopTransaction, programar timeout de seguridad (45s)
-      setTimeout(async () => {
-        try {
-          const txCheck = await db.getTransactionById(transactionId!);
-          if (txCheck && txCheck.status === "IN_PROGRESS") {
-            console.warn(`[stopCharge] Timeout: StopTransaction not received after 45s for txId=${transactionId}. Completing locally.`);
-            await completeTransactionLocally(transactionId!, txCheck);
-          }
-        } catch (err) {
-          console.error(`[stopCharge] Timeout handler error:`, err);
-        }
-      }, 45000);
+      // Sólo StopTransaction (1.6) o TransactionEvent.Ended (2.0.1) cierra la
+      // sesión, liquida el cobro y libera el conector. La reconciliación de
+      // expiración corre en una ruta Heartbeat autenticada (no en un timer en
+      // memoria), por lo que sobrevive reinicios y múltiples instancias.
       
       return {
         status: "stopping",
-        message: "Deteniendo la carga...",
+        message: remoteStopResponse && isAcceptedRemoteStopResponse(remoteStopResponse)
+          ? "El cargador aceptó la orden. Confirmando el final físico de la carga..."
+          : "Orden enviada al cargador. Esperando confirmación de finalización...",
         isSimulation: false,
         transactionId: transactionId,
+        stopRequestStatus: "REQUESTED",
       };
     }),
 

@@ -269,6 +269,26 @@ async function startServer() {
     }
   });
 
+  // ─── Heartbeat: reconciliación de órdenes de detener carga ─────────────────
+  // Una orden RemoteStop aceptada no es el evento físico de cierre. Si el
+  // cargador no entrega StopTransaction / TransactionEvent.Ended en un minuto,
+  // se marca como reintentable sin liquidar ni liberar prematuramente.
+  app.post("/api/scheduled/charge-stop-reconciliation", express.json(), async (req, res) => {
+    const authHeader = req.headers.authorization || "";
+    const expectedToken = process.env.BUILT_IN_FORGE_API_KEY || "";
+    if (expectedToken && authHeader !== `Bearer ${expectedToken}`) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    try {
+      const { reconcileTimedOutChargeStopRequests } = await import("../db");
+      const timedOut = await reconcileTimedOutChargeStopRequests();
+      return res.json({ ok: true, timedOut });
+    } catch (err: any) {
+      console.error("[Heartbeat] Error reconciliando órdenes de detener carga:", err);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
   // Wompi native redirect relay: Chrome Custom Tab bloquea 302 a custom schemes,
   // pero SÍ permite window.location.href desde JavaScript.
   app.get("/api/wompi/redirect", (req, res) => {
@@ -735,6 +755,20 @@ async function startServer() {
           console.log(`[Heartbeat] Job de avisos de reserva registrado: ${job.taskUid}`);
         } else {
           console.log("[Heartbeat] Job de avisos de reserva ya existe, omitiendo registro.");
+        }
+
+        const chargeStopReconciliationExists = existing.jobs?.some((j: any) => j.name === "evgreen-charge-stop-reconciliation");
+        if (!chargeStopReconciliationExists) {
+          const job = await createHeartbeatJob({
+            name: "evgreen-charge-stop-reconciliation",
+            cron: "15 * * * * *",
+            path: "/api/scheduled/charge-stop-reconciliation",
+            method: "POST",
+            description: "Reconciliación durable de órdenes RemoteStop sin confirmación física OCPP; nunca liquida una sesión no confirmada",
+          }, "");
+          console.log(`[Heartbeat] Job de reconciliación de detener carga registrado: ${job.taskUid}`);
+        } else {
+          console.log("[Heartbeat] Job de reconciliación de detener carga ya existe, omitiendo registro.");
         }
       } catch (err) {
         console.warn("[Heartbeat] No se pudieron registrar jobs operativos (no crítico):", err);

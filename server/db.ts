@@ -1021,7 +1021,17 @@ export async function getAvailableEvses(filters?: { connectorType?: Evse["connec
 export async function createTransaction(transaction: InsertTransaction) {
   const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(transactions).values(transaction);
+  // Mantener la compatibilidad de las dos columnas históricas de estado desde
+  // la creación, no sólo al actualizar. Así todos los consumidores observan la
+  // misma sesión en progreso o completada.
+  const normalizedTransaction: any = { ...transaction };
+  if (normalizedTransaction.status && normalizedTransaction.transactionStatus === undefined) {
+    normalizedTransaction.transactionStatus = normalizedTransaction.status;
+  }
+  if (normalizedTransaction.transactionStatus && normalizedTransaction.status === undefined) {
+    normalizedTransaction.status = normalizedTransaction.transactionStatus;
+  }
+  const result = await db.insert(transactions).values(normalizedTransaction);
   return result[0].insertId;
 }
 
@@ -1188,7 +1198,110 @@ export async function getAllTransactionsByInvestor(investorId: number, filters?:
 export async function updateTransaction(id: number, data: Partial<InsertTransaction>) {
   const db = (await getDb())!;
   if (!db) return;
-  await db.update(transactions).set(data as any).where(eq(transactions.id, id));
+  // Legacy `status` and `transaction_status` coexist in producción. Nunca
+  // permitir que una finalización actualice sólo una de ellas: una discrepancia
+  // deja al mapa, al cobro o al monitor viendo sesiones distintas.
+  const normalizedData: any = { ...data };
+  if (normalizedData.status && normalizedData.transactionStatus === undefined) {
+    normalizedData.transactionStatus = normalizedData.status;
+  }
+  if (normalizedData.transactionStatus && normalizedData.status === undefined) {
+    normalizedData.status = normalizedData.transactionStatus;
+  }
+  await db.update(transactions).set(normalizedData).where(eq(transactions.id, id));
+}
+
+export type ChargeStopRequestStatus = "NONE" | "REQUESTED" | "ACCEPTED" | "REJECTED" | "TIMED_OUT" | "CONFIRMED";
+
+/**
+ * Reclama de manera atómica una orden de detención. La orden remota y la
+ * confirmación física OCPP son estados separados: nunca se libera el conector
+ * ni se completa el cobro en esta operación.
+ */
+export async function claimChargeStopRequest(transactionId: number, requestedAt = new Date()) {
+  const db = (await getDb())!;
+  if (!db) return false;
+
+  const retryCutoff = new Date(requestedAt.getTime() - 60_000);
+  const result = await db.update(transactions)
+    .set({
+      stopRequestedAt: requestedAt as any,
+      stopRequestStatus: "REQUESTED",
+      stopRequestMessage: null,
+    } as any)
+    .where(and(
+      eq(transactions.id, transactionId),
+      or(
+        eq(transactions.status, "IN_PROGRESS"),
+        eq(transactions.transactionStatus, "IN_PROGRESS"),
+      ),
+      or(
+        eq(transactions.stopRequestStatus, "NONE"),
+        eq(transactions.stopRequestStatus, "REJECTED"),
+        eq(transactions.stopRequestStatus, "TIMED_OUT"),
+        and(
+          inArray(transactions.stopRequestStatus, ["REQUESTED", "ACCEPTED"]),
+          lte(transactions.stopRequestedAt, retryCutoff as any),
+        ),
+      ),
+    ));
+
+  return Number((result as any)[0]?.affectedRows || 0) > 0;
+}
+
+export async function updateChargeStopRequestStatus(
+  transactionId: number,
+  status: ChargeStopRequestStatus,
+  message?: string | null,
+) {
+  const db = (await getDb())!;
+  if (!db) return;
+  await db.update(transactions)
+    .set({
+      stopRequestStatus: status,
+      stopRequestMessage: message ?? null,
+    } as any)
+    .where(eq(transactions.id, transactionId));
+}
+
+/** Marca la solicitud como vencida sin tocar una sesión física aún activa. */
+export async function markChargeStopRequestTimedOut(transactionId: number, now = new Date()) {
+  const db = (await getDb())!;
+  if (!db) return false;
+
+  const cutoff = new Date(now.getTime() - 60_000);
+  const result = await db.update(transactions)
+    .set({
+      stopRequestStatus: "TIMED_OUT",
+      stopRequestMessage: "El cargador no confirmó el fin de la carga dentro de un minuto.",
+    } as any)
+    .where(and(
+      eq(transactions.id, transactionId),
+      or(eq(transactions.status, "IN_PROGRESS"), eq(transactions.transactionStatus, "IN_PROGRESS")),
+      inArray(transactions.stopRequestStatus, ["REQUESTED", "ACCEPTED"]),
+      lte(transactions.stopRequestedAt, cutoff as any),
+    ));
+
+  return Number((result as any)[0]?.affectedRows || 0) > 0;
+}
+
+export async function reconcileTimedOutChargeStopRequests(now = new Date()) {
+  const db = (await getDb())!;
+  if (!db) return 0;
+
+  const cutoff = new Date(now.getTime() - 60_000);
+  const result = await db.update(transactions)
+    .set({
+      stopRequestStatus: "TIMED_OUT",
+      stopRequestMessage: "El cargador no confirmó el fin de la carga dentro de un minuto.",
+    } as any)
+    .where(and(
+      or(eq(transactions.status, "IN_PROGRESS"), eq(transactions.transactionStatus, "IN_PROGRESS")),
+      inArray(transactions.stopRequestStatus, ["REQUESTED", "ACCEPTED"]),
+      lte(transactions.stopRequestedAt, cutoff as any),
+    ));
+
+  return Number((result as any)[0]?.affectedRows || 0);
 }
 
 export async function getActiveTransaction(evseId: number) {
@@ -4342,7 +4455,10 @@ export async function getActiveTransactionByUserId(userId: number) {
     .where(
       and(
         eq(transactions.userId, userId),
-        eq(transactions.status, "IN_PROGRESS")
+        or(
+          eq(transactions.status, "IN_PROGRESS"),
+          eq(transactions.transactionStatus, "IN_PROGRESS"),
+        )
       )
     )
     .orderBy(desc(transactions.startTime))

@@ -4451,3 +4451,14 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Persistir la capacidad efectiva y el contador de ajustes en `transactions` mediante la migración aditiva `0043_adaptive_soc_calibration.sql`, aplicada y verificada. Reinicios de servidor restauran el modelo; DC y cualquier SOC OCPP real permanecen protegidos de edición manual.
 - [x] Exponer en NOC el modelo adaptativo, el número de ajustes y un resultado honesto al recalibrar. La interfaz aclara que la próxima calibración mejora la estimación futura; no inventa una medición directa.
 - [x] Validación focal: TypeScript limpio y 31 pruebas de SOC aprobadas, incluyendo primera ancla, ajuste progresivo, persistencia, capacidad declarada explícita, falta de evidencia y observaciones físicamente implausibles. Pendiente: suite completa, build, checkpoint y publicación.
+
+
+## Corrección crítica — Finalización de carga confirmada por OCPP (2026-09-19)
+
+- [x] Audit: se identificó que la UI podía redirigir al recibo cuando el servidor sólo había emitido RemoteStopTransaction, sin recibir la confirmación física `StopTransaction`/`TransactionEvent.Ended` del cargador.
+- [x] Fix: persistir el ciclo durable `NONE → REQUESTED → ACCEPTED/REJECTED → CONFIRMED|TIMED_OUT`, idempotente por transacción. Una orden aceptada deja el monitor abierto; no libera el conector, no genera recibo ni liquida cobro hasta el evento OCPP final.
+- [x] UX: añadir tarjeta mobile-first “Finalizando con el cargador”, animación de progreso y bloqueo de doble pulsación. Tras 60 s sin confirmación se muestra un estado explicable y reintentable, sin afirmar falsamente que la carga terminó.
+- [x] Reliability: sustituir el timeout local en memoria por Heartbeat autenticado `evgreen-charge-stop-reconciliation` cada minuto; registrado, habilitado y protegido contra invocaciones sin credencial.
+- [x] Fix: normalizar `status` y `transaction_status` al crear o actualizar transacciones para evitar fuentes de estado divergentes. Se reparó únicamente la paridad del registro confirmado #1140025 (`COMPLETED/COMPLETED`), sin alterar energía, tarifa, cobro ni billetera.
+- [x] Migration: aplicar `0044_charge_stop_lifecycle.sql`, exclusivamente aditiva, con `stopRequestedAt`, `stop_request_status` y `stopRequestMessage`.
+- [x] Test: `pnpm check`, 36 pruebas focales, `pnpm test` completo (212 archivos / 2.254 pruebas) y build productivo aprobados. La ruta programada rechaza acceso anónimo con HTTP 401.

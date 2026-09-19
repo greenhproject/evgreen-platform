@@ -26,6 +26,7 @@ vi.mock("../db", () => ({
   getActiveTransaction: vi.fn(),
   resolveUserByIdTag: vi.fn(),
   getTransactionByOcppId: vi.fn(),
+  markChargeStopRequestTimedOut: vi.fn(),
 }));
 
 // Mock de connection-manager
@@ -168,11 +169,12 @@ describe("stopCharge", () => {
   });
 
   describe("Timeout de seguridad", () => {
-    it("debe completar localmente si el cargador no responde en 45s", () => {
-      // El timeout de 45s está implementado en stopCharge
-      // Verificar que las funciones necesarias existen
+    it("debe conservar la sesión abierta si el cargador no confirma el cierre", () => {
+      // La reconciliación durable marca la orden como reintentable. No debe
+      // completar/cobrar localmente una carga cuyo fin físico no fue confirmado.
       expect(typeof db.getTransactionById).toBe("function");
       expect(typeof db.updateTransaction).toBe("function");
+      expect(typeof (db as any).markChargeStopRequestTimedOut).toBe("function");
     });
   });
 
