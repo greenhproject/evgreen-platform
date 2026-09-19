@@ -569,11 +569,13 @@ export default function StartCharge() {
                       return statusMap[status?.toUpperCase()] || status;
                     };
                     
-                    // Verificar si este conector es el reservado por el usuario actual
-                    const isMyReservation = connector.status === 'RESERVED' && 
-                      connector.activeReservationUserId && 
-                      user?.id && 
-                      String(connector.activeReservationUserId) === String(user.id);
+                    // Verificar si este conector es el reservado por el usuario actual (vía activeReservationUserId o userActiveReservation)
+                    const matchesUserActiveReservation = stationQuery.data?.userActiveReservation &&
+                      (stationQuery.data.userActiveReservation.evseId === connector.id ||
+                       stationQuery.data.userActiveReservation.evseId === connector.evseId);
+                    const isMyReservation = (connector.status === "RESERVED" || matchesUserActiveReservation) && 
+                      ((connector.activeReservationUserId && user?.id && String(connector.activeReservationUserId) === String(user.id)) ||
+                       matchesUserActiveReservation);
                     const canSelect = connector.isAvailable || isMyReservation;
                     
                     return (

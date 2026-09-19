@@ -6,7 +6,7 @@
 import { notifyOwner } from "../_core/notification";
 import { getActiveReservation, getDb, getNotificationByKey, updateEvseStatus } from "../db";
 import { reservations, users, chargingStations, notifications, evses, whatsappNotificationLog } from "../../drizzle/schema";
-import { eq, and, lte, gte, isNull, desc } from "drizzle-orm";
+import { eq, and, lte, gte, isNull, desc, or, sql } from "drizzle-orm";
 import { dualCSMS } from "../ocpp/csms-dual";
 import { getOcppConnectorId, isOcppReservationAccepted } from "../../shared/reservation-lifecycle-policy";
 import {
@@ -291,12 +291,10 @@ export async function processNoShows(): Promise<void> {
   if (!db) return;
 
   const now = new Date();
-  const gracePeriodMinutes = 15; // 15 minutos de gracia
-  const graceExpired = new Date(now.getTime() - gracePeriodMinutes * 60 * 1000);
-
+  // Una reserva sólo se evalúa para no-show cuando su ventana reservada ha finalizado (endTime <= now),
+  // garantizando que el usuario tenga su tiempo completo de reserva sin cancelaciones prematuras.
   try {
-    // Avisar una vez al comenzar la ventana de gracia. La clave idempotente de la
-    // notificación evita repetición aunque este job se ejecute cada minuto.
+    // 1. Notificación de aviso al iniciar la reserva (idempotente)
     const graceWindowReservations = await db
       .select({
         reservation: reservations,
@@ -310,8 +308,8 @@ export async function processNoShows(): Promise<void> {
       .leftJoin(evses, eq(reservations.evseId, evses.id))
       .where(and(
         eq(reservations.reservationStatus, "ACTIVE"),
-        gte(reservations.startTime, graceExpired.toISOString()),
-        lte(reservations.startTime, now.toISOString()),
+        sql`${reservations.startTime} <= UTC_TIMESTAMP()`,
+        sql`${reservations.endTime} > UTC_TIMESTAMP()`
       ));
 
     for (const { reservation, user, station, evse } of graceWindowReservations) {
@@ -320,14 +318,14 @@ export async function processNoShows(): Promise<void> {
         user.id,
         reservation.id,
         station.name,
-        Math.max(0, gracePeriodMinutes - minutesSinceStart),
+        Math.max(0, 15 - minutesSinceStart),
         user,
         evse?.connectorId ?? reservation.evseId,
       );
     }
 
-    // Buscar reservas que han pasado el período de gracia sin iniciar carga
-    const expiredReservations = await db
+    // 2. Evaluar expiración formal únicamente cuando el tiempo reservado ha finalizado
+    const candidateReservations = await db
       .select({
         reservation: reservations,
         user: users,
@@ -341,13 +339,42 @@ export async function processNoShows(): Promise<void> {
       .where(
         and(
           eq(reservations.reservationStatus, "ACTIVE"),
-          // @ts-ignore
-          lte(reservations.startTime, graceExpired)
+          sql`${reservations.endTime} <= UTC_TIMESTAMP()`
         )
       );
 
-    for (const { reservation, user, station, evse } of expiredReservations) {
-      // Marcar como NO_SHOW
+    for (const { reservation, user, station, evse } of candidateReservations) {
+      // 1. Verificar si el usuario efectivamente inició una carga en este conector o estación
+      const { transactions } = await import("../../drizzle/schema");
+      const matchingTxs = await db
+        .select()
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.userId, reservation.userId),
+            eq(transactions.stationId, reservation.stationId),
+            or(
+              eq(transactions.status, "IN_PROGRESS"),
+              eq(transactions.status, "COMPLETED")
+            )
+          )
+        )
+        .limit(1);
+
+      if (matchingTxs.length > 0) {
+        // El usuario sí utilizó la estación: marcar como FULFILLED, nunca como NO_SHOW
+        await db
+          .update(reservations)
+          .set({
+            reservationStatus: "FULFILLED",
+            transactionId: matchingTxs[0].id,
+          } as any)
+          .where(eq(reservations.id, reservation.id));
+        console.log(`[NoShowProtection] Reserva #${reservation.id} cumplida por transacción #${matchingTxs[0].id}`);
+        continue;
+      }
+
+      // 2. Si no inició carga y su tiempo reservado terminó formalmente, marcar como NO_SHOW
       await db
         .update(reservations)
         .set({ 
@@ -403,8 +430,8 @@ export async function processNoShows(): Promise<void> {
       console.log(`[NoShow] Applied penalty of ${penaltyAmount} COP to user ${user.id} for reservation ${reservation.id}`);
     }
 
-    if (expiredReservations.length > 0) {
-      console.log(`[NoShow] Processed ${expiredReservations.length} no-show reservations`);
+    if (candidateReservations.length > 0) {
+      console.log(`[NoShow] Processed ${candidateReservations.length} candidate reservations`);
     }
   } catch (error) {
     console.error("[NoShow] Error processing no-shows:", error);
@@ -438,10 +465,8 @@ async function processUpcomingReservations(): Promise<void> {
       .where(
         and(
           eq(reservations.reservationStatus, "ACTIVE"),
-          // @ts-ignore
-          lte(reservations.startTime, in15Min),
-          // @ts-ignore
-          gte(reservations.endTime, now)
+          sql`${reservations.startTime} <= DATE_ADD(UTC_TIMESTAMP(), INTERVAL 15 MINUTE)`,
+          sql`${reservations.endTime} >= UTC_TIMESTAMP()`
         )
       );
 
@@ -518,8 +543,7 @@ async function processUpcomingReservations(): Promise<void> {
       .where(
         and(
           eq(reservations.reservationStatus, "ACTIVE"),
-          // @ts-ignore
-          lte(reservations.endTime, now)
+          sql`${reservations.endTime} <= UTC_TIMESTAMP()`
         )
       );
 

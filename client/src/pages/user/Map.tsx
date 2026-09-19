@@ -170,13 +170,15 @@ export default function UserMap() {
     { enabled: isAuthenticated, refetchInterval: 30_000 }
   );
 
-  // Mostrar la próxima reserva activa aunque sea para otro día. El campo
-  // persistido es `reservationStatus`; el legado `status` ocultaba el banner.
+  // Mostrar la reserva activa/en curso o próxima más cercana. Soporta reservationStatus y status legado.
   const activeReservation = useMemo(() => {
     if (!myReservations) return null;
     const now = Date.now();
     return myReservations
-      .filter((r: any) => r.reservationStatus === "ACTIVE" && new Date(r.endTime).getTime() > now)
+      .filter((r: any) => {
+        const status = (r.reservationStatus || r.status || "").trim().toUpperCase();
+        return (r.reservationStatus === "ACTIVE" || status === "ACTIVE") && new Date(r.endTime).getTime() >= now;
+      })
       .sort((a: any, b: any) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())[0] || null;
   }, [myReservations]);
 

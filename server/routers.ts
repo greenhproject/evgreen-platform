@@ -2683,18 +2683,31 @@ const claimsRouter = router({
 
 // Importar módulo de tarifa dinámica
 import * as dynamicPricing from "./pricing/dynamic-pricing";
+import { calculateReservationExpiryTime, isReservationActiveNow } from "../shared/reservation-lifecycle-policy";
 
 const reservationsRouter = router({
   myReservations: protectedProcedure.query(async ({ ctx }) => {
     const reservations = await db.getReservationsByUserId(ctx.user.id);
-    // Enriquecer con nombre de estación
+    const now = new Date();
+    // Enriquecer con datos completos de estación y EVSE
     const enriched = await Promise.all(
       reservations.map(async (r) => {
         const station = await db.getChargingStationById(r.stationId);
+        const evse = r.evseId ? await db.getEvseById(r.evseId) : null;
+        const now = new Date();
+        const isActiveNow = isReservationActiveNow(r, now);
         return {
           ...r,
+          status: r.reservationStatus,
+          reservationStatus: r.reservationStatus,
           stationName: station?.name || `Estación #${r.stationId}`,
-          stationAddress: station?.address || null,
+          stationAddress: station?.address || "",
+          stationOcppIdentity: station?.ocppIdentity || String(station?.id || r.stationId),
+          stationLatitude: station?.latitude || null,
+          stationLongitude: station?.longitude || null,
+          connectorType: evse?.connectorType || "GBT_AC",
+          powerKw: evse?.powerKw || 7,
+          isActiveNow,
         };
       })
     );
@@ -2845,8 +2858,8 @@ const reservationsRouter = router({
         });
       }
       
-      // Calcular tiempo de expiración (15 minutos después del inicio)
-      const expiryTime = new Date(input.startTime.getTime() + 15 * 60 * 1000);
+      // El tiempo de expiración cubre la duración completa reservada por el usuario
+      const expiryTime = calculateReservationExpiryTime(input.startTime, input.endTime);
       
       // Crear la reserva
       const id = await db.createReservation({

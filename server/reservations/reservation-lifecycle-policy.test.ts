@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  calculateReservationExpiryTime,
   canReleasePhysicalReservation,
   canUserStartOnReservedConnector,
   getOcppConnectorId,
   isOcppReservationAccepted,
+  isReservationActiveNow,
   isReservationHoldingConnector,
   RESERVATION_HOLD_WINDOW_MINUTES,
+  shouldMarkReservationAsNoShow,
 } from "../../shared/reservation-lifecycle-policy";
 
 const NOW = new Date("2026-09-19T02:00:00.000Z");
@@ -48,5 +51,28 @@ describe("reservation lifecycle policy", () => {
   it("uses the local EVSE identifier for OCPP commands", () => {
     expect(getOcppConnectorId({ evseIdLocal: 3, connectorId: 1 })).toBe(3);
     expect(getOcppConnectorId({ connectorId: 2 })).toBe(2);
+  });
+
+  it("identifies when a reservation is currently in session (active now)", () => {
+    // En curso: empezó hace 10 min y termina en 50 min
+    expect(isReservationActiveNow(activeReservation(-10, 50), NOW)).toBe(true);
+    // Futura: empieza en 15 min
+    expect(isReservationActiveNow(activeReservation(15, 75), NOW)).toBe(false);
+    // Pasada: terminó hace 5 min
+    expect(isReservationActiveNow(activeReservation(-65, -5), NOW)).toBe(false);
+  });
+
+  it("prevents premature no-show while the user is still within their reserved time window", () => {
+    // A los 16 minutos de haber iniciado una reserva de 60 minutos: NO debe marcarse como no-show
+    expect(shouldMarkReservationAsNoShow(activeReservation(-16, 44), NOW)).toBe(false);
+    // Cuando la ventana completa terminó: SÍ se marca como no-show
+    expect(shouldMarkReservationAsNoShow(activeReservation(-61, -1), NOW)).toBe(true);
+  });
+
+  it("calculates expiry time matching full reservation duration", () => {
+    const start = new Date("2026-09-19T02:00:00.000Z");
+    const end = new Date("2026-09-19T03:00:00.000Z");
+    const expiry = calculateReservationExpiryTime(start, end);
+    expect(expiry.getTime()).toBe(end.getTime());
   });
 });

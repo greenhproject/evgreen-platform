@@ -1,7 +1,8 @@
 export const RESERVATION_HOLD_WINDOW_MINUTES = 15;
 
 export type ReservationWindow = {
-  reservationStatus: string;
+  reservationStatus?: string;
+  status?: string;
   startTime: Date | string;
   endTime: Date | string;
 };
@@ -15,7 +16,9 @@ export function isReservationHoldingConnector(
   reservation: ReservationWindow | null | undefined,
   now = new Date(),
 ): boolean {
-  if (!reservation || reservation.reservationStatus !== "ACTIVE") return false;
+  if (!reservation) return false;
+  const status = (reservation.reservationStatus || reservation.status || "").trim().toUpperCase();
+  if (status !== "ACTIVE") return false;
 
   const startTime = new Date(reservation.startTime).getTime();
   const endTime = new Date(reservation.endTime).getTime();
@@ -51,4 +54,60 @@ export function canReleasePhysicalReservation(
 /** OCPP usa el identificador local del EVSE; connectorId es el fallback para equipos legacy. */
 export function getOcppConnectorId(evse: { evseIdLocal?: number | null; connectorId?: number | null }): number {
   return evse.evseIdLocal ?? evse.connectorId ?? 1;
+}
+
+/**
+ * Determina si la reserva está actualmente en curso (la hora actual está entre startTime y endTime).
+ */
+export function isReservationActiveNow(
+  reservation: ReservationWindow | null | undefined,
+  now = new Date(),
+): boolean {
+  if (!reservation) return false;
+  const status = (reservation.reservationStatus || reservation.status || "").trim().toUpperCase();
+  if (status !== "ACTIVE") return false;
+
+  const startTime = new Date(reservation.startTime).getTime();
+  const endTime = new Date(reservation.endTime).getTime();
+  if (!Number.isFinite(startTime) || !Number.isFinite(endTime)) return false;
+
+  const nowMs = now.getTime();
+  return nowMs >= startTime && nowMs <= endTime;
+}
+
+/**
+ * Calcula el tiempo de expiración formal de una reserva.
+ * La reserva debe permanecer vigente durante toda su duración (endTime).
+ */
+export function calculateReservationExpiryTime(
+  startTime: Date | string,
+  endTime: Date | string,
+): Date {
+  const end = new Date(endTime);
+  if (Number.isFinite(end.getTime())) {
+    return end;
+  }
+  const start = new Date(startTime);
+  // Fallback seguro: al menos 60 minutos desde el inicio
+  return new Date(start.getTime() + 60 * 60 * 1000);
+}
+
+/**
+ * Evalúa si una reserva debe considerarse como no-show:
+ * Sólo cuando la ventana completa reservada haya finalizado (now >= endTime),
+ * para no cancelar prematuramente a un usuario que se retrasa unos minutos en llegar.
+ */
+export function shouldMarkReservationAsNoShow(
+  reservation: ReservationWindow | null | undefined,
+  now = new Date(),
+): boolean {
+  if (!reservation) return false;
+  const status = (reservation.reservationStatus || reservation.status || "").trim().toUpperCase();
+  if (status !== "ACTIVE") return false;
+
+  const endTime = new Date(reservation.endTime).getTime();
+  if (!Number.isFinite(endTime)) return false;
+
+  // La reserva sólo se considera no-show cuando su tiempo total reservado ha finalizado
+  return now.getTime() >= endTime;
 }

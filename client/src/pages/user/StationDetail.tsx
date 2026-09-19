@@ -171,6 +171,13 @@ function DynamicPricingCard({ stationId }: { stationId: number }) {
   );
 }
 
+function formatLocalDate(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export default function StationDetail() {
   const { id } = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
@@ -310,10 +317,10 @@ export default function StationDetail() {
 
   const handleReserve = (evse: any) => {
     setSelectedEvse(evse);
-    // Establecer fecha y hora por defecto (próxima hora)
+    // Establecer fecha y hora por defecto usando la zona horaria local del dispositivo
     const now = new Date();
     now.setHours(now.getHours() + 1, 0, 0, 0);
-    setReservationDate(now.toISOString().split("T")[0]);
+    setReservationDate(formatLocalDate(now));
     setReservationTime(now.toTimeString().slice(0, 5));
     setShowReservationModal(true);
   };
@@ -978,7 +985,7 @@ export default function StationDetail() {
                     type="date"
                     value={reservationDate}
                     onChange={(e) => setReservationDate(e.target.value)}
-                    min={new Date().toISOString().split("T")[0]}
+                    min={formatLocalDate(new Date())}
                     className="bg-background/50 text-sm h-9"
                   />
                 </div>

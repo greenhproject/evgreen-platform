@@ -16,6 +16,7 @@ import { eq, and, desc, asc, gte, lte, lt, gt, sql, or, count, sum, avg, ne, inA
  */
 import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2";
+import { isReservationHoldingConnector } from "../shared/reservation-lifecycle-policy";
 import {
   InsertUser,
 	users,
@@ -845,16 +846,11 @@ export async function getEvsesByStationId(stationId: number) {
       const activeResList = reservationsByEvse.get(evse.id) || [];
       
       if (activeResList.length > 0) {
-        const currentOrImminent = activeResList.find(r => 
-          r.startTime <= in15Min.toISOString() && r.endTime > now.toISOString()
-        );
+        const currentOrImminent = activeResList.find(r => isReservationHoldingConnector(r, now));
         
         if (currentOrImminent) {
           return { 
             ...evse, 
-            // Proyección de lectura: la reserva activa bloquea el conector para
-            // todos excepto su titular, aunque aún no haya llegado un nuevo
-            // StatusNotification desde el cargador.
             connectorStatus: 'RESERVED' as typeof evse.connectorStatus,
             status: 'RESERVED' as typeof evse.connectorStatus,
             activeReservationId: currentOrImminent.id, 
@@ -863,7 +859,8 @@ export async function getEvsesByStationId(stationId: number) {
           };
         }
         
-        const nextRes = activeResList[0];
+        const nowMs = now.getTime();
+        const nextRes = activeResList.find(r => new Date(r.startTime).getTime() > nowMs) || activeResList[0];
         return { 
           ...evse, 
           status: evse.connectorStatus,
@@ -926,9 +923,7 @@ export async function getAllEvsesForStations(stationIds: number[]) {
     if (evse.connectorStatus === 'AVAILABLE' || evse.connectorStatus === 'RESERVED') {
       const activeResList = reservationsByEvse.get(evse.id) || [];
       if (activeResList.length > 0) {
-        const currentOrImminent = activeResList.find(r => 
-          r.startTime <= in15Min.toISOString() && r.endTime > now.toISOString()
-        );
+        const currentOrImminent = activeResList.find(r => isReservationHoldingConnector(r, now));
         if (currentOrImminent) {
           enriched = { 
             ...evse, 
@@ -939,7 +934,8 @@ export async function getAllEvsesForStations(stationIds: number[]) {
             nextReservation: null,
           };
         } else {
-          const nextRes = activeResList[0];
+          const nowMs = now.getTime();
+          const nextRes = activeResList.find(r => new Date(r.startTime).getTime() > nowMs) || activeResList[0];
           enriched = { 
             ...evse, 
             status: evse.connectorStatus,
@@ -1319,7 +1315,12 @@ export async function getActiveReservationForUser(evseId: number, userId: number
 export async function getReservationsByUserId(userId: number) {
   const db = (await getDb())!;
   if (!db) return [];
-  return db.select().from(reservations).where(eq(reservations.userId, userId)).orderBy(desc(reservations.startTime));
+  const rows = await db.select().from(reservations).where(eq(reservations.userId, userId)).orderBy(desc(reservations.startTime));
+  return rows.map((r: any) => ({
+    ...r,
+    status: r.reservationStatus,
+    reservationStatus: r.reservationStatus,
+  }));
 }
 
 export async function updateReservation(id: number, data: Partial<InsertReservation>) {

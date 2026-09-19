@@ -418,13 +418,20 @@ export const chargingRouter = router({
         };
       });
       
-      // Verificar si el usuario tiene una reserva activa en esta estación
+      // Verificar si el usuario tiene una reserva activa y operativa en esta estación
       let userActiveReservation = null;
       if (ctx.user) {
         const userReservations = await db.getReservationsByUserId(ctx.user.id);
-        userActiveReservation = userReservations.find(
-          (r: any) => r.stationId === station.id && r.reservationStatus === 'ACTIVE'
-        ) || null;
+        const nowMs = Date.now();
+        userActiveReservation = userReservations.find((r: any) => {
+          const status = r.reservationStatus || r.status;
+          if (status !== "ACTIVE") return false;
+          if (r.stationId !== station.id) return false;
+          const startMs = new Date(r.startTime).getTime();
+          const endMs = new Date(r.endTime).getTime();
+          // Permite check-in automático desde 30 minutos antes hasta el fin de la reserva
+          return (startMs - 30 * 60_000 <= nowMs && endMs >= nowMs);
+        }) || null;
       }
       
       return {
