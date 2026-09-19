@@ -76,9 +76,20 @@ apply from: 'capacitor.build.gradle'
 
 try {
     def servicesJSON = file('google-services.json')
-    if (servicesJSON.text) {
+    if (servicesJSON.exists() && servicesJSON.text.trim()) {
         apply plugin: 'com.google.gms.google-services'
+    } else {
+        // Debug puede compilar sin FCM en entornos locales, pero un artefacto
+        // release sin la configuración no puede recibir Push. La validación se
+        // mantiene también aquí para evitar que Android Studio la omita.
+        gradle.taskGraph.whenReady { graph ->
+            def isReleaseBuild = graph.allTasks.any { task -> task.name.toLowerCase().contains('release') }
+            if (isReleaseBuild) {
+                throw new GradleException("Push release blocked: android/app/google-services.json is required for com.greenhproject.evgreen")
+            }
+        }
+        logger.warn("google-services.json not found; Android Push is disabled for this local/debug build")
     }
 } catch(Exception e) {
-    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+    throw e
 }

@@ -1,172 +1,188 @@
 /**
- * ============================================================================
- * EVGreen Platform - Servicio Unificado de Push Notifications
- * ============================================================================
- * 
- * Este módulo proporciona una función unificada para enviar notificaciones push
- * a los usuarios, independientemente del método de suscripción que hayan usado.
- * 
- * FLUJO DE ENVÍO:
- * 1. Verificar si el usuario tiene suscripción Web Push nativa (VAPID) → enviar
- * 2. Si no, verificar si tiene token FCM → enviar vía Firebase
- * 3. Si ninguno está disponible, retornar false silenciosamente
- * 
- * IMPORTANTE: Todos los módulos que envían notificaciones push deben usar
- * sendUserPush() en lugar de llamar directamente a sendPushNotification() o
- * sendWebPush(), para garantizar que las notificaciones lleguen sin importar
- * el método de registro del usuario.
- * 
- * @module unified-push
+ * Servicio unificado de Push. Envía a cada canal/dispositivo registrado y
+ * conserva la diferencia entre proveedor que acepta la orden y app que la
+ * recibe o abre. El token histórico users.fcmToken se mantiene sólo como
+ * respaldo durante la transición a push_devices.
  */
 
 import { sendWebPush, isWebPushAvailable, type PushSubscriptionData } from "./web-push-service";
-import { sendPushNotification, type NotificationType, type PushNotificationData } from "../firebase/fcm";
+import { sendPushNotificationDetailed, type NotificationType, type PushNotificationData } from "../firebase/fcm";
 import * as db from "../db";
+import {
+  createPushDeliveryEvent,
+  createPushDeliveryId,
+  getActivePushDevicesForUser,
+  markPushDeliveryAccepted,
+  markPushDeliveryFailed,
+  markPushDeviceAccepted,
+  markPushDeviceFailed,
+} from "./push-device-service";
 
-/**
- * Interfaz unificada para notificaciones push
- * Compatible con ambos sistemas (Web Push nativo y FCM)
- */
 export interface UnifiedPushPayload {
-  /** Tipo de notificación para categorización y routing */
   type: NotificationType;
-  /** Título visible de la notificación */
   title: string;
-  /** Cuerpo/descripción de la notificación */
   body: string;
-  /** URL de imagen opcional (para notificaciones expandidas) */
   imageUrl?: string;
-  /** URL a la que navegar al hacer clic en la notificación */
   clickAction?: string;
-  /** Datos adicionales como key-value strings */
   data?: Record<string, string>;
 }
 
+export interface PushChannelAttempt {
+  channel: "FCM" | "WEB_PUSH";
+  deliveryId: string;
+  deviceId?: number;
+  accepted: boolean;
+  errorCode?: string;
+}
+
+export interface UnifiedPushResult {
+  accepted: boolean;
+  attempted: number;
+  acceptedCount: number;
+  attempts: PushChannelAttempt[];
+}
+
+function buildFcmPayload(payload: UnifiedPushPayload, deliveryId: string): PushNotificationData {
+  return {
+    type: payload.type,
+    title: payload.title,
+    body: payload.body,
+    imageUrl: payload.imageUrl,
+    clickAction: payload.clickAction,
+    data: {
+      deliveryId,
+      type: payload.type,
+      ...(payload.data || {}),
+    },
+  };
+}
+
 /**
- * Enviar notificación push a un usuario por su ID.
- * Intenta Web Push nativo primero, luego FCM como fallback.
- * 
- * @param userId - ID del usuario en la base de datos
- * @param payload - Datos de la notificación
- * @returns true si se envió exitosamente por cualquier método, false si falló
- * 
- * @example
- * ```ts
- * await sendUserPush(userId, {
- *   type: "charging_complete",
- *   title: "⚡ ¡Carga completada!",
- *   body: "Tu vehículo está listo. 15.2 kWh entregados.",
- *   clickAction: "/charging-monitor",
- *   data: { transactionId: "123" },
- * });
- * ```
+ * Envía a todos los dispositivos actuales del usuario. `accepted` significa
+ * exclusivamente que FCM/Web Push aceptó la solicitud, nunca “entregado”.
  */
-export async function sendUserPush(
+export async function sendUserPushDetailed(
   userId: number,
-  payload: UnifiedPushPayload
-): Promise<boolean> {
+  payload: UnifiedPushPayload,
+): Promise<UnifiedPushResult> {
+  const attempts: PushChannelAttempt[] = [];
+
   try {
     const user = await db.getUserById(userId);
     if (!user) {
       console.log(`[UnifiedPush] User ${userId} not found`);
-      return false;
+      return { accepted: false, attempted: 0, acceptedCount: 0, attempts };
     }
 
-    // 1. Intentar Web Push nativo (VAPID) - método preferido
+    // Web Push se mantiene separado de los tokens nativos (FCM).
     if (user.pushSubscription && isWebPushAvailable()) {
+      const deliveryId = createPushDeliveryId();
       try {
+        await createPushDeliveryEvent({
+          deliveryId,
+          userId,
+          channel: "WEB_PUSH",
+          notificationType: payload.type,
+        });
         const subscription: PushSubscriptionData = JSON.parse(user.pushSubscription);
-        const sent = await sendWebPush(subscription, {
+        const accepted = await sendWebPush(subscription, {
           title: payload.title,
           body: payload.body,
           image: payload.imageUrl,
           tag: payload.type,
           requireInteraction: ["low_balance", "charging_error", "overstay_alert"].includes(payload.type),
           data: {
+            deliveryId,
             type: payload.type,
             url: payload.clickAction || "/",
             clickAction: payload.clickAction || "/",
-            ...payload.data,
+            ...(payload.data || {}),
           },
         });
 
-        if (sent) {
-          console.log(`[UnifiedPush] Web Push sent to user ${userId}: "${payload.title}"`);
-          return true;
+        if (accepted) {
+          await markPushDeliveryAccepted({ deliveryId, userId });
+        } else {
+          await markPushDeliveryFailed({ deliveryId, userId, errorCode: "WEB_PUSH_REJECTED" });
         }
-        console.warn(`[UnifiedPush] Web Push failed for user ${userId}, trying FCM fallback...`);
-      } catch (parseError) {
-        console.error(`[UnifiedPush] Invalid pushSubscription JSON for user ${userId}:`, parseError);
+        attempts.push({ channel: "WEB_PUSH", deliveryId, accepted, errorCode: accepted ? undefined : "WEB_PUSH_REJECTED" });
+      } catch (error: any) {
+        await markPushDeliveryFailed({ deliveryId, userId, errorCode: "WEB_PUSH_ERROR", errorMessage: error?.message });
+        attempts.push({ channel: "WEB_PUSH", deliveryId, accepted: false, errorCode: "WEB_PUSH_ERROR" });
       }
     }
 
-    // 2. Fallback: FCM (Firebase Cloud Messaging)
-    if (user.fcmToken && !user.fcmToken.startsWith("local_")) {
-      const fcmPayload: PushNotificationData = {
-        type: payload.type,
-        title: payload.title,
-        body: payload.body,
-        imageUrl: payload.imageUrl,
-        clickAction: payload.clickAction,
-        data: payload.data,
-      };
+    const registeredDevices = await getActivePushDevicesForUser(userId);
+    const tokens = new Map<string, { id?: number; token: string }>();
+    for (const device of registeredDevices) tokens.set(device.token, { id: device.id, token: device.token });
+    if (user.fcmToken && !user.fcmToken.startsWith("local_") && !tokens.has(user.fcmToken)) {
+      tokens.set(user.fcmToken, { token: user.fcmToken });
+    }
 
-      const sent = await sendPushNotification(user.fcmToken, fcmPayload);
-      if (sent) {
-        console.log(`[UnifiedPush] FCM sent to user ${userId}: "${payload.title}"`);
-        return true;
+    for (const device of tokens.values()) {
+      const deliveryId = createPushDeliveryId();
+      try {
+        await createPushDeliveryEvent({
+          deliveryId,
+          userId,
+          deviceId: device.id,
+          channel: "FCM",
+          notificationType: payload.type,
+        });
+        const fcmResult = await sendPushNotificationDetailed(device.token, buildFcmPayload(payload, deliveryId));
+        if (fcmResult.accepted) {
+          await markPushDeliveryAccepted({ deliveryId, userId, providerMessageId: fcmResult.providerMessageId });
+          if (device.id) await markPushDeviceAccepted(device.id);
+        } else {
+          await markPushDeliveryFailed({
+            deliveryId,
+            userId,
+            errorCode: fcmResult.errorCode,
+            errorMessage: fcmResult.errorMessage,
+          });
+          if (device.id) await markPushDeviceFailed(device.id, fcmResult.errorCode);
+        }
+        attempts.push({
+          channel: "FCM",
+          deliveryId,
+          deviceId: device.id,
+          accepted: fcmResult.accepted,
+          errorCode: fcmResult.errorCode,
+        });
+      } catch (error: any) {
+        await markPushDeliveryFailed({ deliveryId, userId, errorCode: "PUSH_ROUTER_ERROR", errorMessage: error?.message });
+        if (device.id) await markPushDeviceFailed(device.id, "PUSH_ROUTER_ERROR");
+        attempts.push({ channel: "FCM", deliveryId, deviceId: device.id, accepted: false, errorCode: "PUSH_ROUTER_ERROR" });
       }
-      console.warn(`[UnifiedPush] FCM also failed for user ${userId}`);
     }
-
-    // 3. Ningún método disponible
-    if (!user.pushSubscription && !user.fcmToken) {
-      // Silencioso: el usuario no tiene push registrado
-      return false;
-    }
-
-    console.log(`[UnifiedPush] All push methods failed for user ${userId}`);
-    return false;
   } catch (error) {
-    console.error(`[UnifiedPush] Error sending push to user ${userId}:`, error);
-    return false;
+    console.error(`[UnifiedPush] Error sending Push to user ${userId}:`, error);
   }
+
+  const acceptedCount = attempts.filter((attempt) => attempt.accepted).length;
+  return { accepted: acceptedCount > 0, attempted: attempts.length, acceptedCount, attempts };
 }
 
-/**
- * Enviar notificación push a múltiples usuarios.
- * Procesa en paralelo para mejor rendimiento.
- * 
- * @param userIds - Array de IDs de usuarios
- * @param payload - Datos de la notificación (mismo para todos)
- * @returns Resumen de envíos exitosos y fallidos
- */
+/** Compatibilidad para flujos existentes. */
+export async function sendUserPush(userId: number, payload: UnifiedPushPayload): Promise<boolean> {
+  return (await sendUserPushDetailed(userId, payload)).accepted;
+}
+
 export async function sendUserPushToMultiple(
   userIds: number[],
-  payload: UnifiedPushPayload
+  payload: UnifiedPushPayload,
 ): Promise<{ success: number; failure: number }> {
-  if (userIds.length === 0) {
-    return { success: 0, failure: 0 };
-  }
+  if (!userIds.length) return { success: 0, failure: 0 };
 
-  const results = await Promise.allSettled(
-    userIds.map((userId) => sendUserPush(userId, payload))
-  );
-
+  const results = await Promise.allSettled(userIds.map((userId) => sendUserPush(userId, payload)));
   let success = 0;
   let failure = 0;
-
   for (const result of results) {
-    if (result.status === "fulfilled" && result.value) {
-      success++;
-    } else {
-      failure++;
-    }
+    if (result.status === "fulfilled" && result.value) success++;
+    else failure++;
   }
-
-  console.log(`[UnifiedPush] Multicast: ${success} success, ${failure} failures out of ${userIds.length} users`);
+  console.log(`[UnifiedPush] Multicast: ${success} accepted, ${failure} without provider acknowledgement out of ${userIds.length} users`);
   return { success, failure };
 }
 
-// Re-exportar tipos para conveniencia
 export type { NotificationType } from "../firebase/fcm";

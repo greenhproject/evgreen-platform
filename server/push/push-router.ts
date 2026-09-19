@@ -7,15 +7,16 @@
 import { z } from "zod";
 import { router, protectedProcedure, publicProcedure } from "../_core/trpc";
 import { getDb } from "../db";
-import { users } from "../../drizzle/schema";
-import { eq } from "drizzle-orm";
+import { pushDeliveryEvents, pushDevices, users } from "../../drizzle/schema";
+import { desc, eq } from "drizzle-orm";
 import {
   subscribeToTopic,
   unsubscribeFromTopic,
-  sendPushNotification,
 } from "../firebase/fcm";
-import { sendWebPush, isWebPushAvailable, getVapidPublicKey, type PushSubscriptionData } from "./web-push-service";
+import { isWebPushAvailable, getVapidPublicKey } from "./web-push-service";
 import { checkProximityAndNotify } from "../proximity/proximity-alert-service";
+import { acknowledgePushDelivery, deactivatePushDevice, getActivePushDevicesForUser, registerPushDevice } from "./push-device-service";
+import { sendUserPushDetailed } from "./unified-push";
 
 export const pushRouter = router({
   /**
@@ -70,6 +71,8 @@ export const pushRouter = router({
     .input(
       z.object({
         fcmToken: z.string().min(1),
+        platform: z.enum(["android", "ios", "web", "unknown"]).optional(),
+        appVersion: z.string().max(50).optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -78,7 +81,19 @@ export const pushRouter = router({
 
       const userId = ctx.user.id;
 
-      // Actualizar token FCM del usuario
+      if (input.fcmToken.startsWith("local_")) {
+        return { success: false, error: "El token local de prueba no es válido para Push real" };
+      }
+
+      const device = await registerPushDevice({
+        userId,
+        token: input.fcmToken,
+        platform: input.platform,
+        appVersion: input.appVersion,
+      });
+
+      // Campo histórico conservado para versiones antiguas; el registro real
+      // por dispositivo queda en push_devices.
       await db
         .update(users)
         .set({
@@ -104,17 +119,27 @@ export const pushRouter = router({
         }
       }
 
-      return { success: true };
+      return { success: true, deviceId: device?.id };
     }),
 
   /**
    * Eliminar suscripción push (logout o desinstalar app)
    */
-  unregisterToken: protectedProcedure.mutation(async ({ ctx }) => {
+  unregisterToken: protectedProcedure.input(z.object({ fcmToken: z.string().min(1).optional() }).optional()).mutation(async ({ ctx, input }) => {
     const db = (await getDb())!;
     if (!db) return { success: false, error: "Database not available" };
 
     const userId = ctx.user.id;
+
+    // La app actual envía su token antes de borrarlo localmente: así un usuario
+    // conserva Push en su otro teléfono. Sin token se mantiene el reset global
+    // utilizado por versiones antiguas al cerrar sesión.
+    if (input?.fcmToken) {
+      await deactivatePushDevice({ userId, token: input.fcmToken });
+      await unsubscribeFromTopic(input.fcmToken, "evgreen_all");
+      await unsubscribeFromTopic(input.fcmToken, "evgreen_promotions");
+      return { success: true, scope: "device" as const };
+    }
 
     // Obtener token actual antes de eliminarlo
     const [user] = await db
@@ -138,7 +163,7 @@ export const pushRouter = router({
       })
       .where(eq(users.id, userId));
 
-    return { success: true };
+    return { success: true, scope: "all" as const };
   }),
 
   /**
@@ -167,11 +192,13 @@ export const pushRouter = router({
       .where(eq(users.id, ctx.user.id))
       .limit(1);
 
+    const activeDevices = await getActivePushDevicesForUser(ctx.user.id);
     return {
       chargingComplete: user?.notifyChargingComplete ?? true,
       lowBalance: user?.notifyLowBalance ?? true,
       promotions: user?.notifyPromotions ?? true,
-      pushEnabled: !!(user?.pushSubscription || user?.fcmToken),
+      pushEnabled: !!(user?.pushSubscription || user?.fcmToken || activeDevices.length),
+      activeDeviceCount: activeDevices.length,
     };
   }),
 
@@ -329,36 +356,38 @@ export const pushRouter = router({
       return { success: false, error: "Usuario no encontrado" };
     }
 
-    // Intentar Web Push nativo primero
-    if (user.pushSubscription && isWebPushAvailable()) {
-      try {
-        const subscription: PushSubscriptionData = JSON.parse(user.pushSubscription);
-        const result = await sendWebPush(subscription, {
-          title: "Notificación de prueba - EVGreen",
-          body: `¡Hola ${user.name || "Usuario"}! Las notificaciones push están funcionando correctamente.`,
-          tag: "test-notification",
-          data: { type: "test", url: "/settings/notifications" },
-        });
-        if (result) {
-          return { success: true };
-        }
-      } catch (error) {
-        console.error("[Push] Error sending Web Push test:", error);
-      }
-    }
+    const result = await sendUserPushDetailed(ctx.user.id, {
+      type: "system_alert",
+      title: "Notificación de prueba",
+      body: `Hola ${user.name || "Usuario"}. EVGreen solicitó una prueba Push; el estado se actualizará cuando la app la reciba.`,
+      clickAction: "/settings/notifications",
+      data: { test: "true" },
+    });
 
-    // Fallback a FCM
-    if (user.fcmToken) {
-      const result = await sendPushNotification(user.fcmToken, {
-        type: "system_alert",
-        title: "Notificación de prueba",
-        body: `¡Hola ${user.name || "Usuario"}! Las notificaciones push están funcionando correctamente.`,
-        clickAction: "/settings/notifications",
-      });
-      return { success: result };
-    }
+    return {
+      success: result.accepted,
+      state: result.accepted ? "ACCEPTED_BY_PROVIDER" as const : "NOT_ACCEPTED" as const,
+      attempted: result.attempted,
+      acceptedCount: result.acceptedCount,
+      attempts: result.attempts.map(({ channel, deliveryId, deviceId, accepted, errorCode }) => ({ channel, deliveryId, deviceId, accepted, errorCode })),
+      error: result.attempted === 0 ? "No hay un dispositivo Push real registrado" : undefined,
+    };
+  }),
 
-    return { success: false, error: "No hay suscripción push registrada" };
+  /** La app nativa confirma recepción/apertura; no se acepta de terceros. */
+  acknowledgeDelivery: protectedProcedure
+    .input(z.object({ deliveryId: z.string().min(10).max(80), event: z.enum(["RECEIVED", "OPENED"]) }))
+    .mutation(async ({ ctx, input }) => acknowledgePushDelivery({ ...input, userId: ctx.user.id })),
+
+  /** Diagnóstico sin exponer tokens ni datos sensibles del dispositivo. */
+  getDeliveryHealth: protectedProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) return { devices: [], events: [] };
+    const [devices, events] = await Promise.all([
+      db.select({ id: pushDevices.id, platform: pushDevices.platform, appVersion: pushDevices.appVersion, status: pushDevices.status, registeredAt: pushDevices.registeredAt, lastSeenAt: pushDevices.lastSeenAt, lastAcceptedAt: pushDevices.lastAcceptedAt, lastReceivedAt: pushDevices.lastReceivedAt, lastOpenedAt: pushDevices.lastOpenedAt, lastErrorCode: pushDevices.lastErrorCode }).from(pushDevices).where(eq(pushDevices.userId, ctx.user.id)).orderBy(desc(pushDevices.lastSeenAt)).limit(10),
+      db.select({ deliveryId: pushDeliveryEvents.deliveryId, channel: pushDeliveryEvents.channel, status: pushDeliveryEvents.status, notificationType: pushDeliveryEvents.notificationType, requestedAt: pushDeliveryEvents.requestedAt, acceptedAt: pushDeliveryEvents.acceptedAt, receivedAt: pushDeliveryEvents.receivedAt, openedAt: pushDeliveryEvents.openedAt, errorCode: pushDeliveryEvents.errorCode }).from(pushDeliveryEvents).where(eq(pushDeliveryEvents.userId, ctx.user.id)).orderBy(desc(pushDeliveryEvents.requestedAt)).limit(10),
+    ]);
+    return { devices, events };
   }),
 });
 

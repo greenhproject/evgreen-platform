@@ -24,6 +24,7 @@ export default function UserNotifications() {
     disableNotifications,
     updatePreferences,
     sendTestNotification,
+    deliveryHealth,
   } = useNotifications();
 
   // Preferencias de proximidad
@@ -92,6 +93,8 @@ export default function UserNotifications() {
   };
 
   const emailEnabled = emailPrefs.data?.emailNotifyEnabled ?? true;
+  const latestPushEvent = deliveryHealth?.events?.[0];
+  const activeNativeDevices = deliveryHealth?.devices?.filter((device) => device.status === "ACTIVE").length ?? 0;
 
   return (
     <UserLayout showHeader={false} showBottomNav={false}>
@@ -187,6 +190,24 @@ export default function UserNotifications() {
                     Enviar notificación de prueba
                   </Button>
                 </div>
+                {deliveryHealth && (
+                  <div className="rounded-xl border border-border/60 bg-muted/30 p-3 space-y-1.5" aria-live="polite">
+                    <div className="flex items-center justify-between gap-3 text-xs">
+                      <span className="font-medium">Estado del dispositivo</span>
+                      <Badge variant={activeNativeDevices > 0 ? "secondary" : "destructive"} className="text-[10px]">
+                        {activeNativeDevices > 0 ? `${activeNativeDevices} activo${activeNativeDevices === 1 ? "" : "s"}` : "Sin dispositivo registrado"}
+                      </Badge>
+                    </div>
+                    {latestPushEvent ? (
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        Última prueba: <span className="font-medium text-foreground">{latestPushEvent.status === "ACCEPTED" ? "Aceptada por el proveedor" : latestPushEvent.status === "RECEIVED" ? "Recibida por la app" : latestPushEvent.status === "OPENED" ? "Abierta en la app" : latestPushEvent.status === "FAILED" ? "Falló" : "Solicitada"}</span>
+                        {latestPushEvent.errorCode ? ` (${latestPushEvent.errorCode})` : ""}.
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground leading-relaxed">Aún no hay una entrega Push verificable para este dispositivo.</p>
+                    )}
+                  </div>
+                )}
               </CardContent>
             )}
           </Card>

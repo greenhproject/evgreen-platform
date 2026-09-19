@@ -912,6 +912,57 @@ export const notifications = mysqlTable("notifications", {
 	data: text(),
 });
 
+/**
+ * Registro por dispositivo para FCM. El campo histórico users.fcmToken se
+ * conserva por compatibilidad, pero no puede representar de forma correcta un
+ * teléfono Android y un iPhone del mismo usuario al mismo tiempo.
+ */
+export const pushDevices = mysqlTable("push_devices", {
+	id: int().autoincrement().notNull(),
+	userId: int().notNull(),
+	token: text().notNull(),
+	tokenHash: varchar({ length: 64 }).notNull(),
+	platform: mysqlEnum("push_device_platform", ["android", "ios", "web", "unknown"]).default("unknown").notNull(),
+	appVersion: varchar({ length: 50 }),
+	status: mysqlEnum("push_device_status", ["ACTIVE", "INACTIVE", "INVALID"]).default("ACTIVE").notNull(),
+	registeredAt: timestamp({ mode: "string" }).default("CURRENT_TIMESTAMP").notNull(),
+	lastSeenAt: timestamp({ mode: "string" }).default("CURRENT_TIMESTAMP").notNull(),
+	lastAcceptedAt: timestamp({ mode: "string" }),
+	lastReceivedAt: timestamp({ mode: "string" }),
+	lastOpenedAt: timestamp({ mode: "string" }),
+	lastErrorCode: varchar({ length: 128 }),
+	lastErrorAt: timestamp({ mode: "string" }),
+}, (table) => [
+	uniqueIndex("ux_push_devices_token_hash").on(table.tokenHash),
+	index("idx_push_devices_user_status").on(table.userId, table.status),
+]);
+
+/**
+ * Trazabilidad honesta del ciclo Push. ACCEPTED es acuse del proveedor; sólo
+ * RECEIVED/OPENED son confirmaciones que la propia app puede reportar.
+ */
+export const pushDeliveryEvents = mysqlTable("push_delivery_events", {
+	id: int().autoincrement().notNull(),
+	deliveryId: varchar({ length: 80 }).notNull(),
+	userId: int().notNull(),
+	deviceId: int(),
+	channel: mysqlEnum("push_delivery_channel", ["FCM", "WEB_PUSH"]).notNull(),
+	status: mysqlEnum("push_delivery_status", ["REQUESTED", "ACCEPTED", "RECEIVED", "OPENED", "FAILED"]).default("REQUESTED").notNull(),
+	notificationType: varchar({ length: 50 }).notNull(),
+	providerMessageId: varchar({ length: 255 }),
+	requestedAt: timestamp({ mode: "string" }).default("CURRENT_TIMESTAMP").notNull(),
+	acceptedAt: timestamp({ mode: "string" }),
+	receivedAt: timestamp({ mode: "string" }),
+	openedAt: timestamp({ mode: "string" }),
+	failedAt: timestamp({ mode: "string" }),
+	errorCode: varchar({ length: 128 }),
+	errorMessage: text(),
+}, (table) => [
+	uniqueIndex("ux_push_delivery_events_delivery").on(table.deliveryId),
+	index("idx_push_delivery_events_user_created").on(table.userId, table.requestedAt),
+	index("idx_push_delivery_events_device_created").on(table.deviceId, table.requestedAt),
+]);
+
 export const occupancyLiquidations = mysqlTable("occupancy_liquidations", {
 	id: int().autoincrement().notNull(),
 	transactionId: int().notNull(),

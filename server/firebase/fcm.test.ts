@@ -66,6 +66,23 @@ describe("Firebase Cloud Messaging", () => {
       expect(typeof result).toBe("boolean");
     });
 
+    it("expone un resultado detallado sin declarar entrega al usuario", async () => {
+      const { sendPushNotificationDetailed } = await import("./fcm");
+      const result = await sendPushNotificationDetailed("invalid-token", {
+        type: "system_alert",
+        title: "Test",
+        body: "Test notification",
+      });
+
+      expect(result).toEqual(expect.objectContaining({
+        accepted: expect.any(Boolean),
+        invalidToken: expect.any(Boolean),
+      }));
+      // El contrato no tiene estado "delivered": FCM sólo puede confirmar su
+      // aceptación; RECEIVED/OPENED pertenecen al acuse de la aplicación.
+      expect(result).not.toHaveProperty("delivered");
+    });
+
     it("sendPushNotificationToMultiple debe manejar arrays vacíos", async () => {
       const { sendPushNotificationToMultiple } = await import("./fcm");
       

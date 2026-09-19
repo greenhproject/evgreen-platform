@@ -19,6 +19,12 @@ const config: CapacitorConfig = {
       androidSplashResourceName: 'splash',
       showSpinner: false,
     },
+    // Sin esta configuración iOS puede recibir el Push en foreground pero no
+    // presentarlo visualmente. El plugin reporta RECEIVED y el sistema muestra
+    // alerta, sonido y badge de forma coherente con Android.
+    FirebaseMessaging: {
+      presentationOptions: ['alert', 'badge', 'sound'],
+    },
   },
   ios: {
     path: 'ios',

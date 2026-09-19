@@ -68,12 +68,32 @@ export function useNotifications() {
   const preferencesQuery = trpc.push.getPreferences.useQuery(undefined, {
     enabled: isAuthenticated,
   });
+  const deliveryHealthQuery = trpc.push.getDeliveryHealth.useQuery(undefined, {
+    enabled: isAuthenticated,
+    refetchInterval: isCapacitorNative() ? 15_000 : false,
+  });
 
   const registerSubscriptionMutation = trpc.push.registerSubscription.useMutation();
   const registerTokenMutation = trpc.push.registerToken.useMutation();
   const unregisterTokenMutation = trpc.push.unregisterToken.useMutation();
   const updatePreferencesMutation = trpc.push.updatePreferences.useMutation();
   const sendTestMutation = trpc.push.sendTestNotification.useMutation();
+  const acknowledgeDeliveryMutation = trpc.push.acknowledgeDelivery.useMutation();
+  const nativeFcmTokenRef = useRef<string | null>(null);
+
+  const registerNativeToken = useCallback(async (token: string) => {
+    nativeFcmTokenRef.current = token;
+    const platform = (window as any).Capacitor?.getPlatform?.();
+    await registerTokenMutation.mutateAsync({
+      fcmToken: token,
+      platform: platform === "android" || platform === "ios" ? platform : "unknown",
+      appVersion: import.meta.env.VITE_APP_VERSION || "native",
+    });
+  }, [registerTokenMutation]);
+
+  const acknowledgeNativeDelivery = useCallback(async (deliveryId: string, event: "RECEIVED" | "OPENED") => {
+    await acknowledgeDeliveryMutation.mutateAsync({ deliveryId, event });
+  }, [acknowledgeDeliveryMutation]);
 
   // Inicializar estado
   useEffect(() => {
@@ -124,19 +144,19 @@ export function useNotifications() {
     if (nativeAutoInitDone.current) return;
     nativeAutoInitDone.current = true;
     initNativePush({
-      onToken: async (token) => {
-        await registerTokenMutation.mutateAsync({ fcmToken: token });
-      },
+      onToken: registerNativeToken,
       onForegroundNotification: (title, body) => {
         toast.info(title, { description: body, duration: 5000 });
       },
       onNotificationTap: (path) => {
         window.dispatchEvent(new CustomEvent("evgreen:native-navigate", { detail: path }));
       },
+      onDeliveryEvent: acknowledgeNativeDelivery,
     }).then((registered) => {
       if (registered) setIsEnabled(true);
+      else writeNativePushEnabledCache(false);
     });
-  }, [registerTokenMutation]);
+  }, [acknowledgeNativeDelivery, registerNativeToken]);
 
   // Camino rápido: caché local, no espera respuesta de red.
   useEffect(() => {
@@ -181,16 +201,14 @@ export function useNotifications() {
       // Rama nativa (Capacitor: iOS/Android) — usa el plugin de push nativo en vez de las APIs web
       if (isCapacitorNative()) {
         const nativeRegistered = await initNativePush({
-          onToken: async (token) => {
-            await registerTokenMutation.mutateAsync({ fcmToken: token });
-            console.log("[Push] Token nativo registrado en el servidor");
-          },
+          onToken: registerNativeToken,
           onForegroundNotification: (title, body) => {
             toast.info(title, { description: body, duration: 5000 });
           },
           onNotificationTap: (path) => {
             window.dispatchEvent(new CustomEvent("evgreen:native-navigate", { detail: path }));
           },
+          onDeliveryEvent: acknowledgeNativeDelivery,
         });
 
         setPermissionStatus(nativeRegistered ? "granted" : "denied");
@@ -199,11 +217,11 @@ export function useNotifications() {
           nativeAutoInitDone.current = true;
           writeNativePushEnabledCache(true);
           setIsEnabled(true);
-          toast.success("Notificaciones push activadas correctamente");
+          toast.success("Push activado y dispositivo registrado");
           preferencesQuery.refetch();
         } else {
-          toast.error("Permiso de notificaciones denegado. Revisa la configuración de tu dispositivo.");
-          setError("Permiso denegado");
+          toast.error("No se obtuvo un token Push real. Revisa permisos y la configuración de Google Play Services o APNs.");
+          setError("No fue posible registrar el dispositivo Push");
         }
         return;
       }
@@ -284,16 +302,17 @@ export function useNotifications() {
     } finally {
       setIsLoading(false);
     }
-  }, [isAuthenticated, registerSubscriptionMutation, registerTokenMutation, preferencesQuery]);
+  }, [acknowledgeNativeDelivery, isAuthenticated, registerNativeToken, registerSubscriptionMutation, registerTokenMutation, preferencesQuery]);
 
   // Deshabilitar notificaciones
   const disableNotifications = useCallback(async () => {
     setIsLoading(true);
     try {
       if (isAuthenticated) {
-        await unregisterTokenMutation.mutateAsync();
+        await unregisterTokenMutation.mutateAsync(nativeFcmTokenRef.current ? { fcmToken: nativeFcmTokenRef.current } : undefined);
       }
       await unregisterNativePush();
+      nativeFcmTokenRef.current = null;
       writeNativePushEnabledCache(false);
       setIsEnabled(false);
       toast.success("Notificaciones desactivadas");
@@ -326,29 +345,16 @@ export function useNotifications() {
     try {
       const result = await sendTestMutation.mutateAsync();
       if (result.success) {
-        toast.success("Notificación de prueba enviada");
+        toast.success(`Solicitud aceptada por el proveedor en ${result.acceptedCount}/${result.attempted} canal(es). La pantalla se actualizará cuando el dispositivo la reciba.`);
       } else {
-        // Fallback: mostrar notificación local
-        await showLocalNotification("Notificación de prueba - EVGreen", {
-          body: `¡Hola ${user?.name || "Usuario"}! Las notificaciones están funcionando.`,
-          tag: "test-notification",
-        });
-        toast.info("Notificación local mostrada como fallback");
+        toast.error(result.error || "El proveedor Push no aceptó la prueba. Revisa el estado del dispositivo.");
       }
+      await deliveryHealthQuery.refetch();
     } catch (err) {
       console.error("Error sending test notification:", err);
-      // Intentar notificación local
-      try {
-        await showLocalNotification("Notificación de prueba - EVGreen", {
-          body: "Las notificaciones locales están funcionando.",
-          tag: "test-notification",
-        });
-        toast.info("Notificación local mostrada");
-      } catch {
-        toast.error("Error al enviar notificación de prueba");
-      }
+      toast.error("No fue posible solicitar la prueba Push");
     }
-  }, [sendTestMutation, user]);
+  }, [deliveryHealthQuery, sendTestMutation]);
 
   return {
     isSupported,
@@ -356,6 +362,7 @@ export function useNotifications() {
     isLoading,
     permissionStatus,
     preferences,
+    deliveryHealth: deliveryHealthQuery.data,
     error,
     enableNotifications,
     disableNotifications,
