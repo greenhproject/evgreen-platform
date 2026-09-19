@@ -194,13 +194,16 @@ export default function StationDetail() {
   const { user } = useAuth();
 
   const { data: station, isLoading } = trpc.stations.getById.useQuery({ 
-    id: stationId 
+    id: stationId,
+  }, {
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
   });
   
   // Obtener EVSEs de la estación
   const { data: evses } = trpc.stations.getEvses.useQuery(
     { stationId },
-    { enabled: !!station }
+    { enabled: !!station, refetchInterval: 12_000, refetchOnWindowFocus: true }
   );
 
   // Obtener mis reservas activas para esta estación
@@ -262,7 +265,7 @@ export default function StationDetail() {
   // Obtener ocupación de la zona
   const { data: occupancy } = trpc.reservations.getZoneOccupancy.useQuery(
     { stationId },
-    { enabled: !!station }
+    { enabled: !!station, refetchInterval: 12_000, refetchOnWindowFocus: true }
   );
 
   // Obtener precio dinámico actual para pasar a la sugerencia de IA

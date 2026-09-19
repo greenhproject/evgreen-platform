@@ -494,7 +494,9 @@ const stationsRouter = router({
           activeTransactionByEvse.set(transaction.evseId, transaction);
         }
       }
-      const publicConnections = dualCSMS.getConnectionsStatus();
+      // Incluye los estados por conector de la misma conexión OCPP; la versión
+      // resumida no expone `connectorStatuses` y dejaba al mapa con datos viejos.
+      const publicConnections = dualCSMS.getAllConnectionsInfo();
       const publicConnectionMap = new Map(publicConnections.map(connection => [connection.ocppIdentity, connection]));
       const stationsWithData = await Promise.all(
         stations.map(async (station: any) => {
@@ -534,6 +536,9 @@ const stationsRouter = router({
             });
             return {
               ...evse,
+              // Todas las superficies públicas deben leer el estado canónico,
+              // no el valor persistido que puede estar unos segundos rezagado.
+              connectorStatus: operationalState.status ?? "UNAVAILABLE",
               status: operationalState.status,
               operationalStatus: operationalState.status,
               operationalStatusSource: operationalState.source,
@@ -564,7 +569,7 @@ const stationsRouter = router({
   listAll: technicianProcedure.query(async () => {
     const stations = await db.getAllChargingStations();
     // Obtener conexiones OCPP activas para enriquecer con lastHeartbeat
-    const csmsConnections = dualCSMS.getConnectionsStatus();
+    const csmsConnections = dualCSMS.getAllConnectionsInfo();
     const csmsMap = new Map<string, any>();
     for (const conn of csmsConnections) {
       csmsMap.set(conn.ocppIdentity, conn);
@@ -613,6 +618,7 @@ const stationsRouter = router({
 
         return {
           ...evse,
+          connectorStatus: operationalState.status ?? "UNAVAILABLE",
           // `status` se mantiene por compatibilidad con pantallas históricas.
           status: operationalState.status,
           operationalStatus: operationalState.status,
@@ -658,7 +664,7 @@ const stationsRouter = router({
     const { isDemoStation } = await import("./charging/charging-simulator");
     
     // Obtener conexiones OCPP activas para estado en tiempo real
-    const csmsConnections = dualCSMS.getConnectionsStatus();
+    const csmsConnections = dualCSMS.getAllConnectionsInfo();
     const legacyConnections = ocppManager.getAllConnections();
     const ownedStationIds = allStations.map(station => station.id);
     const activeTransactions = await db.getActiveTransactionsForStations(ownedStationIds);
@@ -703,9 +709,9 @@ const stationsRouter = router({
           crowdfundingProjectName: (station as any).crowdfundingProjectName || null,
           ocppConnection: ocppConn ? {
             ocppVersion: ocppConn.ocppVersion,
-            connectedAt: ocppConn.connectedAt instanceof Date ? ocppConn.connectedAt.toISOString() : String(ocppConn.connectedAt),
-            lastHeartbeat: ocppConn.lastHeartbeat instanceof Date ? ocppConn.lastHeartbeat.toISOString() : String(ocppConn.lastHeartbeat),
-            connectorStatuses: (ocppConn as any).connectorStatuses || {},
+            connectedAt: ocppConn.connectedAt,
+            lastHeartbeat: ocppConn.lastHeartbeat,
+            connectorStatuses: ocppConn.connectorStatuses || {},
           } : null,
           tariff: tariff ? {
             pricePerKwh: tariff.pricePerKwh?.toString() || "1200",
@@ -729,7 +735,7 @@ const stationsRouter = router({
               connectorType: e.connectorType,
               chargeType: e.chargeType,
               powerKw: e.powerKw?.toString() || "22",
-              connectorStatus: e.connectorStatus,
+              connectorStatus: operationalState.status ?? "UNAVAILABLE",
               status: operationalState.status,
               operationalStatus: operationalState.status,
               operationalStatusSource: operationalState.source,
@@ -942,7 +948,7 @@ const stationsRouter = router({
       const activeTransactions = await db.getActiveTransactionsByStationId(input.stationId);
       const activeTransactionByEvse = new Map(activeTransactions.map(transaction => [transaction.evseId, transaction]));
       const liveConnection = station.ocppIdentity
-        ? dualCSMS.getConnectionsStatus().find(connection => connection.ocppIdentity === station.ocppIdentity)
+        ? dualCSMS.getConnectionInfo(station.ocppIdentity)
         : undefined;
       return evses.map((e: any) => {
         const activeTransaction = activeTransactionByEvse.get(e.id);

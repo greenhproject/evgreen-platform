@@ -11,6 +11,8 @@
  */
 
 import * as db from "../db";
+import { dualCSMS } from "../ocpp/csms-dual";
+import { summarizeOperationalConnectorAvailability } from "../../shared/connector-operational-state";
 
 // ============================================================================
 // CONFIGURACIÓN DE TARIFA DINÁMICA
@@ -98,14 +100,28 @@ export function getActiveSimulationCount(): number {
 }
 
 export async function getZoneOccupancy(stationId: number): Promise<OccupancyData> {
-  // Obtener todos los EVSEs de la estación
-  const evses = await db.getEvsesByStationId(stationId);
-  
-  const totalConnectors = evses.length;
-  let availableConnectors = evses.filter(e => e.connectorStatus === "AVAILABLE").length;
-  let chargingConnectors = evses.filter(e => e.connectorStatus === "CHARGING").length;
-  const reservedConnectors = evses.filter(e => e.connectorStatus === "RESERVED").length;
-  const faultedConnectors = evses.filter(e => e.connectorStatus === "FAULTED" || e.connectorStatus === "UNAVAILABLE").length;
+  // La misma proyección operativa que consume el mapa: transacción activa >
+  // OCPP vivo > último estado persistido. Nunca calcular demanda desde un
+  // AVAILABLE persistido cuando el conector ya está cargando.
+  const [station, evses, activeTransactions] = await Promise.all([
+    db.getChargingStationById(stationId),
+    db.getEvsesByStationId(stationId),
+    db.getActiveTransactionsByStationId(stationId),
+  ]);
+  const activeTransactionByEvse = new Map(activeTransactions.map(transaction => [transaction.evseId, transaction.id]));
+  const liveConnection = station?.ocppIdentity ? dualCSMS.getConnectionInfo(station.ocppIdentity) : null;
+  const summary = summarizeOperationalConnectorAvailability(evses.map((evse: any) => ({
+    id: evse.id,
+    evseIdLocal: evse.evseIdLocal,
+    connectorStatus: evse.connectorStatus,
+    activeTransactionId: activeTransactionByEvse.get(evse.id) ?? null,
+    liveOcppStatus: liveConnection?.connectorStatuses?.[evse.evseIdLocal],
+  })));
+  const totalConnectors = summary.totalConnectors;
+  let availableConnectors = summary.availableConnectors;
+  let chargingConnectors = summary.chargingConnectors;
+  const reservedConnectors = summary.reservedConnectors;
+  const faultedConnectors = summary.unavailableConnectors;
   
   // Incluir simulaciones activas en el cálculo de ocupación
   // Cada simulación activa cuenta como un conector ocupado adicional
@@ -148,13 +164,26 @@ export async function getAreaOccupancy(
   let reservedConnectors = 0;
   let faultedConnectors = 0;
   
-  for (const station of stations) {
-    const evses = await db.getEvsesByStationId(station.station.id);
-    totalConnectors += evses.length;
-    availableConnectors += evses.filter(e => e.connectorStatus === "AVAILABLE").length;
-    chargingConnectors += evses.filter(e => e.connectorStatus === "CHARGING").length;
-    reservedConnectors += evses.filter(e => e.connectorStatus === "RESERVED").length;
-    faultedConnectors += evses.filter(e => e.connectorStatus === "FAULTED" || e.connectorStatus === "UNAVAILABLE").length;
+  const stationIds = stations.map((entry: any) => entry.station.id);
+  const activeTransactions = await db.getActiveTransactionsForStations(stationIds);
+  const activeTransactionByEvse = new Map(activeTransactions.map(transaction => [transaction.evseId, transaction.id]));
+
+  for (const stationEntry of stations) {
+    const station = stationEntry.station;
+    const evses = await db.getEvsesByStationId(station.id);
+    const liveConnection = station.ocppIdentity ? dualCSMS.getConnectionInfo(station.ocppIdentity) : null;
+    const summary = summarizeOperationalConnectorAvailability(evses.map((evse: any) => ({
+      id: evse.id,
+      evseIdLocal: evse.evseIdLocal,
+      connectorStatus: evse.connectorStatus,
+      activeTransactionId: activeTransactionByEvse.get(evse.id) ?? null,
+      liveOcppStatus: liveConnection?.connectorStatuses?.[evse.evseIdLocal],
+    })));
+    totalConnectors += summary.totalConnectors;
+    availableConnectors += summary.availableConnectors;
+    chargingConnectors += summary.chargingConnectors;
+    reservedConnectors += summary.reservedConnectors;
+    faultedConnectors += summary.unavailableConnectors;
   }
   
   const occupancyRate = totalConnectors > 0 

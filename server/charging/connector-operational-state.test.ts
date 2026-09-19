@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   normalizeConnectorStatus,
+  projectOperationalConnectorStates,
   resolveConnectorOperationalState,
+  summarizeOperationalConnectorAvailability,
 } from "../../shared/connector-operational-state";
 
 describe("connector operational state projection", () => {
@@ -42,5 +44,27 @@ describe("connector operational state projection", () => {
     expect(resolveConnectorOperationalState({
       persistedStatus: "CHARGING",
     })).toMatchObject({ status: "CHARGING", source: "database", isCharging: true });
+  });
+
+  it("no cuenta como disponible un AVAILABLE persistido si hay una transacción activa", () => {
+    const summary = summarizeOperationalConnectorAvailability([
+      { id: 1, connectorStatus: "AVAILABLE", activeTransactionId: 1140025 },
+    ]);
+    expect(summary).toMatchObject({
+      totalConnectors: 1,
+      availableConnectors: 0,
+      chargingConnectors: 1,
+    });
+  });
+
+  it("proyecta connectorStatus canónico para todas las superficies", () => {
+    const [connector] = projectOperationalConnectorStates([
+      { id: 1, connectorStatus: "AVAILABLE", liveOcppStatus: "Preparing" },
+    ]);
+    expect(connector).toMatchObject({
+      connectorStatus: "PREPARING",
+      operationalStatus: "PREPARING",
+      isAvailable: false,
+    });
   });
 });

@@ -49,6 +49,9 @@ type StationData = {
   evses?: Array<{
     id: number;
     status: string;
+    connectorStatus?: string;
+    operationalStatus?: string | null;
+    isAvailable?: boolean;
     connectorType: string;
     chargeType?: string;
     powerKw: string;
@@ -85,6 +88,9 @@ interface Station {
   evses: Array<{
     id: number;
     status: string;
+    connectorStatus?: string;
+    operationalStatus?: string | null;
+    isAvailable?: boolean;
     connectorType: string;
     chargeType?: string;
     powerKw: string;
@@ -153,7 +159,13 @@ export default function UserMap() {
   const { user, isAuthenticated } = useAuth();
 
   // Obtener estaciones - sin filtro de ubicación para mostrar todas las estaciones públicas
-  const { data: stations, isLoading, refetch } = trpc.stations.listPublic.useQuery({});
+  const { data: stations, isLoading, refetch, isFetching } = trpc.stations.listPublic.useQuery({}, {
+    // No conservar un marcador verde después de que OCPP o una transacción
+    // confirme ocupación. El backend entrega el mismo estado canónico que el detalle.
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
+    staleTime: 5_000,
+  });
 
   // Obtener billetera del usuario (solo si está autenticado)
   const { data: wallet } = trpc.wallet.getMyWallet.useQuery(undefined, { enabled: isAuthenticated });
@@ -308,8 +320,11 @@ export default function UserMap() {
 
   // Obtener estado de disponibilidad
   const getAvailableCount = (station: Station) => {
-    // @ts-ignore
-    return station.evses?.filter((e) => e.connectorStatus === "AVAILABLE").length || 0;
+    return station.evses?.filter((evse) => {
+      if (evse.isAvailable !== undefined) return evse.isAvailable;
+      const status = evse.operationalStatus || evse.status || evse.connectorStatus;
+      return status === "AVAILABLE";
+    }).length || 0;
   };
 
   const getTotalCount = (station: Station) => {
@@ -423,8 +438,7 @@ export default function UserMap() {
       // Determinar tipo de carga de la estación
       const hasDC = station.evses?.some((e) => e.chargeType === 'DC');
       const hasAC = station.evses?.some((e) => e.chargeType === 'AC');
-      // @ts-ignore
-      const availableCount = station.evses?.filter((e) => e.connectorStatus === "AVAILABLE").length || 0;
+      const availableCount = getAvailableCount(station);
       const isAvailable = availableCount > 0;
 
       // Colores según tipo: DC=azul eléctrico, AC=ámbar, Mixto=verde
@@ -727,7 +741,7 @@ export default function UserMap() {
             aria-label="Actualizar estaciones"
           >
             <div className="h-12 w-12 rounded-full bg-emerald-600 shadow-lg shadow-emerald-600/40 border-2 border-emerald-400 flex items-center justify-center text-white active:scale-95 transition-transform">
-              <RefreshCw className="w-5 h-5" />
+              <RefreshCw className={`w-5 h-5 ${isFetching ? "animate-spin" : ""}`} />
             </div>
             <span className="text-[10px] font-bold text-white bg-emerald-700/90 px-2 py-0.5 rounded-full shadow-md">Actualizar</span>
           </button>

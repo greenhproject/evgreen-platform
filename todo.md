@@ -4437,3 +4437,10 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - Añadidos control de preferencias de reserva por usuario y controles Admin para estado/creación de plantilla. La UI de logs diferencia “Aceptado por Meta”, “Entregado”, “Leído” y “Error”, en vez de declarar entrega por una respuesta de envío.
 - Añadido endpoint firmado `/api/whatsapp/webhook` para recibir estados de Meta, con verificación GET, HMAC `X-Hub-Signature-256`, idempotencia por `wamid`, y rutas de Heartbeat autenticadas. Configurar `App Secret` y `Verify token` desde Admin → WhatsApp antes de activar Meta; no se guardan ni devuelven al navegador.
 - Migración aditiva manual `0042_reservation_whatsapp_lifecycle.sql` aplicada de forma segura a la base compartida. El generador Drizzle fue cancelado porque detectó renombres ajenos en tablas de anuncios; no se generó ni aplicó una migración amplia no revisada.
+
+## Disponibilidad única de conectores en mapa, detalle y precio — 2026-09-18
+
+- Auditada la inconsistencia reportada en EVG Diamante: el conector `150001` tiene la transacción `1140025` en curso y estado persistido `CHARGING`; el mapa anterior contaba `connectorStatus` sin reconciliar y por ello anunciaba una disponibilidad obsoleta.
+- La proyección canónica ahora ordena la evidencia como: **transacción activa → estado OCPP vivo → último estado persistido**. Se reutiliza para resultados públicos, administración, inversionista, detalle y ocupación de tarifa dinámica. Un conector con transacción activa jamás puede contabilizarse como disponible, aunque un dato rezagado diga `AVAILABLE`.
+- `stations.listPublic` usa `dualCSMS.getAllConnectionsInfo()` (incluye `connectorStatuses`) y devuelve `connectorStatus`, `operationalStatus`, origen e indicadores normalizados. La pantalla móvil consume `isAvailable` y se refresca cada 15 s; el detalle y la ocupación se refrescan con la misma fuente.
+- Validación local de EVG Diamante mediante el endpoint público: `CHARGING`, `isAvailable: false`, `activeTransactionId: 1140025`; ocupación: 0/1 disponibles y 100%. Añadidas pruebas para estado activo rezagado y OCPP `Preparing`.
