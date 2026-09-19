@@ -4341,6 +4341,16 @@ const settingsRouter = router({
       siigoMail: tenantConfig.siigoMail !== 0,
       alegraToken: tenantConfig.alegraToken ? "****" + tenantConfig.alegraToken.slice(-4) : "",
       alegraEProviderToken: tenantConfig.alegraEProviderToken ? "****" + tenantConfig.alegraEProviderToken.slice(-4) : "",
+      alegraNumberTemplateId: tenantConfig.alegraNumberTemplateId || "",
+      alegraNumberTemplateName: tenantConfig.alegraNumberTemplateName || "",
+      alegraNumberTemplatePrefix: tenantConfig.alegraNumberTemplatePrefix || "",
+      alegraNumberTemplateResolution: tenantConfig.alegraNumberTemplateResolution || "",
+      alegraNumberTemplateStartDate: tenantConfig.alegraNumberTemplateStartDate || "",
+      alegraNumberTemplateEndDate: tenantConfig.alegraNumberTemplateEndDate || "",
+      alegraNumberTemplateStartNumber: tenantConfig.alegraNumberTemplateStartNumber || null,
+      alegraNumberTemplateEndNumber: tenantConfig.alegraNumberTemplateEndNumber || null,
+      alegraNumberTemplateCurrentNumber: tenantConfig.alegraNumberTemplateCurrentNumber || null,
+      alegraNumberTemplateSyncedAt: tenantConfig.alegraNumberTemplateSyncedAt || null,
       siigoAccessKey: tenantConfig.siigoAccessKey ? "****" + tenantConfig.siigoAccessKey.slice(-4) : "",
       worldOfficeToken: tenantConfig.worldOfficeToken ? "****" + tenantConfig.worldOfficeToken.slice(-4) : "",
         webhookSecret: tenantConfig.webhookSecret ? "****" + tenantConfig.webhookSecret.slice(-4) : "",
@@ -4376,6 +4386,16 @@ const settingsRouter = router({
         alegraPaymentMethodId: z.string().optional(),
         alegraPaymentAccountId: z.string().optional(),
         alegraUseElectronicStamp: z.boolean().optional(),
+        alegraNumberTemplateId: z.string().optional(),
+        alegraNumberTemplateName: z.string().optional(),
+        alegraNumberTemplatePrefix: z.string().optional(),
+        alegraNumberTemplateResolution: z.string().optional(),
+        alegraNumberTemplateStartDate: z.string().optional(),
+        alegraNumberTemplateEndDate: z.string().optional(),
+        alegraNumberTemplateStartNumber: z.number().optional().nullable(),
+        alegraNumberTemplateEndNumber: z.number().optional().nullable(),
+        alegraNumberTemplateCurrentNumber: z.number().optional().nullable(),
+        alegraNumberTemplateSyncedAt: z.string().optional().nullable(),
         siigoUsername: z.string().optional(),
         siigoAccessKey: z.string().optional(),
         siigoPartnerId: z.string().optional(),
@@ -4429,6 +4449,16 @@ const settingsRouter = router({
         alegraPaymentMethodId: input.alegraPaymentMethodId || (input.provider === "alegra" ? "transfer" : null),
         alegraPaymentAccountId: input.alegraPaymentAccountId || null,
         alegraUseElectronicStamp: input.alegraUseElectronicStamp !== false ? 1 : 0,
+        alegraNumberTemplateId: input.alegraNumberTemplateId || null,
+        alegraNumberTemplateName: input.alegraNumberTemplateName || null,
+        alegraNumberTemplatePrefix: input.alegraNumberTemplatePrefix || null,
+        alegraNumberTemplateResolution: input.alegraNumberTemplateResolution || null,
+        alegraNumberTemplateStartDate: input.alegraNumberTemplateStartDate || null,
+        alegraNumberTemplateEndDate: input.alegraNumberTemplateEndDate || null,
+        alegraNumberTemplateStartNumber: input.alegraNumberTemplateStartNumber !== undefined && input.alegraNumberTemplateStartNumber !== null ? input.alegraNumberTemplateStartNumber : null,
+        alegraNumberTemplateEndNumber: input.alegraNumberTemplateEndNumber !== undefined && input.alegraNumberTemplateEndNumber !== null ? input.alegraNumberTemplateEndNumber : null,
+        alegraNumberTemplateCurrentNumber: input.alegraNumberTemplateCurrentNumber !== undefined && input.alegraNumberTemplateCurrentNumber !== null ? input.alegraNumberTemplateCurrentNumber : null,
+        alegraNumberTemplateSyncedAt: input.alegraNumberTemplateSyncedAt || null,
         siigoUsername: input.siigoUsername || null,
         siigoPartnerId: input.siigoPartnerId || "EVGreenSaaS",
         siigoDocumentId: input.siigoDocumentId || null,
@@ -4544,13 +4574,29 @@ const settingsRouter = router({
     .input(z.object({
       provider: z.enum(["alegra", "siigo", "world_office"]).optional(),
       query: z.string().optional(),
+      contactsQuery: z.string().optional(),
     }).optional())
     .query(async ({ input }) => {
       const settings = (await db.getTenantBillingSettings(null)) || (await db.getPlatformSettings());
-      if (!settings) return { items: [], taxes: [], paymentMethods: [], bankAccounts: [], documentTypes: [] };
+      if (!settings) return { items: [], taxes: [], paymentMethods: [], bankAccounts: [], documentTypes: [], contacts: [] };
       const provider = input?.provider || (settings as any).provider || "alegra";
       const { getProviderCatalogs } = await import("./billing/billing-service");
-      return getProviderCatalogs(provider, settings as any, input?.query);
+      return getProviderCatalogs(provider, settings as any, input?.query, input?.contactsQuery);
+    }),
+
+  billingSearchPlatformContacts: adminProcedure
+    .input(z.object({
+      query: z.string().optional(),
+      provider: z.enum(["alegra", "siigo", "world_office"]).optional(),
+    }))
+    .query(async ({ input }) => {
+      const settings = (await db.getTenantBillingSettings(null)) || (await db.getPlatformSettings());
+      if (!settings) return [];
+      const provider = input.provider || (settings as any).provider || "alegra";
+      const { getAdapter } = await import("./billing/billing-service");
+      const adapter = getAdapter(provider as any);
+      if (!adapter.listContacts) return [];
+      return adapter.listContacts(settings as any, input.query);
     }),
 
   billingConfigurePlatformWebhook: adminProcedure
@@ -4594,6 +4640,7 @@ const settingsRouter = router({
     .input(z.object({
       organizationId: z.number().optional().nullable(),
       status: z.string().optional(),
+      customerSource: z.enum(["USER", "FALLBACK"]).optional(),
       limit: z.number().default(20),
       offset: z.number().default(0),
     }).optional())
@@ -4601,6 +4648,7 @@ const settingsRouter = router({
       return db.getElectronicInvoicesByOrg({
         organizationId: input?.organizationId,
         status: input?.status,
+        customerSource: input?.customerSource,
         limit: input?.limit,
         offset: input?.offset,
       });

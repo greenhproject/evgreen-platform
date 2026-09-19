@@ -1572,6 +1572,16 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
           fallbackCustomerDepartment: "",
           fallbackCustomerKindOfPerson: "PERSON_ENTITY",
           fallbackCustomerRegime: "SIMPLIFIED_REGIME",
+          alegraNumberTemplateId: "",
+          alegraNumberTemplateName: "",
+          alegraNumberTemplatePrefix: "",
+          alegraNumberTemplateResolution: "",
+          alegraNumberTemplateStartDate: "",
+          alegraNumberTemplateEndDate: "",
+          alegraNumberTemplateStartNumber: null,
+          alegraNumberTemplateEndNumber: null,
+          alegraNumberTemplateCurrentNumber: null,
+          alegraNumberTemplateSyncedAt: null,
         };
       }
 
@@ -1587,6 +1597,16 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         // Enmascarar tokens para seguridad
         alegraToken: settings.alegraToken ? "****" + settings.alegraToken.slice(-4) : "",
         alegraEProviderToken: settings.alegraEProviderToken ? "****" + settings.alegraEProviderToken.slice(-4) : "",
+        alegraNumberTemplateId: settings.alegraNumberTemplateId || "",
+        alegraNumberTemplateName: settings.alegraNumberTemplateName || "",
+        alegraNumberTemplatePrefix: settings.alegraNumberTemplatePrefix || "",
+        alegraNumberTemplateResolution: settings.alegraNumberTemplateResolution || "",
+        alegraNumberTemplateStartDate: settings.alegraNumberTemplateStartDate || "",
+        alegraNumberTemplateEndDate: settings.alegraNumberTemplateEndDate || "",
+        alegraNumberTemplateStartNumber: settings.alegraNumberTemplateStartNumber || null,
+        alegraNumberTemplateEndNumber: settings.alegraNumberTemplateEndNumber || null,
+        alegraNumberTemplateCurrentNumber: settings.alegraNumberTemplateCurrentNumber || null,
+        alegraNumberTemplateSyncedAt: settings.alegraNumberTemplateSyncedAt || null,
         siigoAccessKey: settings.siigoAccessKey ? "****" + settings.siigoAccessKey.slice(-4) : "",
         worldOfficeToken: settings.worldOfficeToken ? "****" + settings.worldOfficeToken.slice(-4) : "",
         webhookSecret: settings.webhookSecret ? "****" + settings.webhookSecret.slice(-4) : "",
@@ -1622,6 +1642,16 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
           alegraPaymentMethodId: z.string().optional(),
           alegraPaymentAccountId: z.string().optional(),
           alegraUseElectronicStamp: z.boolean().optional(),
+          alegraNumberTemplateId: z.string().optional(),
+          alegraNumberTemplateName: z.string().optional(),
+          alegraNumberTemplatePrefix: z.string().optional(),
+          alegraNumberTemplateResolution: z.string().optional(),
+          alegraNumberTemplateStartDate: z.string().optional(),
+          alegraNumberTemplateEndDate: z.string().optional(),
+          alegraNumberTemplateStartNumber: z.number().optional().nullable(),
+          alegraNumberTemplateEndNumber: z.number().optional().nullable(),
+          alegraNumberTemplateCurrentNumber: z.number().optional().nullable(),
+          alegraNumberTemplateSyncedAt: z.string().optional().nullable(),
           // Siigo
           siigoUsername: z.string().optional(),
           siigoAccessKey: z.string().optional(),
@@ -1678,6 +1708,16 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
           alegraPaymentMethodId: input.alegraPaymentMethodId || (input.provider === "alegra" ? "transfer" : null),
           alegraPaymentAccountId: input.alegraPaymentAccountId || null,
           alegraUseElectronicStamp: input.alegraUseElectronicStamp !== false ? 1 : 0,
+          alegraNumberTemplateId: input.alegraNumberTemplateId || null,
+          alegraNumberTemplateName: input.alegraNumberTemplateName || null,
+          alegraNumberTemplatePrefix: input.alegraNumberTemplatePrefix || null,
+          alegraNumberTemplateResolution: input.alegraNumberTemplateResolution || null,
+          alegraNumberTemplateStartDate: input.alegraNumberTemplateStartDate || null,
+          alegraNumberTemplateEndDate: input.alegraNumberTemplateEndDate || null,
+          alegraNumberTemplateStartNumber: input.alegraNumberTemplateStartNumber !== undefined && input.alegraNumberTemplateStartNumber !== null ? input.alegraNumberTemplateStartNumber : null,
+          alegraNumberTemplateEndNumber: input.alegraNumberTemplateEndNumber !== undefined && input.alegraNumberTemplateEndNumber !== null ? input.alegraNumberTemplateEndNumber : null,
+          alegraNumberTemplateCurrentNumber: input.alegraNumberTemplateCurrentNumber !== undefined && input.alegraNumberTemplateCurrentNumber !== null ? input.alegraNumberTemplateCurrentNumber : null,
+          alegraNumberTemplateSyncedAt: input.alegraNumberTemplateSyncedAt || null,
           siigoUsername: input.siigoUsername || null,
           siigoPartnerId: input.siigoPartnerId || "EVGreenSaaS",
           siigoDocumentId: input.siigoDocumentId || null,
@@ -1702,6 +1742,17 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
           selectedProductTaxIncluded: input.selectedProductTaxIncluded === true ? 1 : input.selectedProductTaxIncluded === false ? 0 : null,
           selectedProductSyncedAt: input.selectedProductSyncedAt || null,
           billingRoundingMode: input.billingRoundingMode || "two_decimals",
+          fallbackCustomerEnabled: input.fallbackCustomerEnabled ? 1 : 0,
+          fallbackCustomerId: input.fallbackCustomerId || null,
+          fallbackCustomerName: input.fallbackCustomerName || null,
+          fallbackCustomerDocumentType: input.fallbackCustomerDocumentType || null,
+          fallbackCustomerDocumentNumber: input.fallbackCustomerDocumentNumber || null,
+          fallbackCustomerEmail: input.fallbackCustomerEmail || null,
+          fallbackCustomerAddress: input.fallbackCustomerAddress || null,
+          fallbackCustomerCity: input.fallbackCustomerCity || null,
+          fallbackCustomerDepartment: input.fallbackCustomerDepartment || null,
+          fallbackCustomerKindOfPerson: input.fallbackCustomerKindOfPerson || null,
+          fallbackCustomerRegime: input.fallbackCustomerRegime || null,
           updatedBy: ctx.user.id,
         };
 
@@ -1775,16 +1826,35 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
       .input(
         z.object({
           provider: z.enum(["alegra", "siigo", "world_office"]).optional(),
+          query: z.string().optional(),
+          contactsQuery: z.string().optional(),
         }).optional()
       )
       .query(async ({ ctx, input }: any) => {
         const orgId = ctx.tenant.organizationId;
         const settings = await getTenantBillingSettings(orgId);
         if (!settings) {
-          return { items: [], taxes: [], paymentMethods: [], bankAccounts: [], documentTypes: [] };
+          return { items: [], taxes: [], paymentMethods: [], bankAccounts: [], documentTypes: [], contacts: [] };
         }
         const provider = (input?.provider || settings.provider) as BillingProviderType;
-        return getProviderCatalogs(provider, settings);
+        return getProviderCatalogs(provider, settings, input?.query, input?.contactsQuery);
+      }),
+
+    searchMyBillingContacts: tenantProcedure
+      .input(
+        z.object({
+          query: z.string().optional(),
+          provider: z.enum(["alegra", "siigo", "world_office"]).optional(),
+        })
+      )
+      .query(async ({ ctx, input }: any) => {
+        const orgId = ctx.tenant.organizationId;
+        const settings = await getTenantBillingSettings(orgId);
+        if (!settings) return [];
+        const provider = (input.provider || settings.provider) as BillingProviderType;
+        const adapter = getAdapter(provider);
+        if (!adapter.listContacts) return [];
+        return adapter.listContacts(settings, input.query);
       }),
 
     searchMyBillingItems: tenantProcedure
@@ -1893,6 +1963,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
       .input(
         z.object({
           status: z.string().optional(),
+          customerSource: z.enum(["USER", "FALLBACK"]).optional(),
           limit: z.number().default(20),
           offset: z.number().default(0),
         }).optional()
@@ -1902,6 +1973,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         return getElectronicInvoicesByOrg({
           organizationId: orgId,
           status: input?.status,
+          customerSource: input?.customerSource,
           limit: input?.limit,
           offset: input?.offset,
         });
@@ -2017,12 +2089,13 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         organizationId: z.number(),
         provider: z.enum(["alegra", "siigo", "world_office"]).optional(),
         query: z.string().optional(),
+        contactsQuery: z.string().optional(),
       }))
       .query(async ({ input }: any) => {
         const settings = await getTenantBillingSettings(input.organizationId);
-        if (!settings) return { items: [], taxes: [], paymentMethods: [], bankAccounts: [], documentTypes: [] };
+        if (!settings) return { items: [], taxes: [], paymentMethods: [], bankAccounts: [], documentTypes: [], contacts: [] };
         const provider = (input.provider || settings.provider) as BillingProviderType;
-        return getProviderCatalogs(provider, settings, input.query);
+        return getProviderCatalogs(provider, settings, input.query, input.contactsQuery);
       }),
 
     saveTenantBillingConfigAdmin: adminProcedure

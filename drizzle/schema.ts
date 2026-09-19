@@ -2827,6 +2827,17 @@ export const tenantBillingSettings = mysqlTable("tenant_billing_settings", {
 		autoSendEmail: tinyint("auto_send_email").default(1).notNull(),
 		billingRoundingMode: mysqlEnum("billing_rounding_mode", ['nearest_integer', 'two_decimals']).default('two_decimals').notNull(),
 		resolutionNumber: varchar("resolution_number", { length: 100 }),
+		// Numeración electrónica DIAN seleccionada directamente desde el catálogo de Alegra.
+		alegraNumberTemplateId: varchar("alegra_number_template_id", { length: 100 }),
+		alegraNumberTemplateName: varchar("alegra_number_template_name", { length: 255 }),
+		alegraNumberTemplatePrefix: varchar("alegra_number_template_prefix", { length: 50 }),
+		alegraNumberTemplateResolution: varchar("alegra_number_template_resolution", { length: 100 }),
+		alegraNumberTemplateStartDate: varchar("alegra_number_template_start_date", { length: 30 }),
+		alegraNumberTemplateEndDate: varchar("alegra_number_template_end_date", { length: 30 }),
+		alegraNumberTemplateStartNumber: int("alegra_number_template_start_number"),
+		alegraNumberTemplateEndNumber: int("alegra_number_template_end_number"),
+		alegraNumberTemplateCurrentNumber: int("alegra_number_template_current_number"),
+		alegraNumberTemplateSyncedAt: timestamp("alegra_number_template_synced_at", { mode: 'string' }),
 
 	// Configuración Alegra
 	alegraEmail: varchar("alegra_email", { length: 255 }),

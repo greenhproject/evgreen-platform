@@ -180,6 +180,22 @@ export default function ElectronicBillingConfigCard({ mode = "tenant", organizat
   const [worldOfficePrefixId, setWorldOfficePrefixId] = useState("");
   const [worldOfficePaymentMethodId, setWorldOfficePaymentMethodId] = useState("1");
 
+  // Numeración electrónica DIAN Alegra (Resolución y Prefijo)
+  const [alegraNumberTemplateId, setAlegraNumberTemplateId] = useState("");
+  const [alegraNumberTemplateName, setAlegraNumberTemplateName] = useState("");
+  const [alegraNumberTemplatePrefix, setAlegraNumberTemplatePrefix] = useState("");
+  const [alegraNumberTemplateResolution, setAlegraNumberTemplateResolution] = useState("");
+  const [alegraNumberTemplateStartDate, setAlegraNumberTemplateStartDate] = useState("");
+  const [alegraNumberTemplateEndDate, setAlegraNumberTemplateEndDate] = useState("");
+  const [alegraNumberTemplateStartNumber, setAlegraNumberTemplateStartNumber] = useState<number | null>(null);
+  const [alegraNumberTemplateEndNumber, setAlegraNumberTemplateEndNumber] = useState<number | null>(null);
+  const [alegraNumberTemplateCurrentNumber, setAlegraNumberTemplateCurrentNumber] = useState<number | null>(null);
+
+  // Búsqueda interactiva de Contacto Mostrador
+  const [contactSearchQuery, setContactSearchQuery] = useState("");
+  const [isSearchingContact, setIsSearchingContact] = useState(false);
+  const [contactSearchResults, setContactSearchResults] = useState<any[]>([]);
+
   // Cliente Mostrador (Fallback fiscal cuando el usuario no tiene datos en la app)
   const [fallbackCustomerEnabled, setFallbackCustomerEnabled] = useState(false);
   const [fallbackCustomerId, setFallbackCustomerId] = useState("");
@@ -241,8 +257,21 @@ export default function ElectronicBillingConfigCard({ mode = "tenant", organizat
     )
       || validTemplates.find((template) => template.isDefault)
       || [...validTemplates].sort((a, b) => String(b.startDate || "").localeCompare(String(a.startDate || "")))[0];
-    if (selected?.resolutionNumber && selected.resolutionNumber !== resolutionNumber) {
-      setResolutionNumber(selected.resolutionNumber);
+    if (selected) {
+      if (!alegraNumberTemplateId || !validTemplates.some((t) => t.id === alegraNumberTemplateId)) {
+        setAlegraNumberTemplateId(selected.id);
+        setAlegraNumberTemplateName(selected.name || "");
+        setAlegraNumberTemplatePrefix(selected.prefix || "");
+        setAlegraNumberTemplateResolution(selected.resolutionNumber || "");
+        setAlegraNumberTemplateStartDate(selected.startDate || "");
+        setAlegraNumberTemplateEndDate(selected.endDate || "");
+        setAlegraNumberTemplateStartNumber(selected.startNumber ?? null);
+        setAlegraNumberTemplateEndNumber(selected.endNumber ?? null);
+        setAlegraNumberTemplateCurrentNumber(selected.currentNumber ?? null);
+      }
+      if (selected.resolutionNumber && selected.resolutionNumber !== resolutionNumber) {
+        setResolutionNumber(selected.resolutionNumber);
+      }
     }
     if (alegraBankAccounts.length > 0 && !alegraBankAccounts.some((account) => account.id === alegraPaymentAccountId)) {
       const cajaGeneral = alegraBankAccounts.find((account) => /caja\s*general|principal/i.test(account.name));
@@ -263,6 +292,15 @@ export default function ElectronicBillingConfigCard({ mode = "tenant", organizat
       setAutoSendEmail(config.autoSendEmail !== false);
       setBillingRoundingMode((config.billingRoundingMode as any) || "two_decimals");
       setResolutionNumber(config.resolutionNumber || "");
+      setAlegraNumberTemplateId(config.alegraNumberTemplateId || "");
+      setAlegraNumberTemplateName(config.alegraNumberTemplateName || "");
+      setAlegraNumberTemplatePrefix(config.alegraNumberTemplatePrefix || "");
+      setAlegraNumberTemplateResolution(config.alegraNumberTemplateResolution || "");
+      setAlegraNumberTemplateStartDate(config.alegraNumberTemplateStartDate || "");
+      setAlegraNumberTemplateEndDate(config.alegraNumberTemplateEndDate || "");
+      setAlegraNumberTemplateStartNumber(config.alegraNumberTemplateStartNumber ?? null);
+      setAlegraNumberTemplateEndNumber(config.alegraNumberTemplateEndNumber ?? null);
+      setAlegraNumberTemplateCurrentNumber(config.alegraNumberTemplateCurrentNumber ?? null);
 
       // Snapshot producto
       setSelectedProductId(config.selectedProductId || config.alegraDefaultItemId || config.worldOfficeItemId || "");
@@ -316,6 +354,72 @@ export default function ElectronicBillingConfigCard({ mode = "tenant", organizat
       setFallbackCustomerRegime(config.fallbackCustomerRegime || "SIMPLIFIED_REGIME");
     }
   }, [config]);
+
+  // Manejador de búsqueda interactiva de clientes mostrador
+  const handleSearchContact = async () => {
+    if (!contactSearchQuery.trim()) {
+      toast.warning("Ingresa un término para buscar contactos en Alegra (ej: Mostrador o un NIT)");
+      return;
+    }
+    setIsSearchingContact(true);
+    try {
+      let contacts: any[] = [];
+      if (mode === "tenant") {
+        contacts = await (utils.client as any).organizations.searchMyBillingContacts.query({
+          query: contactSearchQuery.trim(),
+          provider,
+        });
+      } else {
+        const result = isSuperadminTargetingTenant
+          ? await (utils.client as any).organizations.getTenantBillingCatalogsAdmin.query({
+              organizationId: organizationId!,
+              provider,
+              contactsQuery: contactSearchQuery.trim(),
+            })
+          : await (utils.client as any).settings.billingListPlatformCatalogs.query({
+              provider,
+              contactsQuery: contactSearchQuery.trim(),
+            });
+        contacts = result?.contacts || [];
+      }
+      setContactSearchResults(contacts || []);
+      if (!contacts || contacts.length === 0) {
+        toast.info("No se encontraron contactos con ese criterio en Alegra.");
+      }
+    } catch (err: any) {
+      toast.error(`Error buscando contactos: ${err.message}`);
+    } finally {
+      setIsSearchingContact(false);
+    }
+  };
+
+  const handleSelectContact = (c: any) => {
+    setFallbackCustomerId(String(c.id));
+    setFallbackCustomerName(c.name || "Consumidor Final");
+    if (c.identification) {
+      setFallbackCustomerDocumentNumber(c.identification);
+    }
+    if (c.email) {
+      setFallbackCustomerEmail(c.email);
+    }
+    if (c.address) {
+      setFallbackCustomerAddress(c.address);
+    }
+    if (c.city) {
+      setFallbackCustomerCity(c.city);
+    }
+    if (c.department) {
+      setFallbackCustomerDepartment(c.department);
+    }
+    if (c.kindOfPerson) {
+      setFallbackCustomerKindOfPerson(c.kindOfPerson);
+    }
+    if (c.regime) {
+      setFallbackCustomerRegime(c.regime);
+    }
+    setContactSearchResults([]);
+    toast.success(`Contacto #${c.id} "${c.name}" enlazado como mostrador`);
+  };
 
   // Manejador de búsqueda de producto en vivo
   const handleSearchProduct = async () => {
@@ -953,13 +1057,72 @@ export default function ElectronicBillingConfigCard({ mode = "tenant", organizat
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs">N° Resolución DIAN (Referencia)</Label>
-              <Input
-                placeholder="1876400000123"
-                value={resolutionNumber}
-                onChange={(e) => setResolutionNumber(e.target.value)}
-                className="h-9 text-xs"
-              />
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Resolución y Prefijo DIAN (Alegra)</Label>
+                {alegraNumberTemplatePrefix && (
+                  <Badge variant="outline" className="text-[10px] font-mono text-green-500 border-green-500/30">
+                    Prefijo: {alegraNumberTemplatePrefix}
+                  </Badge>
+                )}
+              </div>
+              {provider === "alegra" && (catalogs?.documentTypes || []).filter((t: any) => t.isElectronic && t.documentType === "invoice").length > 0 ? (
+                <Select
+                  value={alegraNumberTemplateId || undefined}
+                  onValueChange={(id) => {
+                    setAlegraNumberTemplateId(id);
+                    const tmpl = (catalogs.documentTypes as any[]).find((t) => t.id === id);
+                    if (tmpl) {
+                      setAlegraNumberTemplateName(tmpl.name || "");
+                      setAlegraNumberTemplatePrefix(tmpl.prefix || "");
+                      setAlegraNumberTemplateResolution(tmpl.resolutionNumber || "");
+                      setAlegraNumberTemplateStartDate(tmpl.startDate || "");
+                      setAlegraNumberTemplateEndDate(tmpl.endDate || "");
+                      setAlegraNumberTemplateStartNumber(tmpl.startNumber ?? null);
+                      setAlegraNumberTemplateEndNumber(tmpl.endNumber ?? null);
+                      setAlegraNumberTemplateCurrentNumber(tmpl.currentNumber ?? null);
+                      if (tmpl.resolutionNumber) {
+                        setResolutionNumber(tmpl.resolutionNumber);
+                      }
+                      toast.success(`Numeración "${tmpl.name || tmpl.prefix}" seleccionada`);
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue placeholder="Selecciona la numeración electrónica" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(catalogs.documentTypes as any[])
+                      .filter((t) => t.isElectronic && (t.documentType === "invoice" || !t.documentType))
+                      .map((t) => (
+                        <SelectItem key={t.id} value={t.id}>
+                          <span className="font-semibold text-foreground">
+                            {t.prefix ? `[${t.prefix}] ` : ""}{t.name}
+                          </span>
+                          <span className="text-muted-foreground ml-2 text-[11px]">
+                            {t.resolutionNumber ? `Res: ${t.resolutionNumber}` : ""}
+                            {t.endDate ? ` • Vence: ${t.endDate.slice(0, 10)}` : ""}
+                            {t.isCurrentValid ? " (Vigente)" : t.isActive === false ? " (Inactiva)" : ""}
+                          </span>
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  placeholder="1876400000123"
+                  value={resolutionNumber}
+                  onChange={(e) => setResolutionNumber(e.target.value)}
+                  className="h-9 text-xs"
+                />
+              )}
+              {alegraNumberTemplateResolution && (
+                <p className="text-[10px] text-muted-foreground">
+                  Resolución vinculada: <span className="font-mono text-foreground">{alegraNumberTemplateResolution}</span>
+                  {alegraNumberTemplateEndDate && (
+                    <span> (Vence: {alegraNumberTemplateEndDate.slice(0, 10)})</span>
+                  )}
+                </p>
+              )}
             </div>
           </div>
 
@@ -1007,7 +1170,73 @@ export default function ElectronicBillingConfigCard({ mode = "tenant", organizat
           </div>
 
           {fallbackCustomerEnabled && (
-            <div className="pt-2 border-t border-border/30 grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="space-y-3 pt-2 border-t border-border/30">
+              {/* Buscador de contacto existente en Alegra */}
+              <div className="rounded-lg border border-border/40 bg-muted/20 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Search className="h-3.5 w-3.5 text-green-500" />
+                    <span className="text-xs font-semibold text-foreground">
+                      Vincular Contacto Existente de {provider.toUpperCase()} (Búsqueda Rápida)
+                    </span>
+                  </div>
+                  {fallbackCustomerId && (
+                    <Badge variant="outline" className="text-[10px] font-mono text-green-500 border-green-500/30">
+                      ID Vinculado: #{fallbackCustomerId}
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder='Buscar por nombre o identificación (ej: "Mostrador", "Consumidor", "222222222222")'
+                    value={contactSearchQuery}
+                    onChange={(e) => setContactSearchQuery(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleSearchContact())}
+                    className="h-8 text-xs bg-background"
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleSearchContact}
+                    disabled={isSearchingContact}
+                    className="h-8 text-xs px-3 gap-1"
+                  >
+                    {isSearchingContact ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Search className="h-3 w-3" />}
+                    Buscar
+                  </Button>
+                </div>
+
+                {contactSearchResults.length > 0 && (
+                  <div className="space-y-1.5 pt-1">
+                    <p className="text-[10px] text-muted-foreground">Resultados en Alegra (haz clic para enlazar):</p>
+                    <div className="max-h-40 overflow-y-auto space-y-1 rounded-md border border-border/40 bg-background p-1.5">
+                      {contactSearchResults.map((contact) => (
+                        <div
+                          key={contact.id}
+                          onClick={() => handleSelectContact(contact)}
+                          className="flex items-center justify-between p-1.5 rounded hover:bg-muted/40 cursor-pointer text-xs transition-colors"
+                        >
+                          <div>
+                            <span className="font-medium text-foreground">{contact.name}</span>
+                            <span className="text-muted-foreground text-[10px] ml-2 font-mono">
+                              Doc: {contact.identification || "Sin doc"}
+                            </span>
+                            {contact.email && (
+                              <span className="text-muted-foreground text-[10px] ml-2">({contact.email})</span>
+                            )}
+                          </div>
+                          <Badge variant="outline" className="text-[9px]">
+                            #{contact.id} Enlazar
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="space-y-1">
                 <Label className="text-[11px]">Razón Social / Nombre Mostrador</Label>
                 <Input
@@ -1082,6 +1311,7 @@ export default function ElectronicBillingConfigCard({ mode = "tenant", organizat
                   />
                 </div>
               </div>
+            </div>
             </div>
           )}
         </div>

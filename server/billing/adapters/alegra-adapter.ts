@@ -7,6 +7,7 @@ import type {
   BillingAdapter,
   CanonicalInvoiceInput,
   CatalogBankAccount,
+  CatalogContact,
   CatalogDocumentType,
   CatalogItem,
   CatalogPaymentMethod,
@@ -282,6 +283,7 @@ export class AlegraAdapter implements BillingAdapter {
     try {
       const credentials = { email: settings.alegraEmail, token: settings.alegraToken };
       const raw = await alegraRequest<any[]>(credentials, "GET", "/number-templates");
+      const today = new Date().toISOString().slice(0, 10);
       return (raw || []).map((nt) => ({
         id: String(nt.id),
         name: nt.name,
@@ -292,10 +294,75 @@ export class AlegraAdapter implements BillingAdapter {
         startDate: nt.startDate || undefined,
         endDate: nt.endDate || undefined,
         resolutionNumber: nt.resolutionNumber || undefined,
+        startNumber: nt.startNumber !== undefined && nt.startNumber !== null ? Number(nt.startNumber) : undefined,
+        endNumber: nt.endNumber !== undefined && nt.endNumber !== null ? Number(nt.endNumber) : undefined,
+        currentNumber: nt.currentNumber !== undefined && nt.currentNumber !== null ? Number(nt.currentNumber) : undefined,
+        documentType: nt.documentType || undefined,
+        isCurrentValid: nt.documentType === "invoice"
+          && !!nt.isElectronic
+          && nt.status === "active"
+          && (!nt.startDate || today >= String(nt.startDate).slice(0, 10))
+          && (!nt.endDate || today <= String(nt.endDate).slice(0, 10)),
       }));
     } catch (e: any) {
       console.warn("[AlegraAdapter] Error listing number templates:", e.message);
       return [];
+    }
+  }
+
+  async listContacts(settings: Record<string, any>, query?: string): Promise<CatalogContact[]> {
+    try {
+      const credentials = { email: settings.alegraEmail, token: settings.alegraToken };
+      const params = new URLSearchParams({
+        type: "client",
+        limit: "30",
+        mode: "simple",
+      });
+      if (query && query.trim()) {
+        params.set("query", query.trim());
+      }
+      const raw = await alegraRequest<any[]>(credentials, "GET", `/contacts?${params.toString()}`);
+      const contacts = Array.isArray(raw) ? raw : (raw as any)?.data || [];
+      return contacts.map((contact: any) => ({
+        id: String(contact.id),
+        name: contact.name,
+        identification: contact.identification || contact.identificationObject?.number || undefined,
+        email: contact.email || undefined,
+        phone: contact.phonePrimary || contact.mobile || undefined,
+        kindOfPerson: contact.kindOfPerson || undefined,
+        regime: contact.regime || undefined,
+        address: contact.address?.address || undefined,
+        city: contact.address?.city || undefined,
+        department: contact.address?.department || undefined,
+        type: Array.isArray(contact.type) ? contact.type : undefined,
+      }));
+    } catch (e: any) {
+      console.warn("[AlegraAdapter] Error listing contacts:", e.message);
+      return [];
+    }
+  }
+
+  async getContactById(settings: Record<string, any>, contactId: string): Promise<CatalogContact | null> {
+    try {
+      const credentials = { email: settings.alegraEmail, token: settings.alegraToken };
+      const contact = await alegraRequest<any>(credentials, "GET", `/contacts/${encodeURIComponent(contactId)}`);
+      if (!contact || !contact.id) return null;
+      return {
+        id: String(contact.id),
+        name: contact.name,
+        identification: contact.identification || contact.identificationObject?.number || undefined,
+        email: contact.email || undefined,
+        phone: contact.phonePrimary || contact.mobile || undefined,
+        kindOfPerson: contact.kindOfPerson || undefined,
+        regime: contact.regime || undefined,
+        address: contact.address?.address || undefined,
+        city: contact.address?.city || undefined,
+        department: contact.address?.department || undefined,
+        type: Array.isArray(contact.type) ? contact.type : undefined,
+      };
+    } catch (e: any) {
+      console.warn(`[AlegraAdapter] Error fetching contact #${contactId}:`, e.message);
+      return null;
     }
   }
 
@@ -490,7 +557,8 @@ export class AlegraAdapter implements BillingAdapter {
 
       const parsedTaxId = parsePositiveInteger(itemTaxId);
       const taxArray = parsedTaxId ? [{ id: parsedTaxId }] : [];
-      const energyQuantity = parseFloat(input.energyDelivered.toFixed(2));
+      const rawEnergy = typeof input.energyDelivered === "number" ? input.energyDelivered : input.kwhConsumed;
+      const energyQuantity = parseFloat((rawEnergy || 0).toFixed(2));
 
       // Tarifa dinámica: EVGreen encapsula todo el servicio cobrado en un solo concepto.
       // Si hay kWh registrados, inyectamos cantidad = kWh y precio = total / kWh para respetar
@@ -533,11 +601,12 @@ export class AlegraAdapter implements BillingAdapter {
         paymentForm: "CASH",
         paymentMethod: mapColombiaPaymentMethod(settings.alegraPaymentMethodId),
         stamp: { generateStamp: settings.alegraUseElectronicStamp !== 0 },
-        anotation: `Recibo de carga EVGreen #${input.transactionId}. Estación: ${input.stationName}. Energía: ${input.energyDelivered.toFixed(2)} kWh.`,
+        anotation: `Recibo de carga EVGreen #${input.transactionId}. Estación: ${input.stationName || "Estación EVGreen"}. Energía: ${energyQuantity.toFixed(2)} kWh.`,
         observations: `Transacción EVGreen #${input.transactionId}.`,
       };
 
-      const numberTemplateId = await this.resolveNumberTemplateId(credentials, settings.resolutionNumber);
+      const targetTemplateIdentifier = settings.alegraNumberTemplateId || settings.resolutionNumber;
+      const numberTemplateId = await this.resolveNumberTemplateId(credentials, targetTemplateIdentifier);
       if (numberTemplateId) {
         invoicePayload.numberTemplate = { id: numberTemplateId };
       }
@@ -562,7 +631,7 @@ export class AlegraAdapter implements BillingAdapter {
             sendCopyToUser: true,
             emailMessage: {
               subject: `Factura Electrónica de carga EVGreen #${input.transactionId}`,
-              body: `Hola ${input.userName},\n\nAdjuntamos la factura electrónica correspondiente a tu recarga de ${input.energyDelivered.toFixed(2)} kWh en ${input.stationName}.\n\nGracias por impulsar la movilidad eléctrica con EVGreen.`,
+              body: `Hola ${input.userName},\n\nAdjuntamos la factura electrónica correspondiente a tu recarga de ${energyQuantity.toFixed(2)} kWh en ${input.stationName || "Estación EVGreen"}.\n\nGracias por impulsar la movilidad eléctrica con EVGreen.`,
             },
           });
         } catch (mailErr) {

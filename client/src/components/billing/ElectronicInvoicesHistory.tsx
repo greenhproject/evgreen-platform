@@ -23,6 +23,8 @@ import {
   RefreshCw,
   Sparkles,
   HelpCircle,
+  Users,
+  UserCheck,
 } from "lucide-react";
 
 interface Props {
@@ -33,6 +35,7 @@ interface Props {
 export default function ElectronicInvoicesHistory({ mode = "tenant", organizationId }: Props) {
   const utils = trpc.useUtils();
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [customerSourceFilter, setCustomerSourceFilter] = useState<string>("ALL");
   const [page, setPage] = useState(0);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [isBulkProcessing, setIsBulkProcessing] = useState(false);
@@ -42,6 +45,7 @@ export default function ElectronicInvoicesHistory({ mode = "tenant", organizatio
   const tenantInvoicesQuery = (trpc.organizations as any).getMyElectronicInvoices.useQuery(
     {
       status: statusFilter === "ALL" ? undefined : statusFilter,
+      customerSource: customerSourceFilter === "ALL" ? undefined : customerSourceFilter,
       limit,
       offset: page * limit,
     },
@@ -52,6 +56,7 @@ export default function ElectronicInvoicesHistory({ mode = "tenant", organizatio
     {
       organizationId: organizationId || undefined,
       status: statusFilter === "ALL" ? undefined : statusFilter,
+      customerSource: customerSourceFilter === "ALL" ? undefined : customerSourceFilter,
       limit,
       offset: page * limit,
     },
@@ -179,6 +184,21 @@ export default function ElectronicInvoicesHistory({ mode = "tenant", organizatio
     }
   };
 
+  const customerSourceBadge = (source?: string) => {
+    if (source === "FALLBACK") {
+      return (
+        <Badge variant="outline" className="text-amber-400 border-amber-400/30 bg-amber-400/10 text-[9px] gap-0.5">
+          <Users className="h-2.5 w-2.5" /> Mostrador
+        </Badge>
+      );
+    }
+    return (
+      <Badge variant="outline" className="text-emerald-400 border-emerald-400/30 bg-emerald-400/10 text-[9px] gap-0.5">
+        <UserCheck className="h-2.5 w-2.5" /> Usuario App
+      </Badge>
+    );
+  };
+
   const providerBadge = (provider: string) => {
     switch (provider) {
       case "alegra":
@@ -220,12 +240,35 @@ export default function ElectronicInvoicesHistory({ mode = "tenant", organizatio
               </Button>
             )}
 
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <Select
+              value={customerSourceFilter}
+              onValueChange={(val) => {
+                setCustomerSourceFilter(val);
+                setPage(0);
+              }}
+            >
               <SelectTrigger className="w-36 h-8 text-xs">
+                <SelectValue placeholder="Origen cliente" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">Todos los clientes</SelectItem>
+                <SelectItem value="USER">Solo Usuario App</SelectItem>
+                <SelectItem value="FALLBACK">Solo Mostrador</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select
+              value={statusFilter}
+              onValueChange={(val) => {
+                setStatusFilter(val);
+                setPage(0);
+              }}
+            >
+              <SelectTrigger className="w-32 h-8 text-xs">
                 <SelectValue placeholder="Filtrar estado" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">Todos los estados</SelectItem>
+                <SelectItem value="ALL">Todos estados</SelectItem>
                 <SelectItem value="COMPLETED">Emitidas</SelectItem>
                 <SelectItem value="FAILED">Fallidas</SelectItem>
                 <SelectItem value="PROCESSING">En Proceso</SelectItem>
@@ -305,8 +348,11 @@ export default function ElectronicInvoicesHistory({ mode = "tenant", organizatio
                           {inv.createdAt ? new Date(inv.createdAt).toLocaleString("es-CO", { dateStyle: "short", timeStyle: "short" }) : "-"}
                         </TableCell>
                         <TableCell>
-                          <div className="text-xs font-medium text-foreground">{inv.customerName || "Cliente"}</div>
-                          <div className="text-[11px] text-muted-foreground">{inv.customerIdentification || inv.customerEmail || "-"}</div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-medium text-foreground">{inv.customerName || "Cliente"}</span>
+                            {customerSourceBadge(inv.customerSource)}
+                          </div>
+                          <div className="text-[11px] text-muted-foreground font-mono">{inv.customerIdentification || inv.customerEmail || "-"}</div>
                         </TableCell>
                         <TableCell className="text-right text-xs font-mono">
                           {kwh.toFixed(2)} kWh

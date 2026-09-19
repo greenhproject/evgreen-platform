@@ -13,6 +13,7 @@ import type {
   CatalogItem,
   CatalogPaymentMethod,
   CatalogTax,
+  CatalogContact,
   ConnectionTestResult,
   InvoiceResult,
 } from "./types";
@@ -63,6 +64,10 @@ export async function getEffectiveBillingSettings(organizationId?: number | null
       autoInvoice: tenantConfig.autoInvoice !== 0,
       autoSendEmail: tenantConfig.autoSendEmail !== 0,
       resolutionNumber: tenantConfig.resolutionNumber || undefined,
+      alegraNumberTemplateId: tenantConfig.alegraNumberTemplateId || undefined,
+      alegraNumberTemplateName: tenantConfig.alegraNumberTemplateName || undefined,
+      alegraNumberTemplatePrefix: tenantConfig.alegraNumberTemplatePrefix || undefined,
+      alegraNumberTemplateResolution: tenantConfig.alegraNumberTemplateResolution || undefined,
       alegraPaymentMethodId: tenantConfig.alegraPaymentMethodId || "transfer",
       billingRoundingMode: (tenantConfig.billingRoundingMode as any) || "two_decimals",
     };
@@ -78,6 +83,7 @@ export async function getEffectiveBillingSettings(organizationId?: number | null
       autoInvoice: legacy.alegraAutoInvoice !== 0,
       autoSendEmail: true,
       resolutionNumber: legacy.alegraResolutionNumber || undefined,
+      alegraNumberTemplateId: undefined,
       alegraEmail: legacy.alegraEmail,
       alegraToken: legacy.alegraToken,
       alegraDefaultItemId: legacy.alegraDefaultItemId || undefined,
@@ -416,23 +422,26 @@ export async function configureProviderWebhook(
 export async function getProviderCatalogs(
   provider: BillingProviderType,
   settings: Record<string, any>,
-  search?: string
+  search?: string,
+  contactsQuery?: string
 ): Promise<{
   items: CatalogItem[];
   taxes: CatalogTax[];
   paymentMethods: CatalogPaymentMethod[];
   bankAccounts: any[];
   documentTypes: CatalogDocumentType[];
+  contacts: CatalogContact[];
 }> {
   const adapter = getAdapter(provider);
 
-  const [items, taxes, paymentMethods, bankAccounts, documentTypes] = await Promise.all([
+  const [items, taxes, paymentMethods, bankAccounts, documentTypes, contacts] = await Promise.all([
     adapter.listItems ? adapter.listItems(settings, search).catch(() => []) : Promise.resolve([]),
     adapter.listTaxes ? adapter.listTaxes(settings).catch(() => []) : Promise.resolve([]),
     adapter.listPaymentMethods ? adapter.listPaymentMethods(settings).catch(() => []) : Promise.resolve([]),
     adapter.listBankAccounts ? adapter.listBankAccounts(settings).catch(() => []) : Promise.resolve([]),
     adapter.listDocumentTypes ? adapter.listDocumentTypes(settings).catch(() => []) : Promise.resolve([]),
+    adapter.listContacts ? adapter.listContacts(settings, contactsQuery).catch(() => []) : Promise.resolve([]),
   ]);
 
-  return { items, taxes, paymentMethods, bankAccounts, documentTypes };
+  return { items, taxes, paymentMethods, bankAccounts, documentTypes, contacts };
 }

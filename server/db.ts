@@ -9222,6 +9222,7 @@ export async function getElectronicInvoiceById(id: number): Promise<ElectronicIn
 export async function getElectronicInvoicesByOrg(options?: {
   organizationId?: number | null;
   status?: string;
+  customerSource?: "USER" | "FALLBACK";
   limit?: number;
   offset?: number;
 }): Promise<{ data: ElectronicInvoice[]; total: number }> {
@@ -9236,6 +9237,10 @@ export async function getElectronicInvoicesByOrg(options?: {
 
   if (options?.status) {
     conditions.push(eq(electronicInvoices.status, options.status as any));
+  }
+
+  if (options?.customerSource) {
+    conditions.push(eq(electronicInvoices.customerSource, options.customerSource));
   }
 
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;

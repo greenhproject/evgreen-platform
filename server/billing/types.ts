@@ -106,6 +106,25 @@ export interface CatalogDocumentType {
   startDate?: string;
   endDate?: string;
   resolutionNumber?: string;
+  startNumber?: number;
+  endNumber?: number;
+  currentNumber?: number;
+  documentType?: string;
+  isCurrentValid?: boolean;
+}
+
+export interface CatalogContact {
+  id: string;
+  name: string;
+  identification?: string;
+  email?: string;
+  phone?: string;
+  kindOfPerson?: string;
+  regime?: string;
+  address?: string;
+  city?: string;
+  department?: string;
+  type?: string[];
 }
 
 export interface BillingAdapter {
@@ -118,5 +137,7 @@ export interface BillingAdapter {
   listPaymentMethods?(settings: Record<string, any>): Promise<CatalogPaymentMethod[]>;
   listBankAccounts?(settings: Record<string, any>): Promise<CatalogBankAccount[]>;
   listDocumentTypes?(settings: Record<string, any>): Promise<CatalogDocumentType[]>;
+  listContacts?(settings: Record<string, any>, query?: string): Promise<CatalogContact[]>;
+  getContactById?(settings: Record<string, any>, contactId: string): Promise<CatalogContact | null>;
   configureWebhook?(settings: Record<string, any>, webhookUrl: string, secret?: string): Promise<{ success: boolean; message?: string; error?: string }>;
 }
