@@ -274,6 +274,10 @@ export default function UserNotifications() {
                     <Bell className="w-3 h-3" />
                     Máximo 1 alerta cada 30 minutos
                   </p>
+                  <p className="flex items-center gap-1.5">
+                    <Navigation className="w-3 h-3" />
+                    Verifica tu ubicación mientras usas la aplicación
+                  </p>
                 </div>
               </CardContent>
             )}

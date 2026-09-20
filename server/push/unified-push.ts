@@ -17,6 +17,7 @@ import {
   markPushDeviceAccepted,
   markPushDeviceFailed,
 } from "./push-device-service";
+import { isPushNotificationAllowed } from "./push-preference-policy";
 
 export interface UnifiedPushPayload {
   type: NotificationType;
@@ -71,6 +72,11 @@ export async function sendUserPushDetailed(
     const user = await db.getUserById(userId);
     if (!user) {
       console.log(`[UnifiedPush] User ${userId} not found`);
+      return { accepted: false, attempted: 0, acceptedCount: 0, attempts };
+    }
+
+    if (!isPushNotificationAllowed(user, payload.type)) {
+      console.log(`[UnifiedPush] User ${userId} disabled ${payload.type} notifications`);
       return { accepted: false, attempted: 0, acceptedCount: 0, attempts };
     }
 
