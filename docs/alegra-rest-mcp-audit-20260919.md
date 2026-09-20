@@ -49,3 +49,10 @@ El código anterior enviaba `paymentMethod: "1"`, omitía `nameObject` al crear 
 La guía oficial de Alegra sobre errores frecuentes de facturación electrónica indica que una factura con fecha muy antigua o futura no es aceptada y debe emitirse con la fecha correcta de operación vigente. Fuente: https://ayuda.alegra.com/col/errores-frecuentes-al-emitir-tus-facturas-electronicas
 
 En EVGreen se identificó que `new Date().toISOString().slice(0, 10)` estaba usando UTC para construir `date`, `dueDate` y la fecha del pago. En Colombia, después de las 19:00 hora local, esa expresión puede adelantar el día. La corrección utiliza la zona IANA de la estación —por defecto `America/Bogota`— para generar `yyyy-MM-dd`, manteniendo la fecha de emisión compatible con Alegra/DIAN.
+
+
+## Confirmación live de FAB05c — 20 de septiembre de 2026
+
+La consulta directa a `GET /api/v1/number-templates` confirma que Alegra devuelve activa la numeración ID `23`, prefijo `FV`, resolución `18764107155503`, vigencia del `2026-03-13` al `2028-03-13`. La API no devuelve un campo que confirme la asociación DIAN del prefijo al software tecnológico; esa asociación se realiza en el portal de Facturación Electrónica de la DIAN.
+
+El rechazo observado `FAB05c` confirma que el payload llega a Alegra y que la validación pendiente es externa: se debe asociar el prefijo `FV` a **Soluciones Alegra S.A.S.** en DIAN. `RUT01` aparece como notificación informativa sobre la validación próxima del estado del RUT y no es la causa primaria del rechazo.
