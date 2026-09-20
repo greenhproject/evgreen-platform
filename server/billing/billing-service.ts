@@ -20,6 +20,7 @@ import type {
 import { AlegraAdapter } from "./adapters/alegra-adapter";
 import { SiigoAdapter } from "./adapters/siigo-adapter";
 import { WorldOfficeAdapter } from "./adapters/world-office-adapter";
+import { getStationTimezone } from "../utils/timezone";
 
 // Instancias de adaptadores disponibles
 const adapters: Record<BillingProviderType, BillingAdapter> = {
@@ -271,6 +272,7 @@ export async function processChargingInvoice(
 	    stationName: station?.name || "Estación EVGreen",
     stationAddress: station?.address || undefined,
     stationCity: station?.city || "Colombia",
+    billingTimeZone: getStationTimezone(station ?? {}),
     connectorType: (tx as any).connectorType || undefined,
     chargeType: (tx as any).chargeType || undefined,
     startTime,

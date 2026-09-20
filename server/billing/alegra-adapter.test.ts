@@ -3,10 +3,14 @@ import { AlegraAdapter } from "./adapters/alegra-adapter";
 
 describe("AlegraAdapter", () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
   it("normaliza contacto, método de pago, cuenta y resolución vigente", async () => {
+    // 2026-09-20 00:40 UTC todavía es 2026-09-19 19:40 en Colombia.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-20T00:40:09.000Z"));
     const requests: Array<{ url: string; body?: any }> = [];
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       const body = init?.body ? JSON.parse(String(init.body)) : undefined;
@@ -22,6 +26,7 @@ describe("AlegraAdapter", () => {
         return new Response(JSON.stringify({
           id: "1900",
           name: "Servicio de recarga de energia",
+          productKey: "81112100",
           price: [{ price: 1 }],
           inventory: { unit: "service" },
           tax: [],
@@ -70,6 +75,7 @@ describe("AlegraAdapter", () => {
     const result = await adapter.createInvoice({
       alegraEmail: "billing@example.com",
       alegraToken: "token",
+      provider: "alegra",
       selectedProductId: "1900",
       selectedProductName: "Servicio de recarga de energia",
       alegraPaymentMethodId: "1",
@@ -108,11 +114,13 @@ describe("AlegraAdapter", () => {
 
     const invoiceRequest = requests.find((request) => request.url.endsWith("/invoices"));
     expect(invoiceRequest?.body).toMatchObject({
+      date: "2026-09-19",
+      dueDate: "2026-09-19",
       client: 1,
       paymentForm: "CASH",
       paymentMethod: "CASH",
       numberTemplate: { id: "23" },
-      payments: [{ amount: 23161, paymentMethod: "cash", account: { id: 1 } }],
+      payments: [{ date: "2026-09-19", amount: 23161, paymentMethod: "cash", account: { id: 1 } }],
     });
     expect(invoiceRequest?.body.items).toEqual([
       expect.objectContaining({ id: 1900, quantity: 16.28, tax: [] }),

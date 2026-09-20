@@ -15,6 +15,7 @@ import type {
   ConnectionTestResult,
   InvoiceResult,
 } from "../types";
+import { formatIsoDateInTz } from "../../utils/timezone";
 
 const ALEGRA_API_BASE = "https://api.alegra.com/api/v1";
 
@@ -423,10 +424,14 @@ export class AlegraAdapter implements BillingAdapter {
     }
   }
 
-  private async resolveNumberTemplateId(credentials: AlegraCredentials, configuredValue?: unknown): Promise<string | undefined> {
+  private async resolveNumberTemplateId(
+    credentials: AlegraCredentials,
+    configuredValue?: unknown,
+    timezone = "America/Bogota",
+  ): Promise<string | undefined> {
     try {
       const raw = await alegraRequest<any[]>(credentials, "GET", "/number-templates");
-      const today = new Date().toISOString().slice(0, 10);
+      const today = formatIsoDateInTz(new Date(), timezone);
       const validElectronic = (raw || []).filter((template) => {
         if (template.documentType !== "invoice" || !template.isElectronic || template.status !== "active") return false;
         if (template.startDate && today < String(template.startDate).slice(0, 10)) return false;
@@ -595,7 +600,11 @@ export class AlegraAdapter implements BillingAdapter {
         return { success: false, error: "No hay conceptos facturables en la transacción" };
       }
 
-      const todayStr = new Date().toISOString().split("T")[0];
+      // Alegra/DIAN exige que una factura electrónica se emita con la fecha
+      // local actual. `toISOString().slice(0, 10)` usa UTC y en Colombia puede
+      // adelantar el día desde las 19:00 hora local.
+      const invoiceTimeZone = input.billingTimeZone || "America/Bogota";
+      const todayStr = formatIsoDateInTz(new Date(), invoiceTimeZone);
 
       const invoicePayload: any = {
         date: todayStr,
@@ -613,7 +622,11 @@ export class AlegraAdapter implements BillingAdapter {
       };
 
       const targetTemplateIdentifier = settings.alegraNumberTemplateId || settings.resolutionNumber;
-      const numberTemplateId = await this.resolveNumberTemplateId(credentials, targetTemplateIdentifier);
+      const numberTemplateId = await this.resolveNumberTemplateId(
+        credentials,
+        targetTemplateIdentifier,
+        invoiceTimeZone,
+      );
       if (numberTemplateId) {
         invoicePayload.numberTemplate = { id: numberTemplateId };
       }

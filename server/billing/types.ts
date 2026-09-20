@@ -35,6 +35,8 @@ export interface CanonicalInvoiceInput {
   stationName: string;
   stationAddress?: string;
   stationCity?: string;
+  /** Zona horaria IANA de la estación para fechas contables del proveedor. */
+  billingTimeZone?: string;
   connectorType?: string;
   chargeType?: string;
   // Tiempos

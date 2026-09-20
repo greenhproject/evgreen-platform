@@ -38,6 +38,23 @@ export function getStationTimezone(station: { timezone?: string | null; country?
   return "America/Bogota";
 }
 
+/**
+ * Devuelve una fecha ISO corta (yyyy-MM-dd) en la zona horaria indicada.
+ * No debe usarse toISOString().slice(0, 10) para fechas contables: eso siempre
+ * interpreta el día en UTC y puede adelantar la fecha para Colombia.
+ */
+export function formatIsoDateInTz(date: Date, timezone = "America/Bogota"): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 /** Formatea una fecha en la zona horaria de la estación */
 export function formatDateInTz(date: Date, timezone: string, locale = "es-CO"): string {
   return date.toLocaleDateString(locale, {

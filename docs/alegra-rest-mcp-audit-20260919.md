@@ -43,3 +43,9 @@ El código anterior enviaba `paymentMethod: "1"`, omitía `nameObject` al crear 
 5. La búsqueda del producto envía el término a `GET /items?query=...` en vez de descargar y filtrar solo los primeros 30.
 6. La emisión ya no depende de `setImmediate`; el cierre espera el proceso de facturación y conserva el registro `PROCESSING/FAILED` para reintentos idempotentes.
 7. El webhook se registra por API REST con las mismas credenciales Basic del tenant. EVGreen crea de forma idempotente las suscripciones `new-invoice` y `edit-invoice`, agrega el secreto como query parameter y acepta el payload oficial `{ subject, message: { invoice } }`. El token Bearer E-Provider ya no se utiliza para este botón.
+
+## Corrección de fecha contable — 20 de septiembre de 2026
+
+La guía oficial de Alegra sobre errores frecuentes de facturación electrónica indica que una factura con fecha muy antigua o futura no es aceptada y debe emitirse con la fecha correcta de operación vigente. Fuente: https://ayuda.alegra.com/col/errores-frecuentes-al-emitir-tus-facturas-electronicas
+
+En EVGreen se identificó que `new Date().toISOString().slice(0, 10)` estaba usando UTC para construir `date`, `dueDate` y la fecha del pago. En Colombia, después de las 19:00 hora local, esa expresión puede adelantar el día. La corrección utiliza la zona IANA de la estación —por defecto `America/Bogota`— para generar `yyyy-MM-dd`, manteniendo la fecha de emisión compatible con Alegra/DIAN.
