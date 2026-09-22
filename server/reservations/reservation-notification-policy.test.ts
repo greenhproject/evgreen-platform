@@ -33,5 +33,12 @@ describe("reservation notification policy", () => {
     expect(getReservationWhatsAppEventType("check_in")).toBe("reservation_started");
     expect(getReservationWhatsAppEventType("cancelled")).toBe("reservation_cancelled");
     expect(getReservationWhatsAppEventType("no_show_penalty")).toBe("reservation_no_show");
+    expect(getReservationWhatsAppEventType("service_issue")).toBe("reservation_service_issue");
+  });
+
+  it("never presents an occupied connector incident as a client no-show", () => {
+    const message = getReservationEventMessage("service_issue", context);
+    expect(message).toContain("No se aplicará penalidad");
+    expect(message).toContain("no presentación");
   });
 });

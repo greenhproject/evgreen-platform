@@ -4,7 +4,14 @@
  */
 
 import { notifyOwner } from "../_core/notification";
-import { getActiveReservation, getDb, getNotificationByKey, updateEvseStatus } from "../db";
+import {
+  getActiveReservation,
+  getActiveTransaction,
+  getDb,
+  getNotificationByKey,
+  markReservationServiceUnavailable,
+  updateEvseStatus,
+} from "../db";
 import { reservations, users, chargingStations, notifications, evses, whatsappNotificationLog } from "../../drizzle/schema";
 import { eq, and, lte, gte, isNull, desc, or, sql } from "drizzle-orm";
 import { dualCSMS } from "../ocpp/csms-dual";
@@ -181,6 +188,28 @@ export async function sendPenaltyNotification(
     userPhone: user?.phone,
     event: "no_show_penalty",
     context: { stationName, penaltyAmount, connectorLabel },
+  });
+}
+
+/**
+ * Una indisponibilidad atribuible al activo o a una carga ajena no puede tratarse
+ * como no-show. El aviso interno es inmediato; WhatsApp usa plantilla Utility sólo
+ * si está aprobada y el usuario lo autorizó.
+ */
+export async function sendReservationServiceIssue(
+  userId: number,
+  reservationId: number,
+  stationName: string,
+  user?: { name?: string | null; phone?: string | null },
+  connectorLabel?: string | number | null,
+): Promise<boolean> {
+  return sendReservationLifecycleNotification({
+    userId,
+    reservationId,
+    userName: user?.name,
+    userPhone: user?.phone,
+    event: "service_issue",
+    context: { stationName, connectorLabel },
   });
 }
 
@@ -482,6 +511,63 @@ async function processUpcomingReservations(): Promise<void> {
         .where(eq(evses.id, res.evseId));
 
       if (evse) {
+        // No se interrumpe una sesión física ya iniciada para “hacer espacio”.
+        // Si otra persona ocupa el conector cuando la reserva entra en vigencia,
+        // protegemos al titular: incidencia explícita, cero no-show y cero penalidad.
+        const activeTransaction = await getActiveTransaction(res.evseId);
+        const physicalStatuses = ["CHARGING", "OCCUPIED", "SUSPENDED_EV", "SUSPENDED_EVSE", "FINISHING"];
+        const physicallyOccupied = physicalStatuses.includes((evse.connectorStatus || "").toUpperCase());
+        const occupiedByAnotherUser = activeTransaction && activeTransaction.userId !== res.userId;
+
+        if (activeTransaction?.userId === res.userId) {
+          await db.update(reservations)
+            .set({ reservationStatus: "FULFILLED", transactionId: activeTransaction.id } as any)
+            .where(and(eq(reservations.id, res.id), eq(reservations.reservationStatus, "ACTIVE")));
+          console.log(`[ReservationProtection] Reserva #${res.id} cumplida por carga activa de su titular #${activeTransaction.id}`);
+          continue;
+        }
+
+        const reservationHasStarted = new Date(res.startTime).getTime() <= now.getTime();
+        if ((occupiedByAnotherUser || physicallyOccupied) && reservationHasStarted) {
+          const issueCode = occupiedByAnotherUser
+            ? "CONNECTOR_OCCUPIED_BY_ACTIVE_CHARGE"
+            : "CONNECTOR_PHYSICALLY_OCCUPIED";
+          const marked = await markReservationServiceUnavailable(res.id, issueCode, now);
+          if (marked) {
+            const [userRows, stationRows] = await Promise.all([
+              db.select({ id: users.id, name: users.name, phone: users.phone })
+                .from(users).where(eq(users.id, res.userId)).limit(1),
+              db.select({ name: chargingStations.name })
+                .from(chargingStations).where(eq(chargingStations.id, res.stationId)).limit(1),
+            ]);
+            const user = userRows[0];
+            const station = stationRows[0];
+            if (user && station) {
+              await sendReservationServiceIssue(
+                user.id,
+                res.id,
+                station.name,
+                user,
+                evse.connectorId ?? res.evseId,
+              );
+            }
+            await notifyOwner({
+              title: "Reserva afectada por conector ocupado",
+              content: `Reserva #${res.id} en ${station?.name ?? `estación #${res.stationId}`} protegida: ${issueCode}. No se aplicará no-show ni penalidad; revisar operación y alternativas para el cliente.`,
+            });
+          }
+          console.warn(`[ReservationProtection] Reserva #${res.id} marcada SERVICE_UNAVAILABLE: ${issueCode}`);
+          continue;
+        }
+
+        // Antes de la hora exacta no se corta una sesión ajena ni se declara una
+        // reserva incumplida. El selector de carga ya impide nuevas sesiones que
+        // invadan esta franja; esta sesión existente se reevaluará al iniciar.
+        if (occupiedByAnotherUser || physicallyOccupied) {
+          console.info(`[ReservationProtection] EVSE ${res.evseId} sigue ocupado; reserva #${res.id} se reevaluará al iniciar.`);
+          continue;
+        }
+
         // Intento OCPP idempotente: sólo se persiste el identificador cuando el
         // cargador confirma Accepted. La reserva de plataforma permanece visible
         // si el equipo está offline, sin declarar un bloqueo físico inexistente.
@@ -579,6 +665,7 @@ const RESERVATION_EVENTS: ReservationNotificationEvent[] = [
   "cancelled",
   "no_show_warning",
   "no_show_penalty",
+  "service_issue",
 ];
 
 /**

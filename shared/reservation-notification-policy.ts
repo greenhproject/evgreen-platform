@@ -5,7 +5,8 @@ export type ReservationNotificationEvent =
   | "check_in"
   | "cancelled"
   | "no_show_warning"
-  | "no_show_penalty";
+  | "no_show_penalty"
+  | "service_issue";
 
 export type ReservationMessageContext = {
   stationName: string;
@@ -40,6 +41,7 @@ export function getReservationEventTitle(event: ReservationNotificationEvent): s
     cancelled: "Reserva cancelada",
     no_show_warning: "Tu reserva está activa",
     no_show_penalty: "Penalización por no presentarte",
+    service_issue: "Tu reserva fue afectada por una carga en curso",
   };
   return titles[event];
 }
@@ -64,6 +66,8 @@ export function getReservationEventMessage(
       return `Tu reserva en ${context.stationName} ya está activa.${context.graceMinutesLeft ? ` Tienes ${context.graceMinutesLeft} minutos para iniciar la carga antes de que se aplique la política de no presentación.` : " Abre EVGreen para iniciar la carga."}`;
     case "no_show_penalty":
       return `La reserva en ${context.stationName} terminó sin una carga iniciada.${context.penaltyAmount ? ` Se aplicó ${formatMoney(context.penaltyAmount)} según la política de no presentación.` : ""}`;
+    case "service_issue":
+      return `Tu reserva en ${context.stationName} fue afectada porque el conector seguía ocupado. No se aplicará penalidad ni se marcará como no presentación. Busca otro conector desde EVGreen; el equipo de operación queda informado.`;
   }
 }
 
@@ -90,6 +94,7 @@ export function getReservationWhatsAppStatusLabel(event: ReservationNotification
     cancelled: "Cancelada",
     no_show_warning: "Reserva activa",
     no_show_penalty: "No presentación",
+    service_issue: "Incidencia de servicio",
   };
   return labels[event];
 }
@@ -99,10 +104,12 @@ export function getReservationWhatsAppEventType(event: ReservationNotificationEv
   | "reservation_reminder"
   | "reservation_started"
   | "reservation_cancelled"
-  | "reservation_no_show" {
+  | "reservation_no_show"
+  | "reservation_service_issue" {
   if (event === "confirmed") return "reservation_confirmed";
   if (event === "reminder_30m" || event === "reminder_5m" || event === "no_show_warning") return "reservation_reminder";
   if (event === "check_in") return "reservation_started";
   if (event === "cancelled") return "reservation_cancelled";
+  if (event === "service_issue") return "reservation_service_issue";
   return "reservation_no_show";
 }

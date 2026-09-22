@@ -54,6 +54,7 @@ export default function UserReservations() {
       EXPIRED: "bg-gray-500/20 text-gray-400",
       CANCELLED: "bg-red-500/20 text-red-400",
       NO_SHOW: "bg-orange-500/20 text-orange-400",
+      SERVICE_UNAVAILABLE: "bg-amber-500/20 text-amber-300",
     };
     const labels: Record<string, string> = {
       ACTIVE: "Activa",
@@ -61,6 +62,7 @@ export default function UserReservations() {
       EXPIRED: "Expirada",
       CANCELLED: "Cancelada",
       NO_SHOW: "No asistió",
+      SERVICE_UNAVAILABLE: "Afectada por disponibilidad",
     };
     return <Badge className={styles[status]}>{labels[status] || status}</Badge>;
   };
@@ -119,6 +121,54 @@ export default function UserReservations() {
           </Card>
         ) : (
           <>
+            {/* Incidencias recientes: se separan del historial para que el usuario
+                entienda que no fue un no-show ni una cancelación propia. */}
+            {(() => {
+              const recentIssueCutoff = Date.now() - 24 * 60 * 60 * 1000;
+              const affected = (reservations || []).filter((r: any) => {
+                const status = (r.reservationStatus || r.status || "").trim().toUpperCase();
+                if (status !== "SERVICE_UNAVAILABLE") return false;
+                const issueAt = new Date(r.serviceIssueAt || r.updatedAt || r.endTime).getTime();
+                return Number.isFinite(issueAt) && issueAt >= recentIssueCutoff;
+              });
+
+              if (affected.length === 0) return null;
+
+              return (
+                <div className="space-y-3">
+                  <h3 className="font-semibold text-sm text-amber-300 flex items-center gap-1.5 uppercase tracking-wider">
+                    <AlertTriangle className="h-4 w-4" />
+                    Reserva afectada
+                  </h3>
+                  {affected.map((reservation: any) => (
+                    <Card key={reservation.id} className="p-4 border-amber-500/50 bg-amber-500/10">
+                      <div className="flex gap-3">
+                        <AlertTriangle className="h-5 w-5 shrink-0 text-amber-400 mt-0.5" />
+                        <div className="min-w-0 flex-1 space-y-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <p className="font-semibold">{reservation.stationName || `Estación #${reservation.stationId}`}</p>
+                              <p className="text-sm text-amber-100/85">
+                                El conector seguía ocupado cuando inició tu reserva.
+                              </p>
+                            </div>
+                            {getStatusBadge("SERVICE_UNAVAILABLE")}
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            No se aplicará penalidad ni se registrará una no presentación. Nuestro equipo operativo fue informado.
+                          </p>
+                          <Button size="sm" className="w-full sm:w-auto" onClick={() => setLocation("/map")}>
+                            <MapPin className="w-4 h-4 mr-1.5" />
+                            Buscar otro conector
+                          </Button>
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              );
+            })()}
+
 {/* 1. Reservas En Curso / Listas para Cargar */}
             {(() => {
               const now = Date.now();

@@ -34,6 +34,7 @@ import {
   Loader2,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   Wallet,
   Clock,
   TrendingUp,
@@ -651,6 +652,31 @@ export default function StartCharge() {
         {/* Step 3: Charge Options */}
         {step === "charge_options" && stationQuery.data && (
           <div className="space-y-4">
+            {estimateQuery.data?.reservationProtection?.status === "BLOCKED" && (
+              <Card className="border-amber-500/50 bg-amber-500/10">
+                <CardContent className="p-4 flex gap-3">
+                  <AlertTriangle className="h-5 w-5 shrink-0 text-amber-400 mt-0.5" />
+                  <div className="space-y-1">
+                    <p className="font-semibold text-amber-100">Conector protegido para una reserva posterior</p>
+                    <p className="text-sm text-amber-100/80">
+                      {estimateQuery.data.reservationProtection.message}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Selecciona otro conector o ajusta la carga para que finalice antes de la hora indicada. No se interrumpirá una carga ya iniciada.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {estimateQuery.data?.reservationProtection?.status === "COMPATIBLE" && (
+              <Card className="border-sky-500/40 bg-sky-500/5">
+                <CardContent className="p-3 text-sm text-sky-100">
+                  {estimateQuery.data.reservationProtection.message}
+                </CardContent>
+              </Card>
+            )}
+
             {/* Wallet Balance Card */}
             <Card className={`${
               estimateQuery.data?.hasSufficientBalance 
@@ -851,6 +877,7 @@ export default function StartCharge() {
                 disabled={
                   isStarting || 
                   !estimateQuery.data?.hasSufficientBalance ||
+                  estimateQuery.data?.reservationProtection?.status === "BLOCKED" ||
                   estimateQuery.isLoading
                 }
               >

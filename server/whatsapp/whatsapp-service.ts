@@ -21,6 +21,7 @@ export type WaEventType =
   | "reservation_started"
   | "reservation_cancelled"
   | "reservation_no_show"
+  | "reservation_service_issue"
   | "monthly_summary"
   | "card_removed"
   | "card_added"
@@ -395,6 +396,7 @@ function eventTypeToUserPrefKey(eventType: WaEventType): keyof typeof users.$inf
     reservation_started: "waNotifyReservations",
     reservation_cancelled: "waNotifyReservations",
     reservation_no_show: "waNotifyReservations",
+    reservation_service_issue: "waNotifyReservations",
     penalty:           "waNotifyPenalty",
     wallet_recharge:   "waNotifyWallet",
     card_added:        "waNotifyWallet",
@@ -616,6 +618,7 @@ function eventTypeToConfigKey(eventType: WaEventType): string | null {
     reservation_started: "notifyReservation",
     reservation_cancelled: "notifyReservation",
     reservation_no_show: "notifyReservation",
+    reservation_service_issue: "notifyReservation",
     monthly_summary: "notifyMonthlySummary",
     station_available: "notifyStationAvailable",
     card_removed: "notifyWalletRecharge",    // reutiliza el flag de billetera

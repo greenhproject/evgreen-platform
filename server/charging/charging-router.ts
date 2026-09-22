@@ -25,6 +25,8 @@ import {
   getChargeStopMessage,
   isAcceptedRemoteStopResponse,
 } from "../../shared/charge-stop-confirmation-policy";
+import { estimateChargePlan } from "../../shared/charge-plan-estimate";
+import { evaluateReservationChargeProtection } from "../../shared/reservation-charge-protection-policy";
 
 // Helper: buscar conexión por stationId en dualCSMS primero, luego fallback a legacy
 // Si ocppIdentity se provee, también busca en dualCSMS por identidad cuando stationId=null
@@ -635,44 +637,23 @@ export const chargingRouter = router({
         console.warn(`[validateAndEstimate] Error checking subscription:`, subErr);
       }
       
-      // Calcular estimación según modo de carga
-      let estimatedKwh = 0;
-      let estimatedCost = 0;
-      let estimatedTime = 0; // en minutos
-      
       // Obtener potencia del conector
       const connectors = await db.getEvsesByStationId(stationId);
       const connector = connectors.find(c => c.connectorId === connectorId || c.evseIdLocal === connectorId);
       const powerKw = connector?.powerKw ? parseFloat(connector.powerKw) : 22; // Default 22kW
-      
-      switch (chargeMode) {
-        case "fixed_amount":
-          // Usuario quiere gastar X pesos
-          estimatedCost = targetValue;
-          estimatedKwh = estimatedCost / pricePerKwh;
-          estimatedTime = (estimatedKwh / powerKw) * 60;
-          break;
-          
-        case "percentage":
-          // Usuario quiere cargar hasta X% (asumiendo batería promedio de 60kWh)
-          const batteryCapacity = 60; // kWh promedio
-          const currentPercent = 20; // Asumimos 20% inicial (esto vendría del vehículo en un caso real)
-          const targetPercent = targetValue;
-          estimatedKwh = ((targetPercent - currentPercent) / 100) * batteryCapacity;
-          estimatedCost = estimatedKwh * pricePerKwh;
-          estimatedTime = (estimatedKwh / powerKw) * 60;
-          break;
-          
-        case "full_charge":
-          // Carga completa (asumiendo de 20% a 100%)
-          const fullBatteryCapacity = 60;
-          estimatedKwh = 0.8 * fullBatteryCapacity; // 80% de la batería
-          estimatedCost = estimatedKwh * pricePerKwh;
-          estimatedTime = (estimatedKwh / powerKw) * 60;
-          break;
-      }
-      
-      const hasSufficientBalance = balance >= estimatedCost;
+      const chargePlan = estimateChargePlan({
+        chargeMode,
+        targetValue,
+        pricePerKwh,
+        powerKw,
+      });
+      const nextReservation = evseId ? await db.getNextActiveReservationForEvse(evseId) : undefined;
+      const reservationProtection = evaluateReservationChargeProtection({
+        currentUserId: ctx.user.id,
+        estimatedMinutes: chargePlan.estimatedTimeMinutes,
+        nextReservation,
+      });
+      const hasSufficientBalance = balance >= chargePlan.estimatedCost;
       
       // Calcular precio base (sin descuentos) para mostrar en UI
       const basePricePerKwh = useAutoPricing
@@ -689,14 +670,15 @@ export const chargingRouter = router({
         basePricePerKwh, // Precio base sin descuentos dinámicos
         demandDiscountPercent, // % de descuento por baja demanda (0 si no aplica)
         useAutoPricing, // Si la estación usa precio dinámico por IA (controla qué muestra la UI)
-        estimatedKwh: Math.round(estimatedKwh * 100) / 100,
-        estimatedCost: Math.round(estimatedCost),
-        estimatedTime: Math.round(estimatedTime),
+        estimatedKwh: chargePlan.estimatedKwh,
+        estimatedCost: chargePlan.estimatedCost,
+        estimatedTime: chargePlan.estimatedTimeMinutes,
         hasSufficientBalance,
-        shortfall: hasSufficientBalance ? 0 : Math.ceil(estimatedCost - balance),
+        shortfall: hasSufficientBalance ? 0 : Math.ceil(chargePlan.estimatedCost - balance),
         dynamicMultiplier,
         demandLevel: dynamicPricing.getDemandLevel(dynamicMultiplier),
         subscriptionDiscount, // % de descuento aplicado por suscripción (0 si no tiene)
+        reservationProtection,
       };
     }),
 
@@ -781,20 +763,15 @@ export const chargingRouter = router({
       
       // Usar el conector ya obtenido arriba (selectedConnector) para cálculos de potencia
       
-      let estimatedCost = 0;
-      switch (chargeMode) {
-        case "fixed_amount":
-          estimatedCost = targetValue;
-          break;
-        case "percentage":
-          const batteryCapacity = 60;
-          const estimatedKwh = ((targetValue - 20) / 100) * batteryCapacity;
-          estimatedCost = estimatedKwh * pricePerKwh;
-          break;
-        case "full_charge":
-          estimatedCost = 0.8 * 60 * pricePerKwh;
-          break;
-      }
+      // La misma estimación se usa para la UI y para impedir que una nueva sesión
+      // invada la ventana de liberación de una reserva posterior de otro cliente.
+      const chargePlan = estimateChargePlan({
+        chargeMode,
+        targetValue,
+        pricePerKwh,
+        powerKw: Number(selectedConnector?.powerKw) || 22,
+      });
+      const estimatedCost = chargePlan.estimatedCost;
       
       if (balance < estimatedCost) {
         throw new TRPCError({
@@ -811,6 +788,22 @@ export const chargingRouter = router({
         throw new TRPCError({
           code: "FORBIDDEN",
           message: "Este conector está reservado temporalmente para otro usuario.",
+        });
+      }
+
+      // Un conector puede no estar reservado todavía y aun así tener una reserva
+      // posterior. No se detiene una carga ya iniciada: se bloquea la nueva orden
+      // que, por su duración estimada, no podría liberar el activo a tiempo.
+      const nextReservation = evseId ? await db.getNextActiveReservationForEvse(evseId) : undefined;
+      const reservationProtection = evaluateReservationChargeProtection({
+        currentUserId: ctx.user.id,
+        estimatedMinutes: chargePlan.estimatedTimeMinutes,
+        nextReservation,
+      });
+      if (reservationProtection.status === "BLOCKED") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: reservationProtection.message || "La carga estimada invade una reserva posterior.",
         });
       }
       

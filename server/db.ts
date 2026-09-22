@@ -1416,6 +1416,54 @@ export async function getActiveReservation(evseId: number) {
 }
 
 /**
+ * Retorna la siguiente reserva realmente futura del EVSE. Es distinta de
+ * getActiveReservation: permite planear una sesión antes de que se abra la
+ * ventana de bloqueo físico, sin tratar una reserva futura como bloqueo actual.
+ */
+export async function getNextActiveReservationForEvse(evseId: number, now = new Date()) {
+  const db = (await getDb())!;
+  if (!db) return undefined;
+
+  const result = await db.select().from(reservations)
+    .where(and(
+      eq(reservations.evseId, evseId),
+      eq(reservations.reservationStatus, "ACTIVE"),
+      gt(reservations.startTime, now.toISOString()),
+      gt(reservations.endTime, now.toISOString()),
+    ))
+    .orderBy(asc(reservations.startTime))
+    .limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+/**
+ * Registra una indisponibilidad operacional sin convertir al titular en
+ * no-show, sin penalidad y sin alterar una transacción física en progreso.
+ */
+export async function markReservationServiceUnavailable(
+  reservationId: number,
+  issueCode: string,
+  occurredAt = new Date(),
+) {
+  const db = (await getDb())!;
+  if (!db) return false;
+
+  const result = await db.update(reservations)
+    .set({
+      reservationStatus: "SERVICE_UNAVAILABLE",
+      serviceIssueCode: issueCode.slice(0, 80),
+      serviceIssueAt: occurredAt.toISOString(),
+      isPenaltyApplied: false,
+    } as any)
+    .where(and(
+      eq(reservations.id, reservationId),
+      eq(reservations.reservationStatus, "ACTIVE"),
+    ));
+
+  return Number((result as any)[0]?.affectedRows || 0) > 0;
+}
+
+/**
  * Obtiene exclusivamente una reserva operativa del titular. No devuelve reservas
  * futuras, vencidas ni de otro usuario, por lo que no puede desbloquear un EVSE
  * reservado para un tercero.
