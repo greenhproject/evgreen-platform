@@ -103,6 +103,7 @@ export default function WhatsAppConfig() {
   const { data: logs, refetch: refetchLogs } = trpc.whatsapp.getLogs.useQuery({ limit: 50 });
   const { data: availabilityTemplate, refetch: refetchAvailabilityTemplate } = trpc.whatsapp.getStationAvailabilityTemplate.useQuery();
   const { data: reservationTemplate, refetch: refetchReservationTemplate } = trpc.whatsapp.getReservationTemplate.useQuery();
+  const { data: chargerOfflineTemplate, refetch: refetchChargerOfflineTemplate } = trpc.whatsapp.getChargerOfflineTemplate.useQuery();
   const refreshAvailabilityTemplate = trpc.whatsapp.refreshStationAvailabilityTemplate.useMutation({
     onSuccess: (template) => {
       toast.success(template.status === "APPROVED" ? "Plantilla aprobada y lista para usar" : `Estado de plantilla: ${template.status}`);
@@ -131,6 +132,22 @@ export default function WhatsAppConfig() {
     onSuccess: (template) => {
       toast.success(template.status === "APPROVED" ? "Plantilla de reservas aprobada y lista para usar" : "Plantilla de reservas enviada a revisión de Meta");
       refetchReservationTemplate();
+      refetch();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const refreshChargerOfflineTemplate = trpc.whatsapp.refreshChargerOfflineTemplate.useMutation({
+    onSuccess: (template) => {
+      toast.success(template.status === "APPROVED" ? "Plantilla operativa aprobada y lista para usar" : `Estado de plantilla operativa: ${template.status}`);
+      refetchChargerOfflineTemplate();
+      refetch();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const createChargerOfflineTemplate = trpc.whatsapp.createChargerOfflineTemplate.useMutation({
+    onSuccess: (template) => {
+      toast.success(template.status === "APPROVED" ? "Plantilla operativa aprobada y lista para usar" : "Plantilla operativa enviada a revisión de Meta");
+      refetchChargerOfflineTemplate();
       refetch();
     },
     onError: (error) => toast.error(error.message),
@@ -365,7 +382,7 @@ export default function WhatsAppConfig() {
                 Mensaje de Prueba
               </h3>
               <p className="text-sm text-muted-foreground mt-1">
-                Envía un mensaje de prueba para verificar que las credenciales funcionan correctamente.
+                Envía la plantilla Utility aprobada de inicio de carga para validar credenciales y entrega sin depender de la ventana de conversación.
               </p>
             </div>
 
@@ -380,7 +397,7 @@ export default function WhatsAppConfig() {
                   className="pl-9 font-mono text-sm"
                 />
               </div>
-              <p className="text-xs text-muted-foreground">El número debe tener WhatsApp activo y haber iniciado conversación con el número de negocio.</p>
+              <p className="text-xs text-muted-foreground">El número debe tener WhatsApp activo. La prueba usa una plantilla aprobada por Meta.</p>
             </div>
 
             <Button
@@ -493,6 +510,37 @@ export default function WhatsAppConfig() {
               {availabilityTemplate?.status === "NOT_CONFIGURED" && (
                 <Button size="sm" onClick={() => createAvailabilityTemplate.mutate()} disabled={createAvailabilityTemplate.isPending || !config?.enabled} className="bg-green-600 hover:bg-green-700">
                   {createAvailabilityTemplate.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MessageCircle className="mr-2 h-4 w-4" />}
+                  Crear plantilla
+                </Button>
+              )}
+            </div>
+          </div>
+          <Separator className="my-6" />
+          <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h4 className="font-semibold">Plantilla operativa: cargador fuera de servicio</h4>
+                <Badge variant={chargerOfflineTemplate?.status === "APPROVED" ? "default" : chargerOfflineTemplate?.status === "IN_REVIEW" ? "secondary" : "outline"}>
+                  {chargerOfflineTemplate?.status === "APPROVED" ? "Aprobada por Meta" : chargerOfflineTemplate?.status === "IN_REVIEW" ? "En revisión" : chargerOfflineTemplate?.status || "Sin verificar"}
+                </Badge>
+              </div>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                La alerta administrativa de un cargador fuera de servicio se envía exclusivamente con una plantilla Utility aprobada. Nunca se usa texto libre fuera de la ventana de conversación.
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <code className="max-w-full break-all rounded bg-zinc-900 px-2 py-1 font-mono">{chargerOfflineTemplate?.name || "evgreen_cargador_fuera_de_servicio_v1"}</code>
+                {chargerOfflineTemplate?.checkedAt && <span>Verificado: {new Date(chargerOfflineTemplate.checkedAt).toLocaleString("es-CO")}</span>}
+              </div>
+              {chargerOfflineTemplate?.reason && <p className="mt-2 text-xs leading-5 text-amber-500">{chargerOfflineTemplate.reason}</p>}
+            </div>
+            <div className="flex flex-wrap gap-2 lg:justify-end">
+              <Button variant="outline" size="sm" onClick={() => refreshChargerOfflineTemplate.mutate()} disabled={refreshChargerOfflineTemplate.isPending}>
+                {refreshChargerOfflineTemplate.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                Verificar estado
+              </Button>
+              {chargerOfflineTemplate?.status === "NOT_CONFIGURED" && (
+                <Button size="sm" onClick={() => createChargerOfflineTemplate.mutate()} disabled={createChargerOfflineTemplate.isPending || !config?.enabled} className="bg-green-600 hover:bg-green-700">
+                  {createChargerOfflineTemplate.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MessageCircle className="mr-2 h-4 w-4" />}
                   Crear plantilla
                 </Button>
               )}

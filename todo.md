@@ -4493,3 +4493,15 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Si al inicio exacto del turno reservado el conector continúa físicamente ocupado por otra transacción, la reserva pasa de forma atómica a `SERVICE_UNAVAILABLE`, nunca a `NO_SHOW`. El titular recibe una tarjeta prioritaria en Mis reservas, notificación interna y WhatsApp con plantilla Utility si está habilitada/aprobada; se avisa a operaciones y no se genera penalidad ni marca de no presentación.
 - [x] Se agregó trazabilidad (`service_issue_code`, `service_issue_at`) e índice de estado/fin mediante la migración aditiva aplicada `0049_reservation_charge_protection.sql`. No se modificaron reservas, transacciones, saldos ni cobros históricos.
 - [x] Validación: TypeScript limpio; pruebas focales de protección, reservas, carga y OCPP aprobadas; suite completa 218 archivos / 2.273 pruebas y build productivo aprobados. Pendiente: checkpoint, publicación segura en GitHub y confirmación Railway.
+
+
+## Auditoría y endurecimiento de plantillas WhatsApp — 2026-09-22
+
+- [x] Consultar directamente el catálogo de Meta para los 11 eventos de mensajería existentes. Resultado: las once plantillas configuradas están `APPROVED`, sin rechazos ni faltantes; diez son `UTILITY` y el recordatorio/alerta de conector disponible conservan su categoría aprobada por Meta.
+- [x] Validar las credenciales activas y persistir los estados reales de disponibilidad y reserva: ambas plantillas críticas están `APPROVED` y `canSend=true`.
+- [x] Enviar, por autorización explícita, una prueba controlada de cada una de las 11 plantillas al número +57 321 456 7644. Meta aceptó 11/11 solicitudes y devolvió `wamid`; se registraron como `sent` (aceptados por proveedor, no confundidos con `delivered` hasta webhook firmado).
+- [x] Auditar las rutas automáticas: recarga, inicio y fin de carga, tarjetas, recordatorio, ocupación, disponibilidad y reservas se enrutan por plantilla. El webhook de Meta permanece firmado con `X-Hub-Signature-256` y actualiza `sent/delivered/read/failed` de forma idempotente por `wamid`.
+- [x] Eliminar el último envío automático de texto libre: la alerta administrativa `charger_offline` ahora exige la plantilla Utility `evgreen_cargador_fuera_de_servicio_v1`, con estado auditable en Admin → WhatsApp; se creó en Meta (ID 1074810078678528) y está `IN_REVIEW`. Mientras tanto se omite WhatsApp para ese evento en lugar de afirmar o intentar una entrega fuera de plantilla.
+- [x] Convertir el botón administrativo de prueba a la plantilla aprobada `evgreen_inicio_carga_v2`; ya no depende de una ventana de conversación ni usa texto libre.
+- [x] Añadir migración aditiva `0050_charger_offline_whatsapp_template.sql`, aplicada sin modificar registros existentes. El Heartbeat autenticado refresca ahora los tres estados asíncronos de plantilla.
+- [x] Validación: TypeScript, 10 pruebas focales de políticas/disparadores/contrato, regresión completa (219 archivos / 2.277 pruebas) y build productivo aprobaron. La nueva plantilla operativa sólo se probará al quedar `APPROVED`; nunca se enviará durante `IN_REVIEW`.

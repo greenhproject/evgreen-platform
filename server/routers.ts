@@ -8149,15 +8149,32 @@ const whatsappRouter = router({
     return createReservationTemplate();
   }),
 
+  getChargerOfflineTemplate: adminProcedure.query(async () => {
+    const { getConfiguredChargerOfflineTemplate } = await import("./whatsapp/whatsapp-service");
+    return getConfiguredChargerOfflineTemplate();
+  }),
+
+  refreshChargerOfflineTemplate: adminProcedure.mutation(async () => {
+    const { refreshChargerOfflineTemplateStatus } = await import("./whatsapp/whatsapp-service");
+    return refreshChargerOfflineTemplateStatus();
+  }),
+
+  createChargerOfflineTemplate: adminProcedure.mutation(async () => {
+    const { createChargerOfflineTemplate } = await import("./whatsapp/whatsapp-service");
+    return createChargerOfflineTemplate();
+  }),
+
   sendTest: adminProcedure
-    .input(z.object({ toPhone: z.string(), message: z.string().optional() }))
+    .input(z.object({ toPhone: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      const { sendWhatsAppMessage } = await import("./whatsapp/whatsapp-service");
-      const ok = await sendWhatsAppMessage({
+      const { sendWhatsAppTemplate, WA_TEMPLATE_NAMES } = await import("./whatsapp/whatsapp-service");
+      const ok = await sendWhatsAppTemplate({
         toPhone: input.toPhone,
-        message: input.message ?? `✅ *EVGreen — Mensaje de prueba*\n\nHola! Este es un mensaje de prueba del sistema de notificaciones WhatsApp de EVGreen.\n\n_Enviado por: ${ctx.user.name || ctx.user.email}_`,
+        templateName: WA_TEMPLATE_NAMES.inicio_carga,
+        parameters: [ctx.user.name || "Administrador", "Estación de prueba EVGreen", "Conector de prueba", new Date().toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })],
         eventType: "charge_start",
-        skipConfigCheck: true, // Los mensajes de prueba siempre se envían sin importar los toggles
+        referenceType: "admin_template_test",
+        skipConfigCheck: true,
       });
       return { success: ok };
     }),

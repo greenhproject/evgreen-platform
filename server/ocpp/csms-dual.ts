@@ -818,16 +818,25 @@ export class DualCSMS {
           if (!isOnlineVal) {
             try {
               const station = await db.getChargingStationById(stationId);
-              const { sendWhatsAppMessage, WaTemplates, getWhatsAppConfig } = await import("../whatsapp/whatsapp-service");
+              const {
+                getConfiguredChargerOfflineTemplate,
+                sendWhatsAppTemplate,
+                getWhatsAppConfig,
+              } = await import("../whatsapp/whatsapp-service");
               const waCfg = await getWhatsAppConfig();
               const adminPhone = waCfg?.adminPhone;
-              if (adminPhone) {
-                sendWhatsAppMessage({
+              const template = await getConfiguredChargerOfflineTemplate();
+              if (adminPhone && template.canSend) {
+                sendWhatsAppTemplate({
                   toPhone: adminPhone,
-                  message: WaTemplates.chargerOffline({ stationName: station?.name || conn.ocppIdentity }),
+                  templateName: template.name,
+                  parameters: ["Equipo EVGreen", station?.name || conn.ocppIdentity],
                   eventType: "charger_offline",
-                  skipConfigCheck: false,
+                  referenceId: stationId,
+                  referenceType: "station",
                 }).catch((e: Error) => console.error("[WhatsApp] charger_offline error:", e.message));
+              } else if (adminPhone) {
+                console.warn(`[WhatsApp] charger_offline omitido: ${template.reason || `plantilla ${template.status}`}`);
               }
             } catch (waOfflineErr) {
               console.error("[CSMS-DUAL] WhatsApp charger_offline error:", waOfflineErr);

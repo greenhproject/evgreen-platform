@@ -59,11 +59,12 @@ export const WA_TEMPLATE_NAMES = {
   tarjeta_eliminada: "evgreen_tarjeta_eliminada_v3",   // params: nombre
   recordatorio_carga: "evgreen_recordatorio_carga_v3", // params: nombre, hora
   pago_sesion: "evgreen_pago_sesion_v3",               // params: nombre, monto, estacion, saldo
-  // ⚠️ PENDIENTE APROBACIÓN META — registrar en Meta Business Manager antes de usar
+  // Plantillas Utility aprobadas en Meta (auditoría directa: 2026-09-22).
   overstay_gracia: "evgreen_overstay_gracia_v1",        // params: nombre, minutos_gracia, estacion, tarifa_por_min
   overstay_penalizacion: "evgreen_overstay_penalizacion_v1", // params: nombre, estacion, acumulado_cop, tarifa_por_min
   station_available: "evgreen_estacion_disponible_v1",  // params: nombre, conector, estacion
   reservation_status: "evgreen_reserva_actualizacion_v1", // params: nombre, estado, estacion
+  charger_offline: "evgreen_cargador_fuera_de_servicio_v1", // params: destinatario, estacion
 } as const;
 
 export type StationAvailabilityTemplateState =
@@ -373,6 +374,136 @@ export async function createReservationTemplate(): Promise<ReservationTemplateIn
   };
 }
 
+/** Estado de la plantilla Utility para alertas operativas fuera de la ventana de 24 h. */
+export type ChargerOfflineTemplateInfo = StationAvailabilityTemplateInfo;
+
+export async function getConfiguredChargerOfflineTemplate(): Promise<ChargerOfflineTemplateInfo> {
+  const cfg = await getWhatsAppConfig();
+  const name = cfg?.chargerOfflineTemplateName || WA_TEMPLATE_NAMES.charger_offline;
+  const configured = Boolean(cfg?.enabled && cfg?.notifyChargerOffline && cfg?.phoneNumberId && cfg?.accessToken);
+  const status = (cfg?.chargerOfflineTemplateStatus || "NOT_CONFIGURED") as StationAvailabilityTemplateState;
+  return {
+    name,
+    id: cfg?.chargerOfflineTemplateId || null,
+    status,
+    canSend: configured && status === "APPROVED",
+    checkedAt: cfg?.chargerOfflineTemplateCheckedAt || null,
+    reason: !configured
+      ? "WhatsApp no está habilitado para alertas operativas de cargador fuera de servicio"
+      : status !== "APPROVED"
+        ? "La plantilla operativa aún no está aprobada por Meta"
+        : undefined,
+  };
+}
+
+export async function refreshChargerOfflineTemplateStatus(): Promise<ChargerOfflineTemplateInfo> {
+  const cfg = await getWhatsAppConfig();
+  const name = cfg?.chargerOfflineTemplateName || WA_TEMPLATE_NAMES.charger_offline;
+  const checkedAt = new Date().toISOString();
+  if (!cfg?.enabled || !cfg.wabaId || !cfg.accessToken) {
+    return {
+      name,
+      id: cfg?.chargerOfflineTemplateId || null,
+      status: "NOT_CONFIGURED",
+      canSend: false,
+      checkedAt,
+      reason: "La configuración de WhatsApp Business no está completa o está deshabilitada",
+    };
+  }
+
+  try {
+    const response = await fetch(
+      `https://graph.facebook.com/v23.0/${cfg.wabaId}/message_templates?name=${encodeURIComponent(name)}&fields=id,name,status,language`,
+      { headers: { Authorization: `Bearer ${cfg.accessToken}` }, signal: AbortSignal.timeout(20_000) },
+    );
+    const data = (await response.json()) as {
+      data?: Array<{ id?: string; name?: string; status?: string; language?: string }>;
+      error?: { message?: string };
+    };
+    if (!response.ok) throw new Error(data.error?.message || `HTTP ${response.status}`);
+
+    const found = data.data?.find((template) => template.name === name && (!template.language || template.language === WHATSAPP_TEMPLATE_LANGUAGE))
+      ?? data.data?.find((template) => template.name === name);
+    const status = found ? mapMetaTemplateStatus(found.status) : "NOT_CONFIGURED";
+    const database = await getDb();
+    if (database) {
+      await database.update(whatsappConfig).set({
+        chargerOfflineTemplateName: name,
+        chargerOfflineTemplateId: found?.id || null,
+        chargerOfflineTemplateStatus: status,
+        chargerOfflineTemplateCheckedAt: checkedAt,
+      } as any).where(eq(whatsappConfig.id, 1));
+    }
+    return {
+      name,
+      id: found?.id || null,
+      status,
+      canSend: Boolean(cfg.notifyChargerOffline && status === "APPROVED"),
+      checkedAt,
+      reason: status === "NOT_CONFIGURED" ? "La plantilla no existe aún en Meta" : undefined,
+    };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    console.error("[WhatsApp] Error consultando plantilla operativa:", reason);
+    return { name, id: cfg?.chargerOfflineTemplateId || null, status: "ERROR", canSend: false, checkedAt, reason };
+  }
+}
+
+/** Crea una plantilla Utility específica; no se enviará hasta que Meta indique APPROVED. */
+export async function createChargerOfflineTemplate(): Promise<ChargerOfflineTemplateInfo> {
+  const cfg = await getWhatsAppConfig();
+  const name = cfg?.chargerOfflineTemplateName || WA_TEMPLATE_NAMES.charger_offline;
+  if (!cfg?.enabled || !cfg.wabaId || !cfg.accessToken) {
+    throw new Error("Configura y activa WhatsApp Business antes de crear la plantilla");
+  }
+
+  const existing = await refreshChargerOfflineTemplateStatus();
+  if (existing.status !== "NOT_CONFIGURED") return existing;
+
+  const response = await fetch(`https://graph.facebook.com/v23.0/${cfg.wabaId}/message_templates`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${cfg.accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      name,
+      category: "UTILITY",
+      language: WHATSAPP_TEMPLATE_LANGUAGE,
+      parameter_format: "POSITIONAL",
+      components: [{
+        type: "BODY",
+        text: "Hola {{1}}. El cargador de {{2}} está fuera de servicio. Nuestro equipo de soporte fue notificado. Te avisaremos cuando esté disponible.",
+        example: { body_text: [["Equipo EVGreen", "EVG Diamante"]] },
+      }],
+    }),
+  });
+  const data = (await response.json()) as { id?: string; status?: string; error?: { message?: string } };
+  if (!response.ok || !data.id) {
+    throw new Error(data.error?.message || `Meta no aceptó la creación de la plantilla (HTTP ${response.status})`);
+  }
+
+  const checkedAt = new Date().toISOString();
+  const status = mapMetaTemplateStatus(data.status || "IN_REVIEW");
+  const database = await getDb();
+  if (database) {
+    await database.update(whatsappConfig).set({
+      chargerOfflineTemplateName: name,
+      chargerOfflineTemplateId: data.id,
+      chargerOfflineTemplateStatus: status,
+      chargerOfflineTemplateCheckedAt: checkedAt,
+    } as any).where(eq(whatsappConfig.id, 1));
+  }
+  return {
+    name,
+    id: data.id,
+    status,
+    canSend: false,
+    checkedAt,
+    reason: "La plantilla fue enviada a revisión de Meta y se habilitará al quedar APPROVED",
+  };
+}
+
 // ─── Enviar mensaje con plantilla aprobada (funciona sin ventana de 24h) ─────
 
 export interface SendWhatsAppTemplateOptions {
@@ -383,6 +514,7 @@ export interface SendWhatsAppTemplateOptions {
   userId?: number;
   referenceId?: number;
   referenceType?: string;
+  skipConfigCheck?: boolean; // Sólo para pruebas administrativas explícitas con plantilla aprobada.
 }
 
 // Mapeo de eventType a campo de preferencia del usuario
@@ -414,7 +546,7 @@ export async function sendWhatsAppTemplate(opts: SendWhatsAppTemplateOptions): P
   }
   // Verificar que el tipo de notificación esté habilitado (control global admin)
   const notifKey = eventTypeToConfigKey(opts.eventType);
-  if (notifKey && !(cfg as Record<string, unknown>)[notifKey]) {
+  if (!opts.skipConfigCheck && notifKey && !(cfg as Record<string, unknown>)[notifKey]) {
     console.log(`[WhatsApp] Notificación tipo '${opts.eventType}' deshabilitada globalmente — omitiendo plantilla`);
     return false;
   }

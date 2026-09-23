@@ -221,8 +221,13 @@ async function startServer() {
       const stationIds = await getRetryableAvailabilityAlertStationIds();
       // La aprobación ocurre asíncronamente en Meta; este Heartbeat autenticado
       // evita depender de un timer en memoria para habilitar plantillas Utility.
-      const { refreshStationAvailabilityTemplateStatus, refreshReservationTemplateStatus } = await import("../whatsapp/whatsapp-service");
+      const {
+        refreshStationAvailabilityTemplateStatus,
+        refreshReservationTemplateStatus,
+        refreshChargerOfflineTemplateStatus,
+      } = await import("../whatsapp/whatsapp-service");
       await refreshReservationTemplateStatus();
+      await refreshChargerOfflineTemplateStatus();
       if (stationIds.length > 0) {
         await refreshStationAvailabilityTemplateStatus();
       }
