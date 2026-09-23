@@ -16,6 +16,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { randomBytes } from "crypto";
 import * as db from "./db";
 import { getDb } from "./db";
 import { users, userVehicles, favoriteStations, notifications, sessionFeedback, tariffs as tariffsTable, whatsappNotificationLog } from "../drizzle/schema";
@@ -59,7 +60,7 @@ import { userOnboardingRouter } from "./routers/user-onboarding";
 import { buildOcpiRouter } from "./ocpi/ocpi-router";
 import { stageSiemLocationSnapshot } from "./ocpi/ocpi-station-snapshot";
 import { contractsRouter } from "./contracts/contracts-router";
-import { resolveConnectorOperationalState } from "../shared/connector-operational-state";
+import { projectOperationalConnectorStates, resolveConnectorOperationalState } from "../shared/connector-operational-state";
 import { CROWDFUNDING_PROJECT_STATUSES } from "./crowdfunding/project-bulk-policy";
 import { manageCrowdfundingProjectsBulk } from "./crowdfunding/project-bulk-operations";
 import {
@@ -1060,6 +1061,118 @@ const evseRouter = router({
     }),
 });
 
+// ============================================================================
+// PHYSICAL CHARGER ROUTER — Station → Charger → Connector (EVSE)
+// ============================================================================
+// A charger is a physical cabinet. An EVSE is one usable output/connector. This
+// router makes the relationship explicit without changing legacy stations that
+// still have EVSEs directly under a station.
+const chargersRouter = router({
+  listByStation: protectedProcedure
+    .input(z.object({ stationId: z.number() }))
+    .query(async ({ input }) => {
+      const [station, chargerRows, connectorRows, activeTransactions] = await Promise.all([
+        db.getChargingStationById(input.stationId),
+        db.getChargersByStationId(input.stationId),
+        db.getEvsesByStationId(input.stationId),
+        db.getActiveTransactionsByStationId(input.stationId),
+      ]);
+      const { buildStationChargerHierarchy } = await import("../shared/station-charger-hierarchy");
+      const activeTransactionByEvse = new Map(activeTransactions.map((transaction: any) => [transaction.evseId, transaction.id]));
+      const chargerById = new Map(chargerRows.map((charger: any) => [charger.id, charger]));
+      const canonicalConnectors = projectOperationalConnectorStates(connectorRows.map((connector: any) => {
+        const physicalCharger = connector.chargerId ? chargerById.get(connector.chargerId) : null;
+        const ocppIdentity = physicalCharger?.ocppIdentity || station?.ocppIdentity;
+        const liveConnection = ocppIdentity ? dualCSMS.getConnectionInfo(ocppIdentity) : null;
+        return {
+          ...connector,
+          activeTransactionId: activeTransactionByEvse.get(connector.id) ?? null,
+          liveOcppStatus: liveConnection?.connectorStatuses?.[connector.evseIdLocal],
+        };
+      }));
+      return buildStationChargerHierarchy(chargerRows as any, canonicalConnectors as any);
+    }),
+
+  create: technicianProcedure
+    .input(z.object({
+      stationId: z.number(),
+      chargerCode: z.string().trim().min(1).max(40),
+      displayName: z.string().trim().min(1).max(120),
+      ocppIdentity: z.string().trim().min(1).max(100),
+      manufacturer: z.string().trim().max(100).optional(),
+      model: z.string().trim().max(100).optional(),
+      serialNumber: z.string().trim().max(100).optional(),
+      powerKw: z.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
+      maxConcurrentSessions: z.number().int().min(1).max(8).default(1),
+      notes: z.string().max(2000).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const id = await db.createCharger({
+        ...input,
+        chargerStatus: "UNKNOWN",
+        isOnline: 0,
+        isActive: 1,
+      } as any);
+      return { id };
+    }),
+
+  update: technicianProcedure
+    .input(z.object({
+      id: z.number(),
+      data: z.object({
+        chargerCode: z.string().trim().min(1).max(40).optional(),
+        displayName: z.string().trim().min(1).max(120).optional(),
+        manufacturer: z.string().trim().max(100).optional(),
+        model: z.string().trim().max(100).optional(),
+        serialNumber: z.string().trim().max(100).optional(),
+        powerKw: z.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
+        maxConcurrentSessions: z.number().int().min(1).max(8).optional(),
+        notes: z.string().max(2000).optional(),
+        isActive: z.boolean().optional(),
+      }),
+    }))
+    .mutation(async ({ input }) => {
+      await db.updateCharger(input.id, input.data as any);
+      return { success: true };
+    }),
+
+  assignConnector: technicianProcedure
+    .input(z.object({
+      chargerId: z.number(),
+      evseId: z.number(),
+      connectorLabel: z.string().trim().min(1).max(60),
+      qrToken: z.string().trim().min(8).max(80).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const [charger, connector] = await Promise.all([
+        db.getChargerById(input.chargerId),
+        db.getEvseById(input.evseId),
+      ]);
+      if (!charger || !connector || charger.stationId !== connector.stationId) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "El cargador y el conector deben pertenecer a la misma estación." });
+      }
+      await db.updateEvse(input.evseId, {
+        chargerId: input.chargerId,
+        connectorLabel: input.connectorLabel,
+        qrToken: input.qrToken || null,
+      } as any);
+      return { success: true };
+    }),
+
+  regenerateConnectorQr: technicianProcedure
+    .input(z.object({ evseId: z.number() }))
+    .mutation(async ({ input }) => {
+      const connector = await db.getEvseById(input.evseId);
+      if (!connector || !connector.isActive) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "No se encontró un conector activo para generar el QR." });
+      }
+      // Token URL-safe y aleatorio: selecciona un conector, pero no constituye
+      // credencial de carga ni expone identificadores internos.
+      const qrToken = randomBytes(32).toString("base64url");
+      await db.updateEvse(input.evseId, { qrToken } as any);
+      return { qrToken, stationId: connector.stationId, evseId: connector.id };
+    }),
+});
 // ============================================================================
 // TARIFFS ROUTER
 // ============================================================================
@@ -8874,6 +8987,7 @@ export const appRouter = router({
   users: usersRouter,
   stations: stationsRouter,
   evses: evseRouter,
+  chargers: chargersRouter,
   tariffs: tariffsRouter,
   transactions: transactionsRouter,
   reservations: reservationsRouter,

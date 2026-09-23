@@ -8,7 +8,7 @@
  * 4. Confirmar y comenzar carga
  */
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Html5Qrcode, Html5QrcodeScannerState } from "html5-qrcode";
 import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
@@ -53,11 +53,15 @@ export default function StartCharge() {
   // Obtener código de la URL si viene de escaneo QR
   const urlParams = new URLSearchParams(searchString);
   const codeFromUrl = urlParams.get("code");
+  const connectorTokenFromUrl = urlParams.get("connector");
+  const evseIdFromUrl = Number(urlParams.get("evseId"));
   
   const [step, setStep] = useState<Step>(codeFromUrl ? "scan" : "scan");
   const [stationCode, setStationCode] = useState(codeFromUrl || "");
   const [autoSearchDone, setAutoSearchDone] = useState(false);
   const [selectedConnector, setSelectedConnector] = useState<number | null>(null);
+  const [selectedEvseId, setSelectedEvseId] = useState<number | null>(null);
+  const [connectorToken, setConnectorToken] = useState<string | null>(connectorTokenFromUrl);
   const [chargeMode, setChargeMode] = useState<ChargeMode>("full_charge");
   const [targetValue, setTargetValue] = useState(80); // % o $ según el modo
   const [isStarting, setIsStarting] = useState(false);
@@ -71,23 +75,39 @@ export default function StartCharge() {
     { code: stationCode },
     { enabled: stationCode.length > 0 && step === "scan" }
   );
+  const connectorQrQuery = trpc.charging.resolveConnectorQr.useQuery(
+    { token: connectorToken || "invalid" },
+    { enabled: !!connectorToken },
+  );
   
   // Query para obtener conectores disponibles
   const connectorsQuery = trpc.charging.getAvailableConnectors.useQuery(
     { stationId: stationQuery.data?.station.id || 0 },
     { enabled: !!stationQuery.data?.station.id && step === "select_connector" }
   );
+  const { data: chargerHierarchy } = trpc.chargers.listByStation.useQuery(
+    { stationId: stationQuery.data?.station.id || 0 },
+    { enabled: !!stationQuery.data?.station.id && step === "select_connector" },
+  );
+  const chargerGroupByConnectorId = useMemo(() => {
+    const groups = new Map<number, any>();
+    for (const group of chargerHierarchy ?? []) {
+      for (const connector of group.connectors ?? []) groups.set(connector.id, group);
+    }
+    return groups;
+  }, [chargerHierarchy]);
   
   // Query para validar saldo y obtener estimación
   const estimateQuery = trpc.charging.validateAndEstimate.useQuery(
     {
       stationId: stationQuery.data?.station.id || 0,
       connectorId: selectedConnector || 0,
+      evseId: selectedEvseId || undefined,
       chargeMode,
       targetValue: chargeMode === "full_charge" ? 100 : targetValue,
     },
     { 
-      enabled: !!stationQuery.data?.station.id && selectedConnector !== null && step === "charge_options",
+      enabled: !!stationQuery.data?.station.id && selectedConnector !== null && selectedEvseId !== null && step === "charge_options",
       refetchInterval: 10000, // Actualizar cada 10 segundos
     }
   );
@@ -135,6 +155,14 @@ export default function StartCharge() {
     }
     // Si no es URL, devolver el texto como está
     return scannedText.toUpperCase().trim();
+  };
+
+  const extractConnectorToken = (scannedText: string): string | null => {
+    try {
+      return new URL(scannedText).searchParams.get("connector");
+    } catch {
+      return null;
+    }
   };
   
   // Feedback de escaneo exitoso: sonido elegante y vibración sutil
@@ -211,6 +239,7 @@ export default function StartCharge() {
         (decodedText) => {
           // QR escaneado exitosamente
           const code = extractStationCode(decodedText);
+          setConnectorToken(extractConnectorToken(decodedText));
           
           // Feedback: sonido elegante + vibración sutil
           playScanFeedback();
@@ -295,6 +324,39 @@ export default function StartCharge() {
         });
         return;
       }
+
+      // QR de conector: sólo se permite avanzar con la salida física impresa.
+      // El token opaco se resuelve del lado servidor y se contrasta contra la
+      // estación del código, por lo que no puede usarse para seleccionar otra.
+      if (connectorToken) {
+        if (!connectorQrQuery.data) return;
+        if (connectorQrQuery.data.stationId !== stationQuery.data.station.id) {
+          toast.error("El QR del conector no corresponde a esta estación.");
+          return;
+        }
+        const qrConnector = stationQuery.data.connectors.find((connector: any) => connector.id === connectorQrQuery.data.evseId);
+        if (!qrConnector) {
+          toast.error("El conector identificado por el QR ya no está disponible.");
+          return;
+        }
+        setSelectedConnector(qrConnector.connectorId);
+        setSelectedEvseId(qrConnector.id);
+        setStep("charge_options");
+        return;
+      }
+
+      // Navegación desde la tarjeta de una pistola dentro de la misma estación.
+      // A diferencia del token QR, esto es sólo una preselección de UX; el
+      // servidor conserva todas las validaciones antes del RemoteStart.
+      if (Number.isInteger(evseIdFromUrl) && evseIdFromUrl > 0) {
+        const requestedConnector = stationQuery.data.connectors.find((connector: any) => connector.id === evseIdFromUrl);
+        if (requestedConnector) {
+          setSelectedConnector(requestedConnector.connectorId);
+          setSelectedEvseId(requestedConnector.id);
+          setStep("charge_options");
+          return;
+        }
+      }
       
       // Check-in automático: si el usuario tiene reserva activa en esta estación
       const reservation = stationQuery.data.userActiveReservation;
@@ -309,6 +371,7 @@ export default function StartCharge() {
         );
         if (reservedConnector) {
           setSelectedConnector(reservedConnector.evseIdLocal || reservedConnector.connectorId || 1);
+          setSelectedEvseId(reservedConnector.id);
           setStep("charge_options");
           return;
         }
@@ -316,23 +379,25 @@ export default function StartCharge() {
       
       setStep("select_connector");
     }
-  }, [stationQuery.data, step]);
+  }, [stationQuery.data, connectorQrQuery.data, connectorToken, evseIdFromUrl, step]);
   
   // Seleccionar conector
-  const handleSelectConnector = (connectorId: number) => {
-    console.log("[StartCharge] Selecting connector:", connectorId);
+  const handleSelectConnector = (connectorId: number, evseId: number) => {
+    console.log("[StartCharge] Selecting connector:", { connectorId, evseId });
     setSelectedConnector(connectorId);
+    setSelectedEvseId(evseId);
     setStep("charge_options");
   };
   
   // Iniciar carga
   const handleStartCharge = async () => {
-    if (!stationQuery.data || selectedConnector === null) return;
+    if (!stationQuery.data || selectedConnector === null || selectedEvseId === null) return;
     
     setIsStarting(true);
     startChargeMutation.mutate({
       stationId: stationQuery.data.station.id,
       connectorId: selectedConnector,
+      evseId: selectedEvseId,
       chargeMode,
       targetValue: chargeMode === "full_charge" ? 100 : targetValue,
     });
@@ -488,7 +553,10 @@ export default function StartCharge() {
                     id="station-code"
                     placeholder="Ej: CP001 o 1"
                     value={stationCode}
-                    onChange={(e) => setStationCode(e.target.value.toUpperCase())}
+                    onChange={(e) => {
+                      setConnectorToken(null);
+                      setStationCode(e.target.value.toUpperCase());
+                    }}
                     onKeyDown={(e) => e.key === "Enter" && handleStationSearch()}
                   />
                   <Button 
@@ -578,17 +646,35 @@ export default function StartCharge() {
                       ((connector.activeReservationUserId && user?.id && String(connector.activeReservationUserId) === String(user.id)) ||
                        matchesUserActiveReservation);
                     const canSelect = connector.isAvailable || isMyReservation;
+                    const chargerGroup = chargerGroupByConnectorId.get(connector.id);
+                    const isFirstConnectorInCharger = !!chargerGroup && chargerGroup.connectors?.[0]?.id === connector.id;
+                    const connectorLabel = connector.connectorLabel
+                      || chargerGroup?.connectors?.find((entry: any) => entry.id === connector.id)?.label
+                      || `Conector ${connector.connectorNumber || connector.connectorId}`;
                     
                     return (
+                      <div key={connector.id} className="space-y-2">
+                        {isFirstConnectorInCharger && (
+                          <div className="flex items-center justify-between rounded-xl border border-primary/20 bg-primary/5 px-3 py-2">
+                            <div>
+                              <p className="text-sm font-semibold">{chargerGroup.label}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {chargerGroup.concurrentCapacity} carga{chargerGroup.concurrentCapacity === 1 ? "" : "s"} simultánea{chargerGroup.concurrentCapacity === 1 ? "" : "s"}
+                              </p>
+                            </div>
+                            {chargerGroup.supportsIndependentSessions && (
+                              <Badge variant="outline" className="border-primary/40 text-primary text-[10px]">A/B independiente</Badge>
+                            )}
+                          </div>
+                        )}
                       <button
-                        key={connector.id}
                         type="button"
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
                           console.log("[StartCharge] Button clicked, connector:", connector);
                           if (canSelect) {
-                            handleSelectConnector(connector.connectorId);
+                            handleSelectConnector(connector.connectorId, connector.evseId);
                           } else {
                             console.log("[StartCharge] Connector not available, status:", connector.status);
                           }
@@ -612,7 +698,7 @@ export default function StartCharge() {
                               }`} />
                             </div>
                             <div>
-                              <p className="font-medium">Conector {connector.connectorNumber || connector.connectorId}</p>
+                              <p className="font-medium">{connectorLabel}</p>
                               <p className="text-sm text-muted-foreground">
                                 {connector.type?.replace('_', ' ')} • {Number(connector.powerKw).toFixed(0)} kW
                               </p>
@@ -624,6 +710,7 @@ export default function StartCharge() {
                           </Badge>
                         </div>
                       </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -640,6 +727,8 @@ export default function StartCharge() {
                 onClick={() => {
                   setStep("scan");
                   setStationCode("");
+                  setConnectorToken(null);
+                  setSelectedEvseId(null);
                 }}
               >
                 <ArrowLeft className="h-4 w-4 mr-2" />

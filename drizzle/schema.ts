@@ -498,6 +498,8 @@ export const evses = mysqlTable("evses", {
 	stationId: int().notNull(),
 	evseIdLocal: int().notNull(),
 	connectorId: int().default(1).notNull(),
+	connectorLabel: varchar("connector_label", { length: 60 }),
+	qrToken: varchar("qr_token", { length: 80 }),
 	connectorType: mysqlEnum("connector_type", ['TYPE_1','TYPE_2','CCS_1','CCS_2','CHADEMO','TESLA','GBT_AC','GBT_DC']).notNull(),
 	chargeType: mysqlEnum("charge_type", ['AC','DC']).notNull(),
 	powerKw: decimal({ precision: 8, scale: 2 }).notNull(),
@@ -514,6 +516,7 @@ export const evses = mysqlTable("evses", {
 },
 	(table) => [
 		index("idx_evses_station").on(table.stationId),
+		uniqueIndex("ux_evses_qr_token").on(table.qrToken),
 	]);
 
 export const ocpiSyncRuns = mysqlTable("ocpi_sync_runs", {
@@ -2520,6 +2523,8 @@ export const wompiTransactions = mysqlTable("wompi_transactions", {
 export const chargers = mysqlTable("chargers", {
 	id: int().autoincrement().notNull(),
 	stationId: int("station_id").notNull(),
+	chargerCode: varchar("charger_code", { length: 40 }),
+	displayName: varchar("display_name", { length: 120 }),
 	ocppIdentity: varchar("ocpp_identity", { length: 100 }).notNull(),
 	ocppPassword: varchar("ocpp_password", { length: 255 }),
 	brand: varchar({ length: 100 }),
@@ -2527,6 +2532,7 @@ export const chargers = mysqlTable("chargers", {
 	serialNumber: varchar("serial_number", { length: 100 }),
 	firmwareVersion: varchar("firmware_version", { length: 50 }),
 	powerKw: decimal("power_kw", { precision: 8, scale: 2 }),
+	maxConcurrentSessions: int("max_concurrent_sessions").default(1).notNull(),
 	chargerStatus: mysqlEnum("charger_status", ['ONLINE','OFFLINE','FAULTED','UNKNOWN']).default('UNKNOWN').notNull(),
 	isOnline: tinyint("is_online").default(0).notNull(),
 	isActive: tinyint("is_active").default(1).notNull(),
@@ -2539,6 +2545,7 @@ export const chargers = mysqlTable("chargers", {
 },
 (table) => [
 	index("idx_chargers_station").on(table.stationId),
+	index("idx_chargers_station_code").on(table.stationId, table.chargerCode),
 	index("idx_chargers_ocpp_identity").on(table.ocppIdentity),
 ]);
 

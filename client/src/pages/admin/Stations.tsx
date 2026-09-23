@@ -46,6 +46,7 @@ import { Search, Plus, MapPin, Zap, Settings, Eye, Pencil, Trash2, X, QrCode, Fi
 import { MapView } from "@/components/Map";
 import { toast } from "sonner";
 import { StationQRCode } from "@/components/StationQRCode";
+import { ChargerHierarchyManager } from "@/components/ChargerHierarchyManager";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { resolveConnectorOperationalState } from "@shared/connector-operational-state";
 
@@ -2020,7 +2021,7 @@ export default function AdminStations() {
 
           {viewingStation && (
             <Tabs value={detailsTab} onValueChange={setDetailsTab} className="w-full">
-              <TabsList className="grid w-full grid-cols-3">
+              <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 h-auto">
                 <TabsTrigger value="info" className="flex items-center gap-1">
                   <Eye className="w-4 h-4" />
                   Información
@@ -2028,6 +2029,10 @@ export default function AdminStations() {
                 <TabsTrigger value="qr" className="flex items-center gap-1">
                   <QrCode className="w-4 h-4" />
                   Código QR
+                </TabsTrigger>
+                <TabsTrigger value="physical" className="flex items-center gap-1">
+                  <Settings className="w-4 h-4" />
+                  Equipos
                 </TabsTrigger>
                 <TabsTrigger value="logs" className="flex items-center gap-1">
                   <Activity className="w-4 h-4" />
@@ -2236,6 +2241,11 @@ export default function AdminStations() {
                   Ver en mapa
                 </Button>
               </div>
+              </TabsContent>
+
+              {/* Configuración Estación → Cargador → Conector */}
+              <TabsContent value="physical" className="mt-4">
+                <ChargerHierarchyManager station={viewingStation} />
               </TabsContent>
               
               {/* Tab de Código QR */}

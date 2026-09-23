@@ -10,23 +10,27 @@ interface StationQRCodeProps {
   stationCode: string;
   stationName: string;
   stationAddress?: string;
+  connectorToken?: string;
+  connectorLabel?: string;
   onClose?: () => void;
 }
 
-export function StationQRCode({ stationCode, stationName, stationAddress, onClose }: StationQRCodeProps) {
+export function StationQRCode({ stationCode, stationName, stationAddress, connectorToken, connectorLabel, onClose }: StationQRCodeProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const printRef = useRef<HTMLDivElement>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
   const [copied, setCopied] = useState(false);
   
-  // El QR contiene una URL corta que funciona con cualquier escáner
-  // Formato: https://evgreen.lat/c/CP001 - redirige automáticamente a StartCharge
+  // Formato legado: /c/:stationCode. Un token opcional mantiene la estación y
+  // selecciona de forma segura la pistola impresa.
   const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://evgreen.lat';
-  const qrContent = `${baseUrl}/c/${stationCode}`;
+  const qrContent = `${baseUrl}/c/${encodeURIComponent(stationCode)}${connectorToken ? `?connector=${encodeURIComponent(connectorToken)}` : ""}`;
+  const printedLabel = connectorLabel || stationCode;
+  const subtitle = connectorLabel ? `Escanea para cargar en ${connectorLabel}` : "Escanea para cargar tu vehículo";
   
   useEffect(() => {
     generateQR();
-  }, [stationCode]);
+  }, [stationCode, connectorToken]);
   
   const generateQR = async () => {
     if (!canvasRef.current) return;
@@ -84,7 +88,7 @@ export function StationQRCode({ stationCode, stationName, stationAddress, onClos
     // Subtítulo
     ctx.fillStyle = "#666666";
     ctx.font = "16px Arial";
-    ctx.fillText("Escanea para cargar tu vehículo", width / 2, 85);
+    ctx.fillText(subtitle, width / 2, 85);
     
     // Cargar imagen QR
     const qrImg = new Image();
@@ -99,10 +103,10 @@ export function StationQRCode({ stationCode, stationName, stationAddress, onClos
       ctx.fillRect(qrX - 10, qrY - 10, qrSize + 20, qrSize + 20);
       ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
       
-      // Código de estación
+      // Identificador visible de estación o pistola
       ctx.fillStyle = "#111827";
       ctx.font = "bold 28px monospace";
-      ctx.fillText(stationCode, width / 2, qrY + qrSize + 45);
+      ctx.fillText(printedLabel, width / 2, qrY + qrSize + 45);
       
       // Nombre de estación
       ctx.fillStyle = "#4b5563";
@@ -113,12 +117,12 @@ export function StationQRCode({ stationCode, stationName, stationAddress, onClos
       // Instrucciones
       ctx.fillStyle = "#9ca3af";
       ctx.font = "12px Arial";
-      ctx.fillText("O ingresa el código manualmente en la app", width / 2, height - 35);
+      ctx.fillText(connectorLabel ? "QR específico de conector EVGreen" : "O ingresa el código manualmente en la app", width / 2, height - 35);
       ctx.fillText("www.evgreen.lat", width / 2, height - 18);
       
       // Descargar
       const link = document.createElement("a");
-      link.download = `qr-${stationCode}.png`;
+      link.download = `qr-${stationCode}${connectorLabel ? `-${connectorLabel.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}` : ""}.png`;
       link.href = printCanvas.toDataURL("image/png");
       link.click();
       
@@ -129,9 +133,9 @@ export function StationQRCode({ stationCode, stationName, stationAddress, onClos
   
   const copyCode = async () => {
     try {
-      await navigator.clipboard.writeText(stationCode);
+      await navigator.clipboard.writeText(connectorToken ? qrContent : stationCode);
       setCopied(true);
-      toast.success("Código copiado");
+      toast.success(connectorToken ? "Enlace QR específico copiado" : "Código copiado");
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       toast.error("Error al copiar");
@@ -150,7 +154,7 @@ export function StationQRCode({ stationCode, stationName, stationAddress, onClos
       <!DOCTYPE html>
       <html>
       <head>
-        <title>QR ${stationCode} - EVGreen</title>
+        <title>QR ${printedLabel} - EVGreen</title>
         <style>
           @page { size: 100mm 140mm; margin: 0; }
           body { 
@@ -215,14 +219,14 @@ export function StationQRCode({ stationCode, stationName, stationAddress, onClos
       <body>
         <div class="container">
           <div class="logo">⚡ EVGreen</div>
-          <div class="subtitle">Escanea para cargar tu vehículo</div>
+          <div class="subtitle">${subtitle}</div>
           <div class="qr-container">
             <img src="${qrDataUrl}" alt="QR Code" />
           </div>
-          <div class="code">${stationCode}</div>
+          <div class="code">${printedLabel}</div>
           <div class="station-name">${stationName}</div>
           <div class="footer">
-            O ingresa el código manualmente en la app<br/>
+            ${connectorLabel ? "QR específico de conector EVGreen" : "O ingresa el código manualmente en la app"}<br/>
             www.evgreen.lat
           </div>
         </div>
@@ -246,10 +250,10 @@ export function StationQRCode({ stationCode, stationName, stationAddress, onClos
           <canvas ref={canvasRef} className="block" />
         </div>
         
-        {/* Código de estación */}
+        {/* Código de estación o pistola */}
         <div className="mt-4 flex items-center gap-2">
           <Badge variant="outline" className="text-lg font-mono px-4 py-2">
-            {stationCode}
+            {printedLabel}
           </Badge>
           <Button
             variant="ghost"
@@ -289,7 +293,7 @@ export function StationQRCode({ stationCode, stationName, stationAddress, onClos
             <li>Descarga o imprime el código QR</li>
             <li>Instala el QR en un lugar visible del cargador</li>
             <li>Los usuarios pueden escanear con la app EVGreen</li>
-            <li>También pueden ingresar el código <strong>{stationCode}</strong> manualmente</li>
+            <li>{connectorLabel ? "El QR selecciona exclusivamente esta pistola." : <>También pueden ingresar el código <strong>{stationCode}</strong> manualmente</>}</li>
           </ol>
         </CardContent>
       </Card>

@@ -20,8 +20,9 @@ import { isReservationHoldingConnector } from "../shared/reservation-lifecycle-p
 import {
   InsertUser,
 	users,
-	chargingStations,
-	organizations,
+  chargingStations,
+  chargers,
+  organizations,
 	evses,
   transactions,
   meterValues,
@@ -40,6 +41,7 @@ import {
   bannerDailyStats,
   InsertChargingStation,
   InsertEvse,
+  InsertCharger,
   InsertTransaction,
   InsertMeterValue,
   InsertReservation,
@@ -811,6 +813,75 @@ export async function getEvseById(id: number) {
   if (!db) return undefined;
   const result = await db.select().from(evses).where(eq(evses.id, id)).limit(1);
   return result.length > 0 ? result[0] : undefined;
+}
+
+/**
+ * Resolves a deliberately opaque connector QR token. The token is a public
+ * selector, never an authorization credential; charging still requires an
+ * authenticated user and all normal station/reservation checks.
+ */
+export async function getEvseByQrToken(qrToken: string) {
+  const db = (await getDb())!;
+  if (!db) return undefined;
+  const result = await db.select().from(evses).where(eq(evses.qrToken, qrToken)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+// ============================================================================
+// PHYSICAL CHARGER HIERARCHY — Station → Charger → Connector (EVSE)
+// ============================================================================
+
+export async function getChargersByStationId(stationId: number) {
+  const db = (await getDb())!;
+  if (!db) return [];
+  return db.select().from(chargers)
+    .where(eq(chargers.stationId, stationId))
+    .orderBy(asc(chargers.chargerCode), asc(chargers.id));
+}
+
+export async function getChargerById(id: number) {
+  const db = (await getDb())!;
+  if (!db) return undefined;
+  const [charger] = await db.select().from(chargers).where(eq(chargers.id, id)).limit(1);
+  return charger;
+}
+
+export async function getChargerByOcppIdentity(ocppIdentity: string) {
+  const db = (await getDb())!;
+  if (!db || !ocppIdentity) return undefined;
+  const [charger] = await db.select().from(chargers).where(eq(chargers.ocppIdentity, ocppIdentity)).limit(1);
+  return charger;
+}
+
+export async function createCharger(charger: InsertCharger) {
+  const db = (await getDb())!;
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(chargers).values(charger as any);
+  return Number(result[0].insertId);
+}
+
+export async function updateCharger(id: number, data: Partial<InsertCharger>) {
+  const db = (await getDb())!;
+  if (!db) return;
+  await db.update(chargers).set(data as any).where(eq(chargers.id, id));
+}
+
+/**
+ * Obtiene el cargador físico junto con todas sus salidas para validar el
+ * máximo de sesiones simultáneas configurado por el administrador.
+ */
+export async function getChargerWithEvses(chargerId: number) {
+  const [charger, connectorRows] = await Promise.all([
+    getChargerById(chargerId),
+    (async () => {
+      const db = (await getDb())!;
+      if (!db) return [];
+      return db.select().from(evses)
+        .where(and(eq(evses.chargerId, chargerId), eq(evses.isActive, 1)))
+        .orderBy(asc(evses.connectorId), asc(evses.id));
+    })(),
+  ]);
+  return { charger, evses: connectorRows };
 }
 
 export async function getEvsesByStationId(stationId: number) {

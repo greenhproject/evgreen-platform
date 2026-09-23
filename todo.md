@@ -4505,3 +4505,14 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Convertir el botón administrativo de prueba a la plantilla aprobada `evgreen_inicio_carga_v2`; ya no depende de una ventana de conversación ni usa texto libre.
 - [x] Añadir migración aditiva `0050_charger_offline_whatsapp_template.sql`, aplicada sin modificar registros existentes. El Heartbeat autenticado refresca ahora los tres estados asíncronos de plantilla.
 - [x] Validación: TypeScript, 10 pruebas focales de políticas/disparadores/contrato, regresión completa (219 archivos / 2.277 pruebas) y build productivo aprobaron. La nueva plantilla operativa sólo se probará al quedar `APPROVED`; nunca se enviará durante `IN_REVIEW`.
+
+## Jerarquía física Estación → Cargador → Conector (2026-09-22)
+
+- [x] Feature: modelar y presentar gabinetes físicos con código/nombre, capacidad simultánea configurable y salidas agrupadas en la experiencia de usuario y el inicio de carga.
+- [x] Feature: soportar Liboltek de dos pistolas con `maxConcurrentSessions = 2`, y proteger los equipos que admiten sólo una sesión simultánea.
+- [x] Feature: agregar administración de cargadores, asignación de conectores y generación/impresión de QR opacos por pistola desde Admin → Estaciones → Equipos.
+- [x] Security: validar QR por conector en servidor, revocar el token anterior al regenerarlo y mantener los QR históricos de estación compatibles.
+- [x] Fix: resolver el EVSE exacto y la identidad OCPP del gabinete antes del RemoteStart; evita colisiones de `connectorId` entre equipos OCPP 1.6.
+- [x] Feature: calcular la tarifa dinámica desde capacidad y ocupación física agregada de la estación, con el mismo multiplicador para todos sus conectores.
+- [x] Test: cubrir capacidad Liboltek 4×2, equipos no simultáneos/legacy, QR inválido-revocado-mismatch, destino OCPP 1.6/2.0.1 y demanda de estación.
+
