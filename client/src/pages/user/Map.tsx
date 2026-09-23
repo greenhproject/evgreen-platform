@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { AIInsightCard } from "@/components/AIInsightCard";
 import { createStationMarkerFingerprint } from "@/lib/station-marker-stability";
+import { formatStationDateTime } from "@shared/station-timezone";
 
 // Tipo inferido del API - usamos any para flexibilidad con datos del backend
 type StationData = {
@@ -176,23 +177,23 @@ export default function UserMap() {
     { enabled: isAuthenticated, refetchInterval: 10000 }
   );
 
-  // Obtener reservas del usuario para mostrar banner de reserva activa
+  // Historial enriquecido para las demás vistas de mapa.
   const { data: myReservations } = trpc.reservations.myReservations.useQuery(
     undefined,
     { enabled: isAuthenticated, refetchInterval: 30_000 }
   );
 
-  // Mostrar la reserva activa/en curso o próxima más cercana. Soporta reservationStatus y status legado.
-  const activeReservation = useMemo(() => {
-    if (!myReservations) return null;
-    const now = Date.now();
-    return myReservations
-      .filter((r: any) => {
-        const status = (r.reservationStatus || r.status || "").trim().toUpperCase();
-        return (r.reservationStatus === "ACTIVE" || status === "ACTIVE") && new Date(r.endTime).getTime() >= now;
-      })
-      .sort((a: any, b: any) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())[0] || null;
-  }, [myReservations]);
+  // La reserva de cabecera se consulta de forma independiente: nunca debe
+  // desaparecer porque el listado completo esté en caché o falle al enriquecer.
+  const { data: activeReservation } = trpc.reservations.activeForBanner.useQuery(
+    undefined,
+    {
+      enabled: isAuthenticated,
+      refetchInterval: 10_000,
+      refetchOnMount: "always",
+      refetchOnWindowFocus: true,
+    },
+  );
 
   // Tracking GPS en tiempo real con watchPosition
   useEffect(() => {
@@ -636,7 +637,7 @@ export default function UserMap() {
                       Reserva activa
                     </p>
                     <p className="text-xs text-purple-300 truncate">
-                      {(activeReservation as any).stationName || `Estación #${activeReservation.stationId}`} • {new Date(activeReservation.startTime).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
+                      {(activeReservation as any).stationName || `Estación #${activeReservation.stationId}`} • {formatStationDateTime(activeReservation.startTime, (activeReservation as any).stationTimezone, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                     </p>
                   </div>
                   <div className="flex gap-1.5 flex-shrink-0">

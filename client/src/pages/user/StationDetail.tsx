@@ -31,6 +31,13 @@ import {
 import { toast } from "sonner";
 import { AIInsightCard } from "@/components/AIInsightCard";
 import { useAuth } from "@/_core/hooks/useAuth";
+import {
+  formatStationDate,
+  formatStationDateTime,
+  formatStationTime,
+  getStationDateTimeParts,
+  stationLocalDateTimeToUtc,
+} from "@shared/station-timezone";
 
 // Componente de tarifa dinámica del kWh
 function DynamicPricingCard({ stationId }: { stationId: number }) {
@@ -171,13 +178,6 @@ function DynamicPricingCard({ stationId }: { stationId: number }) {
   );
 }
 
-function formatLocalDate(d: Date): string {
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
 export default function StationDetail() {
   const { id } = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
@@ -239,12 +239,13 @@ export default function StationDetail() {
   const totalReviews = reviewsData?.totalReviews ?? 0;
 
   // Obtener tarifa dinámica
+  const stationTimezone = station?.timezone || "America/Bogota";
   const requestedDate = useMemo(() => {
     if (reservationDate && reservationTime) {
-      return new Date(`${reservationDate}T${reservationTime}`);
+      return stationLocalDateTimeToUtc(reservationDate, reservationTime, stationTimezone);
     }
     return new Date();
-  }, [reservationDate, reservationTime]);
+  }, [reservationDate, reservationTime, stationTimezone]);
 
   const { data: dynamicPrice, isLoading: priceLoading } = trpc.reservations.getDynamicPrice.useQuery(
     {
@@ -321,10 +322,12 @@ export default function StationDetail() {
   const handleReserve = (evse: any) => {
     setSelectedEvse(evse);
     // Establecer fecha y hora por defecto usando la zona horaria local del dispositivo
-    const now = new Date();
-    now.setHours(now.getHours() + 1, 0, 0, 0);
-    setReservationDate(formatLocalDate(now));
-    setReservationTime(now.toTimeString().slice(0, 5));
+    // Los controles representan el horario del sitio. No se toman de la zona
+    // del teléfono ni del WebView, que puede ser UTC o una zona distinta.
+    const stationNow = new Date(Date.now() + 60 * 60 * 1000);
+    const parts = getStationDateTimeParts(stationNow, stationTimezone);
+    setReservationDate(formatStationDate(stationNow, stationTimezone));
+    setReservationTime(`${String(parts.hour).padStart(2, "0")}:00`);
     setShowReservationModal(true);
   };
 
@@ -334,7 +337,7 @@ export default function StationDetail() {
       return;
     }
 
-    const startTime = new Date(`${reservationDate}T${reservationTime}`);
+    const startTime = stationLocalDateTimeToUtc(reservationDate, reservationTime, stationTimezone);
     const endTime = new Date(startTime.getTime() + parseInt(estimatedDuration) * 60 * 1000);
 
     createReservation.mutate({
@@ -342,6 +345,7 @@ export default function StationDetail() {
       stationId,
       startTime,
       endTime,
+      stationLocalStart: { date: reservationDate, time: reservationTime },
       estimatedDurationMinutes: parseInt(estimatedDuration),
     });
   };
@@ -602,11 +606,9 @@ export default function StationDetail() {
                                 {isMyNextRes ? "Tu pr\u00f3xima reserva" : "Reserva programada"}
                               </div>
                               <div className="text-xs text-muted-foreground">
-                                {new Date(nextRes.startTime).toLocaleDateString("es-CO", { weekday: "short", day: "numeric", month: "short" })}
-                                {" a las "}
-                                {new Date(nextRes.startTime).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })}
+                                {formatStationDateTime(nextRes.startTime, stationTimezone, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
                                 {" - "}
-                                {new Date(nextRes.endTime).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })}
+                                {formatStationTime(nextRes.endTime, stationTimezone)}
                               </div>
                               {isMyNextRes && myNextResDetail?.reservationFee && (
                                 <div className="text-xs text-blue-300 mt-1">Tarifa: ${Number(myNextResDetail.reservationFee).toLocaleString()} COP</div>
@@ -700,12 +702,10 @@ export default function StationDetail() {
                                 </div>
                                 <div className="text-xs text-muted-foreground space-y-1">
                                   <div>
-                                    {new Date(myRes.startTime).toLocaleDateString("es-CO", { weekday: "short", day: "numeric", month: "short" })}
-                                    {" a las "}
-                                    {new Date(myRes.startTime).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })}
+                                    {formatStationDateTime(myRes.startTime, stationTimezone, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
                                   </div>
                                   {myRes.endTime && (
-                                    <div>Hasta: {new Date(myRes.endTime).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })}</div>
+                                    <div>Hasta: {formatStationTime(myRes.endTime, stationTimezone)}</div>
                                   )}
                                   {myRes.reservationFee && (
                                     <div className="text-purple-300">Tarifa: ${Number(myRes.reservationFee).toLocaleString()} COP</div>
@@ -988,7 +988,7 @@ export default function StationDetail() {
                     type="date"
                     value={reservationDate}
                     onChange={(e) => setReservationDate(e.target.value)}
-                    min={formatLocalDate(new Date())}
+                    min={formatStationDate(new Date(), stationTimezone)}
                     className="bg-background/50 text-sm h-9"
                   />
                 </div>
@@ -1098,11 +1098,11 @@ export default function StationDetail() {
                           className="border-green-500/50 text-green-400 hover:bg-green-500/10 text-xs h-7 px-2"
                           onClick={() => {
                             const d = new Date(slot.time);
-                            setReservationDate(d.toISOString().split("T")[0]);
-                            setReservationTime(d.toTimeString().slice(0, 5));
+                            setReservationDate(formatStationDate(d, stationTimezone));
+                            setReservationTime(formatStationTime(d, stationTimezone));
                           }}
                         >
-                          {new Date(slot.time).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })}
+                          {formatStationTime(slot.time, stationTimezone)}
                         </Button>
                       ))}
                   </div>

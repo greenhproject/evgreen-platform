@@ -2690,6 +2690,7 @@ const claimsRouter = router({
 // Importar módulo de tarifa dinámica
 import * as dynamicPricing from "./pricing/dynamic-pricing";
 import { calculateReservationExpiryTime, isReservationActiveNow } from "../shared/reservation-lifecycle-policy";
+import { normalizeStationTimezone, stationLocalDateTimeToUtc } from "../shared/station-timezone";
 
 const reservationsRouter = router({
   myReservations: protectedProcedure.query(async ({ ctx }) => {
@@ -2708,6 +2709,7 @@ const reservationsRouter = router({
           reservationStatus: r.reservationStatus,
           stationName: station?.name || `Estación #${r.stationId}`,
           stationAddress: station?.address || "",
+          stationTimezone: normalizeStationTimezone(station?.timezone),
           stationOcppIdentity: station?.ocppIdentity || String(station?.id || r.stationId),
           stationLatitude: station?.latitude || null,
           stationLongitude: station?.longitude || null,
@@ -2720,6 +2722,34 @@ const reservationsRouter = router({
     return enriched;
   }),
   
+  /** Consulta mínima para que la reserva vigente nunca desaparezca del mapa. */
+  activeForBanner: protectedProcedure.query(async ({ ctx }) => {
+    const now = new Date();
+    const candidates = await db.getReservationsByUserId(ctx.user.id);
+    const reservation = candidates
+      .filter((item: any) => String(item.reservationStatus || item.status || "").toUpperCase() === "ACTIVE")
+      .filter((item: any) => new Date(item.endTime).getTime() >= now.getTime())
+      .sort((a: any, b: any) => (
+        new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+        || Number(b.id) - Number(a.id)
+      ))[0];
+    if (!reservation) return null;
+
+    // El banner sigue siendo útil si la estación está temporalmente
+    // indisponible: el dato canónico de la reserva no debe desaparecer por un
+    // fallo secundario de enriquecimiento.
+    const station = await db.getChargingStationById(reservation.stationId).catch((error) => {
+      console.warn("[Reservation] active banner station enrichment failed:", error);
+      return undefined;
+    });
+    return {
+      ...reservation,
+      status: reservation.reservationStatus,
+      reservationStatus: reservation.reservationStatus,
+      stationName: station?.name || `Estación #${reservation.stationId}`,
+      stationTimezone: normalizeStationTimezone(station?.timezone),
+    };
+  }),
   // Obtener tarifa dinámica para una reserva
   getDynamicPrice: publicProcedure
     .input(z.object({
@@ -2818,15 +2848,43 @@ const reservationsRouter = router({
     .input(z.object({
       evseId: z.number(),
       stationId: z.number(),
-      startTime: z.date(),
-      endTime: z.date(),
+      // Los clientes recientes envían el valor que el usuario eligió en la
+      // zona de la estación. Los instantes UTC se mantienen temporalmente para
+      // no romper versiones móviles anteriores.
+      stationLocalStart: z.object({
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        time: z.string().regex(/^\d{2}:\d{2}$/),
+      }).optional(),
+      startTime: z.date().optional(),
+      endTime: z.date().optional(),
       estimatedDurationMinutes: z.number().min(15).max(480).default(60),
     }))
     .mutation(async ({ ctx, input }) => {
+      const station = await db.getChargingStationById(input.stationId);
+      if (!station) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Estación no encontrada" });
+      }
+      const stationTimezone = normalizeStationTimezone(station.timezone);
+      const startTime = input.stationLocalStart
+        ? stationLocalDateTimeToUtc(input.stationLocalStart.date, input.stationLocalStart.time, stationTimezone)
+        : input.startTime;
+      if (!startTime || Number.isNaN(startTime.getTime())) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Indica una fecha y hora de reserva válidas" });
+      }
+      const endTime = input.stationLocalStart
+        ? new Date(startTime.getTime() + input.estimatedDurationMinutes * 60_000)
+        : input.endTime;
+      if (!endTime || endTime.getTime() <= startTime.getTime()) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "La hora final de la reserva no es válida" });
+      }
+
       // Verificar que el EVSE exista y no esté fuera de servicio
       const evse = await db.getEvseById(input.evseId);
       if (!evse) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Conector no encontrado" });
+      }
+      if (evse.stationId !== input.stationId) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "El conector no pertenece a la estación seleccionada" });
       }
       // Permitir reservas si el conector está AVAILABLE o RESERVED (puede tener reservas futuras sin conflicto)
       // Solo bloquear si está en uso activo, fuera de servicio o con falla
@@ -2838,8 +2896,8 @@ const reservationsRouter = router({
       // Verificar conflictos de horario
       const hasConflict = await db.checkReservationConflict(
         input.evseId,
-        input.startTime,
-        input.endTime
+        startTime,
+        endTime
       );
       if (hasConflict) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Ya existe una reserva en ese horario" });
@@ -2849,7 +2907,7 @@ const reservationsRouter = router({
       const dynamicPrice = await dynamicPricing.calculateDynamicPrice(
         input.stationId,
         input.evseId,
-        input.startTime,
+        startTime,
         input.estimatedDurationMinutes
       );
       
@@ -2865,15 +2923,15 @@ const reservationsRouter = router({
       }
       
       // El tiempo de expiración cubre la duración completa reservada por el usuario
-      const expiryTime = calculateReservationExpiryTime(input.startTime, input.endTime);
+      const expiryTime = calculateReservationExpiryTime(startTime, endTime);
       
       // Crear la reserva
       const id = await db.createReservation({
         evseId: input.evseId,
         userId: ctx.user.id,
         stationId: input.stationId,
-        startTime: typeof input.startTime === "string" ? input.startTime : (input.startTime as any).toISOString(),
-        endTime: typeof input.endTime === "string" ? input.endTime : (input.endTime as any).toISOString(),
+        startTime: startTime.toISOString(),
+        endTime: endTime.toISOString(),
         // @ts-expect-error -- Drizzle type mismatch: schema field type vs inferred type
         expiryTime,
         reservationFee: dynamicPrice.reservationFee.toString(),
@@ -2901,7 +2959,7 @@ const reservationsRouter = router({
       
       // Solo marcar como RESERVED si la reserva empieza dentro de los próximos 15 minutos
       const now = new Date();
-      const minutesUntilStart = (input.startTime.getTime() - now.getTime()) / (1000 * 60);
+      const minutesUntilStart = (startTime.getTime() - now.getTime()) / (1000 * 60);
       if (minutesUntilStart <= 15 && evse.connectorStatus === "AVAILABLE") {
         await db.updateEvseStatus(input.evseId, "RESERVED", { triggeredBy: "SYSTEM" });
       }
@@ -2910,16 +2968,16 @@ const reservationsRouter = router({
       // Reserva confirmada: alerta interna siempre y WhatsApp únicamente cuando
       // Meta haya aprobado la plantilla transaccional correspondiente.
       try {
-        const [userForReservation, station] = await Promise.all([
+        const [userForReservation, reservationStation] = await Promise.all([
           db.getUserById(ctx.user.id),
-          db.getChargingStationById(input.stationId),
+          Promise.resolve(station),
         ]);
         const { sendReservationConfirmation } = await import("./notifications/reservation-notifications");
         await sendReservationConfirmation(
           ctx.user.id,
           id,
-          station?.name ?? `Estación #${input.stationId}`,
-          new Date(input.startTime),
+          reservationStation?.name ?? `Estación #${input.stationId}`,
+          startTime,
           dynamicPrice.reservationFee,
           userForReservation,
           evse.connectorId ?? input.evseId,
@@ -2933,6 +2991,9 @@ const reservationsRouter = router({
         reservationFee: dynamicPrice.reservationFee,
         noShowPenalty: dynamicPrice.noShowPenalty,
         demandLevel: dynamicPrice.factors.demandLevel,
+        startTime,
+        endTime,
+        stationTimezone,
       };
     }),
   // Cancelar reserva con reembolso dinámico

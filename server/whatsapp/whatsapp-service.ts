@@ -7,6 +7,8 @@ import { getDb } from "../db";
 import { whatsappConfig, whatsappNotificationLog, users } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
 
+type WhatsAppConfigRecord = typeof whatsappConfig.$inferSelect;
+
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
 export type WaEventType =
@@ -42,8 +44,8 @@ export interface SendWhatsAppOptions {
 
 // ─── Obtener configuración activa ─────────────────────────────────────────────
 
-export async function getWhatsAppConfig() {
-  const db = (await getDb())!;
+export async function getWhatsAppConfig(): Promise<WhatsAppConfigRecord | null> {
+  const db = await getDb();
   if (!db) return null;
   const rows = await db.select().from(whatsappConfig).where(eq(whatsappConfig.id, 1)).limit(1);
   return rows[0] ?? null;
