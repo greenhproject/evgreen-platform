@@ -1586,27 +1586,11 @@ async function handleOCPP16Message(
         }
       }
       
-      // Si no se encontró transacción, aceptar y limpiar EVSEs
+      // Una StopTransaction sin correlación local no prueba que una pistola se
+      // haya desconectado. El estado físico sólo cambia con StatusNotification
+      // del conector o con EVDisconnected; nunca se libera toda la estación.
       if (!transaction) {
-        console.warn(`[OCPP] StopTransaction - No transaction found for txId=${payload.transactionId}, idTag=${payload.idTag}. Accepting and cleaning up.`);
-        // Limpiar EVSEs de la estación a AVAILABLE
-        let cleanupStId = stationId;
-        if (!cleanupStId) {
-          try {
-            const station = await db.getChargingStationByOcppIdentity(ocppIdentity);
-            if (station) cleanupStId = station.id;
-          } catch (err) { /* ignore */ }
-        }
-        if (cleanupStId) {
-          try {
-            const evses = await db.getEvsesByStationId(cleanupStId);
-            for (const e of evses) {
-              if (e.connectorStatus !== "AVAILABLE") {
-                await db.updateEvseStatus(e.id, "AVAILABLE", { triggeredBy: "OCPP" });
-              }
-            }
-          } catch (err) { /* ignore */ }
-        }
+        console.warn(`[OCPP] StopTransaction - No transaction found for txId=${payload.transactionId}, idTag=${payload.idTag}. Accepting without altering connector state.`);
         return { idTagInfo: { status: "Accepted" } };
       }
       const meterStart = transaction.meterStart ? parseFloat(transaction.meterStart) : 0;

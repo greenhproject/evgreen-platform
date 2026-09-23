@@ -18,6 +18,7 @@ import { sendChargingCompleteNotification } from "../firebase/fcm";
 // alertsService ya no se usa directamente aquí — las alertas se manejan en index.ts
 import mysql from "mysql2/promise";
 import { calculateSocEstimation } from "../charging/soc-estimation";
+import { shouldTreatOcpp16AvailableAsPhysicalDisconnect } from "../../shared/ocpp-status-notification-policy";
 
 // BUILD VERSION para diagnóstico de deploys
 const BUILD_VERSION = "v2026.02.18.B";
@@ -790,7 +791,11 @@ export class DualCSMS {
             console.error(`[CSMS-DUAL] StatusNotification: Error starting overstay tracking:`, e);
           }
         }
-        if (req.status === "Available" && oldStatus === "FINISHING") {
+        if (shouldTreatOcpp16AvailableAsPhysicalDisconnect({
+          connectorId: req.connectorId,
+          status: req.status,
+          previousConnectorStatus: oldStatus,
+        })) {
           try {
             const { onCableDisconnected } = await import("../charging/overstay-monitor");
             await onCableDisconnected(evse.id);
