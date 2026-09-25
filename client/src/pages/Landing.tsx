@@ -36,6 +36,25 @@ import {
 } from "lucide-react";
 import { InstallButton } from "@/components/InstallBanner";
 
+const GOOGLE_PLAY_URL = "https://play.google.com/store/apps/details?id=com.greenhproject.evgreen";
+const GOOGLE_PLAY_BADGE_URL = "/manus-storage/google-play-badge-es-419_ac668aaf.png";
+
+/**
+ * Distintivo oficial localizado de Google Play. Evita reinterpretar el prism
+ * de Google con un SVG propio, lo que producía un icono deformado en móvil.
+ */
+function GooglePlayBadge({ className = "" }: { className?: string }) {
+  return (
+    <img
+      src={GOOGLE_PLAY_BADGE_URL}
+      alt="Descargar EVGreen en Google Play"
+      width={646}
+      height={250}
+      className={`h-auto w-full ${className}`}
+    />
+  );
+}
+
 // Componente de conteo animado
 function AnimatedCounter({ value, suffix = "", prefix = "" }: { value: number; suffix?: string; prefix?: string }) {
   const [count, setCount] = useState(0);
@@ -232,23 +251,13 @@ export default function Landing() {
               </a>
               {/* Google Play */}
               <a
-                href="https://play.google.com/store/apps/details?id=com.greenhproject.evgreen"
+                href={GOOGLE_PLAY_URL}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="group inline-flex items-center gap-3 bg-black/80 hover:bg-black border border-white/15 hover:border-white/30 text-white px-6 py-4 rounded-xl transition-all duration-200 hover:scale-[1.03] hover:shadow-xl hover:shadow-green-500/20 backdrop-blur-sm"
+                className="group relative inline-flex w-full max-w-[268px] items-center justify-center rounded-xl transition-transform duration-200 hover:scale-[1.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 aria-label="Descargar EVGreen en Google Play"
               >
-                {/* Google Play logo */}
-                <svg viewBox="0 0 512 512" className="h-7 w-7 flex-shrink-0" aria-hidden="true">
-                  <path d="M325.3 234.3L104.6 13l280.8 161.2-60.1 60.1zM47 0C34 6.8 25.3 19.2 25.3 35.3v441.3c0 16.1 8.7 28.5 21.7 35.3l2.7 1.5 246.9-246.9v-5.8L47 0zm425.2 225.6l-58.9-34.1-65.7 65.5 65.7 65.5 60.1-34.1c17.1-9.8 17.1-25.8-.2-35.3l-1 1.5zm-218.5 152l-246.9 247c13 7.3 28.4 7.3 41.4 0l279.1-160.8-73.6-86.2z" fill="white"/>
-                </svg>
-                <div className="text-left">
-                  <p className="text-white/50 text-[9px] uppercase tracking-widest leading-none font-medium">Get it on</p>
-                  <p className="text-white font-semibold text-base leading-tight">Google Play</p>
-                </div>
-                <div className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                </div>
+                <GooglePlayBadge />
               </a>
             </motion.div>
 
@@ -1076,23 +1085,15 @@ export default function Landing() {
                   </a>
                   {/* Google Play */}
                   <a
-                    href="https://play.google.com/store/apps/details?id=com.greenhproject.evgreen"
+                    href={GOOGLE_PLAY_URL}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="group inline-block"
+                    className="group inline-block w-full sm:w-auto"
                     aria-label="Descargar EVGreen en Google Play"
                   >
-                    <div className="relative">
+                    <div className="relative mx-auto w-full max-w-[320px]">
                       <div className="absolute -inset-1.5 bg-gradient-to-r from-green-500 to-emerald-500 rounded-2xl blur-xl opacity-50 group-hover:opacity-80 transition-opacity duration-300" />
-                      <div className="relative bg-black rounded-2xl px-6 py-4 flex items-center gap-4 border border-white/10 group-hover:border-white/25 transition-all duration-300 group-hover:scale-[1.04] group-hover:shadow-2xl group-hover:shadow-green-500/30">
-                        <svg viewBox="0 0 512 512" className="h-10 w-10 flex-shrink-0" aria-hidden="true">
-                          <path d="M325.3 234.3L104.6 13l280.8 161.2-60.1 60.1zM47 0C34 6.8 25.3 19.2 25.3 35.3v441.3c0 16.1 8.7 28.5 21.7 35.3l2.7 1.5 246.9-246.9v-5.8L47 0zm425.2 225.6l-58.9-34.1-65.7 65.5 65.7 65.5 60.1-34.1c17.1-9.8 17.1-25.8-.2-35.3l-1 1.5zm-218.5 152l-246.9 247c13 7.3 28.4 7.3 41.4 0l279.1-160.8-73.6-86.2z" fill="white"/>
-                        </svg>
-                        <div>
-                          <p className="text-white/50 text-[10px] font-semibold uppercase tracking-widest leading-none mb-1">Get it on</p>
-                          <p className="text-white text-2xl font-bold leading-none tracking-tight">Google Play</p>
-                        </div>
-                      </div>
+                      <GooglePlayBadge className="relative rounded-2xl transition-transform duration-300 group-hover:scale-[1.04] group-hover:shadow-2xl group-hover:shadow-green-500/30" />
                     </div>
                   </a>
                 </div>
