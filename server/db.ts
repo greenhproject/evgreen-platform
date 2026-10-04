@@ -152,6 +152,7 @@ import { ConnectorStatus, TriggeredBy } from "./charging/connector-state.service
 import { toUtcIso } from "./utils/dates";
 import { mapInheritedSpacePhotos } from "./spaces/crowdfunding-inheritance";
 import { resolveAvailabilityAttempt, type AvailabilityPushStatus, type AvailabilityWhatsAppStatus } from "./notifications/availability-alert-policy";
+import { summarizeFinancialReconciliations } from "../shared/financial-reconciliation-policy";
 
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -2027,6 +2028,66 @@ export async function getWalletTransactionsByUserId(userId: number, limit = 50) 
   if (!db) return [];
   const rows = await db.select().from(walletTransactions).where(eq(walletTransactions.userId, userId)).orderBy(desc(walletTransactions.createdAt)).limit(limit);
   return rows.map((row) => ({ ...row, createdAt: toUtcIso(row.createdAt) as string }));
+}
+
+/**
+ * Libro de conciliaciones financieras aprobadas. La fuente son los asientos
+ * ADMIN_REFUND / ADMIN_REVERSAL de billetera, nunca una estimación de UI.
+ */
+export async function getFinancialReconciliationReport(limit = 100) {
+  const db = (await getDb())!;
+  if (!db) return [];
+
+  const reconciliationCandidates = await db
+    .select()
+    .from(walletTransactions)
+    .where(
+      and(
+        eq(walletTransactions.referenceType, "TRANSACTION"),
+        or(
+          eq(walletTransactions.type, "ADMIN_REFUND"),
+          eq(walletTransactions.type, "ADMIN_REVERSAL"),
+        ),
+      ),
+    )
+    .orderBy(desc(walletTransactions.createdAt))
+    .limit(Math.min(Math.max(limit * 3, 50), 500));
+
+  const transactionIds = [...new Set(reconciliationCandidates
+    .map((adjustment) => adjustment.referenceId)
+    .filter((id): id is number => typeof id === "number"))];
+  if (transactionIds.length === 0) return [];
+
+  // Para cada caso se carga el libro completo ligado a la transacción. Así el
+  // reporte puede demostrar que cobro original + distribución + reversos deja
+  // el neto correcto, en vez de sumar solamente la última corrección.
+  const ledgerEntries = await db
+    .select()
+    .from(walletTransactions)
+    .where(
+      and(
+        eq(walletTransactions.referenceType, "TRANSACTION"),
+        inArray(walletTransactions.referenceId, transactionIds),
+      ),
+    )
+    .orderBy(asc(walletTransactions.createdAt), asc(walletTransactions.id));
+
+  const sessions = await db
+    .select()
+    .from(transactions)
+    .where(inArray(transactions.id, transactionIds));
+  const userIds = [...new Set(sessions.map((session) => session.userId))];
+  const stationIds = [...new Set(sessions.map((session) => session.stationId))];
+  const [people, stations] = await Promise.all([
+    userIds.length > 0
+      ? db.select({ id: users.id, name: users.name, email: users.email }).from(users).where(inArray(users.id, userIds))
+      : Promise.resolve([]),
+    stationIds.length > 0
+      ? db.select({ id: chargingStations.id, name: chargingStations.name }).from(chargingStations).where(inArray(chargingStations.id, stationIds))
+      : Promise.resolve([]),
+  ]);
+
+  return summarizeFinancialReconciliations(ledgerEntries, sessions, people, stations).slice(0, limit);
 }
 
 // ============================================================================

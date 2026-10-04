@@ -93,6 +93,22 @@ const strictAdminProcedure = protectedProcedure.use(({ ctx, next }) => {
   return next({ ctx });
 });
 
+// Reportes financieros auditables: exclusivos de administración. Soporte puede
+// ver la alerta técnica, pero no saldos, movimientos ni beneficiarios.
+const reportsRouter = router({
+  financialReconciliations: strictAdminProcedure
+    .input(z.object({
+      limit: z.number().int().min(1).max(100).default(50),
+    }))
+    .query(async ({ input }) => {
+      const items = await db.getFinancialReconciliationReport(input.limit);
+      return {
+        items,
+        generatedAt: new Date(),
+      };
+    }),
+});
+
 // Procedimiento para ingeniero jefe (control total del área técnica)
 const engineerProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== "engineer" && ctx.user.role !== "admin" && ctx.user.role !== "staff") {
@@ -8983,6 +8999,7 @@ const feedbackRouter = router({
 
 export const appRouter = router({
   system: systemRouter,
+  reports: reportsRouter,
   auth: authRouter,
   users: usersRouter,
   stations: stationsRouter,

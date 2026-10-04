@@ -9,6 +9,14 @@ vi.mock("../_core/notification", () => ({
   notifyOwner: vi.fn().mockResolvedValue(true),
 }));
 
+vi.mock("../notifications/technician-notification-service", () => ({
+  notifyTechniciansOfAlert: vi.fn().mockResolvedValue({
+    pushSent: 0,
+    emailSent: 0,
+    inAppCreated: 0,
+  }),
+}));
+
 vi.mock("../db", () => ({
   createOcppAlert: vi.fn().mockResolvedValue(1),
   getOcppAlerts: vi.fn().mockResolvedValue([]),
@@ -109,6 +117,31 @@ describe("OCPP Alerts Service", () => {
           ocppIdentity: "CP005",
           alertType: "BOOT_REJECTED",
           severity: "critical",
+        })
+      );
+    });
+  });
+
+  describe("handleTransactionReplay", () => {
+    it("should make a warning visible without claiming a financial charge", async () => {
+      await alertsService.handleTransactionReplay({
+        ocppIdentity: "EVG001",
+        stationId: 77,
+        transactionId: 1140032,
+        connectorId: 2,
+        protocol: "OCPP 1.6",
+      });
+
+      expect(db.createOcppAlert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ocppIdentity: "EVG001",
+          stationId: 77,
+          alertType: "TRANSACTION_ERROR",
+          severity: "warning",
+          payload: expect.objectContaining({
+            event: "START_TRANSACTION_REPLAY",
+            financialImpact: "NONE",
+          }),
         })
       );
     });

@@ -1482,6 +1482,15 @@ async function handleOCPP16Message(
       // Una retransmisión del cargador no representa una sesión nueva: responder
       // con el mismo id físico sin reenviar WhatsApp, recibos ni crear cobros.
       if (!persistedStart.created) {
+        alertsService.handleTransactionReplay({
+          ocppIdentity,
+          stationId: resolvedStId,
+          transactionId: newTxId,
+          connectorId: payload.connectorId,
+          protocol: "OCPP 1.6",
+        }).catch((alertError) => {
+          console.error("[OCPP] Could not record contained StartTransaction replay:", alertError);
+        });
         return {
           idTagInfo: { status: "Accepted" },
           transactionId: effectiveOcppNumericTxId,

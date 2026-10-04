@@ -284,6 +284,46 @@ export async function handleBootRejected(
 }
 
 /**
+ * Una retransmisión de StartTransaction no crea una sesión ni un cobro nuevo,
+ * pero sí es una señal operativa para soporte: puede anticipar reconexiones o
+ * firmware inestable del cargador. Se registra como TRANSACTION_ERROR para no
+ * ampliar el enum operativo existente y se deduplica por cargador.
+ */
+export async function handleTransactionReplay(input: {
+  ocppIdentity: string;
+  stationId?: number;
+  transactionId: number;
+  connectorId?: number;
+  protocol: "OCPP 1.6" | "OCPP 2.0.1";
+}): Promise<void> {
+  if (isInCooldown(input.ocppIdentity, "TRANSACTION_ERROR")) {
+    return;
+  }
+
+  const connectorLabel = input.connectorId ? ` en el conector ${input.connectorId}` : "";
+  const alert: OcppAlert = {
+    ocppIdentity: input.ocppIdentity,
+    stationId: input.stationId,
+    alertType: "TRANSACTION_ERROR",
+    severity: "warning",
+    title: `Retransmisión OCPP contenida: ${input.ocppIdentity}`,
+    message: `El cargador retransmitió un inicio de carga ${input.protocol}${connectorLabel}. La sesión #${input.transactionId} fue reutilizada y no se creó ningún cobro adicional. Revisa conectividad o firmware si el evento se repite.`,
+    payload: {
+      event: "START_TRANSACTION_REPLAY",
+      transactionId: input.transactionId,
+      connectorId: input.connectorId,
+      protocol: input.protocol,
+      financialImpact: "NONE",
+    },
+    acknowledged: false,
+    createdAt: new Date(),
+  };
+
+  await saveAndNotifyAlert(alert);
+  registerAlert(input.ocppIdentity, "TRANSACTION_ERROR");
+}
+
+/**
  * Guarda la alerta en BD y envía notificaciones a owner + técnicos.
  * 
  * Para alertas de DISCONNECTION, hace una verificación final antes de notificar:

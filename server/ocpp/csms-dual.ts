@@ -15,7 +15,7 @@ import * as db from "../db";
 import { nanoid } from "nanoid";
 import { findPendingSessionByOcppIdentity, findPendingSessionFromDb, removePendingSession, setActiveSession, getActiveSessionById, removeActiveSession } from "../charging/charging-router";
 import { sendChargingCompleteNotification } from "../firebase/fcm";
-// alertsService ya no se usa directamente aquí — las alertas se manejan en index.ts
+import * as alertsService from "./alerts-service";
 import mysql from "mysql2/promise";
 import { calculateSocEstimation } from "../charging/soc-estimation";
 import { shouldTreatOcpp16AvailableAsPhysicalDisconnect } from "../../shared/ocpp-status-notification-policy";
@@ -2245,6 +2245,15 @@ export class DualCSMS {
         if (!persistedStart.created) {
           console.warn(`[CSMS-DUAL] OCPP 2.0.1 Started replay ignored for transaction ${transactionId}`);
           await db.updateEvseStatus(evse.id, "CHARGING", { triggeredBy: "OCPP" });
+          alertsService.handleTransactionReplay({
+            ocppIdentity: conn.ocppIdentity,
+            stationId: conn.stationId,
+            transactionId,
+            connectorId: req.evse?.connectorId ?? evse.connectorId ?? undefined,
+            protocol: "OCPP 2.0.1",
+          }).catch((alertError) => {
+            console.error("[CSMS-DUAL] Could not record contained TransactionEvent replay:", alertError);
+          });
           break;
         }
 
