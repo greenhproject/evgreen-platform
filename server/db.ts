@@ -1106,6 +1106,88 @@ export async function createTransaction(transaction: InsertTransaction) {
   return result[0].insertId;
 }
 
+/**
+ * Crea una sesión OCPP 1.6 una sola vez.
+ *
+ * Algunos cargadores retransmiten StartTransaction después de una reconexión.
+ * La huella física persistente y su índice único convierten ese reintento en
+ * una lectura del recibo existente, incluso entre instancias del servidor.
+ */
+export async function createOcpp16TransactionOnce(
+  transaction: InsertTransaction & { ocppStartFingerprint: string },
+): Promise<{ transactionId: number; transaction: Transaction; created: boolean }> {
+  const database = (await getDb())!;
+  if (!database) throw new Error("Database not available");
+
+  const normalizedTransaction: any = { ...transaction };
+  if (normalizedTransaction.status && normalizedTransaction.transactionStatus === undefined) {
+    normalizedTransaction.transactionStatus = normalizedTransaction.status;
+  }
+  if (normalizedTransaction.transactionStatus && normalizedTransaction.status === undefined) {
+    normalizedTransaction.status = normalizedTransaction.transactionStatus;
+  }
+
+  try {
+    const result = await database.insert(transactions).values(normalizedTransaction);
+    const transactionId = Number(result[0].insertId);
+    const created = await getTransactionById(transactionId);
+    if (!created) throw new Error(`Created OCPP transaction ${transactionId} could not be read`);
+    return { transactionId, transaction: created, created: true };
+  } catch (error: any) {
+    const isDuplicateKey = error?.code === "ER_DUP_ENTRY" || String(error?.message || "").includes("ux_transactions_ocpp_start_fingerprint");
+    if (!isDuplicateKey) throw error;
+
+    const existing = await database
+      .select()
+      .from(transactions)
+      .where(eq(transactions.ocppStartFingerprint, transaction.ocppStartFingerprint))
+      .limit(1);
+    if (!existing[0]) throw error;
+
+    return { transactionId: existing[0].id, transaction: existing[0], created: false };
+  }
+}
+
+/**
+ * Persiste una sesión identificada por el transactionId emitido por OCPP 2.0.1
+ * o por la identidad interna del CSMS. La restricción única impide que eventos
+ * Started repetidos creen recibos independientes.
+ */
+export async function createTransactionOnceByOcppId(
+  transaction: InsertTransaction & { ocppTransactionId: string },
+): Promise<{ transactionId: number; transaction: Transaction; created: boolean }> {
+  const database = (await getDb())!;
+  if (!database) throw new Error("Database not available");
+
+  const normalizedTransaction: any = { ...transaction };
+  if (normalizedTransaction.status && normalizedTransaction.transactionStatus === undefined) {
+    normalizedTransaction.transactionStatus = normalizedTransaction.status;
+  }
+  if (normalizedTransaction.transactionStatus && normalizedTransaction.status === undefined) {
+    normalizedTransaction.status = normalizedTransaction.transactionStatus;
+  }
+
+  try {
+    const result = await database.insert(transactions).values(normalizedTransaction);
+    const transactionId = Number(result[0].insertId);
+    const created = await getTransactionById(transactionId);
+    if (!created) throw new Error(`Created OCPP transaction ${transactionId} could not be read`);
+    return { transactionId, transaction: created, created: true };
+  } catch (error: any) {
+    const isDuplicateKey = error?.code === "ER_DUP_ENTRY" || String(error?.message || "").includes("ux_transactions_ocpp_transaction_id");
+    if (!isDuplicateKey) throw error;
+
+    const existing = await database
+      .select()
+      .from(transactions)
+      .where(eq(transactions.ocppTransactionId, transaction.ocppTransactionId))
+      .limit(1);
+    if (!existing[0]) throw error;
+
+    return { transactionId: existing[0].id, transaction: existing[0], created: false };
+  }
+}
+
 export async function getTransactionById(id: number) {
   const db = (await getDb())!;
   if (!db) return undefined;
@@ -1280,6 +1362,112 @@ export async function updateTransaction(id: number, data: Partial<InsertTransact
     normalizedData.status = normalizedData.transactionStatus;
   }
   await db.update(transactions).set(normalizedData).where(eq(transactions.id, id));
+}
+
+/**
+ * Reclama la liquidación física de una sesión. Sólo el primer StopTransaction
+ * / TransactionEvent.Ended puede pasar; mensajes OCPP repetidos no generan
+ * una segunda billetera, participación de inversionista ni notificaciones.
+ */
+export async function completeTransactionOnce(id: number, data: Partial<InsertTransaction>) {
+  const database = (await getDb())!;
+  if (!database) return false;
+
+  const normalizedData: any = { ...data, status: "COMPLETED", transactionStatus: "COMPLETED" };
+  const result = await database
+    .update(transactions)
+    .set(normalizedData)
+    .where(and(
+      eq(transactions.id, id),
+      inArray(transactions.status, ["PENDING", "IN_PROGRESS"]),
+      inArray(transactions.transactionStatus, ["PENDING", "IN_PROGRESS"]),
+    ));
+
+  return Number((result as any)[0]?.affectedRows || 0) === 1;
+}
+
+/**
+ * Registra y descuenta un cobro de energía exactamente una vez por sesión.
+ * La inserción de una clave única ocurre dentro de la misma transacción que el
+ * movimiento de saldo; si un flujo distinto intenta repetirlo, revierte sin
+ * tocar la billetera.
+ */
+export async function deductChargePaymentOnce(input: {
+  userId: number;
+  transactionId: number;
+  amount: number;
+  description: string;
+}) {
+  const database = (await getDb())!;
+  if (!database) throw new Error("Database not available");
+
+  const idempotencyKey = `charge-payment:${input.transactionId}`;
+  const roundedAmount = Math.max(0, Math.round(input.amount * 100) / 100);
+
+  try {
+    return await (database as any).transaction(async (tx: any) => {
+      const existing = await tx
+        .select()
+        .from(walletTransactions)
+        .where(eq(walletTransactions.idempotencyKey, idempotencyKey))
+        .limit(1);
+      if (existing[0]) {
+        return { deducted: false, duplicate: true, balance: Number(existing[0].balanceAfter) };
+      }
+
+      const walletRows = await tx
+        .select()
+        .from(wallets)
+        .where(eq(wallets.userId, input.userId))
+        .limit(1);
+      const wallet = walletRows[0];
+      if (!wallet) return { deducted: false, duplicate: false, balance: null };
+
+      const balanceBefore = Number(wallet.balance);
+      const balanceAfter = Math.max(0, balanceBefore - roundedAmount);
+
+      // Reserva de clave antes de alterar el saldo. Una violación de UNIQUE
+      // revierte esta transacción y evita cualquier débito duplicado.
+      const created = await tx.insert(walletTransactions).values({
+        walletId: wallet.id,
+        userId: input.userId,
+        type: "CHARGE_PAYMENT",
+        amount: "0",
+        balanceBefore: balanceBefore.toFixed(2),
+        balanceAfter: balanceBefore.toFixed(2),
+        referenceId: input.transactionId,
+        referenceType: "TRANSACTION",
+        idempotencyKey,
+        paymentStatus: "PENDING",
+        description: "Liquidación de carga en proceso",
+      } as any);
+      const movementId = Number(created[0].insertId);
+
+      await tx.update(wallets).set({ balance: balanceAfter.toFixed(2) } as any).where(eq(wallets.id, wallet.id));
+      await tx
+        .update(walletTransactions)
+        .set({
+          amount: (-roundedAmount).toFixed(2),
+          balanceBefore: balanceBefore.toFixed(2),
+          balanceAfter: balanceAfter.toFixed(2),
+          paymentStatus: "COMPLETED",
+          description: input.description,
+        } as any)
+        .where(eq(walletTransactions.id, movementId));
+
+      return { deducted: true, duplicate: false, balance: balanceAfter };
+    });
+  } catch (error: any) {
+    const isDuplicateKey = error?.code === "ER_DUP_ENTRY" || String(error?.message || "").includes("ux_wallet_transactions_idempotency_key");
+    if (!isDuplicateKey) throw error;
+
+    const existing = await database
+      .select()
+      .from(walletTransactions)
+      .where(eq(walletTransactions.idempotencyKey, idempotencyKey))
+      .limit(1);
+    return { deducted: false, duplicate: true, balance: existing[0] ? Number(existing[0].balanceAfter) : null };
+  }
 }
 
 export type ChargeStopRequestStatus = "NONE" | "REQUESTED" | "ACCEPTED" | "REJECTED" | "TIMED_OUT" | "CONFIRMED";

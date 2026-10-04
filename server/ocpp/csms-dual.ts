@@ -1420,7 +1420,7 @@ export class DualCSMS {
       console.error(`[CSMS-DUAL] Error calculando manualSocEnd:`, socCalcErr);
     }
     // Actualizar transacción
-    await db.updateTransaction(transaction.id, {
+    const settledNow = await db.completeTransactionOnce(transaction.id, {
       // @ts-ignore
       endTime,
       meterEnd: String(req.meterStop),
@@ -1439,6 +1439,11 @@ export class DualCSMS {
       } : {}),
       ...(manualSocEndValue !== null ? { manualSocEnd: manualSocEndValue } : {}),
     });
+
+    if (!settledNow) {
+      console.warn(`[CSMS-DUAL] StopTransaction replay ignored for already-settled transaction ${transaction.id}`);
+      return { idTagInfo: { status: "Accepted" } };
+    }
 
     // Actualizar estado del EVSE
     await db.updateEvseStatus(transaction.evseId, "AVAILABLE", { triggeredBy: "OCPP" });
@@ -1465,24 +1470,14 @@ export class DualCSMS {
           }
         }
 
-        const newBalance = Math.max(0, currentBalance - totalCost);
-        await db.updateWalletBalance(transaction.userId, newBalance.toString());
-
-        await db.createWalletTransaction({
-          walletId: wallet.id,
+        const settlement = await db.deductChargePaymentOnce({
           userId: transaction.userId,
-          type: "CHARGE_PAYMENT",
-          amount: (-totalCost).toString(),
-          balanceBefore: currentBalance.toString(),
-          balanceAfter: newBalance.toString(),
-          referenceId: transaction.id,
-          referenceType: "TRANSACTION",
-          // @ts-ignore
-          status: "COMPLETED",
+          transactionId: transaction.id,
+          amount: totalCost,
           description: `Pago por carga de ${energyDelivered.toFixed(2)} kWh`,
         });
         
-        console.log(`[CSMS-DUAL] Wallet deducted: $${Math.round(totalCost)} from user ${transaction.userId}. Balance: $${currentBalance} -> $${newBalance}`);
+        console.log(`[CSMS-DUAL] Wallet ${settlement.deducted ? "deducted" : "deduped"}: $${Math.round(totalCost)} for user ${transaction.userId}. Balance: ${currentBalance} -> ${settlement.balance ?? "N/A"}`);
       }
     } catch (walletError) {
       console.error(`[CSMS-DUAL] Error deducting wallet for user ${transaction.userId}:`, walletError);
@@ -2232,7 +2227,7 @@ export class DualCSMS {
         const effectivePrice = await db.getEffectiveStationPrice(conn.stationId);
         const pricePerKwh201 = pendingSession?.session?.pricePerKwh
           ?? (tariff ? parseFloat(tariff.pricePerKwh) : effectivePrice.pricePerKwh);
-        const transactionId = await db.createTransaction({
+        const persistedStart = await db.createTransactionOnceByOcppId({
           evseId: evse.id,
           userId,
           stationId: conn.stationId,
@@ -2245,6 +2240,13 @@ export class DualCSMS {
           targetValue: String(pendingSession?.session?.targetValue || 0),
           appliedPricePerKwh: String(pricePerKwh201),
         });
+        const transactionId = persistedStart.transactionId;
+
+        if (!persistedStart.created) {
+          console.warn(`[CSMS-DUAL] OCPP 2.0.1 Started replay ignored for transaction ${transactionId}`);
+          await db.updateEvseStatus(evse.id, "CHARGING", { triggeredBy: "OCPP" });
+          break;
+        }
 
         const fulfilledReservationId = userId > 0
           ? await db.fulfillActiveReservationForTransaction(evse.id, userId, transactionId)
@@ -2377,7 +2379,7 @@ export class DualCSMS {
           const investorShare201 = totalCost * (revenueConfig201.investorPercent / 100);
           const platformFee201 = totalCost * (revenueConfig201.platformPercent / 100);
 
-          await db.updateTransaction(transaction.id, {
+          const settledNow = await db.completeTransactionOnce(transaction.id, {
             // @ts-ignore
             endTime: endTime201,
             kwhConsumed: energyDelivered.toString(),
@@ -2394,6 +2396,11 @@ export class DualCSMS {
               stopRequestMessage: "Finalización física confirmada por TransactionEvent.Ended OCPP.",
             } : {}),
           });
+
+          if (!settledNow) {
+            console.warn(`[CSMS-DUAL] OCPP 2.0.1 Ended replay ignored for already-settled transaction ${transaction.id}`);
+            break;
+          }
 
           await db.updateEvseStatus(evse.id, "AVAILABLE", { triggeredBy: "OCPP" });
 
@@ -2413,22 +2420,13 @@ export class DualCSMS {
                   console.warn(`[CSMS-DUAL] 2.0.1 Error en auto-cobro:`, autoErr201);
                 }
               }
-              const newBalance201 = Math.max(0, currentBalance201 - totalCost);
-              await db.updateWalletBalance(transaction.userId, newBalance201.toString());
-              await db.createWalletTransaction({
-                walletId: wallet201.id,
+              const settlement = await db.deductChargePaymentOnce({
                 userId: transaction.userId,
-                type: "CHARGE_PAYMENT",
-                amount: (-totalCost).toString(),
-                balanceBefore: currentBalance201.toString(),
-                balanceAfter: newBalance201.toString(),
-                referenceId: transaction.id,
-                referenceType: "TRANSACTION",
-                // @ts-ignore
-                status: "COMPLETED",
+                transactionId: transaction.id,
+                amount: totalCost,
                 description: `Pago por carga de ${energyDelivered.toFixed(2)} kWh`,
               });
-              console.log(`[CSMS-DUAL] 2.0.1 Wallet deducted: $${Math.round(totalCost)} from user ${transaction.userId}`);
+              console.log(`[CSMS-DUAL] 2.0.1 Wallet ${settlement.deducted ? "deducted" : "deduped"}: $${Math.round(totalCost)} for user ${transaction.userId}`);
             }
           } catch (walletErr201) {
             console.error(`[CSMS-DUAL] 2.0.1 Error deducting wallet:`, walletErr201);

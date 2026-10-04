@@ -36,6 +36,7 @@ import { ensureContractDocumentStorage } from "../contracts/ensure-contract-docu
 import { registerStorageProxy } from "./storageProxy";
 import { calculateSocEstimation } from "../charging/soc-estimation";
 import { estimatePowerFromEnergySamples, shouldAdvanceTelemetrySample } from "../../shared/charging-telemetry";
+import { createOcpp16StartFingerprint } from "../../shared/ocpp-start-idempotency";
 import { handleBillingWebhook } from "../billing/webhook";
 import { handleWhatsAppWebhook, verifyWhatsAppWebhook } from "../whatsapp/webhook";
 
@@ -1448,14 +1449,21 @@ async function handleOCPP16Message(
       const txChargeMode = pendingSessionForTx?.session?.chargeMode || "full_charge";
       const txTargetValue = pendingSessionForTx?.session?.targetValue || 0;
       const txPricePerKwh = pendingSessionForTx?.session?.pricePerKwh || (tariff ? parseFloat(tariff.pricePerKwh) : 1800);
+      const ocppStartFingerprint = createOcpp16StartFingerprint({
+        stationId: resolvedStId,
+        evseId: evse.id,
+        meterStart: payload.meterStart,
+        timestamp: payload.timestamp,
+      });
       
-      const newTxId = await db.createTransaction({
+      const persistedStart = await db.createOcpp16TransactionOnce({
         evseId: evse.id,
         userId: userId || 1, // Usar usuario encontrado o fallback a 1 (admin)
         stationId: resolvedStId,
         tariffId: tariff?.id,
         ocppTransactionId: internalTransactionId,
         ocppNumericTxId: transactionIdCounter, // ID numérico OCPP 1.6 para RemoteStopTransaction
+        ocppStartFingerprint,
         startTime: new Date(payload.timestamp),
         status: "IN_PROGRESS",
         meterStart: String(payload.meterStart),
@@ -1463,10 +1471,22 @@ async function handleOCPP16Message(
         targetValue: String(txTargetValue),
         appliedPricePerKwh: String(txPricePerKwh),
       });
-      console.log(`[OCPP] StartTransaction - Created tx: dbId=${newTxId}, ocppNumericTxId=${transactionIdCounter}, internalId=${internalTransactionId}`);
+      const newTxId = persistedStart.transactionId;
+      const effectiveOcppTransactionId = persistedStart.transaction.ocppTransactionId || internalTransactionId;
+      const effectiveOcppNumericTxId = persistedStart.transaction.ocppNumericTxId || transactionIdCounter;
+      console.log(`[OCPP] StartTransaction - ${persistedStart.created ? "Created" : "Deduplicated"} tx: dbId=${newTxId}, ocppNumericTxId=${effectiveOcppNumericTxId}, internalId=${effectiveOcppTransactionId}`);
       
-      ocpp16Transactions.set(transactionIdCounter, internalTransactionId);
+      ocpp16Transactions.set(effectiveOcppNumericTxId, effectiveOcppTransactionId);
       await db.updateEvseStatus(evse.id, "CHARGING", { triggeredBy: "OCPP" });
+
+      // Una retransmisión del cargador no representa una sesión nueva: responder
+      // con el mismo id físico sin reenviar WhatsApp, recibos ni crear cobros.
+      if (!persistedStart.created) {
+        return {
+          idTagInfo: { status: "Accepted" },
+          transactionId: effectiveOcppNumericTxId,
+        };
+      }
       
       // Enviar notificación al usuario cuando inicia la carga
       if (userId) {
@@ -1529,7 +1549,7 @@ async function handleOCPP16Message(
       
       return {
         idTagInfo: { status: userId ? "Accepted" : "Accepted" }, // Aceptar incluso sin usuario para permitir cargas anónimas
-        transactionId: transactionIdCounter,
+        transactionId: effectiveOcppNumericTxId,
       };
     }
     case "StopTransaction": {
@@ -1647,7 +1667,7 @@ async function handleOCPP16Message(
       } catch (socCalcErr) {
         console.error(`[OCPP] Error calculando manualSocEnd:`, socCalcErr);
       }
-      await db.updateTransaction(transaction.id, {
+      const settledNow = await db.completeTransactionOnce(transaction.id, {
         endTime,
         meterEnd: String(payload.meterStop),
         kwhConsumed: energyDelivered.toFixed(4),
@@ -1661,6 +1681,11 @@ async function handleOCPP16Message(
         stopReason: payload.reason || "Remote",
         ...(manualSocEndValue !== null ? { manualSocEnd: manualSocEndValue } : {}),
       });
+
+      if (!settledNow) {
+        console.warn(`[OCPP] StopTransaction replay ignored for already-settled transaction ${transaction.id}`);
+        return { idTagInfo: { status: "Accepted" } };
+      }
       
       // StopTransaction cierra el cobro de energía, pero no prueba que el cable continúe conectado.
       // Solo EVDisconnected es una confirmación física que cancela de inmediato todo sobretiempo.
@@ -1701,23 +1726,14 @@ async function handleOCPP16Message(
               }
             }
             
-            const newBalance = Math.max(0, currentBalance - totalCost);
-            await db.updateWalletBalance(transaction.userId, newBalance.toString());
-            
-            await db.createWalletTransaction({
-              walletId: wallet.id,
+            const settlement = await db.deductChargePaymentOnce({
               userId: transaction.userId,
-              type: "CHARGE_PAYMENT",
-              amount: (-totalCost).toString(),
-              balanceBefore: currentBalance.toString(),
-              balanceAfter: newBalance.toString(),
-              referenceId: transaction.id,
-              referenceType: "TRANSACTION",
-              status: "COMPLETED",
+              transactionId: transaction.id,
+              amount: totalCost,
               description: `Pago por carga de ${energyDelivered.toFixed(2)} kWh`,
             });
             
-            console.log(`[OCPP] StopTransaction - Wallet deducted: $${Math.round(totalCost)} from user ${transaction.userId}. Balance: $${currentBalance} -> $${newBalance}`);
+            console.log(`[OCPP] StopTransaction - Wallet ${settlement.deducted ? "deducted" : "deduped"}: $${Math.round(totalCost)} for user ${transaction.userId}. Balance: ${currentBalance} -> ${settlement.balance ?? "N/A"}`);
           }
         } catch (walletErr: any) {
           console.error(`[OCPP] Error deducting user wallet:`, walletErr?.message || walletErr);

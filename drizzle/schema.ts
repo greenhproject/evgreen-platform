@@ -2076,6 +2076,10 @@ export const transactions = mysqlTable("transactions", {
 	tariffId: int(),
 	ocppTransactionId: varchar({ length: 100 }),
 	ocppNumericTxId: int(),
+	// Huella estable del evento físico StartTransaction OCPP 1.6. Un cargador
+	// puede retransmitir el mismo evento después de una reconexión; esta clave
+	// permite responder sin crear una segunda sesión cobrable.
+	ocppStartFingerprint: varchar({ length: 191 }),
 	startTime: timestamp({ mode: 'string' }).notNull(),
 	endTime: timestamp({ mode: 'string' }),
 	kwhConsumed: decimal({ precision: 10, scale: 4 }).default('0'),
@@ -2113,7 +2117,11 @@ export const transactions = mysqlTable("transactions", {
 	chargeMode: varchar({ length: 20 }).default('full_charge'),
 	targetValue: decimal({ precision: 12, scale: 2 }).default('0'),
 	appliedPricePerKwh: decimal({ precision: 10, scale: 2 }),
-});
+},
+(table) => [
+	uniqueIndex("ux_transactions_ocpp_transaction_id").on(table.ocppTransactionId),
+	uniqueIndex("ux_transactions_ocpp_start_fingerprint").on(table.ocppStartFingerprint),
+]);
 
 export const userConsumptionProfile = mysqlTable("user_consumption_profile", {
 	id: int().autoincrement().notNull(),
@@ -2425,10 +2433,16 @@ export const walletTransactions = mysqlTable("wallet_transactions", {
 	balanceAfter: decimal({ precision: 12, scale: 2 }).notNull(),
 	referenceId: int(),
 	referenceType: varchar({ length: 50 }),
+	// Clave de idempotencia para impedir que un StopTransaction retransmitido
+	// descuente la misma sesión más de una vez.
+	idempotencyKey: varchar({ length: 191 }),
 	paymentStatus: mysqlEnum("payment_status", ['PENDING','COMPLETED','FAILED','REFUNDED']).default('PENDING').notNull(),
 	description: text(),
 	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
-});
+},
+(table) => [
+	uniqueIndex("ux_wallet_transactions_idempotency_key").on(table.idempotencyKey),
+]);
 
 export const wallets = mysqlTable("wallets", {
 	id: int().autoincrement().notNull(),
