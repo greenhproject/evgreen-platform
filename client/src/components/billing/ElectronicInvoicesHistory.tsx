@@ -7,6 +7,7 @@
 import { useState } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { trpc } from "@/lib/trpc";
+import { parseBillingError, type BillingErrorDetail } from "@/lib/billing-error";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -31,70 +32,6 @@ import {
 interface Props {
   mode?: "tenant" | "admin";
   organizationId?: number | null;
-}
-
-type BillingErrorDetail = {
-  title: string;
-  summary: string;
-  guidance: string;
-  codes: string[];
-  raw: string;
-  transactionId?: number;
-};
-
-function cleanBillingError(raw: unknown): string {
-  let text = String(raw ?? "Error desconocido");
-  const jsonStart = text.indexOf("{");
-  if (jsonStart >= 0) {
-    try {
-      const parsed = JSON.parse(text.slice(jsonStart));
-      text = parsed?.error?.message || parsed?.message || parsed?.error || text;
-    } catch {
-      // Alegra ocasionalmente devuelve JSON escapado dentro de otro mensaje.
-      text = text.slice(jsonStart);
-    }
-  }
-  return text
-    .replace(/\\u003c/gi, "<")
-    .replace(/\\u003e/gi, ">")
-    .replace(/<\/?li>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
-    .replace(/\\n/g, "\n")
-    .replace(/\\"/g, '"')
-    .replace(/\s*\n\s*/g, "\n")
-    .trim();
-}
-
-function parseBillingError(raw: unknown, transactionId?: number): BillingErrorDetail {
-  const cleaned = cleanBillingError(raw);
-  const codes = Array.from(new Set(cleaned.match(/\b(?:FAZ|FAB|RUT)\d+[A-Za-z]?\b|\b20\d{3}\b/gi) || []));
-  const codeSet = new Set(codes.map((code) => code.toUpperCase()));
-  const guidance: string[] = [];
-
-  if (codeSet.has("FAB05C")) {
-    guidance.push("En DIAN, asocia el prefijo FV al proveedor tecnológico/software de Alegra; EVGreen no puede hacer esa asociación por API.");
-  }
-  if (codeSet.has("FAZ09")) {
-    guidance.push("En Alegra, edita el producto 1900 y agrega su código UNSPSC/productKey. Luego vuelve a sincronizarlo en EVGreen.");
-  }
-  if (codeSet.has("RUT01")) {
-    guidance.push("RUT01 es una notificación informativa de Alegra sobre la validación futura del RUT; no es la causa principal del rechazo.");
-  }
-  if (codeSet.has("2035")) {
-    guidance.push("El contacto facturado no tiene tipo de identificación; completa CC/NIT u otro tipo válido.");
-  }
-  if (cleaned.toLowerCase().includes("forma de pago")) {
-    guidance.push("Verifica que la forma de pago esté guardada en la configuración de Alegra y vuelve a guardar la configuración.");
-  }
-
-  return {
-    title: codes.length ? `Alegra rechazó la factura (${codes.join(" · ")})` : "Alegra rechazó la factura",
-    summary: codes.length ? `Códigos detectados: ${codes.join(" · ")}` : "El proveedor devolvió un rechazo de validación.",
-    guidance: guidance.join(" ") || "Revisa el detalle técnico y la configuración del proveedor antes de reintentar.",
-    codes,
-    raw: cleaned,
-    transactionId,
-  };
 }
 
 export default function ElectronicInvoicesHistory({ mode = "tenant", organizationId }: Props) {
@@ -577,7 +514,25 @@ export default function ElectronicInvoicesHistory({ mode = "tenant", organizatio
           </DialogHeader>
           <div className="space-y-3 overflow-y-auto pr-1">
             <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
-              <strong>Qué hacer:</strong> {errorDetail?.guidance}
+              <p><strong>Qué hacer:</strong> {errorDetail?.guidance}</p>
+              {errorDetail?.steps && errorDetail.steps.length > 0 && (
+                <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-relaxed">
+                  {errorDetail.steps.map((step, index) => (
+                    <li key={`${index}-${step.slice(0, 18)}`}>{step}</li>
+                  ))}
+                </ol>
+              )}
+              {errorDetail?.portalUrl && (
+                <a
+                  href={errorDetail.portalUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-3 inline-flex items-center gap-1.5 font-medium text-amber-200 underline underline-offset-4 hover:text-white"
+                >
+                  Abrir portal Facturando Electrónicamente DIAN
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              )}
             </div>
             <div>
               <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Respuesta técnica de Alegra</p>
