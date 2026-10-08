@@ -824,34 +824,9 @@ async function startServer() {
           console.log("[Heartbeat] Job de reconciliación de detener carga ya existe, omitiendo registro.");
         }
 
-        const chargingHabitReminderExists = existing.jobs?.some((j: any) => j.name === "evgreen-charging-habit-reminders");
-        if (!chargingHabitReminderExists) {
-          const job = await createHeartbeatJob({
-            name: "evgreen-charging-habit-reminders",
-            cron: "0 0,30 * * * *",
-            path: "/api/scheduled/charging-habit-reminders",
-            method: "POST",
-            description: "Recordatorios de carga por franja semanal local, con consentimiento AI y opt-in WhatsApp; idempotente y sin timers de proceso",
-          }, "");
-          console.log(`[Heartbeat] Job de hábitos de carga registrado: ${job.taskUid}`);
-        } else {
-          console.log("[Heartbeat] Job de hábitos de carga ya existe, omitiendo registro.");
-        }
-
-        const consumptionProfileRefreshExists = existing.jobs?.some((j: any) => j.name === "evgreen-consumption-profile-refresh");
-        if (!consumptionProfileRefreshExists) {
-          const job = await createHeartbeatJob({
-            // 03:00 Colombia (UTC-5) = 08:00 UTC; se ejecuta fuera de hora pico.
-            name: "evgreen-consumption-profile-refresh",
-            cron: "0 0 8 * * *",
-            path: "/api/scheduled/consumption-profile-refresh",
-            method: "POST",
-            description: "Recálculo nocturno de perfiles de consumo consentidos usando las últimas 90 jornadas y hora local de estación",
-          }, "");
-          console.log(`[Heartbeat] Job de actualización de perfiles registrado: ${job.taskUid}`);
-        } else {
-          console.log("[Heartbeat] Job de actualización de perfiles ya existe, omitiendo registro.");
-        }
+        // Los jobs de hábitos se administran como Heartbeats de proyecto, no
+        // desde este proceso. Crear un Heartbeat con una cookie vacía produce
+        // ejecuciones sin identidad cron y nunca debe reintentarse al arrancar.
       } catch (err) {
         console.warn("[Heartbeat] No se pudieron registrar jobs operativos (no crítico):", err);
       }
