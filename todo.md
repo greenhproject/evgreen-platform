@@ -22,3 +22,12 @@
 - [x] Claridad: el listado histórico ahora se denomina **Expedientes ya creados** para no confundirlo con la cola de cartas firmadas pendientes.
 - [x] Integridad: no se modificaron cartas, contratos ni datos financieros; se conserva el bloqueo contra expedientes duplicados.
 - [x] Validación: TypeScript, pruebas focales, suite completa (230 archivos / 2.309 pruebas) y build productivo aprobados.
+
+## Recordatorios inteligentes de carga — hábitos locales semanales (2026-10-07)
+
+- [x] Sustituir la coincidencia de una hora en UTC por una franja local **día de semana + hora**, calculada sobre las últimas 90 jornadas de sesiones completadas.
+- [x] Persistir distribución semanal y zona horaria de hábito con migración 0053, exclusivamente aditiva; preservar perfiles e historial existentes.
+- [x] Unificar el cálculo tras cierre de carga y el recálculo nocturno en `computeProfileForUser`, sujeto al consentimiento vigente `AI_PROFILING`.
+- [x] Respetar de forma estricta el opt-in `waNotifyReminder` de WhatsApp; la cadena histórica `"0"` ya no se interpreta como consentimiento.
+- [x] Ejecutar recordatorios cada 30 minutos y recalcular perfiles a las 03:00 Colombia mediante Heartbeats autenticados y durables, sin depender de timers del proceso.
+- [x] Validación: TypeScript limpio, 73 pruebas focales, suite completa 233 archivos/2.315 pruebas, build productivo y endpoints programados bloqueados para solicitudes no cron.

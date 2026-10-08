@@ -17,7 +17,8 @@ import { createHeartbeatJob, listHeartbeatJobs } from "./heartbeat";
 import { startReconciliationCron } from "../wompi/reconciliation-cron";
 import { startTransactionCleanupJob } from "../jobs/transaction-cleanup";
 import { startBalanceMonitor } from "../charging/balance-monitor";
-import { startProactiveNotifications } from "../ai/proactive-notifications";
+import { runHabitualChargingReminderChecks } from "../ai/proactive-notifications";
+import { computeAllProfiles } from "../profiles/consumption-profile-service";
 import { startDemandForecastJob } from "../ai/demand-forecast-service";
 import { startOverstayMonitor, onChargingFinished, onCableDisconnected, onStationReportedAvailable } from "../charging/overstay-monitor";
 import { getOverstayStatusAction, shouldStartOverstayFromStopTransaction } from "../charging/overstay-guards";
@@ -39,6 +40,7 @@ import { estimatePowerFromEnergySamples, shouldAdvanceTelemetrySample } from "..
 import { createOcpp16StartFingerprint } from "../../shared/ocpp-start-idempotency";
 import { handleBillingWebhook } from "../billing/webhook";
 import { handleWhatsAppWebhook, verifyWhatsAppWebhook } from "../whatsapp/webhook";
+import { sdk } from "./sdk";
 
 // Grace period para desconexiones temporales del legacy CSMS
 // Evita notificaciones por reconexiones intermitentes (WiFi inestable, reinicios breves)
@@ -292,6 +294,51 @@ async function startServer() {
     } catch (err: any) {
       console.error("[Heartbeat] Error reconciliando órdenes de detener carga:", err);
       return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // ─── Heartbeat: recordatorios habituales de carga ─────────────────────────
+  // Evalúa la franja día+hora local del usuario y respeta su opt-in de WhatsApp.
+  app.post("/api/scheduled/charging-habit-reminders", express.json(), async (req, res) => {
+    try {
+      const cronUser = await sdk.authenticateRequest(req as any);
+      if (!cronUser.isCron || !cronUser.taskUid) {
+        return res.status(403).json({ error: "cron-only" });
+      }
+      const result = await runHabitualChargingReminderChecks();
+      return res.json({ taskUid: cronUser.taskUid, ...result });
+    } catch (err: any) {
+      console.error("[Heartbeat] Error ejecutando recordatorios de hábito:", err);
+      if (err?.code === "FORBIDDEN" || /Invalid session cookie|Cron session missing/.test(String(err?.message))) {
+        return res.status(403).json({ error: "cron-only" });
+      }
+      return res.status(500).json({
+        ok: false,
+        error: err?.message ?? "Error ejecutando recordatorios de hábito",
+        timestamp: new Date().toISOString(),
+      });
+    }
+  });
+
+  // ─── Heartbeat: recálculo nocturno de perfiles consentidos ─────────────────
+  app.post("/api/scheduled/consumption-profile-refresh", express.json(), async (req, res) => {
+    try {
+      const cronUser = await sdk.authenticateRequest(req as any);
+      if (!cronUser.isCron || !cronUser.taskUid) {
+        return res.status(403).json({ error: "cron-only" });
+      }
+      const result = await computeAllProfiles();
+      return res.json({ ok: true, taskUid: cronUser.taskUid, ...result });
+    } catch (err: any) {
+      console.error("[Heartbeat] Error recalculando perfiles de consumo:", err);
+      if (err?.code === "FORBIDDEN" || /Invalid session cookie|Cron session missing/.test(String(err?.message))) {
+        return res.status(403).json({ error: "cron-only" });
+      }
+      return res.status(500).json({
+        ok: false,
+        error: err?.message ?? "Error recalculando perfiles de consumo",
+        timestamp: new Date().toISOString(),
+      });
     }
   });
 
@@ -776,6 +823,35 @@ async function startServer() {
         } else {
           console.log("[Heartbeat] Job de reconciliación de detener carga ya existe, omitiendo registro.");
         }
+
+        const chargingHabitReminderExists = existing.jobs?.some((j: any) => j.name === "evgreen-charging-habit-reminders");
+        if (!chargingHabitReminderExists) {
+          const job = await createHeartbeatJob({
+            name: "evgreen-charging-habit-reminders",
+            cron: "0 0,30 * * * *",
+            path: "/api/scheduled/charging-habit-reminders",
+            method: "POST",
+            description: "Recordatorios de carga por franja semanal local, con consentimiento AI y opt-in WhatsApp; idempotente y sin timers de proceso",
+          }, "");
+          console.log(`[Heartbeat] Job de hábitos de carga registrado: ${job.taskUid}`);
+        } else {
+          console.log("[Heartbeat] Job de hábitos de carga ya existe, omitiendo registro.");
+        }
+
+        const consumptionProfileRefreshExists = existing.jobs?.some((j: any) => j.name === "evgreen-consumption-profile-refresh");
+        if (!consumptionProfileRefreshExists) {
+          const job = await createHeartbeatJob({
+            // 03:00 Colombia (UTC-5) = 08:00 UTC; se ejecuta fuera de hora pico.
+            name: "evgreen-consumption-profile-refresh",
+            cron: "0 0 8 * * *",
+            path: "/api/scheduled/consumption-profile-refresh",
+            method: "POST",
+            description: "Recálculo nocturno de perfiles de consumo consentidos usando las últimas 90 jornadas y hora local de estación",
+          }, "");
+          console.log(`[Heartbeat] Job de actualización de perfiles registrado: ${job.taskUid}`);
+        } else {
+          console.log("[Heartbeat] Job de actualización de perfiles ya existe, omitiendo registro.");
+        }
       } catch (err) {
         console.warn("[Heartbeat] No se pudieron registrar jobs operativos (no crítico):", err);
       }
@@ -793,8 +869,8 @@ async function startServer() {
     // Iniciar monitoreo de tarifa de ocupación (overstay) cada 60s
     startOverstayMonitor();
     
-    // Fase 2 IA: Iniciar notificaciones proactivas basadas en perfil de consumo (cada 30 min)
-    startProactiveNotifications();
+    // Los recordatorios de hábito se ejecutan con Heartbeat durable; nunca con
+    // timers del proceso, que se pierden ante reinicios o escalado de Railway.
     
     // Fase 3 IA: Iniciar predicción de demanda por estación (cada 6h)
     startDemandForecastJob();

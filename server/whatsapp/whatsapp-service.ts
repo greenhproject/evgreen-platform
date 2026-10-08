@@ -6,6 +6,7 @@
 import { getDb } from "../db";
 import { whatsappConfig, whatsappNotificationLog, users } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
+import { isEnabledDatabaseFlag } from "../../shared/database-boolean";
 
 type WhatsAppConfigRecord = typeof whatsappConfig.$inferSelect;
 
@@ -542,13 +543,13 @@ function eventTypeToUserPrefKey(eventType: WaEventType): keyof typeof users.$inf
 
 export async function sendWhatsAppTemplate(opts: SendWhatsAppTemplateOptions): Promise<boolean> {
   const cfg = await getWhatsAppConfig();
-  if (!cfg || !cfg.enabled || !cfg.phoneNumberId || !cfg.accessToken) {
+  if (!cfg || !isEnabledDatabaseFlag(cfg.enabled) || !cfg.phoneNumberId || !cfg.accessToken) {
     console.log("[WhatsApp] Servicio deshabilitado o sin credenciales — omitiendo plantilla");
     return false;
   }
   // Verificar que el tipo de notificación esté habilitado (control global admin)
   const notifKey = eventTypeToConfigKey(opts.eventType);
-  if (!opts.skipConfigCheck && notifKey && !(cfg as Record<string, unknown>)[notifKey]) {
+  if (!opts.skipConfigCheck && notifKey && !isEnabledDatabaseFlag((cfg as Record<string, unknown>)[notifKey])) {
     console.log(`[WhatsApp] Notificación tipo '${opts.eventType}' deshabilitada globalmente — omitiendo plantilla`);
     return false;
   }
@@ -561,7 +562,7 @@ export async function sendWhatsAppTemplate(opts: SendWhatsAppTemplateOptions): P
         if (db) {
           const userRows = await db.select().from(users).where(eq(users.id, opts.userId)).limit(1);
           const user = userRows[0];
-          if (user && user[userPrefKey] === false) {
+          if (user && !isEnabledDatabaseFlag(user[userPrefKey])) {
             console.log(`[WhatsApp] Usuario ${opts.userId} desactivó notificación '${opts.eventType}' — omitiendo`);
             return false;
           }
@@ -654,7 +655,7 @@ export async function sendWhatsAppTemplate(opts: SendWhatsAppTemplateOptions): P
 export async function sendWhatsAppMessage(opts: SendWhatsAppOptions): Promise<boolean> {
   const cfg = await getWhatsAppConfig();
 
-  if (!cfg || !cfg.enabled || !cfg.phoneNumberId || !cfg.accessToken) {
+  if (!cfg || !isEnabledDatabaseFlag(cfg.enabled) || !cfg.phoneNumberId || !cfg.accessToken) {
     console.log("[WhatsApp] Servicio deshabilitado o sin credenciales — omitiendo notificación");
     return false;
   }

@@ -16,26 +16,26 @@ describe("Process Stability Handlers", () => {
 
   describe("Critical error handlers must exist", () => {
     it("should have unhandledRejection handler", () => {
-      expect(serverCode).toContain("process.on('unhandledRejection'");
+      expect(serverCode).toMatch(/process\.on\(["']unhandledRejection["']/);
     });
 
     it("should have uncaughtException handler", () => {
-      expect(serverCode).toContain("process.on('uncaughtException'");
+      expect(serverCode).toMatch(/process\.on\(["']uncaughtException["']/);
     });
 
     it("should have SIGTERM handler for graceful shutdown", () => {
-      expect(serverCode).toContain("process.on('SIGTERM'");
+      expect(serverCode).toMatch(/process\.on\(["']SIGTERM["']/);
     });
 
     it("should have SIGINT handler for graceful shutdown", () => {
-      expect(serverCode).toContain("process.on('SIGINT'");
+      expect(serverCode).toMatch(/process\.on\(["']SIGINT["']/);
     });
   });
 
   describe("Error handlers should NOT exit the process", () => {
     it("uncaughtException handler should not call process.exit", () => {
       // Extract the uncaughtException handler block
-      const uncaughtStart = serverCode.indexOf("process.on('uncaughtException'");
+      const uncaughtStart = serverCode.search(/process\.on\(["']uncaughtException["']/);
       const uncaughtEnd = serverCode.indexOf("});", uncaughtStart) + 3;
       const uncaughtBlock = serverCode.substring(uncaughtStart, uncaughtEnd);
       
@@ -43,7 +43,7 @@ describe("Process Stability Handlers", () => {
     });
 
     it("unhandledRejection handler should not call process.exit", () => {
-      const rejectionStart = serverCode.indexOf("process.on('unhandledRejection'");
+      const rejectionStart = serverCode.search(/process\.on\(["']unhandledRejection["']/);
       const rejectionEnd = serverCode.indexOf("});", rejectionStart) + 3;
       const rejectionBlock = serverCode.substring(rejectionStart, rejectionEnd);
       
@@ -71,7 +71,7 @@ describe("Process Stability Handlers", () => {
   describe("Background jobs error handling", () => {
     it("all setInterval jobs should have try/catch", () => {
       // Check that reservation jobs have try/catch
-      expect(serverCode).toContain('} catch (e) {\n        console.error("[ReservationJobs]');
+      expect(serverCode).toMatch(/}\s*catch \(e\) \{\s*console\.error\(\s*["']\[ReservationJobs]/);
     });
 
     it("should have health check endpoint", () => {

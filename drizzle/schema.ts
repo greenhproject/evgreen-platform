@@ -2161,6 +2161,10 @@ export const userConsumptionProfile = mysqlTable("user_consumption_profile", {
 	windowDays: int().default(90).notNull(),
 	profileConfidence: mysqlEnum("profile_confidence", ['LOW','MEDIUM','HIGH']).default('LOW').notNull(),
 	computedAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP'),
+	// Franja local de hábito por combinación día de semana + hora. Evita enviar
+	// recordatorios por una coincidencia de hora en un día distinto.
+	habitSlotDistribution: json(),
+	habitTimezone: varchar({ length: 100 }).default('America/Bogota'),
 },
 (table) => [
 	index("userId_unique").on(table.userId),

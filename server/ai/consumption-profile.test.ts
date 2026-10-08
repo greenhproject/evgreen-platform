@@ -1,6 +1,6 @@
 /**
  * Tests for Fase 2 — Inteligencia IA: Perfil de Consumo Inteligente
- * 
+ *
  * Tests:
  * 1. formatProfileForLLM generates correct text from profile data
  * 2. calculateUserScore returns correct scores
@@ -17,7 +17,9 @@ import type { UserConsumptionProfile } from "../../drizzle/schema";
 // HELPER: Create mock profile
 // ============================================================================
 
-function createMockProfile(overrides: Partial<UserConsumptionProfile> = {}): UserConsumptionProfile {
+function createMockProfile(
+  overrides: Partial<UserConsumptionProfile> = {}
+): UserConsumptionProfile {
   return {
     id: 1,
     userId: 42,
@@ -133,7 +135,10 @@ describe("formatProfileForLLM", () => {
   });
 
   it("should NOT include subscription recommendation when FREE", () => {
-    const profile = createMockProfile({ recommendedTier: "FREE", estimatedMonthlySavingsWithUpgrade: "0.00" });
+    const profile = createMockProfile({
+      recommendedTier: "FREE",
+      estimatedMonthlySavingsWithUpgrade: "0.00",
+    });
     const text = formatProfileForLLM(profile);
     expect(text).not.toContain("Suscripción recomendada");
   });
@@ -208,17 +213,17 @@ describe("Proactive notification cooldown logic", () => {
     const COOLDOWN = 12 * 60 * 60 * 1000;
 
     const key = "42-low_price";
-    
+
     // First time: not recently sent
     expect(sentNotifications.has(key)).toBe(false);
-    
+
     // Mark as sent
     sentNotifications.set(key, Date.now());
-    
+
     // Should be recently sent now
     const lastSent = sentNotifications.get(key)!;
     expect(Date.now() - lastSent < COOLDOWN).toBe(true);
-    
+
     // After cooldown (simulate)
     sentNotifications.set(key, Date.now() - COOLDOWN - 1000);
     const lastSent2 = sentNotifications.get(key)!;
@@ -262,11 +267,14 @@ describe("Subscription recommendation logic", () => {
   const SUBSCRIPTION_DISCOUNTS: Record<string, number> = {
     FREE: 0,
     BASIC: 0.05,
-    PREMIUM: 0.10,
+    PREMIUM: 0.1,
     ENTERPRISE: 0.15,
   };
 
-  function calculateRecommendation(monthlySpent: number, monthlySessions: number) {
+  function calculateRecommendation(
+    monthlySpent: number,
+    monthlySessions: number
+  ) {
     const savings: Record<string, number> = {};
     for (const [tier, discount] of Object.entries(SUBSCRIPTION_DISCOUNTS)) {
       const price = SUBSCRIPTION_PRICES[tier];
@@ -284,7 +292,10 @@ describe("Subscription recommendation logic", () => {
       bestTier = "FREE";
       bestSavings = 0;
     }
-    return { recommendedTier: bestTier, estimatedSavings: Math.max(0, bestSavings) };
+    return {
+      recommendedTier: bestTier,
+      estimatedSavings: Math.max(0, bestSavings),
+    };
   }
 
   it("should recommend FREE for low spenders", () => {
@@ -343,11 +354,16 @@ describe("User score calculation", () => {
     else if (input.monthlyAvgSpent >= 200000) spending = 70;
     else if (input.monthlyAvgSpent >= 100000) spending = 50;
     else if (input.monthlyAvgSpent >= 50000) spending = 30;
-    else spending = Math.round(input.monthlyAvgSpent / 50000 * 30);
+    else spending = Math.round((input.monthlyAvgSpent / 50000) * 30);
 
-    const punctuality = input.totalSessions > 0
-      ? Math.round(((input.totalSessions - input.overstayCount) / input.totalSessions) * 100)
-      : 100;
+    const punctuality =
+      input.totalSessions > 0
+        ? Math.round(
+            ((input.totalSessions - input.overstayCount) /
+              input.totalSessions) *
+              100
+          )
+        : 100;
 
     return { frequency, spending, punctuality };
   }
@@ -418,7 +434,7 @@ describe("Context service consumption profile integration", () => {
     const fs = await import("fs");
     const contextServicePath = `${process.cwd()}/server/ai/context-service.ts`;
     const content = fs.readFileSync(contextServicePath, "utf-8");
-    
+
     expect(content).toContain("consumptionProfileText");
     expect(content).toContain("getConsumptionProfile");
     expect(content).toContain("formatProfileForLLM");
@@ -428,7 +444,7 @@ describe("Context service consumption profile integration", () => {
     const fs = await import("fs");
     const contextServicePath = `${process.cwd()}/server/ai/context-service.ts`;
     const content = fs.readFileSync(contextServicePath, "utf-8");
-    
+
     // Verify the system prompt generator includes consumption profile
     expect(content).toContain("context.consumptionProfileText");
     expect(content).toContain("perfil de consumo");
@@ -438,7 +454,7 @@ describe("Context service consumption profile integration", () => {
     const fs = await import("fs");
     const csmsPath = `${process.cwd()}/server/ocpp/csms-dual.ts`;
     const content = fs.readFileSync(csmsPath, "utf-8");
-    
+
     // Verify both OCPP 1.6 and 2.0.1 hooks exist
     expect(content).toContain("updateConsumptionProfile");
     // Should have at least 2 occurrences (1.6 and 2.0.1)
@@ -457,17 +473,18 @@ describe("Proactive notifications service", () => {
     const fs = await import("fs");
     const path = `${process.cwd()}/server/ai/proactive-notifications.ts`;
     const content = fs.readFileSync(path, "utf-8");
-    
+
     expect(content).toContain("export function startProactiveNotifications");
     expect(content).toContain("export { runProactiveChecks }");
   });
 
-  it("should be registered in server startup", async () => {
+  it("should expose a durable heartbeat handler instead of a process timer", async () => {
     const fs = await import("fs");
     const indexPath = `${process.cwd()}/server/_core/index.ts`;
     const content = fs.readFileSync(indexPath, "utf-8");
-    
-    expect(content).toContain("startProactiveNotifications");
+
+    expect(content).toContain("/api/scheduled/charging-habit-reminders");
+    expect(content).toContain("runHabitualChargingReminderChecks");
     expect(content).toContain("proactive-notifications");
   });
 
@@ -475,7 +492,7 @@ describe("Proactive notifications service", () => {
     const fs = await import("fs");
     const path = `${process.cwd()}/server/ai/proactive-notifications.ts`;
     const content = fs.readFileSync(path, "utf-8");
-    
+
     expect(content).toContain("checkLowPriceAtFavoriteStations");
     expect(content).toContain("savingsPercent >= 15"); // 15% threshold
   });
@@ -484,16 +501,18 @@ describe("Proactive notifications service", () => {
     const fs = await import("fs");
     const path = `${process.cwd()}/server/ai/proactive-notifications.ts`;
     const content = fs.readFileSync(path, "utf-8");
-    
+
     expect(content).toContain("checkHabitualChargingTime");
-    expect(content).toContain("preferredHours.includes(currentHour)");
+    expect(content).toContain("habitSlotDistribution");
+    expect(content).toContain("selectReminderHabitSlot");
+    expect(content).toContain("waNotifyReminder");
   });
 
   it("should check charge prediction", async () => {
     const fs = await import("fs");
     const path = `${process.cwd()}/server/ai/proactive-notifications.ts`;
     const content = fs.readFileSync(path, "utf-8");
-    
+
     expect(content).toContain("checkChargePrediction");
     expect(content).toContain("nextPredictedChargeAt");
   });
@@ -502,7 +521,7 @@ describe("Proactive notifications service", () => {
     const fs = await import("fs");
     const path = `${process.cwd()}/server/ai/proactive-notifications.ts`;
     const content = fs.readFileSync(path, "utf-8");
-    
+
     expect(content).toContain("NOTIFICATION_COOLDOWN_MS");
     expect(content).toContain("24 * 60 * 60 * 1000");
   });
@@ -511,7 +530,7 @@ describe("Proactive notifications service", () => {
     const fs = await import("fs");
     const path = `${process.cwd()}/server/ai/proactive-notifications.ts`;
     const content = fs.readFileSync(path, "utf-8");
-    
+
     expect(content).toContain("cleanupCache");
     expect(content).toContain("sentNotifications.delete");
   });
@@ -520,11 +539,14 @@ describe("Proactive notifications service", () => {
     const fs = await import("fs");
     const path = `${process.cwd()}/server/ai/proactive-notifications.ts`;
     const content = fs.readFileSync(path, "utf-8");
-    
+
     // El servicio puede usar firebase/fcm directamente O el módulo unificado unified-push
     // (que internamente usa firebase/fcm). Ambos patrones son válidos.
-    const usesFCMDirectly = content.includes("../firebase/fcm") && content.includes("sendPushNotification");
-    const usesUnifiedPush = content.includes("unified-push") && content.includes("sendUserPush");
+    const usesFCMDirectly =
+      content.includes("../firebase/fcm") &&
+      content.includes("sendPushNotification");
+    const usesUnifiedPush =
+      content.includes("unified-push") && content.includes("sendUserPush");
     expect(usesFCMDirectly || usesUnifiedPush).toBe(true);
   });
 });
