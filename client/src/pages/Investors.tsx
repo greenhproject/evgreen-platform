@@ -67,6 +67,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { MapView } from "@/components/Map";
+import { InvestmentOpportunityCard } from "@/components/crowdfunding/InvestmentOpportunityCard";
 import { resolveInheritedProjectPhotos } from "@shared/project-gallery";
 import { hasValidInvestorMapCoordinates } from "@shared/investor-map-policy";
 
@@ -623,18 +624,54 @@ export default function Investors() {
   const CrowdfundingSection = () => {
     const { data: proyectos, isLoading } = trpc.crowdfunding.getProjects.useQuery();
     
-    // Fallback a datos estáticos si no hay datos de la BD
-    const estaciones = proyectos && proyectos.length > 0 ? proyectos.map(p => ({
-      id: p.id.toString(),
-      ciudad: p.city,
-      zona: p.zone,
-      metaInversion: Number(p.targetAmount),
-      montoRecaudado: Number(p.raisedAmount),
-      inversionistas: p.investorCount || 0,
-      fechaObjetivo: p.targetDate ? new Date(p.targetDate).toLocaleDateString('es-CO', { month: 'short', year: 'numeric' }) : 'TBD',
-      estado: p.status,
-      prioridad: p.priority
-    })) : ESTACIONES_ROADMAP;
+    // Los proyectos reales son la fuente principal. El roadmap solo queda como fallback
+    // de emergencia para evitar una sección vacía si el backend aún no responde.
+    const estaciones = proyectos && proyectos.length > 0 ? proyectos.map(p => {
+      const photos = resolveInheritedProjectPhotos(p);
+      return {
+        id: p.id.toString(),
+        title: p.name || `Estación ${p.city}`,
+        city: p.city,
+        region: p.zone,
+        typeLabel: "Estación de carga rápida",
+        imageUrl: photos[0]?.url || null,
+        imageCount: photos.length,
+        targetAmount: Number(p.targetAmount),
+        raisedAmount: Number(p.raisedAmount),
+        minimumInvestment: Number(p.minimumInvestment),
+        investorCount: p.investorCount || 0,
+        targetDateLabel: p.targetDate ? new Date(p.targetDate).toLocaleDateString('es-CO', { month: 'short', year: 'numeric' }) : null,
+        status: p.status,
+        powerKw: Number(p.totalPowerKw),
+        chargerCount: Number(p.chargerCount),
+        chargerPowerKw: Number(p.chargerPowerKw),
+        hasSolar: Boolean(p.hasSolarPanels),
+        roiPercent: p.estimatedRoiPercent,
+        paybackMonths: p.estimatedPaybackMonths,
+        connectorType: "CCS2",
+      };
+    }) : ESTACIONES_ROADMAP.map(estacion => ({
+      id: estacion.id,
+      title: `Estación ${estacion.ciudad}`,
+      city: estacion.ciudad,
+      region: estacion.zona,
+      typeLabel: "Oportunidad EVGreen",
+      imageUrl: null,
+      imageCount: 0,
+      targetAmount: estacion.metaInversion,
+      raisedAmount: estacion.montoRecaudado,
+      minimumInvestment: participacionMinima,
+      investorCount: estacion.inversionistas,
+      targetDateLabel: estacion.fechaObjetivo,
+      status: estacion.estado,
+      powerKw: 480,
+      chargerCount: 4,
+      chargerPowerKw: 120,
+      hasSolar: true,
+      roiPercent: null,
+      paybackMonths: null,
+      connectorType: "CCS2",
+    }));
 
     return (
       <section id="crowdfunding" className="py-20 bg-gradient-to-b from-black to-slate-900">
@@ -661,116 +698,34 @@ export default function Investors() {
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-400"></div>
             </div>
           ) : (
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
-              {estaciones.map((estacion) => {
-                const porcentaje = (estacion.montoRecaudado / estacion.metaInversion) * 100;
-                const esProximamente = estacion.estado === "DRAFT" || estacion.estado === "PROXIMAMENTE";
-                const estaCompleto = porcentaje >= 100 || estacion.estado === "FUNDED";
-                
-                return (
-                  <Card 
-                    key={estacion.id} 
-                    className={`relative overflow-hidden transition-all ${
-                      esProximamente 
-                        ? "bg-slate-800/30 border-white/5 opacity-60" 
-                        : estaCompleto
-                          ? "bg-gradient-to-br from-green-900/40 to-emerald-900/40 border-green-500/30"
-                          : "bg-gradient-to-br from-amber-900/20 to-orange-900/20 border-amber-500/20 hover:border-amber-500/40"
-                    }`}
-                  >
-                    {/* Badge de estado */}
-                    <div className="absolute top-3 right-3">
-                      {esProximamente ? (
-                        <span className="px-2 py-1 rounded-full bg-slate-700 text-slate-400 text-xs">
-                          Próximamente
-                        </span>
-                      ) : estaCompleto ? (
-                        <span className="px-2 py-1 rounded-full bg-green-500/20 text-green-400 text-xs flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3" />
-                          Financiado
-                        </span>
-                      ) : (
-                        <span className="px-2 py-1 rounded-full bg-amber-500/20 text-amber-400 text-xs flex items-center gap-1">
-                          <Timer className="w-3 h-3" />
-                          {estacion.fechaObjetivo}
-                        </span>
-                      )}
-                    </div>
-
-                    <CardContent className="p-6">
-                      {/* Ciudad y zona */}
-                      <div className="flex items-center gap-3 mb-4">
-                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                          esProximamente ? "bg-slate-700" : "bg-gradient-to-br from-amber-500 to-orange-600"
-                        }`}>
-                          <MapPin className="w-6 h-6 text-white" />
-                        </div>
-                        <div>
-                          <h3 className="text-xl font-bold text-white">{estacion.ciudad}</h3>
-                          <p className="text-sm text-white/60">{estacion.zona}</p>
-                        </div>
-                      </div>
-
-                      {/* Barra de progreso */}
-                      <div className="mb-4">
-                        <div className="flex justify-between text-sm mb-2">
-                          <span className="text-white/60">Progreso</span>
-                          <span className={`font-bold ${esProximamente ? "text-slate-500" : "text-amber-400"}`}>
-                            {porcentaje.toFixed(0)}%
-                          </span>
-                        </div>
-                        <div className="h-3 bg-slate-700 rounded-full overflow-hidden">
-                          <div 
-                            className={`h-full rounded-full transition-all duration-500 ${
-                              estaCompleto 
-                                ? "bg-gradient-to-r from-green-500 to-emerald-400" 
-                                : "bg-gradient-to-r from-amber-500 to-orange-400"
-                            }`}
-                            style={{ width: `${Math.min(porcentaje, 100)}%` }}
-                          />
-                        </div>
-                      </div>
-
-                      {/* Montos */}
-                      <div className="grid grid-cols-2 gap-4 mb-4">
-                        <div className="p-3 rounded-lg bg-black/30">
-                          <p className="text-xs text-white/60">Recaudado</p>
-                          <p className={`text-lg font-bold ${esProximamente ? "text-slate-500" : "text-white"}`}>
-                            {formatCOPShort(estacion.montoRecaudado)}
-                          </p>
-                        </div>
-                        <div className="p-3 rounded-lg bg-black/30">
-                          <p className="text-xs text-white/60">Meta</p>
-                          <p className="text-lg font-bold text-white/80">
-                            {formatCOPShort(estacion.metaInversion)}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Inversionistas */}
-                      <div className="flex items-center justify-between text-sm">
-                        <div className="flex items-center gap-2 text-white/60">
-                          <Users className="w-4 h-4" />
-                          <span>{estacion.inversionistas} inversionistas</span>
-                        </div>
-                        <span className="text-white/40">
-                          Faltan {formatCOPShort(estacion.metaInversion - estacion.montoRecaudado)}
-                        </span>
-                      </div>
-
-                      {/* Botón de acción */}
-                      {!esProximamente && !estaCompleto && (
-                        <a href={`https://wa.me/573054124009?text=${encodeURIComponent(`Hola EVGreen, estoy interesado en invertir en la estación de ${estacion.ciudad}. Me gustaría recibir más información.`)}`} target="_blank" rel="noopener noreferrer">
-                          <Button className="w-full mt-4 bg-amber-500 hover:bg-amber-600 text-white gap-2">
-                            Invertir en {estacion.ciudad}
-                            <ArrowRight className="w-4 h-4" />
-                          </Button>
-                        </a>
-                      )}
-                    </CardContent>
-                  </Card>
-                );
-              })}
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 max-w-6xl mx-auto">
+              {estaciones.map((estacion) => (
+                <InvestmentOpportunityCard
+                  key={estacion.id}
+                  variant="crowdfunding"
+                  title={estacion.title}
+                  city={estacion.city}
+                  region={estacion.region}
+                  typeLabel={estacion.typeLabel}
+                  imageUrl={estacion.imageUrl}
+                  imageCount={estacion.imageCount}
+                  status={estacion.status}
+                  targetDateLabel={estacion.targetDateLabel}
+                  targetAmount={estacion.targetAmount}
+                  raisedAmount={estacion.raisedAmount}
+                  minimumInvestment={estacion.minimumInvestment}
+                  investorCount={estacion.investorCount}
+                  powerKw={estacion.powerKw}
+                  chargerCount={estacion.chargerCount}
+                  chargerPowerKw={estacion.chargerPowerKw}
+                  hasSolar={estacion.hasSolar}
+                  roiPercent={estacion.roiPercent}
+                  paybackMonths={estacion.paybackMonths}
+                  connectorType={estacion.connectorType}
+                  actionLabel={estacion.status === "FUNDED" ? "Ver estación" : "Solicitar información"}
+                  actionHref={`https://wa.me/573054124009?text=${encodeURIComponent(`Hola EVGreen, estoy interesado en la estación ${estacion.title} en ${estacion.city}. Me gustaría recibir más información.`)}`}
+                />
+              ))}
             </div>
           )}
 
@@ -1814,13 +1769,31 @@ export default function Investors() {
                 /* LIST VIEW */
                 <>
                   {visiblePremiumStations.map((project: any) => {
-                    const fundingPct = Number(project.targetAmount) > 0
-                      ? Math.min(100, Math.round((Number(project.raisedAmount) / Number(project.targetAmount)) * 100))
-                      : 0;
+                    const photos = resolveInheritedProjectPhotos(project);
                     return (
-                      <button
+                      <InvestmentOpportunityCard
                         key={`premium-${project.id}`}
-                        onClick={() => {
+                        variant="crowdfunding"
+                        title={project.name || `Estación ${project.city}`}
+                        city={project.city}
+                        region={project.zone}
+                        typeLabel="Estación Premium · Colectiva"
+                        imageUrl={photos[0]?.url || null}
+                        imageCount={photos.length}
+                        status={project.status}
+                        targetDateLabel={project.targetDate ? new Date(project.targetDate).toLocaleDateString("es-CO", { month: "short", year: "numeric" }) : null}
+                        targetAmount={Number(project.targetAmount)}
+                        raisedAmount={Number(project.raisedAmount)}
+                        minimumInvestment={Number(project.minimumInvestment)}
+                        investorCount={project.investorCount || 0}
+                        powerKw={Number(project.totalPowerKw)}
+                        chargerCount={Number(project.chargerCount)}
+                        chargerPowerKw={Number(project.chargerPowerKw)}
+                        hasSolar={Boolean(project.hasSolarPanels)}
+                        roiPercent={project.estimatedRoiPercent}
+                        paybackMonths={project.estimatedPaybackMonths}
+                        connectorType="CCS2"
+                        onSelect={() => {
                           setSelectedSpace(null);
                           setSelectedPremium(project);
                           if (mapRef.current) {
@@ -1828,116 +1801,38 @@ export default function Investors() {
                             mapRef.current.setZoom(12);
                           }
                         }}
-                        className="w-full text-left rounded-xl border border-amber-500/30 bg-gradient-to-br from-amber-900/25 to-slate-800/80 p-4 transition-all hover:border-amber-400/70"
-                      >
-                        <div className="mb-2 flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-amber-400">
-                              <Star className="h-3.5 w-3.5 fill-current" />
-                              Estación Premium · Colectiva
-                            </div>
-                            <h4 className="truncate text-sm font-semibold text-white">{project.name || `Estación ${project.city}`}</h4>
-                            <p className="text-xs text-gray-400">{project.city}{project.zone ? ` · ${project.zone}` : ""}</p>
-                          </div>
-                          <span className="rounded-full border border-amber-400/25 bg-amber-500/15 px-2 py-0.5 text-xs font-bold text-amber-300">{fundingPct}%</span>
-                        </div>
-                        <div className="mb-3 flex items-center gap-4 text-xs text-gray-300">
-                          <span className="flex items-center gap-1"><Zap className="h-3 w-3 text-amber-400" />{project.totalPowerKw} kW</span>
-                          <span className="flex items-center gap-1"><Battery className="h-3 w-3 text-amber-400" />{project.chargerCount} cargadores</span>
-                        </div>
-                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-700">
-                          <div className="h-full rounded-full bg-gradient-to-r from-amber-500 to-yellow-400" style={{ width: `${fundingPct}%` }} />
-                        </div>
-                      </button>
+                      />
                     );
                   })}
-                  {visibleIndividualSpaces.map((space: any) => {
-                  const fundingPct = space.crowdfunding
-                    ? Math.min(100, Math.round((space.crowdfunding.raisedAmount / space.crowdfunding.targetAmount) * 100))
-                    : 0;
-                  return (
-                    <button
+                  {visibleIndividualSpaces.map((space: any) => (
+                    <InvestmentOpportunityCard
                       key={space.id}
-                      onClick={() => {
+                      variant="space"
+                      title={space.spaceName}
+                      city={space.city}
+                      region={space.department}
+                      typeLabel={SPACE_TYPE_LABELS[space.spaceType] || space.spaceType}
+                      imageUrl={space.thumbnailUrl}
+                      imageCount={space.photos?.length || 0}
+                      status={space.spaceStatus}
+                      showFunding={Boolean(space.crowdfunding)}
+                      targetAmount={space.crowdfunding?.targetAmount}
+                      raisedAmount={space.crowdfunding?.raisedAmount}
+                      investmentAmount={space.estimatedInvestmentCop}
+                      powerKw={Number(space.estimatedPowerKw) || null}
+                      chargerCount={Number(space.estimatedChargerCount) || null}
+                      connectorType="CCS2"
+                      aiScore={Number(space.aiScore) || null}
+                      viewCount={Number(space.viewCount) || 0}
+                      onSelect={() => {
                         handleSelectSpace(space);
                         if (space.latitude && space.longitude && mapRef.current) {
                           mapRef.current.panTo({ lat: parseFloat(space.latitude), lng: parseFloat(space.longitude) });
                           mapRef.current.setZoom(14);
                         }
                       }}
-                      className="w-full text-left bg-slate-800/60 border border-slate-700 rounded-xl p-4 hover:border-emerald-500/30 transition-all group"
-                    >
-                      {/* Thumbnail */}
-                      {space.thumbnailUrl && (
-                        <div className="relative w-full h-28 rounded-lg overflow-hidden mb-3">
-                          <img src={space.thumbnailUrl} alt={space.spaceName} className="w-full h-full object-cover" />
-                          {space.photos && space.photos.length > 1 && (
-                            <div className="absolute bottom-1.5 right-1.5 flex items-center gap-1 bg-black/60 text-white text-[10px] px-2 py-0.5 rounded-full backdrop-blur-sm">
-                              <Camera className="w-3 h-3" />
-                              {space.photos.length}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex-1 min-w-0">
-                          <h4 className="text-sm font-semibold text-white truncate group-hover:text-emerald-300 transition-colors">
-                            {space.spaceName}
-                          </h4>
-                          <p className="text-xs text-gray-500">
-                            {space.city}{space.department ? `, ${space.department}` : ""} · {SPACE_TYPE_LABELS[space.spaceType] || space.spaceType}
-                          </p>
-                        </div>
-                        {space.aiScore && (
-                          <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold border ${getScoreBg(space.aiScore)}`}>
-                            <Star className="w-3 h-3" />
-                            <span className={getScoreColor(space.aiScore)}>{space.aiScore}</span>
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-4 text-xs text-gray-400 mb-3">
-                        {space.estimatedPowerKw && (
-                          <span className="flex items-center gap-1">
-                            <Zap className="w-3 h-3 text-emerald-400" />
-                            {space.estimatedPowerKw} kW
-                          </span>
-                        )}
-                        {space.estimatedChargerCount && (
-                          <span className="flex items-center gap-1">
-                            <Battery className="w-3 h-3 text-blue-400" />
-                            {space.estimatedChargerCount} cargadores
-                          </span>
-                        )}
-                        {space.estimatedInvestmentCop && (
-                          <span className="flex items-center gap-1">
-                            <DollarSign className="w-3 h-3 text-yellow-400" />
-                            {formatCOPMap(space.estimatedInvestmentCop)}
-                          </span>
-                        )}
-                        {space.viewCount > 0 && (
-                          <span className="flex items-center gap-1">
-                            <Eye className="w-3 h-3 text-gray-500" />
-                            {space.viewCount}
-                          </span>
-                        )}
-                      </div>
-                      {space.crowdfunding && (
-                        <div>
-                          <div className="flex items-center justify-between text-xs mb-1">
-                            <span className="text-gray-500">Financiamiento</span>
-                            <span className="text-emerald-400 font-medium">{fundingPct}%</span>
-                          </div>
-                          <div className="w-full h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                            <div
-                              className="h-full rounded-full transition-all bg-gradient-to-r from-emerald-500 to-green-400"
-                              style={{ width: `${fundingPct}%` }}
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </button>
-                  );
-                  })}
+                    />
+                  ))}
                 </>
               )}
             </div>
