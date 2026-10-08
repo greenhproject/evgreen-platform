@@ -66,8 +66,8 @@ const NOTIFICATION_TYPES = [
   },
   {
     key: "notifyReservation",
-    label: "Reservas confirmadas",
-    description: "Confirmación de reserva con fecha, hora y estación",
+    label: "Ciclo de reservas",
+    description: "Confirmación, recordatorios, uso, cancelación y no presentación",
     icon: Calendar,
     color: "text-orange-400",
     event: "reservation_confirmed",
@@ -79,6 +79,14 @@ const NOTIFICATION_TYPES = [
     icon: BarChart3,
     color: "text-indigo-400",
     event: "monthly_summary",
+  },
+  {
+    key: "notifyStationAvailable",
+    label: "Conector disponible",
+    description: "Alerta solicitada por el usuario cuando un conector compatible queda libre",
+    icon: Bell,
+    color: "text-cyan-400",
+    event: "station_available",
   },
 ];
 
@@ -93,6 +101,57 @@ export default function WhatsAppConfig() {
     onError: (e) => toast.error(e.message),
   });
   const { data: logs, refetch: refetchLogs } = trpc.whatsapp.getLogs.useQuery({ limit: 50 });
+  const { data: availabilityTemplate, refetch: refetchAvailabilityTemplate } = trpc.whatsapp.getStationAvailabilityTemplate.useQuery();
+  const { data: reservationTemplate, refetch: refetchReservationTemplate } = trpc.whatsapp.getReservationTemplate.useQuery();
+  const { data: chargerOfflineTemplate, refetch: refetchChargerOfflineTemplate } = trpc.whatsapp.getChargerOfflineTemplate.useQuery();
+  const refreshAvailabilityTemplate = trpc.whatsapp.refreshStationAvailabilityTemplate.useMutation({
+    onSuccess: (template) => {
+      toast.success(template.status === "APPROVED" ? "Plantilla aprobada y lista para usar" : `Estado de plantilla: ${template.status}`);
+      refetchAvailabilityTemplate();
+      refetch();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const createAvailabilityTemplate = trpc.whatsapp.createStationAvailabilityTemplate.useMutation({
+    onSuccess: (template) => {
+      toast.success(template.status === "APPROVED" ? "Plantilla aprobada y lista para usar" : "Plantilla enviada a revisión de Meta");
+      refetchAvailabilityTemplate();
+      refetch();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const refreshReservationTemplate = trpc.whatsapp.refreshReservationTemplate.useMutation({
+    onSuccess: (template) => {
+      toast.success(template.status === "APPROVED" ? "Plantilla de reservas aprobada y lista para usar" : `Estado de plantilla de reservas: ${template.status}`);
+      refetchReservationTemplate();
+      refetch();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const createReservationTemplate = trpc.whatsapp.createReservationTemplate.useMutation({
+    onSuccess: (template) => {
+      toast.success(template.status === "APPROVED" ? "Plantilla de reservas aprobada y lista para usar" : "Plantilla de reservas enviada a revisión de Meta");
+      refetchReservationTemplate();
+      refetch();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const refreshChargerOfflineTemplate = trpc.whatsapp.refreshChargerOfflineTemplate.useMutation({
+    onSuccess: (template) => {
+      toast.success(template.status === "APPROVED" ? "Plantilla operativa aprobada y lista para usar" : `Estado de plantilla operativa: ${template.status}`);
+      refetchChargerOfflineTemplate();
+      refetch();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const createChargerOfflineTemplate = trpc.whatsapp.createChargerOfflineTemplate.useMutation({
+    onSuccess: (template) => {
+      toast.success(template.status === "APPROVED" ? "Plantilla operativa aprobada y lista para usar" : "Plantilla operativa enviada a revisión de Meta");
+      refetchChargerOfflineTemplate();
+      refetch();
+    },
+    onError: (error) => toast.error(error.message),
+  });
 
   const [form, setForm] = useState({
     phoneNumberId: "",
@@ -100,6 +159,8 @@ export default function WhatsAppConfig() {
     wabaId: "",
     fromPhone: "",
     adminPhone: "",
+    appSecret: "",
+    verifyToken: "",
   });
   const [showToken, setShowToken] = useState(false);
   const [testPhone, setTestPhone] = useState("");
@@ -114,6 +175,8 @@ export default function WhatsAppConfig() {
         wabaId: config.wabaId ?? "",
         fromPhone: config.displayPhone ?? "",
         adminPhone: config.adminPhone ?? "",
+        appSecret: "",
+        verifyToken: "",
       });
     }
   }, [config?.phoneNumberId, config?.accessToken, config?.wabaId, config?.displayPhone, config?.adminPhone]);
@@ -125,6 +188,8 @@ export default function WhatsAppConfig() {
       wabaId: form.wabaId,
       fromPhone: form.fromPhone,
       adminPhone: form.adminPhone,
+      ...(form.appSecret.trim() && { appSecret: form.appSecret.trim() }),
+      ...(form.verifyToken.trim() && { verifyToken: form.verifyToken.trim() }),
     });
   };
 
@@ -279,6 +344,24 @@ export default function WhatsAppConfig() {
                 </div>
                 <p className="text-xs text-muted-foreground">Recibe alertas cuando un cargador se desconecta. Sin + ni espacios.</p>
               </div>
+
+              <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-3 space-y-3">
+                <div>
+                  <p className="text-sm font-medium text-cyan-100">Confirmación de entrega (webhook de Meta)</p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">Configura este endpoint y suscríbete al campo <code className="rounded bg-zinc-950 px-1">messages</code> en Meta. Así el historial diferencia “aceptado por Meta” de “entregado” o “leído”.</p>
+                  <code className="mt-2 block break-all rounded bg-zinc-950 px-2 py-1.5 text-[11px] text-cyan-200">https://app.evgreen.lat/api/whatsapp/webhook</code>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label>App Secret {config?.appSecretConfigured ? <span className="text-green-400">• guardado</span> : null}</Label>
+                    <Input type="password" autoComplete="new-password" placeholder={config?.appSecretConfigured ? "Dejar vacío para conservar" : "App Secret de Meta"} value={form.appSecret} onChange={(e) => setForm({ ...form, appSecret: e.target.value })} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Verify token {config?.verifyTokenConfigured ? <span className="text-green-400">• guardado</span> : null}</Label>
+                    <Input type="password" autoComplete="new-password" placeholder={config?.verifyTokenConfigured ? "Dejar vacío para conservar" : "Token secreto elegido por el admin"} value={form.verifyToken} onChange={(e) => setForm({ ...form, verifyToken: e.target.value })} />
+                  </div>
+                </div>
+              </div>
             </div>
 
             <Button
@@ -299,7 +382,7 @@ export default function WhatsAppConfig() {
                 Mensaje de Prueba
               </h3>
               <p className="text-sm text-muted-foreground mt-1">
-                Envía un mensaje de prueba para verificar que las credenciales funcionan correctamente.
+                Envía la plantilla Utility aprobada de inicio de carga para validar credenciales y entrega sin depender de la ventana de conversación.
               </p>
             </div>
 
@@ -314,7 +397,7 @@ export default function WhatsAppConfig() {
                   className="pl-9 font-mono text-sm"
                 />
               </div>
-              <p className="text-xs text-muted-foreground">El número debe tener WhatsApp activo y haber iniciado conversación con el número de negocio.</p>
+              <p className="text-xs text-muted-foreground">El número debe tener WhatsApp activo. La prueba usa una plantilla aprobada por Meta.</p>
             </div>
 
             <Button
@@ -367,7 +450,7 @@ export default function WhatsAppConfig() {
 
       {/* Tab: Notificaciones */}
       {activeTab === "notifications" && (
-        <Card className="p-6">
+        <Card className="p-4 sm:p-6">
           <div className="mb-6">
             <h3 className="font-semibold text-lg">Tipos de Notificación</h3>
             <p className="text-sm text-muted-foreground mt-1">
@@ -400,6 +483,100 @@ export default function WhatsAppConfig() {
               );
             })}
           </div>
+
+          <Separator className="my-6" />
+          <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h4 className="font-semibold">Plantilla de disponibilidad</h4>
+                <Badge variant={availabilityTemplate?.status === "APPROVED" ? "default" : availabilityTemplate?.status === "IN_REVIEW" ? "secondary" : "outline"}>
+                  {availabilityTemplate?.status === "APPROVED" ? "Aprobada por Meta" : availabilityTemplate?.status === "IN_REVIEW" ? "En revisión" : availabilityTemplate?.status || "Sin verificar"}
+                </Badge>
+              </div>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                Las alertas fuera de la ventana de conversación se envían únicamente mediante una plantilla de utilidad aprobada. La aplicación siempre conserva la alerta interna; no marca WhatsApp como entregado si Meta no lo acepta.
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <code className="max-w-full break-all rounded bg-zinc-900 px-2 py-1 font-mono">{availabilityTemplate?.name || config?.stationAvailableTemplateName || "evgreen_estacion_disponible_v1"}</code>
+                {availabilityTemplate?.checkedAt && <span>Verificado: {new Date(availabilityTemplate.checkedAt).toLocaleString("es-CO")}</span>}
+              </div>
+              {availabilityTemplate?.reason && <p className="mt-2 text-xs leading-5 text-amber-500">{availabilityTemplate.reason}</p>}
+            </div>
+            <div className="flex flex-wrap gap-2 lg:justify-end">
+              <Button variant="outline" size="sm" onClick={() => refreshAvailabilityTemplate.mutate()} disabled={refreshAvailabilityTemplate.isPending}>
+                {refreshAvailabilityTemplate.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                Verificar estado
+              </Button>
+              {availabilityTemplate?.status === "NOT_CONFIGURED" && (
+                <Button size="sm" onClick={() => createAvailabilityTemplate.mutate()} disabled={createAvailabilityTemplate.isPending || !config?.enabled} className="bg-green-600 hover:bg-green-700">
+                  {createAvailabilityTemplate.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MessageCircle className="mr-2 h-4 w-4" />}
+                  Crear plantilla
+                </Button>
+              )}
+            </div>
+          </div>
+          <Separator className="my-6" />
+          <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h4 className="font-semibold">Plantilla operativa: cargador fuera de servicio</h4>
+                <Badge variant={chargerOfflineTemplate?.status === "APPROVED" ? "default" : chargerOfflineTemplate?.status === "IN_REVIEW" ? "secondary" : "outline"}>
+                  {chargerOfflineTemplate?.status === "APPROVED" ? "Aprobada por Meta" : chargerOfflineTemplate?.status === "IN_REVIEW" ? "En revisión" : chargerOfflineTemplate?.status || "Sin verificar"}
+                </Badge>
+              </div>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                La alerta administrativa de un cargador fuera de servicio se envía exclusivamente con una plantilla Utility aprobada. Nunca se usa texto libre fuera de la ventana de conversación.
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <code className="max-w-full break-all rounded bg-zinc-900 px-2 py-1 font-mono">{chargerOfflineTemplate?.name || "evgreen_cargador_fuera_de_servicio_v1"}</code>
+                {chargerOfflineTemplate?.checkedAt && <span>Verificado: {new Date(chargerOfflineTemplate.checkedAt).toLocaleString("es-CO")}</span>}
+              </div>
+              {chargerOfflineTemplate?.reason && <p className="mt-2 text-xs leading-5 text-amber-500">{chargerOfflineTemplate.reason}</p>}
+            </div>
+            <div className="flex flex-wrap gap-2 lg:justify-end">
+              <Button variant="outline" size="sm" onClick={() => refreshChargerOfflineTemplate.mutate()} disabled={refreshChargerOfflineTemplate.isPending}>
+                {refreshChargerOfflineTemplate.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                Verificar estado
+              </Button>
+              {chargerOfflineTemplate?.status === "NOT_CONFIGURED" && (
+                <Button size="sm" onClick={() => createChargerOfflineTemplate.mutate()} disabled={createChargerOfflineTemplate.isPending || !config?.enabled} className="bg-green-600 hover:bg-green-700">
+                  {createChargerOfflineTemplate.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MessageCircle className="mr-2 h-4 w-4" />}
+                  Crear plantilla
+                </Button>
+              )}
+            </div>
+          </div>
+          <Separator className="my-6" />
+          <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h4 className="font-semibold">Plantilla de ciclo de reservas</h4>
+                <Badge variant={reservationTemplate?.status === "APPROVED" ? "default" : reservationTemplate?.status === "IN_REVIEW" ? "secondary" : "outline"}>
+                  {reservationTemplate?.status === "APPROVED" ? "Aprobada por Meta" : reservationTemplate?.status === "IN_REVIEW" ? "En revisión" : reservationTemplate?.status || "Sin verificar"}
+                </Badge>
+              </div>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                Una única plantilla Utility cubre confirmación, recordatorios de 30 y 5 minutos, uso efectivo, cancelación y no presentación. La alerta interna se conserva aun si WhatsApp sigue pendiente de aprobación.
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <code className="max-w-full break-all rounded bg-zinc-900 px-2 py-1 font-mono">{reservationTemplate?.name || config?.reservationTemplateName || "evgreen_reserva_actualizacion_v1"}</code>
+                {reservationTemplate?.checkedAt && <span>Verificado: {new Date(reservationTemplate.checkedAt).toLocaleString("es-CO")}</span>}
+              </div>
+              {reservationTemplate?.reason && <p className="mt-2 text-xs leading-5 text-amber-500">{reservationTemplate.reason}</p>}
+            </div>
+            <div className="flex flex-wrap gap-2 lg:justify-end">
+              <Button variant="outline" size="sm" onClick={() => refreshReservationTemplate.mutate()} disabled={refreshReservationTemplate.isPending}>
+                {refreshReservationTemplate.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                Verificar estado
+              </Button>
+              {reservationTemplate?.status === "NOT_CONFIGURED" && (
+                <Button size="sm" onClick={() => createReservationTemplate.mutate()} disabled={createReservationTemplate.isPending || !config?.enabled} className="bg-green-600 hover:bg-green-700">
+                  {createReservationTemplate.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MessageCircle className="mr-2 h-4 w-4" />}
+                  Crear plantilla
+                </Button>
+              )}
+            </div>
+          </div>
         </Card>
       )}
 
@@ -428,16 +605,18 @@ export default function WhatsAppConfig() {
               {logs.map((log) => {
                 const notifType = NOTIFICATION_TYPES.find((n) => n.event === log.eventType);
                 const Icon = notifType?.icon ?? MessageCircle;
+                const statusLabel = log.status === "sent" ? "Aceptado por Meta" : log.status === "delivered" ? "Entregado" : log.status === "read" ? "Leído" : "Error";
+                const isFailure = log.status === "failed";
                 return (
                   <div key={log.id} className="flex items-start gap-3 p-3 rounded-lg bg-zinc-900/50 border border-zinc-800">
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${log.status === "sent" ? "bg-green-500/20" : "bg-red-500/20"}`}>
-                      <Icon className={`w-4 h-4 ${log.status === "sent" ? "text-green-400" : "text-red-400"}`} />
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${isFailure ? "bg-red-500/20" : "bg-green-500/20"}`}>
+                      <Icon className={`w-4 h-4 ${isFailure ? "text-red-400" : "text-green-400"}`} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-medium">{notifType?.label ?? log.eventType}</span>
-                        <Badge variant={log.status === "sent" ? "default" : "destructive"} className="text-xs">
-                          {log.status === "sent" ? "Enviado" : "Error"}
+                        <Badge variant={isFailure ? "destructive" : "default"} className="text-xs">
+                          {statusLabel}
                         </Badge>
                         <span className="text-xs text-muted-foreground font-mono">→ {log.toPhone}</span>
                       </div>

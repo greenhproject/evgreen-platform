@@ -23,6 +23,21 @@ import { eq, desc, sql, and, like, or, isNull } from "drizzle-orm";
 import { protectedProcedure, publicProcedure, tenantProcedure } from "../_core/trpc";
 import { generateOrgReportHtml, generateOrgReportCsv } from "../reports/org-report-pdf";
 import { canConfigureNetworkMode, normalizeNetworkAccessMode } from "./network-policy";
+import {
+  getTenantBillingSettings,
+  upsertTenantBillingSettings,
+  getElectronicInvoicesByOrg,
+  getElectronicInvoiceById,
+} from "../db";
+import {
+  testProviderConnection,
+  getProviderCatalogs,
+  configureProviderWebhook,
+  retryElectronicInvoice,
+  getAdapter,
+} from "../billing/billing-service";
+import type { BillingProviderType } from "../billing/types";
+import crypto from "crypto";
 
 // Helper: default modules per plan
 function getDefaultModules(plan: string): string[] {
@@ -1490,6 +1505,736 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         if (!key) throw new TRPCError({ code: 'NOT_FOUND' });
         await db!.update(apiKeys).set({ isActive: 0 } as any).where(eq(apiKeys.id, input.id));
         return { success: true };
+      }),
+
+    // ==========================================
+    // FACTURACIÓN ELECTRÓNICA MULTI-PROVEEDOR (TENANT)
+    // ==========================================
+
+    getMyElectronicBillingConfig: tenantProcedure.query(async ({ ctx }: any) => {
+      const orgId = ctx.tenant.organizationId;
+      const settings = await getTenantBillingSettings(orgId);
+
+      if (!settings) {
+        return {
+          provider: "alegra" as const,
+          enabled: false,
+          environment: "production" as const,
+          autoInvoice: true,
+          autoSendEmail: true,
+          resolutionNumber: "",
+          alegraEmail: "",
+          alegraToken: "",
+          alegraDefaultItemId: "",
+          alegraDefaultTaxId: "",
+          alegraPaymentMethodId: "",
+          alegraPaymentAccountId: "",
+          alegraUseElectronicStamp: true,
+          siigoUsername: "",
+          siigoAccessKey: "",
+          siigoPartnerId: "EVGreenSaaS",
+          siigoDocumentId: "",
+          siigoSellerId: "",
+          siigoPaymentTypeId: "",
+          siigoProductCode: "",
+          siigoTaxId: "",
+          siigoStamp: true,
+          siigoMail: true,
+          worldOfficeToken: "",
+          worldOfficeCompanyId: "",
+          worldOfficeDocumentTypeId: "",
+          worldOfficePrefixId: "",
+          worldOfficePaymentMethodId: "",
+          worldOfficeItemId: "",
+          worldOfficeTaxId: "",
+          selectedProductId: "",
+          selectedProductName: "",
+          selectedProductCode: "",
+          selectedProductPrice: null,
+          selectedProductTaxes: null,
+          selectedProductUnit: "",
+          selectedProductTaxIncluded: null,
+          selectedProductSyncedAt: null,
+          billingRoundingMode: "two_decimals" as const,
+          webhookSecret: "",
+          webhookConfiguredAt: null,
+          lastTestStatus: "none" as const,
+          lastTestMessage: null,
+          lastTestedAt: null,
+          fallbackCustomerEnabled: false,
+          fallbackCustomerId: "",
+          fallbackCustomerName: "",
+          fallbackCustomerDocumentType: "CC",
+          fallbackCustomerDocumentNumber: "",
+          fallbackCustomerEmail: "",
+          fallbackCustomerAddress: "",
+          fallbackCustomerCity: "",
+          fallbackCustomerDepartment: "",
+          fallbackCustomerKindOfPerson: "PERSON_ENTITY",
+          fallbackCustomerRegime: "SIMPLIFIED_REGIME",
+          alegraNumberTemplateId: "",
+          alegraNumberTemplateName: "",
+          alegraNumberTemplatePrefix: "",
+          alegraNumberTemplateResolution: "",
+          alegraNumberTemplateStartDate: "",
+          alegraNumberTemplateEndDate: "",
+          alegraNumberTemplateStartNumber: null,
+          alegraNumberTemplateEndNumber: null,
+          alegraNumberTemplateCurrentNumber: null,
+          alegraNumberTemplateSyncedAt: null,
+        };
+      }
+
+      return {
+        ...settings,
+        enabled: !!settings.enabled,
+        billingRoundingMode: (settings.billingRoundingMode as any) || "two_decimals",
+        autoInvoice: settings.autoInvoice !== 0,
+        autoSendEmail: settings.autoSendEmail !== 0,
+        alegraUseElectronicStamp: settings.alegraUseElectronicStamp !== 0,
+        siigoStamp: settings.siigoStamp !== 0,
+        siigoMail: settings.siigoMail !== 0,
+        // Enmascarar tokens para seguridad
+        alegraToken: settings.alegraToken ? "****" + settings.alegraToken.slice(-4) : "",
+        alegraEProviderToken: settings.alegraEProviderToken ? "****" + settings.alegraEProviderToken.slice(-4) : "",
+        alegraNumberTemplateId: settings.alegraNumberTemplateId || "",
+        alegraNumberTemplateName: settings.alegraNumberTemplateName || "",
+        alegraNumberTemplatePrefix: settings.alegraNumberTemplatePrefix || "",
+        alegraNumberTemplateResolution: settings.alegraNumberTemplateResolution || "",
+        alegraNumberTemplateStartDate: settings.alegraNumberTemplateStartDate || "",
+        alegraNumberTemplateEndDate: settings.alegraNumberTemplateEndDate || "",
+        alegraNumberTemplateStartNumber: settings.alegraNumberTemplateStartNumber || null,
+        alegraNumberTemplateEndNumber: settings.alegraNumberTemplateEndNumber || null,
+        alegraNumberTemplateCurrentNumber: settings.alegraNumberTemplateCurrentNumber || null,
+        alegraNumberTemplateSyncedAt: settings.alegraNumberTemplateSyncedAt || null,
+        siigoAccessKey: settings.siigoAccessKey ? "****" + settings.siigoAccessKey.slice(-4) : "",
+        worldOfficeToken: settings.worldOfficeToken ? "****" + settings.worldOfficeToken.slice(-4) : "",
+        webhookSecret: settings.webhookSecret ? "****" + settings.webhookSecret.slice(-4) : "",
+        fallbackCustomerEnabled: settings.fallbackCustomerEnabled !== 0,
+        fallbackCustomerId: settings.fallbackCustomerId || "",
+        fallbackCustomerName: settings.fallbackCustomerName || "",
+        fallbackCustomerDocumentType: settings.fallbackCustomerDocumentType || "CC",
+        fallbackCustomerDocumentNumber: settings.fallbackCustomerDocumentNumber || "",
+        fallbackCustomerEmail: settings.fallbackCustomerEmail || "",
+        fallbackCustomerAddress: settings.fallbackCustomerAddress || "",
+        fallbackCustomerCity: settings.fallbackCustomerCity || "",
+        fallbackCustomerDepartment: settings.fallbackCustomerDepartment || "",
+        fallbackCustomerKindOfPerson: settings.fallbackCustomerKindOfPerson || "PERSON_ENTITY",
+        fallbackCustomerRegime: settings.fallbackCustomerRegime || "SIMPLIFIED_REGIME",
+      };
+    }),
+
+    saveMyElectronicBillingConfig: tenantProcedure
+      .input(
+        z.object({
+          provider: z.enum(["alegra", "siigo", "world_office"]).default("alegra"),
+          enabled: z.boolean(),
+          environment: z.enum(["sandbox", "production"]).default("production"),
+          autoInvoice: z.boolean().default(true),
+          autoSendEmail: z.boolean().default(true),
+          resolutionNumber: z.string().optional(),
+          // Alegra
+          alegraEmail: z.string().optional(),
+          alegraToken: z.string().optional(),
+          alegraEProviderToken: z.string().optional(),
+          alegraDefaultItemId: z.string().optional(),
+          alegraDefaultTaxId: z.string().optional(),
+          alegraPaymentMethodId: z.string().optional(),
+          alegraPaymentAccountId: z.string().optional(),
+          alegraUseElectronicStamp: z.boolean().optional(),
+          alegraNumberTemplateId: z.string().optional(),
+          alegraNumberTemplateName: z.string().optional(),
+          alegraNumberTemplatePrefix: z.string().optional(),
+          alegraNumberTemplateResolution: z.string().optional(),
+          alegraNumberTemplateStartDate: z.string().optional(),
+          alegraNumberTemplateEndDate: z.string().optional(),
+          alegraNumberTemplateStartNumber: z.number().optional().nullable(),
+          alegraNumberTemplateEndNumber: z.number().optional().nullable(),
+          alegraNumberTemplateCurrentNumber: z.number().optional().nullable(),
+          alegraNumberTemplateSyncedAt: z.string().optional().nullable(),
+          // Siigo
+          siigoUsername: z.string().optional(),
+          siigoAccessKey: z.string().optional(),
+          siigoPartnerId: z.string().optional(),
+          siigoDocumentId: z.string().optional(),
+          siigoSellerId: z.string().optional(),
+          siigoPaymentTypeId: z.string().optional(),
+          siigoProductCode: z.string().optional(),
+          siigoTaxId: z.string().optional(),
+          siigoStamp: z.boolean().optional(),
+          siigoMail: z.boolean().optional(),
+          // World Office
+          worldOfficeToken: z.string().optional(),
+          worldOfficeCompanyId: z.string().optional(),
+          worldOfficeDocumentTypeId: z.string().optional(),
+          worldOfficePrefixId: z.string().optional(),
+          worldOfficePaymentMethodId: z.string().optional(),
+          worldOfficeItemId: z.string().optional(),
+          worldOfficeTaxId: z.string().optional(),
+          selectedProductId: z.string().optional(),
+          selectedProductName: z.string().optional(),
+          selectedProductCode: z.string().optional(),
+          selectedProductPrice: z.number().optional().nullable(),
+          selectedProductTaxes: z.string().optional().nullable(),
+          selectedProductUnit: z.string().optional().nullable(),
+          selectedProductTaxIncluded: z.boolean().optional().nullable(),
+          selectedProductSyncedAt: z.string().optional().nullable(),
+          billingRoundingMode: z.enum(["nearest_integer", "two_decimals"]).default("two_decimals"),
+          fallbackCustomerEnabled: z.boolean().optional(),
+          fallbackCustomerId: z.string().optional(),
+          fallbackCustomerName: z.string().optional(),
+          fallbackCustomerDocumentType: z.string().optional(),
+          fallbackCustomerDocumentNumber: z.string().optional(),
+          fallbackCustomerEmail: z.string().optional(),
+          fallbackCustomerAddress: z.string().optional(),
+          fallbackCustomerCity: z.string().optional(),
+          fallbackCustomerDepartment: z.string().optional(),
+          fallbackCustomerKindOfPerson: z.string().optional(),
+          fallbackCustomerRegime: z.string().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }: any) => {
+        const orgId = ctx.tenant.organizationId;
+        const payload: any = {
+          provider: input.provider,
+          enabled: input.enabled ? 1 : 0,
+          environment: input.environment,
+          autoInvoice: input.autoInvoice ? 1 : 0,
+          autoSendEmail: input.autoSendEmail ? 1 : 0,
+          resolutionNumber: input.resolutionNumber || null,
+          alegraEmail: input.alegraEmail || null,
+          alegraDefaultItemId: input.alegraDefaultItemId || null,
+          alegraDefaultTaxId: input.alegraDefaultTaxId || null,
+          alegraPaymentMethodId: input.alegraPaymentMethodId || (input.provider === "alegra" ? "transfer" : null),
+          alegraPaymentAccountId: input.alegraPaymentAccountId || null,
+          alegraUseElectronicStamp: input.alegraUseElectronicStamp !== false ? 1 : 0,
+          alegraNumberTemplateId: input.alegraNumberTemplateId || null,
+          alegraNumberTemplateName: input.alegraNumberTemplateName || null,
+          alegraNumberTemplatePrefix: input.alegraNumberTemplatePrefix || null,
+          alegraNumberTemplateResolution: input.alegraNumberTemplateResolution || null,
+          alegraNumberTemplateStartDate: input.alegraNumberTemplateStartDate || null,
+          alegraNumberTemplateEndDate: input.alegraNumberTemplateEndDate || null,
+          alegraNumberTemplateStartNumber: input.alegraNumberTemplateStartNumber !== undefined && input.alegraNumberTemplateStartNumber !== null ? input.alegraNumberTemplateStartNumber : null,
+          alegraNumberTemplateEndNumber: input.alegraNumberTemplateEndNumber !== undefined && input.alegraNumberTemplateEndNumber !== null ? input.alegraNumberTemplateEndNumber : null,
+          alegraNumberTemplateCurrentNumber: input.alegraNumberTemplateCurrentNumber !== undefined && input.alegraNumberTemplateCurrentNumber !== null ? input.alegraNumberTemplateCurrentNumber : null,
+          alegraNumberTemplateSyncedAt: input.alegraNumberTemplateSyncedAt || null,
+          siigoUsername: input.siigoUsername || null,
+          siigoPartnerId: input.siigoPartnerId || "EVGreenSaaS",
+          siigoDocumentId: input.siigoDocumentId || null,
+          siigoSellerId: input.siigoSellerId || null,
+          siigoPaymentTypeId: input.siigoPaymentTypeId || null,
+          siigoProductCode: input.siigoProductCode || null,
+          siigoTaxId: input.siigoTaxId || null,
+          siigoStamp: input.siigoStamp !== false ? 1 : 0,
+          siigoMail: input.siigoMail !== false ? 1 : 0,
+          worldOfficeCompanyId: input.worldOfficeCompanyId || null,
+          worldOfficeDocumentTypeId: input.worldOfficeDocumentTypeId || null,
+          worldOfficePrefixId: input.worldOfficePrefixId || null,
+          worldOfficePaymentMethodId: input.worldOfficePaymentMethodId || null,
+          worldOfficeItemId: input.worldOfficeItemId || null,
+          worldOfficeTaxId: input.worldOfficeTaxId || null,
+          selectedProductId: input.selectedProductId || null,
+          selectedProductName: input.selectedProductName || null,
+          selectedProductCode: input.selectedProductCode || null,
+          selectedProductPrice: input.selectedProductPrice !== undefined && input.selectedProductPrice !== null ? String(input.selectedProductPrice) : null,
+          selectedProductTaxes: input.selectedProductTaxes || null,
+          selectedProductUnit: input.selectedProductUnit || null,
+          selectedProductTaxIncluded: input.selectedProductTaxIncluded === true ? 1 : input.selectedProductTaxIncluded === false ? 0 : null,
+          selectedProductSyncedAt: input.selectedProductSyncedAt || null,
+          billingRoundingMode: input.billingRoundingMode || "two_decimals",
+          fallbackCustomerEnabled: input.fallbackCustomerEnabled ? 1 : 0,
+          fallbackCustomerId: input.fallbackCustomerId || null,
+          fallbackCustomerName: input.fallbackCustomerName || null,
+          fallbackCustomerDocumentType: input.fallbackCustomerDocumentType || null,
+          fallbackCustomerDocumentNumber: input.fallbackCustomerDocumentNumber || null,
+          fallbackCustomerEmail: input.fallbackCustomerEmail || null,
+          fallbackCustomerAddress: input.fallbackCustomerAddress || null,
+          fallbackCustomerCity: input.fallbackCustomerCity || null,
+          fallbackCustomerDepartment: input.fallbackCustomerDepartment || null,
+          fallbackCustomerKindOfPerson: input.fallbackCustomerKindOfPerson || null,
+          fallbackCustomerRegime: input.fallbackCustomerRegime || null,
+          updatedBy: ctx.user.id,
+        };
+
+        // Solo actualizar tokens si el usuario los escribió explícitamente y no vienen enmascarados
+        if (input.alegraToken && !input.alegraToken.startsWith("****")) {
+          payload.alegraToken = input.alegraToken;
+        }
+        if (input.alegraEProviderToken && !input.alegraEProviderToken.startsWith("****")) {
+          payload.alegraEProviderToken = input.alegraEProviderToken;
+        }
+        if (input.siigoAccessKey && !input.siigoAccessKey.startsWith("****")) {
+          payload.siigoAccessKey = input.siigoAccessKey;
+        }
+        if (input.worldOfficeToken && !input.worldOfficeToken.startsWith("****")) {
+          payload.worldOfficeToken = input.worldOfficeToken;
+        }
+
+        // Si aún no tiene secreto de webhook para este tenant, generarlo de forma determinista y segura
+        const existingSettings = await getTenantBillingSettings(orgId);
+        if (!existingSettings?.webhookSecret) {
+          payload.webhookSecret = crypto.randomBytes(24).toString("hex");
+          payload.webhookConfiguredAt = new Date().toISOString();
+        }
+
+        await upsertTenantBillingSettings(orgId, payload);
+        return { success: true, message: "Configuración guardada exitosamente" };
+      }),
+
+    testMyElectronicBillingConnection: tenantProcedure
+      .input(
+        z.object({
+          provider: z.enum(["alegra", "siigo", "world_office"]),
+          alegraEmail: z.string().optional(),
+          alegraToken: z.string().optional(),
+          siigoUsername: z.string().optional(),
+          siigoAccessKey: z.string().optional(),
+          siigoPartnerId: z.string().optional(),
+          worldOfficeToken: z.string().optional(),
+          worldOfficeCompanyId: z.string().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }: any) => {
+        const orgId = ctx.tenant.organizationId;
+        const current = await getTenantBillingSettings(orgId);
+
+        // Si el token viene enmascarado o vacío, usar el que ya está guardado en DB
+        const testPayload: Record<string, any> = { ...input };
+        if ((!input.alegraToken || input.alegraToken.startsWith("****")) && current?.alegraToken) {
+          testPayload.alegraToken = current.alegraToken;
+        }
+        if ((!input.siigoAccessKey || input.siigoAccessKey.startsWith("****")) && current?.siigoAccessKey) {
+          testPayload.siigoAccessKey = current.siigoAccessKey;
+        }
+        if ((!input.worldOfficeToken || input.worldOfficeToken.startsWith("****")) && current?.worldOfficeToken) {
+          testPayload.worldOfficeToken = current.worldOfficeToken;
+        }
+
+        const result = await testProviderConnection(input.provider as BillingProviderType, testPayload);
+
+        // Actualizar estado del test en la base de datos
+        await upsertTenantBillingSettings(orgId, {
+          lastTestStatus: result.success ? "success" : "error",
+          lastTestMessage: result.message || result.error || null,
+          lastTestedAt: new Date().toISOString(),
+        });
+
+        return result;
+      }),
+
+    listMyBillingCatalogs: tenantProcedure
+      .input(
+        z.object({
+          provider: z.enum(["alegra", "siigo", "world_office"]).optional(),
+          query: z.string().optional(),
+          contactsQuery: z.string().optional(),
+        }).optional()
+      )
+      .query(async ({ ctx, input }: any) => {
+        const orgId = ctx.tenant.organizationId;
+        const settings = await getTenantBillingSettings(orgId);
+        if (!settings) {
+          return { items: [], taxes: [], paymentMethods: [], bankAccounts: [], documentTypes: [], contacts: [] };
+        }
+        const provider = (input?.provider || settings.provider) as BillingProviderType;
+        return getProviderCatalogs(provider, settings, input?.query, input?.contactsQuery);
+      }),
+
+    searchMyBillingContacts: tenantProcedure
+      .input(
+        z.object({
+          query: z.string().optional(),
+          provider: z.enum(["alegra", "siigo", "world_office"]).optional(),
+        })
+      )
+      .query(async ({ ctx, input }: any) => {
+        const orgId = ctx.tenant.organizationId;
+        const settings = await getTenantBillingSettings(orgId);
+        if (!settings) return [];
+        const provider = (input.provider || settings.provider) as BillingProviderType;
+        const adapter = getAdapter(provider);
+        if (!adapter.listContacts) return [];
+        return adapter.listContacts(settings, input.query);
+      }),
+
+    searchMyBillingItems: tenantProcedure
+      .input(
+        z.object({
+          query: z.string().min(1),
+          provider: z.enum(["alegra", "siigo", "world_office"]).optional(),
+        })
+      )
+      .query(async ({ ctx, input }: any) => {
+        const orgId = ctx.tenant.organizationId;
+        const settings = await getTenantBillingSettings(orgId);
+        if (!settings) return [];
+        const provider = (input.provider || settings.provider) as BillingProviderType;
+        const adapter = getAdapter(provider);
+        if (!adapter.listItems) return [];
+        return adapter.listItems(settings, input.query);
+      }),
+
+    selectAndSyncMyBillingProduct: tenantProcedure
+      .input(
+        z.object({
+          productId: z.string().min(1),
+          provider: z.enum(["alegra", "siigo", "world_office"]).optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }: any) => {
+        const orgId = ctx.tenant.organizationId;
+        const settings = await getTenantBillingSettings(orgId);
+        if (!settings) throw new TRPCError({ code: "BAD_REQUEST", message: "Debe configurar credenciales primero" });
+        const provider = (input.provider || settings.provider) as BillingProviderType;
+        const adapter = getAdapter(provider);
+        let product = adapter.getItemById ? await adapter.getItemById(settings, input.productId) : null;
+        if (!product && adapter.listItems) {
+          const list = await adapter.listItems(settings, input.productId);
+          product = list.find((i) => i.id === input.productId || i.code === input.productId) || null;
+        }
+        if (!product) {
+          throw new TRPCError({ code: "NOT_FOUND", message: `Producto #${input.productId} no encontrado en ${provider}` });
+        }
+
+        if (provider === "alegra" && !product.code) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `El producto "${product.name}" no tiene código UNSPSC en Alegra. Agrégalo en Inventario > Ítems de venta y vuelve a sincronizarlo para evitar el rechazo DIAN FAZ09.`,
+          });
+        }
+
+        const taxesPayload = product.taxPercentage !== undefined || product.taxName
+          ? JSON.stringify([{ id: product.taxId, name: product.taxName, percentage: product.taxPercentage }])
+          : null;
+
+        await upsertTenantBillingSettings(orgId, {
+          selectedProductId: product.id,
+          selectedProductName: product.name,
+          selectedProductCode: product.code || null,
+          selectedProductPrice: product.price !== undefined ? String(product.price) : null,
+          selectedProductTaxes: taxesPayload,
+          selectedProductUnit: product.unit || "unidad",
+          selectedProductTaxIncluded: product.taxIncluded ? 1 : 0,
+          selectedProductSyncedAt: new Date().toISOString(),
+          // Sincronizar también en la columna legacy según proveedor
+          alegraDefaultItemId: provider === "alegra" ? product.id : settings.alegraDefaultItemId,
+          siigoProductCode: provider === "siigo" ? (product.code || product.id) : settings.siigoProductCode,
+          worldOfficeItemId: provider === "world_office" ? product.id : settings.worldOfficeItemId,
+        });
+
+        return {
+          success: true,
+          product,
+          message: `Producto "${product.name}" sincronizado con éxito. EVGreen sólo enviará la cantidad de kWh.`,
+        };
+      }),
+
+    configureMyBillingWebhook: tenantProcedure
+      .input(z.object({
+        webhookUrl: z.string().url(),
+        provider: z.enum(["alegra", "siigo", "world_office"]).optional(),
+        alegraEProviderToken: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }: any) => {
+        const orgId = ctx.tenant.organizationId;
+        const current = await getTenantBillingSettings(orgId);
+        if (!current) throw new TRPCError({ code: "NOT_FOUND", message: "Configuración de facturación no encontrada" });
+
+        const provider = (input.provider || current.provider) as BillingProviderType;
+        const effectiveSettings: Record<string, any> = { ...current };
+        if (input.alegraEProviderToken && !input.alegraEProviderToken.startsWith("****")) {
+          effectiveSettings.alegraEProviderToken = input.alegraEProviderToken;
+        }
+
+        let secret = current.webhookSecret;
+        if (!secret) {
+          secret = crypto.randomBytes(24).toString("hex");
+          await upsertTenantBillingSettings(orgId, {
+            webhookSecret: secret,
+          });
+        }
+
+        const result = await configureProviderWebhook(provider, effectiveSettings, input.webhookUrl, secret);
+        if (result.success) {
+          await upsertTenantBillingSettings(orgId, {
+            webhookConfiguredAt: new Date().toISOString(),
+            ...(input.alegraEProviderToken && !input.alegraEProviderToken.startsWith("****")
+              ? { alegraEProviderToken: input.alegraEProviderToken }
+              : {}),
+          });
+        }
+        return result;
+      }),
+
+    getMyElectronicInvoices: tenantProcedure
+      .input(
+        z.object({
+          status: z.string().optional(),
+          customerSource: z.enum(["USER", "FALLBACK"]).optional(),
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        }).optional()
+      )
+      .query(async ({ ctx, input }: any) => {
+        const orgId = ctx.tenant.organizationId;
+        return getElectronicInvoicesByOrg({
+          organizationId: orgId,
+          status: input?.status,
+          customerSource: input?.customerSource,
+          limit: input?.limit,
+          offset: input?.offset,
+        });
+      }),
+
+    retryMyElectronicInvoice: tenantProcedure
+      .input(z.object({ invoiceRecordId: z.number(), forceSync: z.boolean().optional() }))
+      .mutation(async ({ ctx, input }: any) => {
+        const orgId = ctx.tenant.organizationId;
+        const invoice = await getElectronicInvoiceById(input.invoiceRecordId);
+        if (!invoice || invoice.organizationId !== orgId) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Factura no encontrada o no pertenece a esta organización" });
+        }
+        return retryElectronicInvoice(input.invoiceRecordId, !!input.forceSync);
+      }),
+
+    // Procedimientos SuperAdmin para consultar y actualizar la facturación de CUALQUIER Tenant
+    getTenantBillingConfigAdmin: adminProcedure
+      .input(z.object({ organizationId: z.number() }))
+      .query(async ({ input }: any) => {
+        const settings = await getTenantBillingSettings(input.organizationId);
+        if (!settings) {
+          return {
+            organizationId: input.organizationId,
+            provider: "alegra" as const,
+            enabled: false,
+            environment: "production" as const,
+            autoInvoice: true,
+            autoSendEmail: true,
+            billingRoundingMode: "two_decimals" as const,
+            resolutionNumber: "",
+            alegraEmail: "",
+            alegraToken: "",
+            alegraDefaultItemId: "",
+            alegraDefaultTaxId: "",
+            alegraPaymentMethodId: "",
+            alegraPaymentAccountId: "",
+            alegraUseElectronicStamp: true,
+            siigoUsername: "",
+            siigoAccessKey: "",
+            siigoPartnerId: "EVGreenSaaS",
+            siigoDocumentId: "",
+            siigoSellerId: "",
+            siigoPaymentTypeId: "",
+            siigoProductCode: "",
+            siigoTaxId: "",
+            siigoStamp: true,
+            siigoMail: true,
+            worldOfficeToken: "",
+            worldOfficeCompanyId: "",
+            worldOfficeDocumentTypeId: "",
+            worldOfficePrefixId: "",
+            worldOfficePaymentMethodId: "",
+            worldOfficeItemId: "",
+            worldOfficeTaxId: "",
+            selectedProductId: "",
+            selectedProductName: "",
+            selectedProductCode: "",
+            selectedProductPrice: null,
+            selectedProductTaxes: null,
+            selectedProductUnit: "",
+          selectedProductTaxIncluded: null,
+          selectedProductSyncedAt: null,
+          webhookSecret: "",
+          webhookConfiguredAt: null,
+          lastTestStatus: "none" as const,
+          lastTestMessage: null,
+          lastTestedAt: null,
+          fallbackCustomerEnabled: false,
+          fallbackCustomerId: "",
+          fallbackCustomerName: "",
+          fallbackCustomerDocumentType: "CC",
+          fallbackCustomerDocumentNumber: "",
+          fallbackCustomerEmail: "",
+          fallbackCustomerAddress: "",
+          fallbackCustomerCity: "",
+          fallbackCustomerDepartment: "",
+          fallbackCustomerKindOfPerson: "PERSON_ENTITY",
+          fallbackCustomerRegime: "SIMPLIFIED_REGIME",
+        };
+      }
+      return {
+        ...settings,
+        organizationId: input.organizationId,
+        enabled: !!settings.enabled,
+        autoInvoice: settings.autoInvoice !== 0,
+        autoSendEmail: settings.autoSendEmail !== 0,
+        billingRoundingMode: (settings.billingRoundingMode as any) || "two_decimals",
+        alegraUseElectronicStamp: settings.alegraUseElectronicStamp !== 0,
+        siigoStamp: settings.siigoStamp !== 0,
+        siigoMail: settings.siigoMail !== 0,
+        alegraToken: settings.alegraToken ? "****" + settings.alegraToken.slice(-4) : "",
+        alegraEProviderToken: settings.alegraEProviderToken ? "****" + settings.alegraEProviderToken.slice(-4) : "",
+        siigoAccessKey: settings.siigoAccessKey ? "****" + settings.siigoAccessKey.slice(-4) : "",
+        worldOfficeToken: settings.worldOfficeToken ? "****" + settings.worldOfficeToken.slice(-4) : "",
+        webhookSecret: settings.webhookSecret ? "****" + settings.webhookSecret.slice(-4) : "",
+        fallbackCustomerEnabled: settings.fallbackCustomerEnabled !== 0,
+        fallbackCustomerId: settings.fallbackCustomerId || "",
+        fallbackCustomerName: settings.fallbackCustomerName || "",
+        fallbackCustomerDocumentType: settings.fallbackCustomerDocumentType || "CC",
+        fallbackCustomerDocumentNumber: settings.fallbackCustomerDocumentNumber || "",
+        fallbackCustomerEmail: settings.fallbackCustomerEmail || "",
+        fallbackCustomerAddress: settings.fallbackCustomerAddress || "",
+        fallbackCustomerCity: settings.fallbackCustomerCity || "",
+        fallbackCustomerDepartment: settings.fallbackCustomerDepartment || "",
+        fallbackCustomerKindOfPerson: settings.fallbackCustomerKindOfPerson || "PERSON_ENTITY",
+        fallbackCustomerRegime: settings.fallbackCustomerRegime || "SIMPLIFIED_REGIME",
+      };
+    }),
+
+    getTenantBillingCatalogsAdmin: adminProcedure
+      .input(z.object({
+        organizationId: z.number(),
+        provider: z.enum(["alegra", "siigo", "world_office"]).optional(),
+        query: z.string().optional(),
+        contactsQuery: z.string().optional(),
+      }))
+      .query(async ({ input }: any) => {
+        const settings = await getTenantBillingSettings(input.organizationId);
+        if (!settings) return { items: [], taxes: [], paymentMethods: [], bankAccounts: [], documentTypes: [], contacts: [] };
+        const provider = (input.provider || settings.provider) as BillingProviderType;
+        return getProviderCatalogs(provider, settings, input.query, input.contactsQuery);
+      }),
+
+    saveTenantBillingConfigAdmin: adminProcedure
+      .input(
+        z.object({
+          organizationId: z.number(),
+          provider: z.enum(["alegra", "siigo", "world_office"]).default("alegra"),
+          enabled: z.boolean(),
+          environment: z.enum(["sandbox", "production"]).default("production"),
+          autoInvoice: z.boolean().default(true),
+          autoSendEmail: z.boolean().default(true),
+          billingRoundingMode: z.enum(["nearest_integer", "two_decimals"]).default("two_decimals"),
+          resolutionNumber: z.string().optional(),
+          alegraEmail: z.string().optional(),
+          alegraToken: z.string().optional(),
+          alegraEProviderToken: z.string().optional(),
+          alegraDefaultItemId: z.string().optional(),
+          alegraDefaultTaxId: z.string().optional(),
+          alegraPaymentMethodId: z.string().optional(),
+          alegraPaymentAccountId: z.string().optional(),
+          alegraUseElectronicStamp: z.boolean().optional(),
+          siigoUsername: z.string().optional(),
+          siigoAccessKey: z.string().optional(),
+          siigoPartnerId: z.string().optional(),
+          siigoDocumentId: z.string().optional(),
+          siigoSellerId: z.string().optional(),
+          siigoPaymentTypeId: z.string().optional(),
+          siigoProductCode: z.string().optional(),
+          siigoTaxId: z.string().optional(),
+          siigoStamp: z.boolean().optional(),
+          siigoMail: z.boolean().optional(),
+          worldOfficeToken: z.string().optional(),
+          worldOfficeCompanyId: z.string().optional(),
+          worldOfficeDocumentTypeId: z.string().optional(),
+          worldOfficePrefixId: z.string().optional(),
+          worldOfficePaymentMethodId: z.string().optional(),
+          worldOfficeItemId: z.string().optional(),
+          worldOfficeTaxId: z.string().optional(),
+          selectedProductId: z.string().optional(),
+          selectedProductName: z.string().optional(),
+          selectedProductCode: z.string().optional(),
+          selectedProductPrice: z.number().optional().nullable(),
+          selectedProductTaxes: z.string().optional().nullable(),
+          selectedProductUnit: z.string().optional().nullable(),
+          selectedProductTaxIncluded: z.boolean().optional().nullable(),
+          selectedProductSyncedAt: z.string().optional().nullable(),
+          fallbackCustomerEnabled: z.boolean().optional(),
+          fallbackCustomerId: z.string().optional(),
+          fallbackCustomerName: z.string().optional(),
+          fallbackCustomerDocumentType: z.string().optional(),
+          fallbackCustomerDocumentNumber: z.string().optional(),
+          fallbackCustomerEmail: z.string().optional(),
+          fallbackCustomerAddress: z.string().optional(),
+          fallbackCustomerCity: z.string().optional(),
+          fallbackCustomerDepartment: z.string().optional(),
+          fallbackCustomerKindOfPerson: z.string().optional(),
+          fallbackCustomerRegime: z.string().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }: any) => {
+        const payload: any = {
+          provider: input.provider,
+          enabled: input.enabled ? 1 : 0,
+          environment: input.environment,
+          autoInvoice: input.autoInvoice ? 1 : 0,
+          autoSendEmail: input.autoSendEmail ? 1 : 0,
+          billingRoundingMode: input.billingRoundingMode || "two_decimals",
+          resolutionNumber: input.resolutionNumber || null,
+          alegraEmail: input.alegraEmail || null,
+          alegraDefaultItemId: input.alegraDefaultItemId || null,
+          alegraDefaultTaxId: input.alegraDefaultTaxId || null,
+          alegraPaymentMethodId: input.alegraPaymentMethodId || (input.provider === "alegra" ? "transfer" : null),
+          alegraPaymentAccountId: input.alegraPaymentAccountId || null,
+          alegraUseElectronicStamp: input.alegraUseElectronicStamp !== false ? 1 : 0,
+          siigoUsername: input.siigoUsername || null,
+          siigoPartnerId: input.siigoPartnerId || "EVGreenSaaS",
+          siigoDocumentId: input.siigoDocumentId || null,
+          siigoSellerId: input.siigoSellerId || null,
+          siigoPaymentTypeId: input.siigoPaymentTypeId || null,
+          siigoProductCode: input.siigoProductCode || null,
+          siigoTaxId: input.siigoTaxId || null,
+          siigoStamp: input.siigoStamp !== false ? 1 : 0,
+          siigoMail: input.siigoMail !== false ? 1 : 0,
+          worldOfficeCompanyId: input.worldOfficeCompanyId || null,
+          worldOfficeDocumentTypeId: input.worldOfficeDocumentTypeId || null,
+          worldOfficePrefixId: input.worldOfficePrefixId || null,
+          worldOfficePaymentMethodId: input.worldOfficePaymentMethodId || null,
+          worldOfficeItemId: input.worldOfficeItemId || null,
+          worldOfficeTaxId: input.worldOfficeTaxId || null,
+          selectedProductId: input.selectedProductId || null,
+          selectedProductName: input.selectedProductName || null,
+          selectedProductCode: input.selectedProductCode || null,
+          selectedProductPrice: input.selectedProductPrice !== undefined && input.selectedProductPrice !== null ? String(input.selectedProductPrice) : null,
+          selectedProductTaxes: input.selectedProductTaxes || null,
+          selectedProductUnit: input.selectedProductUnit || null,
+          selectedProductTaxIncluded: input.selectedProductTaxIncluded === true ? 1 : input.selectedProductTaxIncluded === false ? 0 : null,
+          selectedProductSyncedAt: input.selectedProductSyncedAt || null,
+          fallbackCustomerEnabled: input.fallbackCustomerEnabled ? 1 : 0,
+          fallbackCustomerId: input.fallbackCustomerId || null,
+          fallbackCustomerName: input.fallbackCustomerName || null,
+          fallbackCustomerDocumentType: input.fallbackCustomerDocumentType || null,
+          fallbackCustomerDocumentNumber: input.fallbackCustomerDocumentNumber || null,
+          fallbackCustomerEmail: input.fallbackCustomerEmail || null,
+          fallbackCustomerAddress: input.fallbackCustomerAddress || null,
+          fallbackCustomerCity: input.fallbackCustomerCity || null,
+          fallbackCustomerDepartment: input.fallbackCustomerDepartment || null,
+          fallbackCustomerKindOfPerson: input.fallbackCustomerKindOfPerson || null,
+          fallbackCustomerRegime: input.fallbackCustomerRegime || null,
+          updatedBy: ctx.user.id,
+        };
+
+        if (input.alegraToken && !input.alegraToken.startsWith("****")) {
+          payload.alegraToken = input.alegraToken;
+        }
+        if (input.alegraEProviderToken && !input.alegraEProviderToken.startsWith("****")) {
+          payload.alegraEProviderToken = input.alegraEProviderToken;
+        }
+        if (input.siigoAccessKey && !input.siigoAccessKey.startsWith("****")) {
+          payload.siigoAccessKey = input.siigoAccessKey;
+        }
+        if (input.worldOfficeToken && !input.worldOfficeToken.startsWith("****")) {
+          payload.worldOfficeToken = input.worldOfficeToken;
+        }
+
+        const existing = await getTenantBillingSettings(input.organizationId);
+        if (!existing?.webhookSecret) {
+          payload.webhookSecret = crypto.randomBytes(24).toString("hex");
+          payload.webhookConfiguredAt = new Date().toISOString();
+        }
+
+        await upsertTenantBillingSettings(input.organizationId, payload);
+        return { success: true, message: "Configuración del tenant guardada por superadmin" };
       }),
 
     // ==========================================

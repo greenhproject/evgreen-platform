@@ -669,6 +669,7 @@ function OrgDetailDialog({ org, onClose, onRefresh }: {
                 <TabsList className="h-auto gap-0 p-0 bg-transparent border-0 w-full justify-start">
                   {[
                     { value: "billing", icon: CreditCard, label: "Billing" },
+                    { value: "electronic_invoicing", icon: FileText, label: "Facturación Electrónica" },
                     { value: "stations", icon: MapPin, label: "Estaciones" },
                     { value: "modules", icon: Layers, label: "Módulos" },
                     { value: "users", icon: Users, label: "Usuarios" },
@@ -849,10 +850,19 @@ function OrgDetailDialog({ org, onClose, onRefresh }: {
                       description: newBillingForm.description || undefined, amount: newBillingForm.amount, currency: newBillingForm.currency });
                     setNewBillingForm({ type: "setup", description: "", amount: "", currency: "USD" });
                   }}>
-                  <Plus className="h-3 w-3 mr-1" /> Agregar registro
+                  Crear registro
                 </Button>
               </div>
             </div>
+              </div>
+            </ScrollArea>
+          </TabsContent>
+
+          {/* ---- TAB: FACTURACIÓN ELECTRÓNICA DIAN (CENTRALIZADO TENANT) ---- */}
+          <TabsContent value="electronic_invoicing" className="flex-1 min-h-0 data-[state=active]:flex data-[state=active]:flex-col">
+            <ScrollArea className="flex-1">
+              <div className="p-4 space-y-4">
+                <TenantBillingTab org={org} />
               </div>
             </ScrollArea>
           </TabsContent>
@@ -1399,3 +1409,4 @@ function PricingDialog({ open, onClose, defaults, onUpdate }: {
     </Dialog>
   );
 }
+import TenantBillingTab from "@/components/billing/TenantBillingTab";

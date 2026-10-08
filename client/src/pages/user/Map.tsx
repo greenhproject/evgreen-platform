@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { AIInsightCard } from "@/components/AIInsightCard";
 import { createStationMarkerFingerprint } from "@/lib/station-marker-stability";
+import { formatStationDateTime } from "@shared/station-timezone";
 
 // Tipo inferido del API - usamos any para flexibilidad con datos del backend
 type StationData = {
@@ -49,6 +50,9 @@ type StationData = {
   evses?: Array<{
     id: number;
     status: string;
+    connectorStatus?: string;
+    operationalStatus?: string | null;
+    isAvailable?: boolean;
     connectorType: string;
     chargeType?: string;
     powerKw: string;
@@ -85,6 +89,9 @@ interface Station {
   evses: Array<{
     id: number;
     status: string;
+    connectorStatus?: string;
+    operationalStatus?: string | null;
+    isAvailable?: boolean;
     connectorType: string;
     chargeType?: string;
     powerKw: string;
@@ -153,7 +160,13 @@ export default function UserMap() {
   const { user, isAuthenticated } = useAuth();
 
   // Obtener estaciones - sin filtro de ubicación para mostrar todas las estaciones públicas
-  const { data: stations, isLoading, refetch } = trpc.stations.listPublic.useQuery({});
+  const { data: stations, isLoading, refetch, isFetching } = trpc.stations.listPublic.useQuery({}, {
+    // No conservar un marcador verde después de que OCPP o una transacción
+    // confirme ocupación. El backend entrega el mismo estado canónico que el detalle.
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
+    staleTime: 5_000,
+  });
 
   // Obtener billetera del usuario (solo si está autenticado)
   const { data: wallet } = trpc.wallet.getMyWallet.useQuery(undefined, { enabled: isAuthenticated });
@@ -164,25 +177,23 @@ export default function UserMap() {
     { enabled: isAuthenticated, refetchInterval: 10000 }
   );
 
-  // Obtener reservas del usuario para mostrar banner de reserva activa
+  // Historial enriquecido para las demás vistas de mapa.
   const { data: myReservations } = trpc.reservations.myReservations.useQuery(
     undefined,
-    { enabled: isAuthenticated }
+    { enabled: isAuthenticated, refetchInterval: 30_000 }
   );
 
-  // Filtrar reserva activa próxima (dentro de las próximas 2 horas o en curso)
-  const activeReservation = useMemo(() => {
-    if (!myReservations) return null;
-    const now = Date.now();
-    const twoHoursFromNow = now + 2 * 60 * 60 * 1000;
-    return myReservations.find((r: any) => {
-      if (r.status !== 'ACTIVE') return false;
-      const startTime = new Date(r.startTime).getTime();
-      const endTime = new Date(r.endTime).getTime();
-      // Mostrar si la reserva está en curso o empieza dentro de 2 horas
-      return (startTime <= twoHoursFromNow && endTime > now);
-    }) || null;
-  }, [myReservations]);
+  // La reserva de cabecera se consulta de forma independiente: nunca debe
+  // desaparecer porque el listado completo esté en caché o falle al enriquecer.
+  const { data: activeReservation } = trpc.reservations.activeForBanner.useQuery(
+    undefined,
+    {
+      enabled: isAuthenticated,
+      refetchInterval: 10_000,
+      refetchOnMount: "always",
+      refetchOnWindowFocus: true,
+    },
+  );
 
   // Tracking GPS en tiempo real con watchPosition
   useEffect(() => {
@@ -310,8 +321,11 @@ export default function UserMap() {
 
   // Obtener estado de disponibilidad
   const getAvailableCount = (station: Station) => {
-    // @ts-ignore
-    return station.evses?.filter((e) => e.connectorStatus === "AVAILABLE").length || 0;
+    return station.evses?.filter((evse) => {
+      if (evse.isAvailable !== undefined) return evse.isAvailable;
+      const status = evse.operationalStatus || evse.status || evse.connectorStatus;
+      return status === "AVAILABLE";
+    }).length || 0;
   };
 
   const getTotalCount = (station: Station) => {
@@ -425,8 +439,7 @@ export default function UserMap() {
       // Determinar tipo de carga de la estación
       const hasDC = station.evses?.some((e) => e.chargeType === 'DC');
       const hasAC = station.evses?.some((e) => e.chargeType === 'AC');
-      // @ts-ignore
-      const availableCount = station.evses?.filter((e) => e.connectorStatus === "AVAILABLE").length || 0;
+      const availableCount = getAvailableCount(station);
       const isAvailable = availableCount > 0;
 
       // Colores según tipo: DC=azul eléctrico, AC=ámbar, Mixto=verde
@@ -624,7 +637,7 @@ export default function UserMap() {
                       Reserva activa
                     </p>
                     <p className="text-xs text-purple-300 truncate">
-                      {(activeReservation as any).stationName || `Estación #${activeReservation.stationId}`} • {new Date(activeReservation.startTime).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
+                      {(activeReservation as any).stationName || `Estación #${activeReservation.stationId}`} • {formatStationDateTime(activeReservation.startTime, (activeReservation as any).stationTimezone, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                     </p>
                   </div>
                   <div className="flex gap-1.5 flex-shrink-0">
@@ -640,10 +653,10 @@ export default function UserMap() {
                     <Button
                       size="sm"
                       className="h-8 px-2.5 text-xs bg-purple-500 hover:bg-purple-400 text-white"
-                      onClick={() => setLocation(`/start-charge?code=${activeReservation.stationId}`)}
+                      onClick={() => setLocation(`/station/${activeReservation.stationId}`)}
                     >
                       <QrCode className="w-3.5 h-3.5 mr-1" />
-                      Cargar
+                      Llegar
                     </Button>
                   </div>
                 </div>
@@ -729,7 +742,7 @@ export default function UserMap() {
             aria-label="Actualizar estaciones"
           >
             <div className="h-12 w-12 rounded-full bg-emerald-600 shadow-lg shadow-emerald-600/40 border-2 border-emerald-400 flex items-center justify-center text-white active:scale-95 transition-transform">
-              <RefreshCw className="w-5 h-5" />
+              <RefreshCw className={`w-5 h-5 ${isFetching ? "animate-spin" : ""}`} />
             </div>
             <span className="text-[10px] font-bold text-white bg-emerald-700/90 px-2 py-0.5 rounded-full shadow-md">Actualizar</span>
           </button>

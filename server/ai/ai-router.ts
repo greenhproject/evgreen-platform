@@ -443,10 +443,13 @@ export const aiRouter = router({
       stationId: z.number(),
       connectorType: z.string().optional(),
       stationName: z.string().optional(),
-      sendPush: z.boolean().optional().default(true),
-      sendWhatsapp: z.boolean().optional().default(true),
+      sendPush: z.boolean().optional().default(false),
+      sendWhatsapp: z.boolean().optional().default(false),
     }))
     .mutation(async ({ input, ctx }) => {
+      if (!input.sendPush && !input.sendWhatsapp) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Selecciona al menos un canal de notificación" });
+      }
       const user = await dbOps.getUserById(ctx.user.id);
       const alert = await dbOps.createAvailabilityAlert({
         userId: ctx.user.id,
@@ -461,7 +464,19 @@ export const aiRouter = router({
       if (!alert) {
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "No se pudo registrar la alerta" });
       }
-      return { success: true, alertId: alert.id, alreadyExists: false };
+      const { getConfiguredStationAvailabilityTemplate } = await import("../whatsapp/whatsapp-service");
+      const template = input.sendWhatsapp ? await getConfiguredStationAvailabilityTemplate() : null;
+      const canReceivePush = Boolean(user?.pushSubscription || (user?.fcmToken && !user.fcmToken.startsWith("local_")));
+      return {
+        success: true,
+        alertId: alert.id,
+        alreadyExists: false,
+        channels: {
+          inApp: true,
+          push: input.sendPush ? (canReceivePush ? "SCHEDULED" : "NEEDS_PERMISSION") : "NOT_REQUESTED",
+          whatsapp: input.sendWhatsapp ? (template?.canSend ? "SCHEDULED" : "WAITING_TEMPLATE") : "NOT_REQUESTED",
+        },
+      };
     }),
 
   /**

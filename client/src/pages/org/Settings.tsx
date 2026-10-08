@@ -19,9 +19,11 @@ import {
   Palette, Copy, CheckCircle2, AlertCircle, Info,
   ExternalLink, Zap, CreditCard, Calendar, TrendingUp,
   ArrowUpCircle, Clock, Upload, ImageIcon, X as XIcon,
-  Headphones, MessageCircle, ToggleLeft, Code,
+  Headphones, MessageCircle, ToggleLeft, Code, FileText,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
+import ElectronicBillingConfigCard from "@/components/billing/ElectronicBillingConfigCard";
+import ElectronicInvoicesHistory from "@/components/billing/ElectronicInvoicesHistory";
 
 export default function OrgSettings() {
   const utils = trpc.useUtils();
@@ -163,7 +165,7 @@ export default function OrgSettings() {
       </div>
 
       <Tabs defaultValue="info" className="w-full">
-        <TabsList className="grid w-full grid-cols-5 bg-muted/30">
+        <TabsList className="grid w-full grid-cols-3 sm:grid-cols-6 bg-muted/30">
           <TabsTrigger value="info" className="flex items-center gap-2">
             <Building className="h-4 w-4" />
             <span className="hidden sm:inline">Información</span>
@@ -171,6 +173,10 @@ export default function OrgSettings() {
           <TabsTrigger value="billing" className="flex items-center gap-2">
             <CreditCard className="h-4 w-4" />
             <span className="hidden sm:inline">Mi Plan</span>
+          </TabsTrigger>
+          <TabsTrigger value="billing_provider" className="flex items-center gap-2">
+            <FileText className="h-4 w-4" />
+            <span className="hidden sm:inline">Facturación</span>
           </TabsTrigger>
           <TabsTrigger value="branding" className="flex items-center gap-2">
             <Palette className="h-4 w-4" />
@@ -699,6 +705,12 @@ export default function OrgSettings() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* ─── TAB: FACTURACIÓN ELECTRÓNICA MULTI-PROVEEDOR ─── */}
+        <TabsContent value="billing_provider" className="mt-6 space-y-6">
+          <ElectronicBillingConfigCard mode="tenant" />
+          <ElectronicInvoicesHistory mode="tenant" />
         </TabsContent>
 
         {/* ─── TAB: SOPORTE ─── */}

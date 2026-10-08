@@ -75,12 +75,25 @@ export type NotificationType =
 
 // Interfaz para datos de notificación
 export interface PushNotificationData {
-  type: NotificationType;
-  title: string;
-  body: string;
-  imageUrl?: string;
-  data?: Record<string, string>;
-  clickAction?: string;
+	type: NotificationType;
+	title: string;
+	body: string;
+	imageUrl?: string;
+	data?: Record<string, string>;
+	clickAction?: string;
+}
+
+/**
+ * FCM sólo confirma que aceptó una solicitud del servidor. No es una prueba de
+ * que el teléfono la mostró. Ese segundo paso se registra cuando la app nativa
+ * reporta RECEIVED u OPENED.
+ */
+export interface FcmSendResult {
+	accepted: boolean;
+	providerMessageId?: string;
+	errorCode?: string;
+	errorMessage?: string;
+	invalidToken: boolean;
 }
 
 // Iconos y colores por tipo de notificación
@@ -108,14 +121,19 @@ const notificationStyles: Record<NotificationType, { icon: string; color: string
 /**
  * Enviar notificación push a un dispositivo específico
  */
-export async function sendPushNotification(
-  fcmToken: string,
-  notification: PushNotificationData
-): Promise<boolean> {
-  if (!initializeFirebase()) {
-    console.log("[FCM] Cannot send notification - Firebase not initialized");
-    return false;
-  }
+export async function sendPushNotificationDetailed(
+	fcmToken: string,
+	notification: PushNotificationData
+): Promise<FcmSendResult> {
+	if (!initializeFirebase()) {
+		console.log("[FCM] Cannot send notification - Firebase not initialized");
+		return {
+			accepted: false,
+			errorCode: "FCM_NOT_CONFIGURED",
+			errorMessage: "Las credenciales de Firebase no están disponibles en el servidor.",
+			invalidToken: false,
+		};
+	}
 
   const style = notificationStyles[notification.type];
 
@@ -174,20 +192,29 @@ export async function sendPushNotification(
       },
     };
 
-    const response = await admin.messaging().send(message);
-    console.log(`[FCM] Notification sent successfully: ${response}`);
-    return true;
-  } catch (error: any) {
-    console.error("[FCM] Error sending notification:", error.message);
-    
-    // Si el token es inválido, retornar false para que se pueda limpiar
-    if (error.code === "messaging/invalid-registration-token" ||
-        error.code === "messaging/registration-token-not-registered") {
-      return false;
-    }
-    
-    return false;
-  }
+		const providerMessageId = await admin.messaging().send(message);
+		console.log(`[FCM] Notification accepted by provider: ${providerMessageId}`);
+		return { accepted: true, providerMessageId, invalidToken: false };
+	} catch (error: any) {
+		console.error("[FCM] Error sending notification:", error.message);
+		const invalidToken = error.code === "messaging/invalid-registration-token" ||
+			error.code === "messaging/registration-token-not-registered";
+		return {
+			accepted: false,
+			errorCode: error.code || "FCM_SEND_FAILED",
+			errorMessage: error.message || "Firebase rechazó el mensaje.",
+			invalidToken,
+		};
+	}
+}
+
+/** Compatibilidad para flujos existentes que sólo requieren éxito/fallo. */
+export async function sendPushNotification(
+	fcmToken: string,
+	notification: PushNotificationData
+): Promise<boolean> {
+	const result = await sendPushNotificationDetailed(fcmToken, notification);
+	return result.accepted;
 }
 
 /**

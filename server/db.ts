@@ -16,10 +16,12 @@ import { eq, and, desc, asc, gte, lte, lt, gt, sql, or, count, sum, avg, ne, inA
  */
 import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2";
+import { isReservationHoldingConnector } from "../shared/reservation-lifecycle-policy";
 import {
   InsertUser,
 	users,
 	chargingStations,
+  chargers,
 	crowdfundingProjects,
 	crowdfundingParticipations,
 	crowdfundingStationLinkRepairs,
@@ -42,6 +44,7 @@ import {
   bannerDailyStats,
   InsertChargingStation,
   InsertEvse,
+  InsertCharger,
   InsertTransaction,
   InsertMeterValue,
   InsertReservation,
@@ -68,6 +71,12 @@ import {
   priceHistory,
   InsertPriceHistory,
   PriceHistory,
+  tenantBillingSettings,
+  TenantBillingSettings,
+  InsertTenantBillingSettings,
+  electronicInvoices,
+  ElectronicInvoice,
+  InsertElectronicInvoice,
   platformSettings,
   PlatformSettings,
   InsertPlatformSettings,
@@ -139,11 +148,14 @@ import {
 	  InsertUserVehicle,
 	  spaceSubmissions,
 	  spacePhotos,
-} from "../drizzle/schema";
+	  crowdfundingProjects,
+	} from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { ConnectorStatus, TriggeredBy } from "./charging/connector-state.service";
 import { toUtcIso } from "./utils/dates";
 import { mapInheritedSpacePhotos } from "./spaces/crowdfunding-inheritance";
+import { resolveAvailabilityAttempt, type AvailabilityPushStatus, type AvailabilityWhatsAppStatus } from "./notifications/availability-alert-policy";
+import { summarizeFinancialReconciliations } from "../shared/financial-reconciliation-policy";
 
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -592,8 +604,22 @@ export async function getChargingStationById(id: number) {
 export async function getChargingStationByOcppIdentity(ocppIdentity: string) {
   const db = (await getDb())!;
   if (!db) return undefined;
-  const result = await db.select().from(chargingStations).where(eq(chargingStations.ocppIdentity, ocppIdentity)).limit(1);
-  return result.length > 0 ? result[0] : undefined;
+  const directResult = await db.select().from(chargingStations).where(eq(chargingStations.ocppIdentity, ocppIdentity)).limit(1);
+  if (directResult.length > 0) return directResult[0];
+
+  // Una estación puede contener varios cargadores físicos, cada uno con su
+  // propia identidad OCPP. Mantener este fallback aquí permite que el CSMS
+  // conserve el stationId común sin mezclar sus EVSEs.
+  const charger = await db.select({ stationId: chargers.stationId })
+    .from(chargers)
+    .where(eq(chargers.ocppIdentity, ocppIdentity))
+    .limit(1);
+  if (charger.length === 0) return undefined;
+
+  const parentResult = await db.select().from(chargingStations)
+    .where(eq(chargingStations.id, charger[0].stationId))
+    .limit(1);
+  return parentResult.length > 0 ? parentResult[0] : undefined;
 }
 
 export async function getAllChargingStations(filters?: { ownerId?: number; isActive?: boolean; isPublic?: boolean }) {
@@ -775,9 +801,18 @@ export async function updateChargingStation(id: number, data: Partial<InsertChar
 export async function updateStationOnlineStatus(ocppIdentity: string, isOnline: boolean) {
   const db = (await getDb())!;
   if (!db) return;
-  await db.update(chargingStations)
-    .set({ isOnline: isOnline ? 1 : 0, lastBootNotification: isOnline ? new Date().toISOString() : undefined } as any)
-    .where(eq(chargingStations.ocppIdentity, ocppIdentity));
+  const station = await getChargingStationByOcppIdentity(ocppIdentity);
+  if (station) {
+    await db.update(chargingStations)
+      .set({ isOnline: isOnline ? 1 : 0, lastBootNotification: isOnline ? new Date().toISOString() : undefined } as any)
+      .where(eq(chargingStations.id, station.id));
+  }
+
+  // Mantener también el estado operativo del cargador físico cuando la
+  // identidad no vive directamente en charging_stations.
+  await db.update(chargers)
+    .set({ isOnline: isOnline ? 1 : 0, chargerStatus: isOnline ? "ONLINE" : "OFFLINE" } as any)
+    .where(eq(chargers.ocppIdentity, ocppIdentity));
 }
 
 export async function deleteChargingStation(id: number, actorId?: number) {
@@ -848,6 +883,75 @@ export async function getEvseById(id: number) {
   return result.length > 0 ? result[0] : undefined;
 }
 
+/**
+ * Resolves a deliberately opaque connector QR token. The token is a public
+ * selector, never an authorization credential; charging still requires an
+ * authenticated user and all normal station/reservation checks.
+ */
+export async function getEvseByQrToken(qrToken: string) {
+  const db = (await getDb())!;
+  if (!db) return undefined;
+  const result = await db.select().from(evses).where(eq(evses.qrToken, qrToken)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+// ============================================================================
+// PHYSICAL CHARGER HIERARCHY — Station → Charger → Connector (EVSE)
+// ============================================================================
+
+export async function getChargersByStationId(stationId: number) {
+  const db = (await getDb())!;
+  if (!db) return [];
+  return db.select().from(chargers)
+    .where(eq(chargers.stationId, stationId))
+    .orderBy(asc(chargers.chargerCode), asc(chargers.id));
+}
+
+export async function getChargerById(id: number) {
+  const db = (await getDb())!;
+  if (!db) return undefined;
+  const [charger] = await db.select().from(chargers).where(eq(chargers.id, id)).limit(1);
+  return charger;
+}
+
+export async function getChargerByOcppIdentity(ocppIdentity: string) {
+  const db = (await getDb())!;
+  if (!db || !ocppIdentity) return undefined;
+  const [charger] = await db.select().from(chargers).where(eq(chargers.ocppIdentity, ocppIdentity)).limit(1);
+  return charger;
+}
+
+export async function createCharger(charger: InsertCharger) {
+  const db = (await getDb())!;
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(chargers).values(charger as any);
+  return Number(result[0].insertId);
+}
+
+export async function updateCharger(id: number, data: Partial<InsertCharger>) {
+  const db = (await getDb())!;
+  if (!db) return;
+  await db.update(chargers).set(data as any).where(eq(chargers.id, id));
+}
+
+/**
+ * Obtiene el cargador físico junto con todas sus salidas para validar el
+ * máximo de sesiones simultáneas configurado por el administrador.
+ */
+export async function getChargerWithEvses(chargerId: number) {
+  const [charger, connectorRows] = await Promise.all([
+    getChargerById(chargerId),
+    (async () => {
+      const db = (await getDb())!;
+      if (!db) return [];
+      return db.select().from(evses)
+        .where(and(eq(evses.chargerId, chargerId), eq(evses.isActive, 1)))
+        .orderBy(asc(evses.connectorId), asc(evses.id));
+    })(),
+  ]);
+  return { charger, evses: connectorRows };
+}
+
 export async function getEvsesByStationId(stationId: number) {
   const db = (await getDb())!;
   if (!db) return [];
@@ -881,21 +985,21 @@ export async function getEvsesByStationId(stationId: number) {
       const activeResList = reservationsByEvse.get(evse.id) || [];
       
       if (activeResList.length > 0) {
-        const currentOrImminent = activeResList.find(r => 
-          r.startTime <= in15Min.toISOString() && r.endTime > now.toISOString()
-        );
+        const currentOrImminent = activeResList.find(r => isReservationHoldingConnector(r, now));
         
         if (currentOrImminent) {
           return { 
             ...evse, 
-            status: 'RESERVED' as typeof evse.connectorStatus, 
+            connectorStatus: 'RESERVED' as typeof evse.connectorStatus,
+            status: 'RESERVED' as typeof evse.connectorStatus,
             activeReservationId: currentOrImminent.id, 
             activeReservationUserId: currentOrImminent.userId,
             nextReservation: null,
           };
         }
         
-        const nextRes = activeResList[0];
+        const nowMs = now.getTime();
+        const nextRes = activeResList.find(r => new Date(r.startTime).getTime() > nowMs) || activeResList[0];
         return { 
           ...evse, 
           status: evse.connectorStatus,
@@ -958,19 +1062,19 @@ export async function getAllEvsesForStations(stationIds: number[]) {
     if (evse.connectorStatus === 'AVAILABLE' || evse.connectorStatus === 'RESERVED') {
       const activeResList = reservationsByEvse.get(evse.id) || [];
       if (activeResList.length > 0) {
-        const currentOrImminent = activeResList.find(r => 
-          r.startTime <= in15Min.toISOString() && r.endTime > now.toISOString()
-        );
+        const currentOrImminent = activeResList.find(r => isReservationHoldingConnector(r, now));
         if (currentOrImminent) {
           enriched = { 
             ...evse, 
+            connectorStatus: 'RESERVED' as typeof evse.connectorStatus,
             status: 'RESERVED' as typeof evse.connectorStatus, 
             activeReservationId: currentOrImminent.id, 
             activeReservationUserId: currentOrImminent.userId,
             nextReservation: null,
           };
         } else {
-          const nextRes = activeResList[0];
+          const nowMs = now.getTime();
+          const nextRes = activeResList.find(r => new Date(r.startTime).getTime() > nowMs) || activeResList[0];
           enriched = { 
             ...evse, 
             status: evse.connectorStatus,
@@ -1056,8 +1160,100 @@ export async function getAvailableEvses(filters?: { connectorType?: Evse["connec
 export async function createTransaction(transaction: InsertTransaction) {
   const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(transactions).values(transaction);
+  // Mantener la compatibilidad de las dos columnas históricas de estado desde
+  // la creación, no sólo al actualizar. Así todos los consumidores observan la
+  // misma sesión en progreso o completada.
+  const normalizedTransaction: any = { ...transaction };
+  if (normalizedTransaction.status && normalizedTransaction.transactionStatus === undefined) {
+    normalizedTransaction.transactionStatus = normalizedTransaction.status;
+  }
+  if (normalizedTransaction.transactionStatus && normalizedTransaction.status === undefined) {
+    normalizedTransaction.status = normalizedTransaction.transactionStatus;
+  }
+  const result = await db.insert(transactions).values(normalizedTransaction);
   return result[0].insertId;
+}
+
+/**
+ * Crea una sesión OCPP 1.6 una sola vez.
+ *
+ * Algunos cargadores retransmiten StartTransaction después de una reconexión.
+ * La huella física persistente y su índice único convierten ese reintento en
+ * una lectura del recibo existente, incluso entre instancias del servidor.
+ */
+export async function createOcpp16TransactionOnce(
+  transaction: InsertTransaction & { ocppStartFingerprint: string },
+): Promise<{ transactionId: number; transaction: Transaction; created: boolean }> {
+  const database = (await getDb())!;
+  if (!database) throw new Error("Database not available");
+
+  const normalizedTransaction: any = { ...transaction };
+  if (normalizedTransaction.status && normalizedTransaction.transactionStatus === undefined) {
+    normalizedTransaction.transactionStatus = normalizedTransaction.status;
+  }
+  if (normalizedTransaction.transactionStatus && normalizedTransaction.status === undefined) {
+    normalizedTransaction.status = normalizedTransaction.transactionStatus;
+  }
+
+  try {
+    const result = await database.insert(transactions).values(normalizedTransaction);
+    const transactionId = Number(result[0].insertId);
+    const created = await getTransactionById(transactionId);
+    if (!created) throw new Error(`Created OCPP transaction ${transactionId} could not be read`);
+    return { transactionId, transaction: created, created: true };
+  } catch (error: any) {
+    const isDuplicateKey = error?.code === "ER_DUP_ENTRY" || String(error?.message || "").includes("ux_transactions_ocpp_start_fingerprint");
+    if (!isDuplicateKey) throw error;
+
+    const existing = await database
+      .select()
+      .from(transactions)
+      .where(eq(transactions.ocppStartFingerprint, transaction.ocppStartFingerprint))
+      .limit(1);
+    if (!existing[0]) throw error;
+
+    return { transactionId: existing[0].id, transaction: existing[0], created: false };
+  }
+}
+
+/**
+ * Persiste una sesión identificada por el transactionId emitido por OCPP 2.0.1
+ * o por la identidad interna del CSMS. La restricción única impide que eventos
+ * Started repetidos creen recibos independientes.
+ */
+export async function createTransactionOnceByOcppId(
+  transaction: InsertTransaction & { ocppTransactionId: string },
+): Promise<{ transactionId: number; transaction: Transaction; created: boolean }> {
+  const database = (await getDb())!;
+  if (!database) throw new Error("Database not available");
+
+  const normalizedTransaction: any = { ...transaction };
+  if (normalizedTransaction.status && normalizedTransaction.transactionStatus === undefined) {
+    normalizedTransaction.transactionStatus = normalizedTransaction.status;
+  }
+  if (normalizedTransaction.transactionStatus && normalizedTransaction.status === undefined) {
+    normalizedTransaction.status = normalizedTransaction.transactionStatus;
+  }
+
+  try {
+    const result = await database.insert(transactions).values(normalizedTransaction);
+    const transactionId = Number(result[0].insertId);
+    const created = await getTransactionById(transactionId);
+    if (!created) throw new Error(`Created OCPP transaction ${transactionId} could not be read`);
+    return { transactionId, transaction: created, created: true };
+  } catch (error: any) {
+    const isDuplicateKey = error?.code === "ER_DUP_ENTRY" || String(error?.message || "").includes("ux_transactions_ocpp_transaction_id");
+    if (!isDuplicateKey) throw error;
+
+    const existing = await database
+      .select()
+      .from(transactions)
+      .where(eq(transactions.ocppTransactionId, transaction.ocppTransactionId))
+      .limit(1);
+    if (!existing[0]) throw error;
+
+    return { transactionId: existing[0].id, transaction: existing[0], created: false };
+  }
 }
 
 export async function getTransactionById(id: number) {
@@ -1223,7 +1419,216 @@ export async function getAllTransactionsByInvestor(investorId: number, filters?:
 export async function updateTransaction(id: number, data: Partial<InsertTransaction>) {
   const db = (await getDb())!;
   if (!db) return;
-  await db.update(transactions).set(data as any).where(eq(transactions.id, id));
+  // Legacy `status` and `transaction_status` coexist in producción. Nunca
+  // permitir que una finalización actualice sólo una de ellas: una discrepancia
+  // deja al mapa, al cobro o al monitor viendo sesiones distintas.
+  const normalizedData: any = { ...data };
+  if (normalizedData.status && normalizedData.transactionStatus === undefined) {
+    normalizedData.transactionStatus = normalizedData.status;
+  }
+  if (normalizedData.transactionStatus && normalizedData.status === undefined) {
+    normalizedData.status = normalizedData.transactionStatus;
+  }
+  await db.update(transactions).set(normalizedData).where(eq(transactions.id, id));
+}
+
+/**
+ * Reclama la liquidación física de una sesión. Sólo el primer StopTransaction
+ * / TransactionEvent.Ended puede pasar; mensajes OCPP repetidos no generan
+ * una segunda billetera, participación de inversionista ni notificaciones.
+ */
+export async function completeTransactionOnce(id: number, data: Partial<InsertTransaction>) {
+  const database = (await getDb())!;
+  if (!database) return false;
+
+  const normalizedData: any = { ...data, status: "COMPLETED", transactionStatus: "COMPLETED" };
+  const result = await database
+    .update(transactions)
+    .set(normalizedData)
+    .where(and(
+      eq(transactions.id, id),
+      inArray(transactions.status, ["PENDING", "IN_PROGRESS"]),
+      inArray(transactions.transactionStatus, ["PENDING", "IN_PROGRESS"]),
+    ));
+
+  return Number((result as any)[0]?.affectedRows || 0) === 1;
+}
+
+/**
+ * Registra y descuenta un cobro de energía exactamente una vez por sesión.
+ * La inserción de una clave única ocurre dentro de la misma transacción que el
+ * movimiento de saldo; si un flujo distinto intenta repetirlo, revierte sin
+ * tocar la billetera.
+ */
+export async function deductChargePaymentOnce(input: {
+  userId: number;
+  transactionId: number;
+  amount: number;
+  description: string;
+}) {
+  const database = (await getDb())!;
+  if (!database) throw new Error("Database not available");
+
+  const idempotencyKey = `charge-payment:${input.transactionId}`;
+  const roundedAmount = Math.max(0, Math.round(input.amount * 100) / 100);
+
+  try {
+    return await (database as any).transaction(async (tx: any) => {
+      const existing = await tx
+        .select()
+        .from(walletTransactions)
+        .where(eq(walletTransactions.idempotencyKey, idempotencyKey))
+        .limit(1);
+      if (existing[0]) {
+        return { deducted: false, duplicate: true, balance: Number(existing[0].balanceAfter) };
+      }
+
+      const walletRows = await tx
+        .select()
+        .from(wallets)
+        .where(eq(wallets.userId, input.userId))
+        .limit(1);
+      const wallet = walletRows[0];
+      if (!wallet) return { deducted: false, duplicate: false, balance: null };
+
+      const balanceBefore = Number(wallet.balance);
+      const balanceAfter = Math.max(0, balanceBefore - roundedAmount);
+
+      // Reserva de clave antes de alterar el saldo. Una violación de UNIQUE
+      // revierte esta transacción y evita cualquier débito duplicado.
+      const created = await tx.insert(walletTransactions).values({
+        walletId: wallet.id,
+        userId: input.userId,
+        type: "CHARGE_PAYMENT",
+        amount: "0",
+        balanceBefore: balanceBefore.toFixed(2),
+        balanceAfter: balanceBefore.toFixed(2),
+        referenceId: input.transactionId,
+        referenceType: "TRANSACTION",
+        idempotencyKey,
+        paymentStatus: "PENDING",
+        description: "Liquidación de carga en proceso",
+      } as any);
+      const movementId = Number(created[0].insertId);
+
+      await tx.update(wallets).set({ balance: balanceAfter.toFixed(2) } as any).where(eq(wallets.id, wallet.id));
+      await tx
+        .update(walletTransactions)
+        .set({
+          amount: (-roundedAmount).toFixed(2),
+          balanceBefore: balanceBefore.toFixed(2),
+          balanceAfter: balanceAfter.toFixed(2),
+          paymentStatus: "COMPLETED",
+          description: input.description,
+        } as any)
+        .where(eq(walletTransactions.id, movementId));
+
+      return { deducted: true, duplicate: false, balance: balanceAfter };
+    });
+  } catch (error: any) {
+    const isDuplicateKey = error?.code === "ER_DUP_ENTRY" || String(error?.message || "").includes("ux_wallet_transactions_idempotency_key");
+    if (!isDuplicateKey) throw error;
+
+    const existing = await database
+      .select()
+      .from(walletTransactions)
+      .where(eq(walletTransactions.idempotencyKey, idempotencyKey))
+      .limit(1);
+    return { deducted: false, duplicate: true, balance: existing[0] ? Number(existing[0].balanceAfter) : null };
+  }
+}
+
+export type ChargeStopRequestStatus = "NONE" | "REQUESTED" | "ACCEPTED" | "REJECTED" | "TIMED_OUT" | "CONFIRMED";
+
+/**
+ * Reclama de manera atómica una orden de detención. La orden remota y la
+ * confirmación física OCPP son estados separados: nunca se libera el conector
+ * ni se completa el cobro en esta operación.
+ */
+export async function claimChargeStopRequest(transactionId: number, requestedAt = new Date()) {
+  const db = (await getDb())!;
+  if (!db) return false;
+
+  const retryCutoff = new Date(requestedAt.getTime() - 60_000);
+  const result = await db.update(transactions)
+    .set({
+      stopRequestedAt: requestedAt as any,
+      stopRequestStatus: "REQUESTED",
+      stopRequestMessage: null,
+    } as any)
+    .where(and(
+      eq(transactions.id, transactionId),
+      or(
+        eq(transactions.status, "IN_PROGRESS"),
+        eq(transactions.transactionStatus, "IN_PROGRESS"),
+      ),
+      or(
+        eq(transactions.stopRequestStatus, "NONE"),
+        eq(transactions.stopRequestStatus, "REJECTED"),
+        eq(transactions.stopRequestStatus, "TIMED_OUT"),
+        and(
+          inArray(transactions.stopRequestStatus, ["REQUESTED", "ACCEPTED"]),
+          lte(transactions.stopRequestedAt, retryCutoff as any),
+        ),
+      ),
+    ));
+
+  return Number((result as any)[0]?.affectedRows || 0) > 0;
+}
+
+export async function updateChargeStopRequestStatus(
+  transactionId: number,
+  status: ChargeStopRequestStatus,
+  message?: string | null,
+) {
+  const db = (await getDb())!;
+  if (!db) return;
+  await db.update(transactions)
+    .set({
+      stopRequestStatus: status,
+      stopRequestMessage: message ?? null,
+    } as any)
+    .where(eq(transactions.id, transactionId));
+}
+
+/** Marca la solicitud como vencida sin tocar una sesión física aún activa. */
+export async function markChargeStopRequestTimedOut(transactionId: number, now = new Date()) {
+  const db = (await getDb())!;
+  if (!db) return false;
+
+  const cutoff = new Date(now.getTime() - 60_000);
+  const result = await db.update(transactions)
+    .set({
+      stopRequestStatus: "TIMED_OUT",
+      stopRequestMessage: "El cargador no confirmó el fin de la carga dentro de un minuto.",
+    } as any)
+    .where(and(
+      eq(transactions.id, transactionId),
+      or(eq(transactions.status, "IN_PROGRESS"), eq(transactions.transactionStatus, "IN_PROGRESS")),
+      inArray(transactions.stopRequestStatus, ["REQUESTED", "ACCEPTED"]),
+      lte(transactions.stopRequestedAt, cutoff as any),
+    ));
+
+  return Number((result as any)[0]?.affectedRows || 0) > 0;
+}
+
+export async function reconcileTimedOutChargeStopRequests(now = new Date()) {
+  const db = (await getDb())!;
+  if (!db) return 0;
+
+  const cutoff = new Date(now.getTime() - 60_000);
+  const result = await db.update(transactions)
+    .set({
+      stopRequestStatus: "TIMED_OUT",
+      stopRequestMessage: "El cargador no confirmó el fin de la carga dentro de un minuto.",
+    } as any)
+    .where(and(
+      or(eq(transactions.status, "IN_PROGRESS"), eq(transactions.transactionStatus, "IN_PROGRESS")),
+      inArray(transactions.stopRequestStatus, ["REQUESTED", "ACCEPTED"]),
+      lte(transactions.stopRequestedAt, cutoff as any),
+    ));
+
+  return Number((result as any)[0]?.affectedRows || 0);
 }
 
 export async function getActiveTransaction(evseId: number) {
@@ -1323,16 +1728,87 @@ export async function getReservationById(id: number) {
 export async function getActiveReservation(evseId: number) {
   const db = (await getDb())!;
   if (!db) return undefined;
+  const now = new Date();
+  const holdWindowEnd = new Date(now.getTime() + 15 * 60 * 1000);
   const result = await db.select().from(reservations)
-    .where(and(eq(reservations.evseId, evseId), eq(reservations.reservationStatus, "ACTIVE")))
+    .where(and(
+      eq(reservations.evseId, evseId),
+      eq(reservations.reservationStatus, "ACTIVE"),
+      lte(reservations.startTime, holdWindowEnd.toISOString()),
+      gt(reservations.endTime, now.toISOString()),
+    ))
+    .orderBy(reservations.startTime)
     .limit(1);
   return result.length > 0 ? result[0] : undefined;
+}
+
+/**
+ * Retorna la siguiente reserva realmente futura del EVSE. Es distinta de
+ * getActiveReservation: permite planear una sesión antes de que se abra la
+ * ventana de bloqueo físico, sin tratar una reserva futura como bloqueo actual.
+ */
+export async function getNextActiveReservationForEvse(evseId: number, now = new Date()) {
+  const db = (await getDb())!;
+  if (!db) return undefined;
+
+  const result = await db.select().from(reservations)
+    .where(and(
+      eq(reservations.evseId, evseId),
+      eq(reservations.reservationStatus, "ACTIVE"),
+      gt(reservations.startTime, now.toISOString()),
+      gt(reservations.endTime, now.toISOString()),
+    ))
+    .orderBy(asc(reservations.startTime))
+    .limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+/**
+ * Registra una indisponibilidad operacional sin convertir al titular en
+ * no-show, sin penalidad y sin alterar una transacción física en progreso.
+ */
+export async function markReservationServiceUnavailable(
+  reservationId: number,
+  issueCode: string,
+  occurredAt = new Date(),
+) {
+  const db = (await getDb())!;
+  if (!db) return false;
+
+  const result = await db.update(reservations)
+    .set({
+      reservationStatus: "SERVICE_UNAVAILABLE",
+      serviceIssueCode: issueCode.slice(0, 80),
+      serviceIssueAt: occurredAt.toISOString(),
+      isPenaltyApplied: false,
+    } as any)
+    .where(and(
+      eq(reservations.id, reservationId),
+      eq(reservations.reservationStatus, "ACTIVE"),
+    ));
+
+  return Number((result as any)[0]?.affectedRows || 0) > 0;
+}
+
+/**
+ * Obtiene exclusivamente una reserva operativa del titular. No devuelve reservas
+ * futuras, vencidas ni de otro usuario, por lo que no puede desbloquear un EVSE
+ * reservado para un tercero.
+ */
+export async function getActiveReservationForUser(evseId: number, userId: number) {
+  const reservation = await getActiveReservation(evseId);
+  return reservation?.userId === userId ? reservation : undefined;
 }
 
 export async function getReservationsByUserId(userId: number) {
   const db = (await getDb())!;
   if (!db) return [];
-  return db.select().from(reservations).where(eq(reservations.userId, userId)).orderBy(desc(reservations.startTime));
+  const rows = await db.select().from(reservations).where(eq(reservations.userId, userId)).orderBy(desc(reservations.startTime));
+  return rows.map((r: any) => ({
+    ...r,
+    status: r.reservationStatus,
+    reservationStatus: r.reservationStatus,
+  }));
 }
 
 export async function updateReservation(id: number, data: Partial<InsertReservation>) {
@@ -1445,6 +1921,35 @@ export async function fulfillReservation(reservationId: number, transactionId: n
     .where(eq(reservations.id, reservationId));
 }
 
+/**
+ * Vincula la reserva al inicio de carga confirmado por OCPP. La confirmación no
+ * se hace al pulsar el botón de la app: sólo después de crear la transacción.
+ */
+export async function fulfillActiveReservationForTransaction(
+  evseId: number,
+  userId: number,
+  transactionId: number,
+): Promise<number | null> {
+  const reservation = await getActiveReservationForUser(evseId, userId);
+  if (!reservation) return null;
+
+  const db = (await getDb())!;
+  if (!db) return null;
+
+  await db.update(reservations)
+    .set({
+      reservationStatus: "FULFILLED",
+      transactionId,
+    } as any)
+    .where(and(
+      eq(reservations.id, reservation.id),
+      eq(reservations.userId, userId),
+      eq(reservations.reservationStatus, "ACTIVE"),
+    ));
+
+  return reservation.id;
+}
+
 export async function getReservationsForStation(stationId: number, date?: Date) {
   const db = (await getDb())!;
   if (!db) return [];
@@ -1503,8 +2008,14 @@ export async function cancelReservationWithRefund(reservationId: number, refundP
     }
   }
   
-  // Liberar el EVSE
-  await updateEvseStatus(reservation.evseId, "AVAILABLE", { triggeredBy: "SYSTEM" });
+  // Liberar sólo si no existe otra reserva actualmente operativa. Esto evita que
+  // la cancelación de una reserva libere por error el turno inmediatamente siguiente.
+  const replacementReservation = await getActiveReservation(reservation.evseId);
+  await updateEvseStatus(
+    reservation.evseId,
+    replacementReservation ? "RESERVED" : "AVAILABLE",
+    { triggeredBy: "RESERVATION", reason: replacementReservation ? "Active replacement reservation" : "Reservation cancelled" },
+  );
   
   return { success: true, refundAmount };
 }
@@ -1584,6 +2095,66 @@ export async function getWalletTransactionsByUserId(userId: number, limit = 50) 
   if (!db) return [];
   const rows = await db.select().from(walletTransactions).where(eq(walletTransactions.userId, userId)).orderBy(desc(walletTransactions.createdAt)).limit(limit);
   return rows.map((row) => ({ ...row, createdAt: toUtcIso(row.createdAt) as string }));
+}
+
+/**
+ * Libro de conciliaciones financieras aprobadas. La fuente son los asientos
+ * ADMIN_REFUND / ADMIN_REVERSAL de billetera, nunca una estimación de UI.
+ */
+export async function getFinancialReconciliationReport(limit = 100) {
+  const db = (await getDb())!;
+  if (!db) return [];
+
+  const reconciliationCandidates = await db
+    .select()
+    .from(walletTransactions)
+    .where(
+      and(
+        eq(walletTransactions.referenceType, "TRANSACTION"),
+        or(
+          eq(walletTransactions.type, "ADMIN_REFUND"),
+          eq(walletTransactions.type, "ADMIN_REVERSAL"),
+        ),
+      ),
+    )
+    .orderBy(desc(walletTransactions.createdAt))
+    .limit(Math.min(Math.max(limit * 3, 50), 500));
+
+  const transactionIds = [...new Set(reconciliationCandidates
+    .map((adjustment) => adjustment.referenceId)
+    .filter((id): id is number => typeof id === "number"))];
+  if (transactionIds.length === 0) return [];
+
+  // Para cada caso se carga el libro completo ligado a la transacción. Así el
+  // reporte puede demostrar que cobro original + distribución + reversos deja
+  // el neto correcto, en vez de sumar solamente la última corrección.
+  const ledgerEntries = await db
+    .select()
+    .from(walletTransactions)
+    .where(
+      and(
+        eq(walletTransactions.referenceType, "TRANSACTION"),
+        inArray(walletTransactions.referenceId, transactionIds),
+      ),
+    )
+    .orderBy(asc(walletTransactions.createdAt), asc(walletTransactions.id));
+
+  const sessions = await db
+    .select()
+    .from(transactions)
+    .where(inArray(transactions.id, transactionIds));
+  const userIds = [...new Set(sessions.map((session) => session.userId))];
+  const stationIds = [...new Set(sessions.map((session) => session.stationId))];
+  const [people, stations] = await Promise.all([
+    userIds.length > 0
+      ? db.select({ id: users.id, name: users.name, email: users.email }).from(users).where(inArray(users.id, userIds))
+      : Promise.resolve([]),
+    stationIds.length > 0
+      ? db.select({ id: chargingStations.id, name: chargingStations.name }).from(chargingStations).where(inArray(chargingStations.id, stationIds))
+      : Promise.resolve([]),
+  ]);
+
+  return summarizeFinancialReconciliations(ledgerEntries, sessions, people, stations).slice(0, limit);
 }
 
 // ============================================================================
@@ -4319,7 +4890,10 @@ export async function getActiveTransactionByUserId(userId: number) {
     .where(
       and(
         eq(transactions.userId, userId),
-        eq(transactions.status, "IN_PROGRESS")
+        or(
+          eq(transactions.status, "IN_PROGRESS"),
+          eq(transactions.transactionStatus, "IN_PROGRESS"),
+        )
       )
     )
     .orderBy(desc(transactions.startTime))
@@ -4975,6 +5549,15 @@ export interface CrowdfundingProject {
   createdById: number | null;
   createdAt: Date;
   updatedAt: Date;
+  spaceSubmissionId?: number | null;
+  spaceInheritanceSnapshot?: unknown;
+  financialOverrideReason?: string | null;
+  financialOverrideAt?: string | null;
+  financialOverrideBy?: number | null;
+  financialProjectionSnapshot?: unknown;
+  financialProjectionScenario?: string | null;
+  financialProjectionUpdatedAt?: string | null;
+  financialProjectionUpdatedBy?: number | null;
   investorCount?: number;
   cancellationReason?: string | null;
   cancelledAt?: string | Date | null;
@@ -5040,20 +5623,25 @@ export async function getCrowdfundingProjects(options?: {
 	      s.estimatedDailyVehicles as inheritedDailyVehicles,
 	      s.estimatedEvPercent as inheritedEvPercent,
 	      s.transformerCapacityKva as inheritedTransformerKva,
-		      s.availableAreaM2 as inheritedAvailableAreaM2,
-		      s.parkingSpots as inheritedParkingSpots,
-		      override_user.name as financialOverrideByName,
-		      cancel_user.name as cancelledByName,
-		      COALESCE(s.latitude, cs.latitude) as linkedLatitude,
-		      COALESCE(s.longitude, cs.longitude) as linkedLongitude
-	      FROM crowdfunding_projects p
-		      LEFT JOIN space_submissions s ON s.id = p.spaceSubmissionId
+	      s.availableAreaM2 as inheritedAvailableAreaM2,
+			      s.parkingSpots as inheritedParkingSpots,
+			      override_user.name as financialOverrideByName,
+			      cancel_user.name as cancelledByName,
+			      COALESCE(s.latitude, cs.latitude) as linkedLatitude,
+		      COALESCE(s.longitude, cs.longitude) as linkedLongitude,
+		      cs.evgreenSharePercent,
+		      cs.investorSharePercent,
+		      cs.hostSharePercent,
+		      cs.energyPurchaseCostPerKwh,
+		      cs.hostName
+      FROM crowdfunding_projects p
+	      LEFT JOIN space_submissions s ON s.id = p.spaceSubmissionId
 		      LEFT JOIN charging_stations cs ON cs.id = p.stationId
 		      LEFT JOIN users override_user ON override_user.id = p.financial_override_by
 		      LEFT JOIN users cancel_user ON cancel_user.id = p.cancelled_by
-	    `;
-	    
-	    if (sanitizedStatus) {
+    `;
+    
+    if (sanitizedStatus) {
       query += ` WHERE p.status = '${sanitizedStatus}'`;
     } else if (!options?.includePrivate) {
       query += ` WHERE p.status != 'DRAFT'`;
@@ -5097,6 +5685,16 @@ export async function getCrowdfundingProjects(options?: {
 				financialOverrideAt: r.financial_override_at || null,
 				financialOverrideBy: r.financial_override_by || null,
 				financialOverrideByName: r.financialOverrideByName || null,
+				financialProjectionSnapshot: typeof r.financial_projection_snapshot === "string"
+					? (() => { try { return JSON.parse(r.financial_projection_snapshot); } catch { return null; } })()
+					: r.financial_projection_snapshot || null,
+					financialProjectionScenario: r.financial_projection_scenario || null,
+					financialProjectionUpdatedAt: r.financial_projection_updated_at || null,
+					financialProjectionUpdatedBy: r.financial_projection_updated_by || null,
+					cancellationReason: r.cancellation_reason || null,
+					cancelledAt: r.cancelled_at || null,
+					cancelledBy: r.cancelled_by || null,
+					cancelledByName: r.cancelledByName || null,
 				inheritedPhotos: snapshotPhotos ?? (r.spaceSubmissionId ? photosBySpace[r.spaceSubmissionId] || [] : []),
 			};
 		});
@@ -5113,21 +5711,34 @@ export async function getCrowdfundingProjectById(projectId: number): Promise<Cro
   
   try {
     const result = await db.execute(sql`
-      SELECT 
-        p.*,
-        (SELECT COUNT(*) FROM crowdfunding_participations WHERE projectId = p.id AND paymentStatus = 'COMPLETED') as investorCount,
-        cancel_user.name as cancelledByName
-      FROM crowdfunding_projects p
-      LEFT JOIN users cancel_user ON cancel_user.id = p.cancelled_by
+	      SELECT
+	        p.*,
+	        (SELECT COUNT(*) FROM crowdfunding_participations WHERE projectId = p.id AND paymentStatus = 'COMPLETED') as investorCount,
+	        cancel_user.name as cancelledByName
+	      FROM crowdfunding_projects p
+	      LEFT JOIN users cancel_user ON cancel_user.id = p.cancelled_by
       WHERE p.id = ${projectId}
       LIMIT 1
     `);
     
-    const rows = (result as any)[0] as CrowdfundingProject[];
-    const row = rows[0] || null;
-    // Normalizar hasSolarPanels de tinyint(1) a boolean
-    if (row) row.hasSolarPanels = !!row.hasSolarPanels;
-    return row;
+	    const rows = (result as any)[0] as any[];
+	    const row = rows[0] || null;
+	    if (!row) return null;
+	    row.hasSolarPanels = !!row.hasSolarPanels;
+	    row.spaceInheritanceSnapshot = typeof row.space_inheritance_snapshot === "string"
+	      ? (() => { try { return JSON.parse(row.space_inheritance_snapshot); } catch { return null; } })()
+	      : row.space_inheritance_snapshot || null;
+	    row.financialProjectionSnapshot = typeof row.financial_projection_snapshot === "string"
+	      ? (() => { try { return JSON.parse(row.financial_projection_snapshot); } catch { return null; } })()
+	      : row.financial_projection_snapshot || null;
+		    row.financialProjectionScenario = row.financial_projection_scenario || null;
+		    row.financialProjectionUpdatedAt = row.financial_projection_updated_at || null;
+		    row.financialProjectionUpdatedBy = row.financial_projection_updated_by || null;
+		    row.cancellationReason = row.cancellation_reason || null;
+		    row.cancelledAt = row.cancelled_at || null;
+		    row.cancelledBy = row.cancelled_by || null;
+		    row.cancelledByName = row.cancelledByName || null;
+	    return row as CrowdfundingProject;
   } catch (error) {
     console.error('[DB] Error getting crowdfunding project:', error);
     return null;
@@ -5147,9 +5758,13 @@ export async function createCrowdfundingProject(data: {
   chargerCount?: number;
   chargerPowerKw?: number;
   hasSolarPanels?: boolean;
-  estimatedRoiPercent?: number;
-  estimatedPaybackMonths?: number;
-  status?: string;
+	estimatedRoiPercent?: number;
+	estimatedPaybackMonths?: number;
+	financialProjectionSnapshot?: unknown;
+	financialProjectionScenario?: string;
+	financialProjectionUpdatedAt?: string;
+	financialProjectionUpdatedBy?: number;
+	status?: string;
   targetDate?: Date;
   priority?: number;
   createdById?: number;
@@ -5157,34 +5772,30 @@ export async function createCrowdfundingProject(data: {
   const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   
-  const result = await db.execute(sql`
-    INSERT INTO crowdfunding_projects (
-      name, description, city, zone, address,
-      targetAmount, minimumInvestment, totalPowerKw, chargerCount, chargerPowerKw,
-      hasSolarPanels, estimatedRoiPercent, estimatedPaybackMonths,
-      status, targetDate, priority, createdById
-    ) VALUES (
-      ${data.name},
-      ${data.description || null},
-      ${data.city},
-      ${data.zone},
-      ${data.address || null},
-      ${data.targetAmount},
-      ${data.minimumInvestment || 50000000},
-      ${data.totalPowerKw || 480},
-      ${data.chargerCount || 4},
-      ${data.chargerPowerKw || 120},
-      ${data.hasSolarPanels !== false},
-      ${data.estimatedRoiPercent || 85.00},
-      ${data.estimatedPaybackMonths || 14},
-      ${data.status || 'DRAFT'},
-      ${data.targetDate || null},
-      ${data.priority || 0},
-      ${data.createdById || null}
-    )
-  `);
-  
-  return (result[0] as any).insertId;
+	  const [result] = await db.insert(crowdfundingProjects).values({
+	    name: data.name,
+	    description: data.description || null,
+	    city: data.city,
+	    zone: data.zone,
+	    address: data.address || null,
+	    targetAmount: data.targetAmount,
+	    minimumInvestment: data.minimumInvestment ?? 50000000,
+	    totalPowerKw: data.totalPowerKw ?? 480,
+	    chargerCount: data.chargerCount ?? 4,
+	    chargerPowerKw: data.chargerPowerKw ?? 120,
+	    hasSolarPanels: data.hasSolarPanels === false ? 0 : 1,
+	    estimatedRoiPercent: data.estimatedRoiPercent !== undefined ? String(data.estimatedRoiPercent) : null,
+	    estimatedPaybackMonths: data.estimatedPaybackMonths ?? null,
+	    financialProjectionSnapshot: data.financialProjectionSnapshot ?? null,
+	    financialProjectionScenario: data.financialProjectionScenario ?? null,
+	    financialProjectionUpdatedAt: data.financialProjectionUpdatedAt ?? null,
+	    financialProjectionUpdatedBy: data.financialProjectionUpdatedBy ?? null,
+	    status: (data.status || "DRAFT") as any,
+	    targetDate: data.targetDate ? data.targetDate.toISOString().slice(0, 19).replace("T", " ") : null,
+	    priority: data.priority ?? 0,
+	    createdById: data.createdById ?? null,
+	  } as any);
+	  return Number(result.insertId);
 }
 
 // Actualizar un proyecto de crowdfunding
@@ -5214,53 +5825,18 @@ data: Partial<{
     stationId: number;
 		financialOverrideReason: string;
 		financialOverrideAt: string;
-		financialOverrideBy: number;
-  }>
+			financialOverrideBy: number;
+			financialProjectionSnapshot: unknown;
+			financialProjectionScenario: string;
+			financialProjectionUpdatedAt: string;
+			financialProjectionUpdatedBy: number;
+	  }>
 ): Promise<void> {
-const db = (await getDb())!;
-if (!db) throw new Error("Database not available");
-  
-  
-const updates: string[] = [];
-const values: any[] = [];
-	const columnNames: Record<string, string> = {
-		financialOverrideReason: "financial_override_reason",
-		financialOverrideAt: "financial_override_at",
-		financialOverrideBy: "financial_override_by",
-	};
-  
-Object.entries(data).forEach(([key, value]) => {
-if (value !== undefined) {
-      updates.push(`${columnNames[key] || key} = ?`);
-values.push(value);
-}
-  });
-  
-  if (updates.length === 0) return;
-  
-  // Construir la query con valores interpolados
-  const setClause = Object.entries(data)
-    .filter(([_, v]) => v !== undefined)
-    .map(([key, value]) => {
-      if (value instanceof Date) {
-        return `${key} = '${value.toISOString().slice(0, 19).replace('T', ' ')}'`;
-      } else if (typeof value === 'string') {
-        return `${key} = '${value.replace(/'/g, "''")}'`;
-      } else if (typeof value === 'boolean') {
-        return `${key} = ${value ? 1 : 0}`;
-      } else {
-        return `${key} = ${value}`;
-      }
-    })
-    .join(', ');
-  
-  if (!setClause) return;
-  
-	  await db.execute(sql.raw(`
-	    UPDATE crowdfunding_projects 
-	    SET ${setClause}
-	    WHERE id = ${projectId}
-	  `));
+	const db = (await getDb())!;
+	if (!db) throw new Error("Database not available");
+	const cleanData = Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined));
+	if (Object.keys(cleanData).length === 0) return;
+	await db.update(crowdfundingProjects).set(cleanData as any).where(eq(crowdfundingProjects.id, projectId));
 }
 
 export async function recordCrowdfundingFinancialOverride(
@@ -8739,11 +9315,16 @@ export async function createAvailabilityAlert(data: {
   const database = await getDb();
   if (!database) return null;
 
-  // Verificar si ya existe una alerta PENDING para este usuario+estación
+  // Verificar si ya existe una alerta PENDING para este usuario+estación+conector.
+  // Un mismo usuario puede esperar conectores compatibles distintos en una estación.
+  const connectorCondition = data.connectorType
+    ? eq(stationAvailabilityAlerts.connectorType, data.connectorType)
+    : isNull(stationAvailabilityAlerts.connectorType);
   const existing = await database.select().from(stationAvailabilityAlerts)
     .where(and(
       eq(stationAvailabilityAlerts.userId, data.userId),
       eq(stationAvailabilityAlerts.stationId, data.stationId),
+      connectorCondition,
       eq(stationAvailabilityAlerts.alertReqStatus, "PENDING"),
     ))
     .limit(1);
@@ -8763,6 +9344,13 @@ export async function createAvailabilityAlert(data: {
     sendPush: data.sendPush !== false ? 1 : 0,
     sendWhatsapp: data.sendWhatsapp !== false ? 1 : 0,
     alertReqStatus: "PENDING",
+    pushStatus: data.sendPush === false ? "NOT_REQUESTED" : "PENDING",
+    whatsappStatus: data.sendWhatsapp === false
+      ? "NOT_REQUESTED"
+      : data.userPhone
+        ? "PENDING"
+        : "NO_PHONE",
+    nextAttemptAt: new Date(),
     expiresAt: expiresAt,
   } as any);
 
@@ -8786,20 +9374,106 @@ export async function getPendingAlertsByStation(stationId: number): Promise<type
     .where(and(
       eq(stationAvailabilityAlerts.stationId, stationId),
       eq(stationAvailabilityAlerts.alertReqStatus, "PENDING"),
+      gt(stationAvailabilityAlerts.expiresAt, new Date().toISOString()),
     ))
     .orderBy(asc(stationAvailabilityAlerts.createdAt));
 }
 
 /**
- * Marca una alerta como enviada.
+ * Reclama atómicamente una alerta lista para enviarse. El claim evita que dos
+ * eventos OCPP o instancias concurrentes dupliquen los mensajes.
  */
-export async function markAlertSent(alertId: number): Promise<void> {
+export async function claimAvailabilityAlert(alertId: number): Promise<typeof stationAvailabilityAlerts.$inferSelect | null> {
+  const database = await getDb();
+  if (!database) return null;
+  const now = new Date().toISOString();
+
+  const [claim] = await database.update(stationAvailabilityAlerts)
+    .set({
+      alertReqStatus: "PROCESSING",
+      processingStartedAt: now,
+      lastAttemptAt: now,
+      attemptCount: sql`${stationAvailabilityAlerts.attemptCount} + 1`,
+    } as any)
+    .where(and(
+      eq(stationAvailabilityAlerts.id, alertId),
+      eq(stationAvailabilityAlerts.alertReqStatus, "PENDING"),
+      gt(stationAvailabilityAlerts.expiresAt, now),
+      or(
+        isNull(stationAvailabilityAlerts.nextAttemptAt),
+        lte(stationAvailabilityAlerts.nextAttemptAt, now),
+      ),
+    ));
+
+  if (!(claim as any).affectedRows) return null;
+  const [alert] = await database.select().from(stationAvailabilityAlerts)
+    .where(eq(stationAvailabilityAlerts.id, alertId));
+  return alert || null;
+}
+
+/**
+ * Guarda el resultado de cada canal. La alerta sólo queda SENT cuando no tiene
+ * un canal solicitado pendiente de reintento; así un fallo no se disfraza como
+ * entrega exitosa y un Push ya enviado no se repite al reintentar WhatsApp.
+ */
+export async function completeAvailabilityAlertAttempt(input: {
+  alertId: number;
+  pushStatus: AvailabilityPushStatus;
+  whatsappStatus: AvailabilityWhatsAppStatus;
+  pushError?: string | null;
+  whatsappError?: string | null;
+}): Promise<void> {
   const database = await getDb();
   if (!database) return;
 
+  const [current] = await database.select().from(stationAvailabilityAlerts)
+    .where(eq(stationAvailabilityAlerts.id, input.alertId));
+  if (!current || current.alertReqStatus !== "PROCESSING") return;
+
+  const attemptCount = Number(current.attemptCount || 0);
+  const outcome = resolveAvailabilityAttempt({ attemptCount, pushStatus: input.pushStatus, whatsappStatus: input.whatsappStatus });
+  const nextAttemptAt = outcome.nextDelayMinutes === null
+    ? null
+    : new Date(Date.now() + outcome.nextDelayMinutes * 60 * 1000);
+
   await database.update(stationAvailabilityAlerts)
-    .set({ alertReqStatus: "SENT", sentAt: new Date().toISOString() } as any)
-    .where(eq(stationAvailabilityAlerts.id, alertId));
+    .set({
+      alertReqStatus: outcome.alertStatus,
+      pushStatus: input.pushStatus,
+      whatsappStatus: input.whatsappStatus,
+      pushError: input.pushError || null,
+      whatsappError: input.whatsappError || null,
+      nextAttemptAt,
+      processingStartedAt: null,
+      sentAt: outcome.alertStatus === "SENT" ? new Date().toISOString() : null,
+    } as any)
+    .where(and(
+      eq(stationAvailabilityAlerts.id, input.alertId),
+      eq(stationAvailabilityAlerts.alertReqStatus, "PROCESSING"),
+    ));
+}
+
+/** Restablece claims interrumpidos y devuelve alertas reintentables agrupadas por estación. */
+export async function getRetryableAvailabilityAlertStationIds(): Promise<number[]> {
+  const database = await getDb();
+  if (!database) return [];
+  const now = new Date().toISOString();
+  const staleBefore = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  await database.update(stationAvailabilityAlerts)
+    .set({ alertReqStatus: "PENDING", processingStartedAt: null } as any)
+    .where(and(
+      eq(stationAvailabilityAlerts.alertReqStatus, "PROCESSING"),
+      lt(stationAvailabilityAlerts.processingStartedAt, staleBefore),
+    ));
+
+  const rows = await database.select({ stationId: stationAvailabilityAlerts.stationId })
+    .from(stationAvailabilityAlerts)
+    .where(and(
+      eq(stationAvailabilityAlerts.alertReqStatus, "PENDING"),
+      lte(stationAvailabilityAlerts.nextAttemptAt, now),
+      gt(stationAvailabilityAlerts.expiresAt, now),
+    ));
+  return [...new Set(rows.map((row) => Number(row.stationId)))];
 }
 
 /**
@@ -8848,4 +9522,179 @@ export async function expireOldAvailabilityAlerts(): Promise<number> {
       lt(stationAvailabilityAlerts.expiresAt, new Date().toISOString()),
     ));
   return (result as any).affectedRows || 0;
+}
+
+// ============================================================================
+// FACTURACIÓN ELECTRÓNICA MULTI-PROVEEDOR (Alegra, Siigo, World Office)
+// ============================================================================
+
+/**
+ * Obtiene la configuración de facturación para una organización o la configuración por defecto de la plataforma.
+ */
+export async function getTenantBillingSettings(organizationId?: number | null): Promise<TenantBillingSettings | null> {
+  const database = await getDb();
+  if (!database) return null;
+
+  // Si se especifica una organización, buscar su configuración específica
+  if (organizationId) {
+    const orgSettings = await database.select().from(tenantBillingSettings)
+      .where(eq(tenantBillingSettings.organizationId, organizationId))
+      .limit(1);
+    if (orgSettings.length > 0) return orgSettings[0];
+  }
+
+  // Fallback: configuración global / plataforma (organizationId IS NULL o 1)
+  const globalSettings = await database.select().from(tenantBillingSettings)
+    .where(or(isNull(tenantBillingSettings.organizationId), eq(tenantBillingSettings.organizationId, 1)))
+    .orderBy(desc(tenantBillingSettings.updatedAt))
+    .limit(1);
+
+  return globalSettings.length > 0 ? globalSettings[0] : null;
+}
+
+/**
+ * Guarda o actualiza la configuración de facturación para una organización.
+ */
+export async function upsertTenantBillingSettings(
+  organizationId: number | null,
+  data: Partial<InsertTenantBillingSettings>
+): Promise<TenantBillingSettings> {
+  const database = await getDb();
+  if (!database) throw new Error("Base de datos no disponible");
+
+  const condition = organizationId !== null && organizationId !== undefined
+    ? eq(tenantBillingSettings.organizationId, organizationId)
+    : isNull(tenantBillingSettings.organizationId);
+
+  const existing = await database.select().from(tenantBillingSettings)
+    .where(condition)
+    .limit(1);
+
+  if (existing.length > 0) {
+    await database.update(tenantBillingSettings)
+      .set({
+        ...data,
+        updatedAt: new Date().toISOString(),
+      } as any)
+      .where(eq(tenantBillingSettings.id, existing[0].id));
+
+    const updated = await database.select().from(tenantBillingSettings)
+      .where(eq(tenantBillingSettings.id, existing[0].id))
+      .limit(1);
+    return updated[0];
+  } else {
+    const [inserted] = await database.insert(tenantBillingSettings)
+      .values({
+        ...data,
+        organizationId: organizationId || null,
+      } as any);
+
+    const insertId = (inserted as any)?.insertId;
+    const created = await database.select().from(tenantBillingSettings)
+      .where(eq(tenantBillingSettings.id, insertId))
+      .limit(1);
+    return created[0] || ({} as TenantBillingSettings);
+  }
+}
+
+/**
+ * Registra un intento de factura electrónica con idempotencia.
+ */
+export async function createElectronicInvoiceRecord(data: InsertElectronicInvoice): Promise<number> {
+  const database = await getDb();
+  if (!database) throw new Error("Base de datos no disponible");
+
+  const [result] = await database.insert(electronicInvoices).values(data as any);
+  return (result as any).insertId;
+}
+
+/**
+ * Actualiza un registro de factura electrónica.
+ */
+export async function updateElectronicInvoiceRecord(id: number, data: Partial<InsertElectronicInvoice>): Promise<void> {
+  const database = await getDb();
+  if (!database) return;
+
+  await database.update(electronicInvoices)
+    .set({
+      ...data,
+      updatedAt: new Date().toISOString(),
+    } as any)
+    .where(eq(electronicInvoices.id, id));
+}
+
+/**
+ * Obtiene el registro de factura electrónica por transacción.
+ */
+export async function getElectronicInvoiceByTransactionId(transactionId: number): Promise<ElectronicInvoice | null> {
+  const database = await getDb();
+  if (!database) return null;
+
+  const rows = await database.select().from(electronicInvoices)
+    .where(eq(electronicInvoices.transactionId, transactionId))
+    .limit(1);
+
+  return rows.length > 0 ? rows[0] : null;
+}
+
+/**
+ * Obtiene una factura electrónica por ID.
+ */
+export async function getElectronicInvoiceById(id: number): Promise<ElectronicInvoice | null> {
+  const database = await getDb();
+  if (!database) return null;
+
+  const rows = await database.select().from(electronicInvoices)
+    .where(eq(electronicInvoices.id, id))
+    .limit(1);
+
+  return rows.length > 0 ? rows[0] : null;
+}
+
+/**
+ * Lista facturas electrónicas con filtros y paginación para una organización o global.
+ */
+export async function getElectronicInvoicesByOrg(options?: {
+  organizationId?: number | null;
+  status?: string;
+  customerSource?: "USER" | "FALLBACK";
+  limit?: number;
+  offset?: number;
+}): Promise<{ data: ElectronicInvoice[]; total: number }> {
+  const database = await getDb();
+  if (!database) return { data: [], total: 0 };
+
+  const conditions: any[] = [];
+
+  if (options?.organizationId !== undefined && options.organizationId !== null) {
+    conditions.push(eq(electronicInvoices.organizationId, options.organizationId));
+  }
+
+  if (options?.status) {
+    conditions.push(eq(electronicInvoices.status, options.status as any));
+  }
+
+  if (options?.customerSource) {
+    conditions.push(eq(electronicInvoices.customerSource, options.customerSource));
+  }
+
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const [countResult] = await database.select({ count: count() })
+    .from(electronicInvoices)
+    .where(whereClause);
+
+  const limit = options?.limit || 20;
+  const offset = options?.offset || 0;
+
+  const data = await database.select().from(electronicInvoices)
+    .where(whereClause)
+    .orderBy(desc(electronicInvoices.createdAt))
+    .limit(limit)
+    .offset(offset);
+
+  return {
+    data,
+    total: Number(countResult?.count || 0),
+  };
 }

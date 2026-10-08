@@ -423,6 +423,10 @@ export const crowdfundingProjects = mysqlTable("crowdfunding_projects", {
 	financialOverrideReason: text("financial_override_reason"),
 	financialOverrideAt: timestamp("financial_override_at", { mode: 'string' }),
 	financialOverrideBy: int("financial_override_by"),
+	financialProjectionSnapshot: json("financial_projection_snapshot"),
+	financialProjectionScenario: varchar("financial_projection_scenario", { length: 20 }),
+	financialProjectionUpdatedAt: timestamp("financial_projection_updated_at", { mode: 'string' }),
+	financialProjectionUpdatedBy: int("financial_projection_updated_by"),
 	cancellationReason: text("cancellation_reason"),
 	cancelledAt: timestamp("cancelled_at", { mode: 'string' }),
 	cancelledBy: int("cancelled_by"),
@@ -511,6 +515,8 @@ export const evses = mysqlTable("evses", {
 	stationId: int().notNull(),
 	evseIdLocal: int().notNull(),
 	connectorId: int().default(1).notNull(),
+	connectorLabel: varchar("connector_label", { length: 60 }),
+	qrToken: varchar("qr_token", { length: 80 }),
 	connectorType: mysqlEnum("connector_type", ['TYPE_1','TYPE_2','CCS_1','CCS_2','CHADEMO','TESLA','GBT_AC','GBT_DC']).notNull(),
 	chargeType: mysqlEnum("charge_type", ['AC','DC']).notNull(),
 	powerKw: decimal({ precision: 8, scale: 2 }).notNull(),
@@ -527,6 +533,7 @@ export const evses = mysqlTable("evses", {
 },
 	(table) => [
 		index("idx_evses_station").on(table.stationId),
+		uniqueIndex("ux_evses_qr_token").on(table.qrToken),
 	]);
 
 export const ocpiSyncRuns = mysqlTable("ocpi_sync_runs", {
@@ -924,6 +931,57 @@ export const notifications = mysqlTable("notifications", {
 	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
 	data: text(),
 });
+
+/**
+ * Registro por dispositivo para FCM. El campo histórico users.fcmToken se
+ * conserva por compatibilidad, pero no puede representar de forma correcta un
+ * teléfono Android y un iPhone del mismo usuario al mismo tiempo.
+ */
+export const pushDevices = mysqlTable("push_devices", {
+	id: int().autoincrement().notNull(),
+	userId: int("user_id").notNull(),
+	token: text().notNull(),
+	tokenHash: varchar("token_hash", { length: 64 }).notNull(),
+	platform: mysqlEnum("platform", ["android", "ios", "web", "unknown"]).default("unknown").notNull(),
+	appVersion: varchar("app_version", { length: 50 }),
+	status: mysqlEnum("status", ["ACTIVE", "INACTIVE", "INVALID"]).default("ACTIVE").notNull(),
+	registeredAt: timestamp("registered_at", { mode: "string" }).default("CURRENT_TIMESTAMP").notNull(),
+	lastSeenAt: timestamp("last_seen_at", { mode: "string" }).default("CURRENT_TIMESTAMP").notNull(),
+	lastAcceptedAt: timestamp("last_accepted_at", { mode: "string" }),
+	lastReceivedAt: timestamp("last_received_at", { mode: "string" }),
+	lastOpenedAt: timestamp("last_opened_at", { mode: "string" }),
+	lastErrorCode: varchar("last_error_code", { length: 128 }),
+	lastErrorAt: timestamp("last_error_at", { mode: "string" }),
+}, (table) => [
+	uniqueIndex("ux_push_devices_token_hash").on(table.tokenHash),
+	index("idx_push_devices_user_status").on(table.userId, table.status),
+]);
+
+/**
+ * Trazabilidad honesta del ciclo Push. ACCEPTED es acuse del proveedor; sólo
+ * RECEIVED/OPENED son confirmaciones que la propia app puede reportar.
+ */
+export const pushDeliveryEvents = mysqlTable("push_delivery_events", {
+	id: int().autoincrement().notNull(),
+	deliveryId: varchar("delivery_id", { length: 80 }).notNull(),
+	userId: int("user_id").notNull(),
+	deviceId: int("device_id"),
+	channel: mysqlEnum("channel", ["FCM", "WEB_PUSH"]).notNull(),
+	status: mysqlEnum("status", ["REQUESTED", "ACCEPTED", "RECEIVED", "OPENED", "FAILED"]).default("REQUESTED").notNull(),
+	notificationType: varchar("notification_type", { length: 50 }).notNull(),
+	providerMessageId: varchar("provider_message_id", { length: 255 }),
+	requestedAt: timestamp("requested_at", { mode: "string" }).default("CURRENT_TIMESTAMP").notNull(),
+	acceptedAt: timestamp("accepted_at", { mode: "string" }),
+	receivedAt: timestamp("received_at", { mode: "string" }),
+	openedAt: timestamp("opened_at", { mode: "string" }),
+	failedAt: timestamp("failed_at", { mode: "string" }),
+	errorCode: varchar("error_code", { length: 128 }),
+	errorMessage: text("error_message"),
+}, (table) => [
+	uniqueIndex("ux_push_delivery_events_delivery").on(table.deliveryId),
+	index("idx_push_delivery_events_user_created").on(table.userId, table.requestedAt),
+	index("idx_push_delivery_events_device_created").on(table.deviceId, table.requestedAt),
+]);
 
 export const occupancyLiquidations = mysqlTable("occupancy_liquidations", {
 	id: int().autoincrement().notNull(),
@@ -1431,12 +1489,15 @@ export const reservations = mysqlTable("reservations", {
 	startTime: timestamp({ mode: 'string' }).notNull(),
 	endTime: timestamp({ mode: 'string' }).notNull(),
 	expiryTime: timestamp({ mode: 'string' }).notNull(),
-	reservationStatus: mysqlEnum("reservation_status", ['ACTIVE','EXPIRED','CANCELLED','FULFILLED','NO_SHOW']).default('ACTIVE').notNull(),
+	reservationStatus: mysqlEnum("reservation_status", ['ACTIVE','EXPIRED','CANCELLED','FULFILLED','NO_SHOW','SERVICE_UNAVAILABLE']).default('ACTIVE').notNull(),
 	reservationFee: decimal({ precision: 10, scale: 2 }).default('0'),
 	noShowPenalty: decimal({ precision: 10, scale: 2 }).default('0'),
 	isPenaltyApplied: tinyint().default(0).notNull(),
 	transactionId: int(),
 	ocppReservationId: int(),
+	// Incidencia operacional fuera del control del titular: nunca puede derivar en NO_SHOW.
+	serviceIssueCode: varchar("service_issue_code", { length: 80 }),
+	serviceIssueAt: timestamp("service_issue_at", { mode: 'string' }),
 	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
 	updatedAt: timestamp({ mode: 'string' }).defaultNow().onUpdateNow().notNull(),
 	reminder30MinSent: timestamp({ mode: 'string' }),
@@ -1812,7 +1873,15 @@ export const stationAvailabilityAlerts = mysqlTable("station_availability_alerts
 	userName: varchar({ length: 100 }),
 	sendPush: tinyint().default(1).notNull(),
 	sendWhatsapp: tinyint().default(1).notNull(),
-	alertReqStatus: mysqlEnum("alert_req_status", ['PENDING','SENT','CANCELLED','EXPIRED']).default('PENDING').notNull(),
+	alertReqStatus: mysqlEnum("alert_req_status", ['PENDING','PROCESSING','SENT','CANCELLED','EXPIRED']).default('PENDING').notNull(),
+	pushStatus: mysqlEnum("availability_push_status", ['PENDING','SENT','FAILED','NOT_AVAILABLE','NOT_REQUESTED']).default('PENDING').notNull(),
+	whatsappStatus: mysqlEnum("availability_whatsapp_status", ['PENDING','SENT','FAILED','WAITING_TEMPLATE','NO_PHONE','NOT_AVAILABLE','NOT_REQUESTED']).default('PENDING').notNull(),
+	pushError: text(),
+	whatsappError: text(),
+	attemptCount: int().default(0).notNull(),
+	lastAttemptAt: timestamp({ mode: 'string' }),
+	nextAttemptAt: timestamp({ mode: 'string' }),
+	processingStartedAt: timestamp({ mode: 'string' }),
 	sentAt: timestamp({ mode: 'string' }),
 	expiresAt: timestamp({ mode: 'string' }),
 	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
@@ -2024,6 +2093,10 @@ export const transactions = mysqlTable("transactions", {
 	tariffId: int(),
 	ocppTransactionId: varchar({ length: 100 }),
 	ocppNumericTxId: int(),
+	// Huella estable del evento físico StartTransaction OCPP 1.6. Un cargador
+	// puede retransmitir el mismo evento después de una reconexión; esta clave
+	// permite responder sin crear una segunda sesión cobrable.
+	ocppStartFingerprint: varchar({ length: 191 }),
 	startTime: timestamp({ mode: 'string' }).notNull(),
 	endTime: timestamp({ mode: 'string' }),
 	kwhConsumed: decimal({ precision: 10, scale: 4 }).default('0'),
@@ -2040,6 +2113,12 @@ export const transactions = mysqlTable("transactions", {
 	transactionStatus: mysqlEnum("transaction_status", ['PENDING','IN_PROGRESS','COMPLETED','FAILED','CANCELLED']).default('PENDING').notNull(),
 	startMethod: varchar({ length: 50 }),
 	stopReason: varchar({ length: 100 }),
+	// El comando remoto y el fin físico de una carga son hechos distintos.
+	// Estos campos impiden presentar un recibo o liberar un conector antes de
+	// que OCPP confirme StopTransaction / TransactionEvent.Ended.
+	stopRequestedAt: timestamp({ mode: 'string' }),
+	stopRequestStatus: mysqlEnum("stop_request_status", ['NONE','REQUESTED','ACCEPTED','REJECTED','TIMED_OUT','CONFIRMED']).default('NONE').notNull(),
+	stopRequestMessage: varchar({ length: 255 }),
 	reservationId: int(),
 	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
 	updatedAt: timestamp({ mode: 'string' }).defaultNow().onUpdateNow().notNull(),
@@ -2048,10 +2127,18 @@ export const transactions = mysqlTable("transactions", {
 	manualBatteryCapacityKwh: decimal({ precision: 6, scale: 2 }),
 	manualSocCalibrationKwh: decimal({ precision: 10, scale: 4 }),
 	manualSocCalibratedAt: timestamp({ mode: 'string' }),
+	// Modelo adaptativo exclusivo de la sesión AC: conserva la ficha declarada
+	// del vehículo y aprende una capacidad energética efectiva entre anclas SOC.
+	manualSocEffectiveCapacityKwh: decimal({ precision: 6, scale: 2 }),
+	manualSocCalibrationCount: int().default(0).notNull(),
 	chargeMode: varchar({ length: 20 }).default('full_charge'),
 	targetValue: decimal({ precision: 12, scale: 2 }).default('0'),
 	appliedPricePerKwh: decimal({ precision: 10, scale: 2 }),
-});
+},
+(table) => [
+	uniqueIndex("ux_transactions_ocpp_transaction_id").on(table.ocppTransactionId),
+	uniqueIndex("ux_transactions_ocpp_start_fingerprint").on(table.ocppStartFingerprint),
+]);
 
 export const userConsumptionProfile = mysqlTable("user_consumption_profile", {
 	id: int().autoincrement().notNull(),
@@ -2091,6 +2178,10 @@ export const userConsumptionProfile = mysqlTable("user_consumption_profile", {
 	windowDays: int().default(90).notNull(),
 	profileConfidence: mysqlEnum("profile_confidence", ['LOW','MEDIUM','HIGH']).default('LOW').notNull(),
 	computedAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP'),
+	// Franja local de hábito por combinación día de semana + hora. Evita enviar
+	// recordatorios por una coincidencia de hora en un día distinto.
+	habitSlotDistribution: json(),
+	habitTimezone: varchar({ length: 100 }).default('America/Bogota'),
 },
 (table) => [
 	index("userId_unique").on(table.userId),
@@ -2118,7 +2209,7 @@ export const userOnboardingProgress = mysqlTable("user_onboarding_progress", {
 	id: int().autoincrement().notNull(),
 	userId: int("user_id").notNull(),
 	version: varchar({ length: 30 }).default('2026-08-v1').notNull(),
-	status: mysqlEnum("user_onboarding_status", ['IN_PROGRESS', 'COMPLETED', 'SKIPPED']).default('IN_PROGRESS').notNull(),
+	status: mysqlEnum("status", ['IN_PROGRESS', 'COMPLETED', 'SKIPPED']).default('IN_PROGRESS').notNull(),
 	currentStep: int("current_step").default(1).notNull(),
 	startedAt: timestamp("started_at", { mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
 	lastSavedAt: timestamp("last_saved_at", { mode: 'string' }).defaultNow().onUpdateNow().notNull(),
@@ -2300,11 +2391,13 @@ export const users = mysqlTable("users", {
 	fiscalAddress: varchar({ length: 500 }),
 	fiscalCity: varchar({ length: 100 }),
 	fiscalDepartment: varchar({ length: 100 }),
-	kindOfPerson: mysqlEnum("kind_of_person", ['PERSON_ENTITY','LEGAL_ENTITY']),
-	regime: mysqlEnum(['SIMPLIFIED_REGIME','COMMON_REGIME','NOT_RESPONSIBLE_FOR_IVA']),
-	alegraContactId: varchar({ length: 50 }),
-	electronicInvoiceOptIn: tinyint("electronic_invoice_opt_in").default(0).notNull(),
-	investorTypes: json(),
+		kindOfPerson: mysqlEnum("kind_of_person", ['PERSON_ENTITY','LEGAL_ENTITY']),
+		regime: mysqlEnum(['SIMPLIFIED_REGIME','COMMON_REGIME','NOT_RESPONSIBLE_FOR_IVA']),
+		alegraContactId: varchar({ length: 50 }),
+		siigoCustomerId: varchar({ length: 100 }),
+		worldOfficeCustomerId: varchar({ length: 100 }),
+		electronicInvoiceOptIn: tinyint("electronic_invoice_opt_in").default(0).notNull(),
+		investorTypes: json(),
 	onboardingCompleted: tinyint().default(0),
 	onboardingStep: int().default(0),
 	onboardingStartedAt: timestamp({ mode: 'string' }),
@@ -2315,6 +2408,7 @@ export const users = mysqlTable("users", {
 	waNotifyChargeStart: tinyint().default(1).notNull(),
 	waNotifyChargeEnd: tinyint().default(1).notNull(),
 	waNotifyReminder: tinyint().default(0).notNull(),
+	waNotifyReservations: tinyint().default(1).notNull(),
 	waNotifyPenalty: tinyint().default(1).notNull(),
 	waNotifyWallet: tinyint().default(1).notNull(),
 	termsAcceptedAt: timestamp({ mode: 'string' }),
@@ -2360,10 +2454,16 @@ export const walletTransactions = mysqlTable("wallet_transactions", {
 	balanceAfter: decimal({ precision: 12, scale: 2 }).notNull(),
 	referenceId: int(),
 	referenceType: varchar({ length: 50 }),
+	// Clave de idempotencia para impedir que un StopTransaction retransmitido
+	// descuente la misma sesión más de una vez.
+	idempotencyKey: varchar({ length: 191 }),
 	paymentStatus: mysqlEnum("payment_status", ['PENDING','COMPLETED','FAILED','REFUNDED']).default('PENDING').notNull(),
 	description: text(),
 	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
-});
+},
+(table) => [
+	uniqueIndex("ux_wallet_transactions_idempotency_key").on(table.idempotencyKey),
+]);
 
 export const wallets = mysqlTable("wallets", {
 	id: int().autoincrement().notNull(),
@@ -2395,6 +2495,19 @@ export const whatsappConfig = mysqlTable("whatsapp_config", {
 	notifyChargerOffline: tinyint().default(0).notNull(),
 	notifyReservation: tinyint().default(1).notNull(),
 	notifyMonthlySummary: tinyint().default(0).notNull(),
+	notifyStationAvailable: tinyint().default(1).notNull(),
+	stationAvailableTemplateName: varchar({ length: 100 }).default('evgreen_estacion_disponible_v1'),
+	stationAvailableTemplateId: varchar({ length: 100 }),
+	stationAvailableTemplateStatus: varchar({ length: 30 }).default('NOT_CONFIGURED'),
+	stationAvailableTemplateCheckedAt: timestamp({ mode: 'string' }),
+	reservationTemplateName: varchar({ length: 100 }).default('evgreen_reserva_actualizacion_v1'),
+	reservationTemplateId: varchar({ length: 100 }),
+	reservationTemplateStatus: varchar({ length: 30 }).default('NOT_CONFIGURED'),
+	reservationTemplateCheckedAt: timestamp({ mode: 'string' }),
+	chargerOfflineTemplateName: varchar({ length: 100 }).default('evgreen_cargador_fuera_de_servicio_v1'),
+	chargerOfflineTemplateId: varchar({ length: 100 }),
+	chargerOfflineTemplateStatus: varchar({ length: 30 }).default('NOT_CONFIGURED'),
+	chargerOfflineTemplateCheckedAt: timestamp({ mode: 'string' }),
 	updatedBy: int(),
 	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
 	updatedAt: timestamp({ mode: 'string' }).defaultNow().onUpdateNow().notNull(),
@@ -2445,6 +2558,8 @@ export const wompiTransactions = mysqlTable("wompi_transactions", {
 export const chargers = mysqlTable("chargers", {
 	id: int().autoincrement().notNull(),
 	stationId: int("station_id").notNull(),
+	chargerCode: varchar("charger_code", { length: 40 }),
+	displayName: varchar("display_name", { length: 120 }),
 	ocppIdentity: varchar("ocpp_identity", { length: 100 }).notNull(),
 	ocppPassword: varchar("ocpp_password", { length: 255 }),
 	brand: varchar({ length: 100 }),
@@ -2452,6 +2567,7 @@ export const chargers = mysqlTable("chargers", {
 	serialNumber: varchar("serial_number", { length: 100 }),
 	firmwareVersion: varchar("firmware_version", { length: 50 }),
 	powerKw: decimal("power_kw", { precision: 8, scale: 2 }),
+	maxConcurrentSessions: int("max_concurrent_sessions").default(1).notNull(),
 	chargerStatus: mysqlEnum("charger_status", ['ONLINE','OFFLINE','FAULTED','UNKNOWN']).default('UNKNOWN').notNull(),
 	isOnline: tinyint("is_online").default(0).notNull(),
 	isActive: tinyint("is_active").default(1).notNull(),
@@ -2464,6 +2580,7 @@ export const chargers = mysqlTable("chargers", {
 },
 (table) => [
 	index("idx_chargers_station").on(table.stationId),
+	index("idx_chargers_station_code").on(table.stationId, table.chargerCode),
 	index("idx_chargers_ocpp_identity").on(table.ocppIdentity),
 ]);
 
@@ -2744,3 +2861,138 @@ export type InsertAdCampaign = typeof adCampaigns.$inferInsert;
 export type AdCampaign = typeof adCampaigns.$inferSelect;
 export type InsertAdCampaignCreative = typeof adCampaignCreatives.$inferInsert;
 export type AdCampaignCreative = typeof adCampaignCreatives.$inferSelect;
+
+// ============================================================================
+// Facturación Electrónica Multi-Proveedor (Alegra, Siigo, World Office)
+// ============================================================================
+
+export const tenantBillingSettings = mysqlTable("tenant_billing_settings", {
+	id: int().autoincrement().notNull(),
+	organizationId: int("organization_id"),
+	provider: mysqlEnum("billing_provider", ['alegra', 'siigo', 'world_office']).default('alegra').notNull(),
+	enabled: tinyint().default(0).notNull(),
+	environment: mysqlEnum("billing_environment", ['sandbox', 'production']).default('production').notNull(),
+	autoInvoice: tinyint("auto_invoice").default(1).notNull(),
+		autoSendEmail: tinyint("auto_send_email").default(1).notNull(),
+		billingRoundingMode: mysqlEnum("billing_rounding_mode", ['nearest_integer', 'two_decimals']).default('two_decimals').notNull(),
+		resolutionNumber: varchar("resolution_number", { length: 100 }),
+		// Numeración electrónica DIAN seleccionada directamente desde el catálogo de Alegra.
+		alegraNumberTemplateId: varchar("alegra_number_template_id", { length: 100 }),
+		alegraNumberTemplateName: varchar("alegra_number_template_name", { length: 255 }),
+		alegraNumberTemplatePrefix: varchar("alegra_number_template_prefix", { length: 50 }),
+		alegraNumberTemplateResolution: varchar("alegra_number_template_resolution", { length: 100 }),
+		alegraNumberTemplateStartDate: varchar("alegra_number_template_start_date", { length: 30 }),
+		alegraNumberTemplateEndDate: varchar("alegra_number_template_end_date", { length: 30 }),
+		alegraNumberTemplateStartNumber: int("alegra_number_template_start_number"),
+		alegraNumberTemplateEndNumber: int("alegra_number_template_end_number"),
+		alegraNumberTemplateCurrentNumber: int("alegra_number_template_current_number"),
+		alegraNumberTemplateSyncedAt: timestamp("alegra_number_template_synced_at", { mode: 'string' }),
+
+	// Configuración Alegra
+	alegraEmail: varchar("alegra_email", { length: 255 }),
+	alegraToken: text("alegra_token"),
+	alegraEProviderToken: text("alegra_eprovider_token"),
+	alegraDefaultItemId: varchar("alegra_default_item_id", { length: 50 }),
+	alegraDefaultTaxId: varchar("alegra_default_tax_id", { length: 50 }),
+	alegraPaymentMethodId: varchar("alegra_payment_method_id", { length: 50 }),
+	alegraPaymentAccountId: varchar("alegra_payment_account_id", { length: 50 }),
+	alegraUseElectronicStamp: tinyint("alegra_use_electronic_stamp").default(1).notNull(),
+
+	// Cliente mostrador/fallback cuando el usuario no ha informado sus datos fiscales.
+	fallbackCustomerEnabled: tinyint("fallback_customer_enabled").default(0).notNull(),
+	fallbackCustomerId: varchar("fallback_customer_id", { length: 100 }),
+	fallbackCustomerName: varchar("fallback_customer_name", { length: 255 }),
+	fallbackCustomerDocumentType: varchar("fallback_customer_document_type", { length: 30 }),
+	fallbackCustomerDocumentNumber: varchar("fallback_customer_document_number", { length: 50 }),
+	fallbackCustomerEmail: varchar("fallback_customer_email", { length: 320 }),
+	fallbackCustomerAddress: varchar("fallback_customer_address", { length: 500 }),
+	fallbackCustomerCity: varchar("fallback_customer_city", { length: 100 }),
+	fallbackCustomerDepartment: varchar("fallback_customer_department", { length: 100 }),
+	fallbackCustomerKindOfPerson: varchar("fallback_customer_kind_of_person", { length: 30 }),
+	fallbackCustomerRegime: varchar("fallback_customer_regime", { length: 40 }),
+
+	// Configuración Siigo Nube
+	siigoUsername: varchar("siigo_username", { length: 255 }),
+	siigoAccessKey: text("siigo_access_key"),
+	siigoPartnerId: varchar("siigo_partner_id", { length: 100 }),
+	siigoDocumentId: varchar("siigo_document_id", { length: 50 }),
+	siigoSellerId: varchar("siigo_seller_id", { length: 50 }),
+	siigoPaymentTypeId: varchar("siigo_payment_type_id", { length: 50 }),
+	siigoProductCode: varchar("siigo_product_code", { length: 100 }),
+	siigoTaxId: varchar("siigo_tax_id", { length: 50 }),
+	siigoStamp: tinyint("siigo_stamp").default(1).notNull(),
+	siigoMail: tinyint("siigo_mail").default(1).notNull(),
+
+	// Configuración World Office Cloud
+	worldOfficeToken: text("world_office_token"),
+	worldOfficeCompanyId: varchar("world_office_company_id", { length: 50 }),
+	worldOfficeDocumentTypeId: varchar("world_office_document_type_id", { length: 50 }),
+	worldOfficePrefixId: varchar("world_office_prefix_id", { length: 50 }),
+	worldOfficePaymentMethodId: varchar("world_office_payment_method_id", { length: 50 }),
+	worldOfficeItemId: varchar("world_office_item_id", { length: 50 }),
+	worldOfficeTaxId: varchar("world_office_tax_id", { length: 50 }),
+
+	// Producto/servicio único que EVGreen utiliza como concepto fiscal.
+	// El precio del catálogo es referencial; el valor de cada línea se congela
+	// con el total real de la sesión al momento de facturar.
+	selectedProductId: varchar("selected_product_id", { length: 150 }),
+	selectedProductName: varchar("selected_product_name", { length: 255 }),
+	selectedProductCode: varchar("selected_product_code", { length: 150 }),
+	selectedProductPrice: decimal("selected_product_price", { precision: 14, scale: 6 }),
+	selectedProductTaxes: text("selected_product_taxes"),
+	selectedProductUnit: varchar("selected_product_unit", { length: 80 }),
+	selectedProductTaxIncluded: tinyint("selected_product_tax_included"),
+	selectedProductSyncedAt: timestamp("selected_product_synced_at", { mode: 'string' }),
+
+	// El proveedor recibe este secreto como header al enviar confirmaciones.
+	webhookSecret: text("webhook_secret"),
+	webhookConfiguredAt: timestamp("webhook_configured_at", { mode: 'string' }),
+
+	// Auditoría y estado operativo
+	lastTestStatus: mysqlEnum("billing_last_test_status", ['none', 'success', 'error']).default('none').notNull(),
+	lastTestMessage: text("last_test_message"),
+	lastTestedAt: timestamp("last_tested_at", { mode: 'string' }),
+	updatedBy: int("updated_by"),
+	createdAt: timestamp("created_at", { mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
+	updatedAt: timestamp("updated_at", { mode: 'string' }).defaultNow().onUpdateNow().notNull(),
+},
+(table) => [
+	index("idx_tenant_billing_org").on(table.organizationId),
+]);
+
+export const electronicInvoices = mysqlTable("electronic_invoices", {
+	id: int().autoincrement().notNull(),
+	organizationId: int("organization_id"),
+	transactionId: int("transaction_id").notNull(),
+	provider: mysqlEnum("electronic_invoice_provider", ['alegra', 'siigo', 'world_office']).notNull(),
+	status: mysqlEnum("electronic_invoice_status", ['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'RETRYABLE_ERROR']).default('PENDING').notNull(),
+	externalInvoiceId: varchar("external_invoice_id", { length: 100 }),
+	invoiceNumber: varchar("invoice_number", { length: 100 }),
+	cufe: text(),
+	totalAmount: decimal("total_amount", { precision: 12, scale: 2 }).default('0').notNull(),
+	billedUnitPrice: decimal("billed_unit_price", { precision: 14, scale: 2 }).default('0').notNull(),
+	billedProductId: varchar("billed_product_id", { length: 150 }),
+	billedProductName: varchar("billed_product_name", { length: 255 }),
+	energyKwh: decimal("energy_kwh", { precision: 10, scale: 4 }).default('0').notNull(),
+	customerName: varchar("customer_name", { length: 255 }),
+	customerIdentification: varchar("customer_identification", { length: 50 }),
+	customerEmail: varchar("customer_email", { length: 255 }),
+	customerSource: mysqlEnum("customer_source", ['USER', 'FALLBACK']).default('USER').notNull(),
+	externalContactId: varchar("external_contact_id", { length: 100 }),
+	pdfUrl: text("pdf_url"),
+	xmlUrl: text("xml_url"),
+	errorMessage: text("error_message"),
+	attempts: int().default(0).notNull(),
+	lastAttemptAt: timestamp("last_attempt_at", { mode: 'string' }),
+	createdAt: timestamp("created_at", { mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
+	updatedAt: timestamp("updated_at", { mode: 'string' }).defaultNow().onUpdateNow().notNull(),
+},
+(table) => [
+	index("idx_elec_inv_org").on(table.organizationId),
+	index("idx_elec_inv_tx").on(table.transactionId),
+]);
+
+export type InsertTenantBillingSettings = typeof tenantBillingSettings.$inferInsert;
+export type TenantBillingSettings = typeof tenantBillingSettings.$inferSelect;
+export type InsertElectronicInvoice = typeof electronicInvoices.$inferInsert;
+export type ElectronicInvoice = typeof electronicInvoices.$inferSelect;

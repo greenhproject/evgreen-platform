@@ -16,6 +16,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { randomBytes } from "crypto";
 import * as db from "./db";
 import { getDb } from "./db";
 import { users, userVehicles, favoriteStations, notifications, sessionFeedback, tariffs as tariffsTable, whatsappNotificationLog } from "../drizzle/schema";
@@ -59,13 +60,17 @@ import { userOnboardingRouter } from "./routers/user-onboarding";
 import { buildOcpiRouter } from "./ocpi/ocpi-router";
 import { stageSiemLocationSnapshot } from "./ocpi/ocpi-station-snapshot";
 import { contractsRouter } from "./contracts/contracts-router";
-import { resolveConnectorOperationalState } from "../shared/connector-operational-state";
+import { projectOperationalConnectorStates, resolveConnectorOperationalState } from "../shared/connector-operational-state";
 import { CROWDFUNDING_PROJECT_STATUSES } from "./crowdfunding/project-bulk-policy";
 import { manageCrowdfundingProjectsBulk } from "./crowdfunding/project-bulk-operations";
 import {
   listOrphanedCrowdfundingStationLinks,
   repairOrphanedCrowdfundingStationLinks,
 } from "./crowdfunding/orphaned-station-links";
+import {
+  buildCrowdfundingProjectionSnapshot,
+  getSelectedCrowdfundingProjection,
+} from "../shared/crowdfunding-financial-projection";
 
 // ============================================================================
 // ROLE-BASED PROCEDURES
@@ -90,6 +95,22 @@ const strictAdminProcedure = protectedProcedure.use(({ ctx, next }) => {
     });
   }
   return next({ ctx });
+});
+
+// Reportes financieros auditables: exclusivos de administración. Soporte puede
+// ver la alerta técnica, pero no saldos, movimientos ni beneficiarios.
+const reportsRouter = router({
+  financialReconciliations: strictAdminProcedure
+    .input(z.object({
+      limit: z.number().int().min(1).max(100).default(50),
+    }))
+    .query(async ({ input }) => {
+      const items = await db.getFinancialReconciliationReport(input.limit);
+      return {
+        items,
+        generatedAt: new Date(),
+      };
+    }),
 });
 
 // Procedimiento para ingeniero jefe (control total del área técnica)
@@ -494,7 +515,9 @@ const stationsRouter = router({
           activeTransactionByEvse.set(transaction.evseId, transaction);
         }
       }
-      const publicConnections = dualCSMS.getConnectionsStatus();
+      // Incluye los estados por conector de la misma conexión OCPP; la versión
+      // resumida no expone `connectorStatuses` y dejaba al mapa con datos viejos.
+      const publicConnections = dualCSMS.getAllConnectionsInfo();
       const publicConnectionMap = new Map(publicConnections.map(connection => [connection.ocppIdentity, connection]));
       const stationsWithData = await Promise.all(
         stations.map(async (station: any) => {
@@ -534,6 +557,9 @@ const stationsRouter = router({
             });
             return {
               ...evse,
+              // Todas las superficies públicas deben leer el estado canónico,
+              // no el valor persistido que puede estar unos segundos rezagado.
+              connectorStatus: operationalState.status ?? "UNAVAILABLE",
               status: operationalState.status,
               operationalStatus: operationalState.status,
               operationalStatusSource: operationalState.source,
@@ -564,7 +590,7 @@ const stationsRouter = router({
   listAll: technicianProcedure.query(async () => {
     const stations = await db.getAllChargingStations();
     // Obtener conexiones OCPP activas para enriquecer con lastHeartbeat
-    const csmsConnections = dualCSMS.getConnectionsStatus();
+    const csmsConnections = dualCSMS.getAllConnectionsInfo();
     const csmsMap = new Map<string, any>();
     for (const conn of csmsConnections) {
       csmsMap.set(conn.ocppIdentity, conn);
@@ -613,6 +639,7 @@ const stationsRouter = router({
 
         return {
           ...evse,
+          connectorStatus: operationalState.status ?? "UNAVAILABLE",
           // `status` se mantiene por compatibilidad con pantallas históricas.
           status: operationalState.status,
           operationalStatus: operationalState.status,
@@ -658,7 +685,7 @@ const stationsRouter = router({
     const { isDemoStation } = await import("./charging/charging-simulator");
     
     // Obtener conexiones OCPP activas para estado en tiempo real
-    const csmsConnections = dualCSMS.getConnectionsStatus();
+    const csmsConnections = dualCSMS.getAllConnectionsInfo();
     const legacyConnections = ocppManager.getAllConnections();
     const ownedStationIds = allStations.map(station => station.id);
     const activeTransactions = await db.getActiveTransactionsForStations(ownedStationIds);
@@ -703,9 +730,9 @@ const stationsRouter = router({
           crowdfundingProjectName: (station as any).crowdfundingProjectName || null,
           ocppConnection: ocppConn ? {
             ocppVersion: ocppConn.ocppVersion,
-            connectedAt: ocppConn.connectedAt instanceof Date ? ocppConn.connectedAt.toISOString() : String(ocppConn.connectedAt),
-            lastHeartbeat: ocppConn.lastHeartbeat instanceof Date ? ocppConn.lastHeartbeat.toISOString() : String(ocppConn.lastHeartbeat),
-            connectorStatuses: (ocppConn as any).connectorStatuses || {},
+            connectedAt: ocppConn.connectedAt,
+            lastHeartbeat: ocppConn.lastHeartbeat,
+            connectorStatuses: ocppConn.connectorStatuses || {},
           } : null,
           tariff: tariff ? {
             pricePerKwh: tariff.pricePerKwh?.toString() || "1200",
@@ -729,7 +756,7 @@ const stationsRouter = router({
               connectorType: e.connectorType,
               chargeType: e.chargeType,
               powerKw: e.powerKw?.toString() || "22",
-              connectorStatus: e.connectorStatus,
+              connectorStatus: operationalState.status ?? "UNAVAILABLE",
               status: operationalState.status,
               operationalStatus: operationalState.status,
               operationalStatusSource: operationalState.source,
@@ -942,7 +969,7 @@ const stationsRouter = router({
       const activeTransactions = await db.getActiveTransactionsByStationId(input.stationId);
       const activeTransactionByEvse = new Map(activeTransactions.map(transaction => [transaction.evseId, transaction]));
       const liveConnection = station.ocppIdentity
-        ? dualCSMS.getConnectionsStatus().find(connection => connection.ocppIdentity === station.ocppIdentity)
+        ? dualCSMS.getConnectionInfo(station.ocppIdentity)
         : undefined;
       return evses.map((e: any) => {
         const activeTransaction = activeTransactionByEvse.get(e.id);
@@ -1054,6 +1081,118 @@ const evseRouter = router({
     }),
 });
 
+// ============================================================================
+// PHYSICAL CHARGER ROUTER — Station → Charger → Connector (EVSE)
+// ============================================================================
+// A charger is a physical cabinet. An EVSE is one usable output/connector. This
+// router makes the relationship explicit without changing legacy stations that
+// still have EVSEs directly under a station.
+const chargersRouter = router({
+  listByStation: protectedProcedure
+    .input(z.object({ stationId: z.number() }))
+    .query(async ({ input }) => {
+      const [station, chargerRows, connectorRows, activeTransactions] = await Promise.all([
+        db.getChargingStationById(input.stationId),
+        db.getChargersByStationId(input.stationId),
+        db.getEvsesByStationId(input.stationId),
+        db.getActiveTransactionsByStationId(input.stationId),
+      ]);
+      const { buildStationChargerHierarchy } = await import("../shared/station-charger-hierarchy");
+      const activeTransactionByEvse = new Map(activeTransactions.map((transaction: any) => [transaction.evseId, transaction.id]));
+      const chargerById = new Map(chargerRows.map((charger: any) => [charger.id, charger]));
+      const canonicalConnectors = projectOperationalConnectorStates(connectorRows.map((connector: any) => {
+        const physicalCharger = connector.chargerId ? chargerById.get(connector.chargerId) : null;
+        const ocppIdentity = physicalCharger?.ocppIdentity || station?.ocppIdentity;
+        const liveConnection = ocppIdentity ? dualCSMS.getConnectionInfo(ocppIdentity) : null;
+        return {
+          ...connector,
+          activeTransactionId: activeTransactionByEvse.get(connector.id) ?? null,
+          liveOcppStatus: liveConnection?.connectorStatuses?.[connector.evseIdLocal],
+        };
+      }));
+      return buildStationChargerHierarchy(chargerRows as any, canonicalConnectors as any);
+    }),
+
+  create: technicianProcedure
+    .input(z.object({
+      stationId: z.number(),
+      chargerCode: z.string().trim().min(1).max(40),
+      displayName: z.string().trim().min(1).max(120),
+      ocppIdentity: z.string().trim().min(1).max(100),
+      manufacturer: z.string().trim().max(100).optional(),
+      model: z.string().trim().max(100).optional(),
+      serialNumber: z.string().trim().max(100).optional(),
+      powerKw: z.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
+      maxConcurrentSessions: z.number().int().min(1).max(8).default(1),
+      notes: z.string().max(2000).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const id = await db.createCharger({
+        ...input,
+        chargerStatus: "UNKNOWN",
+        isOnline: 0,
+        isActive: 1,
+      } as any);
+      return { id };
+    }),
+
+  update: technicianProcedure
+    .input(z.object({
+      id: z.number(),
+      data: z.object({
+        chargerCode: z.string().trim().min(1).max(40).optional(),
+        displayName: z.string().trim().min(1).max(120).optional(),
+        manufacturer: z.string().trim().max(100).optional(),
+        model: z.string().trim().max(100).optional(),
+        serialNumber: z.string().trim().max(100).optional(),
+        powerKw: z.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
+        maxConcurrentSessions: z.number().int().min(1).max(8).optional(),
+        notes: z.string().max(2000).optional(),
+        isActive: z.boolean().optional(),
+      }),
+    }))
+    .mutation(async ({ input }) => {
+      await db.updateCharger(input.id, input.data as any);
+      return { success: true };
+    }),
+
+  assignConnector: technicianProcedure
+    .input(z.object({
+      chargerId: z.number(),
+      evseId: z.number(),
+      connectorLabel: z.string().trim().min(1).max(60),
+      qrToken: z.string().trim().min(8).max(80).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const [charger, connector] = await Promise.all([
+        db.getChargerById(input.chargerId),
+        db.getEvseById(input.evseId),
+      ]);
+      if (!charger || !connector || charger.stationId !== connector.stationId) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "El cargador y el conector deben pertenecer a la misma estación." });
+      }
+      await db.updateEvse(input.evseId, {
+        chargerId: input.chargerId,
+        connectorLabel: input.connectorLabel,
+        qrToken: input.qrToken || null,
+      } as any);
+      return { success: true };
+    }),
+
+  regenerateConnectorQr: technicianProcedure
+    .input(z.object({ evseId: z.number() }))
+    .mutation(async ({ input }) => {
+      const connector = await db.getEvseById(input.evseId);
+      if (!connector || !connector.isActive) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "No se encontró un conector activo para generar el QR." });
+      }
+      // Token URL-safe y aleatorio: selecciona un conector, pero no constituye
+      // credencial de carga ni expone identificadores internos.
+      const qrToken = randomBytes(32).toString("base64url");
+      await db.updateEvse(input.evseId, { qrToken } as any);
+      return { qrToken, stationId: connector.stationId, evseId: connector.id };
+    }),
+});
 // ============================================================================
 // TARIFFS ROUTER
 // ============================================================================
@@ -2683,20 +2822,67 @@ const claimsRouter = router({
 
 // Importar módulo de tarifa dinámica
 import * as dynamicPricing from "./pricing/dynamic-pricing";
+import { calculateReservationExpiryTime, isReservationActiveNow } from "../shared/reservation-lifecycle-policy";
+import { normalizeStationTimezone, stationLocalDateTimeToUtc } from "../shared/station-timezone";
 
 const reservationsRouter = router({
   myReservations: protectedProcedure.query(async ({ ctx }) => {
     const reservations = await db.getReservationsByUserId(ctx.user.id);
-    // Enriquecer con nombre de estación
+    const now = new Date();
+    // Enriquecer con datos completos de estación y EVSE
     const enriched = await Promise.all(
       reservations.map(async (r) => {
         const station = await db.getChargingStationById(r.stationId);
-        return { ...r, stationName: station?.name || `Estación #${r.stationId}` };
+        const evse = r.evseId ? await db.getEvseById(r.evseId) : null;
+        const now = new Date();
+        const isActiveNow = isReservationActiveNow(r, now);
+        return {
+          ...r,
+          status: r.reservationStatus,
+          reservationStatus: r.reservationStatus,
+          stationName: station?.name || `Estación #${r.stationId}`,
+          stationAddress: station?.address || "",
+          stationTimezone: normalizeStationTimezone(station?.timezone),
+          stationOcppIdentity: station?.ocppIdentity || String(station?.id || r.stationId),
+          stationLatitude: station?.latitude || null,
+          stationLongitude: station?.longitude || null,
+          connectorType: evse?.connectorType || "GBT_AC",
+          powerKw: evse?.powerKw || 7,
+          isActiveNow,
+        };
       })
     );
     return enriched;
   }),
   
+  /** Consulta mínima para que la reserva vigente nunca desaparezca del mapa. */
+  activeForBanner: protectedProcedure.query(async ({ ctx }) => {
+    const now = new Date();
+    const candidates = await db.getReservationsByUserId(ctx.user.id);
+    const reservation = candidates
+      .filter((item: any) => String(item.reservationStatus || item.status || "").toUpperCase() === "ACTIVE")
+      .filter((item: any) => new Date(item.endTime).getTime() >= now.getTime())
+      .sort((a: any, b: any) => (
+        new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+        || Number(b.id) - Number(a.id)
+      ))[0];
+    if (!reservation) return null;
+
+    // El banner sigue siendo útil si la estación está temporalmente
+    // indisponible: el dato canónico de la reserva no debe desaparecer por un
+    // fallo secundario de enriquecimiento.
+    const station = await db.getChargingStationById(reservation.stationId).catch((error) => {
+      console.warn("[Reservation] active banner station enrichment failed:", error);
+      return undefined;
+    });
+    return {
+      ...reservation,
+      status: reservation.reservationStatus,
+      reservationStatus: reservation.reservationStatus,
+      stationName: station?.name || `Estación #${reservation.stationId}`,
+      stationTimezone: normalizeStationTimezone(station?.timezone),
+    };
+  }),
   // Obtener tarifa dinámica para una reserva
   getDynamicPrice: publicProcedure
     .input(z.object({
@@ -2795,15 +2981,43 @@ const reservationsRouter = router({
     .input(z.object({
       evseId: z.number(),
       stationId: z.number(),
-      startTime: z.date(),
-      endTime: z.date(),
+      // Los clientes recientes envían el valor que el usuario eligió en la
+      // zona de la estación. Los instantes UTC se mantienen temporalmente para
+      // no romper versiones móviles anteriores.
+      stationLocalStart: z.object({
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        time: z.string().regex(/^\d{2}:\d{2}$/),
+      }).optional(),
+      startTime: z.date().optional(),
+      endTime: z.date().optional(),
       estimatedDurationMinutes: z.number().min(15).max(480).default(60),
     }))
     .mutation(async ({ ctx, input }) => {
+      const station = await db.getChargingStationById(input.stationId);
+      if (!station) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Estación no encontrada" });
+      }
+      const stationTimezone = normalizeStationTimezone(station.timezone);
+      const startTime = input.stationLocalStart
+        ? stationLocalDateTimeToUtc(input.stationLocalStart.date, input.stationLocalStart.time, stationTimezone)
+        : input.startTime;
+      if (!startTime || Number.isNaN(startTime.getTime())) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Indica una fecha y hora de reserva válidas" });
+      }
+      const endTime = input.stationLocalStart
+        ? new Date(startTime.getTime() + input.estimatedDurationMinutes * 60_000)
+        : input.endTime;
+      if (!endTime || endTime.getTime() <= startTime.getTime()) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "La hora final de la reserva no es válida" });
+      }
+
       // Verificar que el EVSE exista y no esté fuera de servicio
       const evse = await db.getEvseById(input.evseId);
       if (!evse) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Conector no encontrado" });
+      }
+      if (evse.stationId !== input.stationId) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "El conector no pertenece a la estación seleccionada" });
       }
       // Permitir reservas si el conector está AVAILABLE o RESERVED (puede tener reservas futuras sin conflicto)
       // Solo bloquear si está en uso activo, fuera de servicio o con falla
@@ -2815,8 +3029,8 @@ const reservationsRouter = router({
       // Verificar conflictos de horario
       const hasConflict = await db.checkReservationConflict(
         input.evseId,
-        input.startTime,
-        input.endTime
+        startTime,
+        endTime
       );
       if (hasConflict) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Ya existe una reserva en ese horario" });
@@ -2826,7 +3040,7 @@ const reservationsRouter = router({
       const dynamicPrice = await dynamicPricing.calculateDynamicPrice(
         input.stationId,
         input.evseId,
-        input.startTime,
+        startTime,
         input.estimatedDurationMinutes
       );
       
@@ -2841,16 +3055,16 @@ const reservationsRouter = router({
         });
       }
       
-      // Calcular tiempo de expiración (15 minutos después del inicio)
-      const expiryTime = new Date(input.startTime.getTime() + 15 * 60 * 1000);
+      // El tiempo de expiración cubre la duración completa reservada por el usuario
+      const expiryTime = calculateReservationExpiryTime(startTime, endTime);
       
       // Crear la reserva
       const id = await db.createReservation({
         evseId: input.evseId,
         userId: ctx.user.id,
         stationId: input.stationId,
-        startTime: typeof input.startTime === "string" ? input.startTime : (input.startTime as any).toISOString(),
-        endTime: typeof input.endTime === "string" ? input.endTime : (input.endTime as any).toISOString(),
+        startTime: startTime.toISOString(),
+        endTime: endTime.toISOString(),
         // @ts-expect-error -- Drizzle type mismatch: schema field type vs inferred type
         expiryTime,
         reservationFee: dynamicPrice.reservationFee.toString(),
@@ -2878,41 +3092,31 @@ const reservationsRouter = router({
       
       // Solo marcar como RESERVED si la reserva empieza dentro de los próximos 15 minutos
       const now = new Date();
-      const minutesUntilStart = (input.startTime.getTime() - now.getTime()) / (1000 * 60);
+      const minutesUntilStart = (startTime.getTime() - now.getTime()) / (1000 * 60);
       if (minutesUntilStart <= 15 && evse.connectorStatus === "AVAILABLE") {
         await db.updateEvseStatus(input.evseId, "RESERVED", { triggeredBy: "SYSTEM" });
       }
             // Para reservas futuras (>15 min), un job periódico se encargará de marcar RESERVED cuando se acerque la hora
 
-      // WhatsApp: notificar reserva confirmada
+      // Reserva confirmada: alerta interna siempre y WhatsApp únicamente cuando
+      // Meta haya aprobado la plantilla transaccional correspondiente.
       try {
-        const userForWa = await db.getUserById(ctx.user.id);
-        if (userForWa?.phone) {
-          const station = await db.getChargingStationById(input.stationId);
-          const { sendWhatsAppMessage, WaTemplates } = await import("./whatsapp/whatsapp-service");
-          const startDate = new Date(input.startTime);
-          const endDate = new Date(input.endTime);
-          const { getStationTimezone, formatDateInTz, formatTimeRangeInTz } = await import("./utils/timezone");
-          const stationTz = getStationTimezone(station ?? {});
-          const dateStr = formatDateInTz(startDate, stationTz);
-          const timeStr = formatTimeRangeInTz(startDate, endDate, stationTz);
-          sendWhatsAppMessage({
-            toPhone: userForWa.phone,
-            message: WaTemplates.reservationConfirmed({
-              stationName: station?.name ?? `Estación #${input.stationId}`,
-              date: dateStr,
-              time: timeStr,
-              connectorId: input.evseId,
-              userName: userForWa.name?.split(" ")[0],
-            }),
-            eventType: "reservation_confirmed",
-            userId: ctx.user.id,
-            referenceId: id,
-            referenceType: "reservation",
-          }).catch((e: Error) => console.error("[WhatsApp] reservation_confirmed error:", e.message));
-        }
+        const [userForReservation, reservationStation] = await Promise.all([
+          db.getUserById(ctx.user.id),
+          Promise.resolve(station),
+        ]);
+        const { sendReservationConfirmation } = await import("./notifications/reservation-notifications");
+        await sendReservationConfirmation(
+          ctx.user.id,
+          id,
+          reservationStation?.name ?? `Estación #${input.stationId}`,
+          startTime,
+          dynamicPrice.reservationFee,
+          userForReservation,
+          evse.connectorId ?? input.evseId,
+        );
       } catch (waErr) {
-        console.error("[WhatsApp] reservation_confirmed trigger error:", waErr);
+        console.error("[Reservation] confirmation notification error:", waErr);
       }
 
       return { 
@@ -2920,6 +3124,9 @@ const reservationsRouter = router({
         reservationFee: dynamicPrice.reservationFee,
         noShowPenalty: dynamicPrice.noShowPenalty,
         demandLevel: dynamicPrice.factors.demandLevel,
+        startTime,
+        endTime,
+        stationTimezone,
       };
     }),
   // Cancelar reserva con reembolso dinámico
@@ -2950,6 +3157,30 @@ const reservationsRouter = router({
       }
       
       const result = await db.cancelReservationWithRefund(input.id, refundPercent);
+      if (result.success) {
+        try {
+          const [reservationUser, station, evse] = await Promise.all([
+            db.getUserById(reservation.userId),
+            db.getChargingStationById(reservation.stationId),
+            db.getEvseById(reservation.evseId),
+          ]);
+          const { sendReservationLifecycleNotification } = await import("./notifications/reservation-notifications");
+          await sendReservationLifecycleNotification({
+            userId: reservation.userId,
+            reservationId: reservation.id,
+            userName: reservationUser?.name,
+            userPhone: reservationUser?.phone,
+            event: "cancelled",
+            context: {
+              stationName: station?.name ?? `Estación #${reservation.stationId}`,
+              connectorLabel: evse?.connectorId ?? reservation.evseId,
+              refundAmount: result.refundAmount,
+            },
+          });
+        } catch (notificationError) {
+          console.error("[Reservation] cancellation notification error:", notificationError);
+        }
+      }
       
       return { 
         success: result.success, 
@@ -4238,6 +4469,391 @@ const settingsRouter = router({
       return { accounts: [], error: e.message };
     }
   }),
+
+  // Multi-Proveedor Facturación Electrónica (Alegra, Siigo, World Office)
+  billingGetPlatformConfig: adminProcedure.query(async () => {
+    const tenantConfig = await db.getTenantBillingSettings(null);
+    const legacy = await db.getPlatformSettings();
+
+    if (!tenantConfig) {
+      return {
+        provider: "alegra" as const,
+        enabled: !!legacy?.alegraEnabled,
+        environment: legacy?.alegraTestMode ? "sandbox" : "production",
+        autoInvoice: legacy?.alegraAutoInvoice !== 0,
+        autoSendEmail: true,
+        billingRoundingMode: "two_decimals" as const,
+        resolutionNumber: legacy?.alegraResolutionNumber || "",
+        alegraEmail: legacy?.alegraEmail || "",
+        alegraToken: legacy?.alegraToken ? "****" + legacy.alegraToken.slice(-4) : "",
+        alegraDefaultItemId: legacy?.alegraDefaultItemId || "",
+        alegraDefaultTaxId: legacy?.alegraDefaultTaxId || "",
+        alegraPaymentMethodId: legacy?.alegraPaymentMethodId || "",
+        alegraPaymentAccountId: legacy?.alegraPaymentAccountId || "",
+        alegraUseElectronicStamp: true,
+        siigoUsername: "",
+        siigoAccessKey: "",
+        siigoPartnerId: "EVGreenSaaS",
+        siigoDocumentId: "",
+        siigoSellerId: "",
+        siigoPaymentTypeId: "",
+        siigoProductCode: "",
+        siigoTaxId: "",
+        siigoStamp: true,
+        siigoMail: true,
+        worldOfficeToken: "",
+        worldOfficeCompanyId: "",
+        worldOfficeDocumentTypeId: "",
+        worldOfficePrefixId: "",
+        worldOfficePaymentMethodId: "",
+        worldOfficeItemId: "",
+        worldOfficeTaxId: "",
+        selectedProductId: "",
+        selectedProductName: "",
+        selectedProductCode: "",
+        selectedProductPrice: null,
+        selectedProductTaxes: null,
+        selectedProductUnit: "",
+        selectedProductTaxIncluded: null,
+        selectedProductSyncedAt: null,
+        webhookSecret: "",
+        webhookConfiguredAt: null,
+        lastTestStatus: "none" as const,
+        lastTestMessage: null,
+        lastTestedAt: null,
+      };
+    }
+
+    return {
+      ...tenantConfig,
+      enabled: !!tenantConfig.enabled,
+      autoInvoice: tenantConfig.autoInvoice !== 0,
+      autoSendEmail: tenantConfig.autoSendEmail !== 0,
+      billingRoundingMode: (tenantConfig.billingRoundingMode as any) || "two_decimals",
+      alegraUseElectronicStamp: tenantConfig.alegraUseElectronicStamp !== 0,
+      siigoStamp: tenantConfig.siigoStamp !== 0,
+      siigoMail: tenantConfig.siigoMail !== 0,
+      alegraToken: tenantConfig.alegraToken ? "****" + tenantConfig.alegraToken.slice(-4) : "",
+      alegraEProviderToken: tenantConfig.alegraEProviderToken ? "****" + tenantConfig.alegraEProviderToken.slice(-4) : "",
+      alegraNumberTemplateId: tenantConfig.alegraNumberTemplateId || "",
+      alegraNumberTemplateName: tenantConfig.alegraNumberTemplateName || "",
+      alegraNumberTemplatePrefix: tenantConfig.alegraNumberTemplatePrefix || "",
+      alegraNumberTemplateResolution: tenantConfig.alegraNumberTemplateResolution || "",
+      alegraNumberTemplateStartDate: tenantConfig.alegraNumberTemplateStartDate || "",
+      alegraNumberTemplateEndDate: tenantConfig.alegraNumberTemplateEndDate || "",
+      alegraNumberTemplateStartNumber: tenantConfig.alegraNumberTemplateStartNumber || null,
+      alegraNumberTemplateEndNumber: tenantConfig.alegraNumberTemplateEndNumber || null,
+      alegraNumberTemplateCurrentNumber: tenantConfig.alegraNumberTemplateCurrentNumber || null,
+      alegraNumberTemplateSyncedAt: tenantConfig.alegraNumberTemplateSyncedAt || null,
+      siigoAccessKey: tenantConfig.siigoAccessKey ? "****" + tenantConfig.siigoAccessKey.slice(-4) : "",
+      worldOfficeToken: tenantConfig.worldOfficeToken ? "****" + tenantConfig.worldOfficeToken.slice(-4) : "",
+        webhookSecret: tenantConfig.webhookSecret ? "****" + tenantConfig.webhookSecret.slice(-4) : "",
+        fallbackCustomerEnabled: tenantConfig.fallbackCustomerEnabled !== 0,
+        fallbackCustomerId: tenantConfig.fallbackCustomerId || "",
+        fallbackCustomerName: tenantConfig.fallbackCustomerName || "",
+        fallbackCustomerDocumentType: tenantConfig.fallbackCustomerDocumentType || "CC",
+        fallbackCustomerDocumentNumber: tenantConfig.fallbackCustomerDocumentNumber || "",
+        fallbackCustomerEmail: tenantConfig.fallbackCustomerEmail || "",
+        fallbackCustomerAddress: tenantConfig.fallbackCustomerAddress || "",
+        fallbackCustomerCity: tenantConfig.fallbackCustomerCity || "",
+        fallbackCustomerDepartment: tenantConfig.fallbackCustomerDepartment || "",
+        fallbackCustomerKindOfPerson: tenantConfig.fallbackCustomerKindOfPerson || "PERSON_ENTITY",
+        fallbackCustomerRegime: tenantConfig.fallbackCustomerRegime || "SIMPLIFIED_REGIME",
+      };
+    }),
+
+  billingSavePlatformConfig: adminProcedure
+    .input(
+      z.object({
+        provider: z.enum(["alegra", "siigo", "world_office"]).default("alegra"),
+        enabled: z.boolean(),
+        environment: z.enum(["sandbox", "production"]).default("production"),
+        autoInvoice: z.boolean().default(true),
+        autoSendEmail: z.boolean().default(true),
+        billingRoundingMode: z.enum(["nearest_integer", "two_decimals"]).default("two_decimals"),
+        resolutionNumber: z.string().optional(),
+        alegraEmail: z.string().optional(),
+        alegraToken: z.string().optional(),
+        alegraEProviderToken: z.string().optional(),
+        alegraDefaultItemId: z.string().optional(),
+        alegraDefaultTaxId: z.string().optional(),
+        alegraPaymentMethodId: z.string().optional(),
+        alegraPaymentAccountId: z.string().optional(),
+        alegraUseElectronicStamp: z.boolean().optional(),
+        alegraNumberTemplateId: z.string().optional(),
+        alegraNumberTemplateName: z.string().optional(),
+        alegraNumberTemplatePrefix: z.string().optional(),
+        alegraNumberTemplateResolution: z.string().optional(),
+        alegraNumberTemplateStartDate: z.string().optional(),
+        alegraNumberTemplateEndDate: z.string().optional(),
+        alegraNumberTemplateStartNumber: z.number().optional().nullable(),
+        alegraNumberTemplateEndNumber: z.number().optional().nullable(),
+        alegraNumberTemplateCurrentNumber: z.number().optional().nullable(),
+        alegraNumberTemplateSyncedAt: z.string().optional().nullable(),
+        siigoUsername: z.string().optional(),
+        siigoAccessKey: z.string().optional(),
+        siigoPartnerId: z.string().optional(),
+        siigoDocumentId: z.string().optional(),
+        siigoSellerId: z.string().optional(),
+        siigoPaymentTypeId: z.string().optional(),
+        siigoProductCode: z.string().optional(),
+        siigoTaxId: z.string().optional(),
+        siigoStamp: z.boolean().optional(),
+        siigoMail: z.boolean().optional(),
+        worldOfficeToken: z.string().optional(),
+        worldOfficeCompanyId: z.string().optional(),
+        worldOfficeDocumentTypeId: z.string().optional(),
+        worldOfficePrefixId: z.string().optional(),
+        worldOfficePaymentMethodId: z.string().optional(),
+        worldOfficeItemId: z.string().optional(),
+        worldOfficeTaxId: z.string().optional(),
+        selectedProductId: z.string().optional(),
+        selectedProductName: z.string().optional(),
+        selectedProductCode: z.string().optional(),
+        selectedProductPrice: z.number().optional().nullable(),
+        selectedProductTaxes: z.string().optional().nullable(),
+        selectedProductUnit: z.string().optional().nullable(),
+        selectedProductTaxIncluded: z.boolean().optional().nullable(),
+        selectedProductSyncedAt: z.string().optional().nullable(),
+        fallbackCustomerEnabled: z.boolean().optional(),
+        fallbackCustomerId: z.string().optional(),
+        fallbackCustomerName: z.string().optional(),
+        fallbackCustomerDocumentType: z.string().optional(),
+        fallbackCustomerDocumentNumber: z.string().optional(),
+        fallbackCustomerEmail: z.string().optional(),
+        fallbackCustomerAddress: z.string().optional(),
+        fallbackCustomerCity: z.string().optional(),
+        fallbackCustomerDepartment: z.string().optional(),
+        fallbackCustomerKindOfPerson: z.string().optional(),
+        fallbackCustomerRegime: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }: any) => {
+      const payload: any = {
+        provider: input.provider,
+        enabled: input.enabled ? 1 : 0,
+        environment: input.environment,
+        autoInvoice: input.autoInvoice ? 1 : 0,
+        autoSendEmail: input.autoSendEmail ? 1 : 0,
+        billingRoundingMode: input.billingRoundingMode || "two_decimals",
+        resolutionNumber: input.resolutionNumber || null,
+        alegraEmail: input.alegraEmail || null,
+        alegraDefaultItemId: input.alegraDefaultItemId || null,
+        alegraDefaultTaxId: input.alegraDefaultTaxId || null,
+        alegraPaymentMethodId: input.alegraPaymentMethodId || (input.provider === "alegra" ? "transfer" : null),
+        alegraPaymentAccountId: input.alegraPaymentAccountId || null,
+        alegraUseElectronicStamp: input.alegraUseElectronicStamp !== false ? 1 : 0,
+        alegraNumberTemplateId: input.alegraNumberTemplateId || null,
+        alegraNumberTemplateName: input.alegraNumberTemplateName || null,
+        alegraNumberTemplatePrefix: input.alegraNumberTemplatePrefix || null,
+        alegraNumberTemplateResolution: input.alegraNumberTemplateResolution || null,
+        alegraNumberTemplateStartDate: input.alegraNumberTemplateStartDate || null,
+        alegraNumberTemplateEndDate: input.alegraNumberTemplateEndDate || null,
+        alegraNumberTemplateStartNumber: input.alegraNumberTemplateStartNumber !== undefined && input.alegraNumberTemplateStartNumber !== null ? input.alegraNumberTemplateStartNumber : null,
+        alegraNumberTemplateEndNumber: input.alegraNumberTemplateEndNumber !== undefined && input.alegraNumberTemplateEndNumber !== null ? input.alegraNumberTemplateEndNumber : null,
+        alegraNumberTemplateCurrentNumber: input.alegraNumberTemplateCurrentNumber !== undefined && input.alegraNumberTemplateCurrentNumber !== null ? input.alegraNumberTemplateCurrentNumber : null,
+        alegraNumberTemplateSyncedAt: input.alegraNumberTemplateSyncedAt || null,
+        siigoUsername: input.siigoUsername || null,
+        siigoPartnerId: input.siigoPartnerId || "EVGreenSaaS",
+        siigoDocumentId: input.siigoDocumentId || null,
+        siigoSellerId: input.siigoSellerId || null,
+        siigoPaymentTypeId: input.siigoPaymentTypeId || null,
+        siigoProductCode: input.siigoProductCode || null,
+        siigoTaxId: input.siigoTaxId || null,
+        siigoStamp: input.siigoStamp !== false ? 1 : 0,
+        siigoMail: input.siigoMail !== false ? 1 : 0,
+        worldOfficeCompanyId: input.worldOfficeCompanyId || null,
+        worldOfficeDocumentTypeId: input.worldOfficeDocumentTypeId || null,
+        worldOfficePrefixId: input.worldOfficePrefixId || null,
+        worldOfficePaymentMethodId: input.worldOfficePaymentMethodId || null,
+        worldOfficeItemId: input.worldOfficeItemId || null,
+        worldOfficeTaxId: input.worldOfficeTaxId || null,
+        selectedProductId: input.selectedProductId || null,
+        selectedProductName: input.selectedProductName || null,
+        selectedProductCode: input.selectedProductCode || null,
+        selectedProductPrice: input.selectedProductPrice !== undefined && input.selectedProductPrice !== null ? String(input.selectedProductPrice) : null,
+        selectedProductTaxes: input.selectedProductTaxes || null,
+        selectedProductUnit: input.selectedProductUnit || null,
+        selectedProductTaxIncluded: input.selectedProductTaxIncluded === true ? 1 : input.selectedProductTaxIncluded === false ? 0 : null,
+        selectedProductSyncedAt: input.selectedProductSyncedAt || null,
+        fallbackCustomerEnabled: input.fallbackCustomerEnabled ? 1 : 0,
+        fallbackCustomerId: input.fallbackCustomerId || null,
+        fallbackCustomerName: input.fallbackCustomerName || null,
+        fallbackCustomerDocumentType: input.fallbackCustomerDocumentType || null,
+        fallbackCustomerDocumentNumber: input.fallbackCustomerDocumentNumber || null,
+        fallbackCustomerEmail: input.fallbackCustomerEmail || null,
+        fallbackCustomerAddress: input.fallbackCustomerAddress || null,
+        fallbackCustomerCity: input.fallbackCustomerCity || null,
+        fallbackCustomerDepartment: input.fallbackCustomerDepartment || null,
+        fallbackCustomerKindOfPerson: input.fallbackCustomerKindOfPerson || null,
+        fallbackCustomerRegime: input.fallbackCustomerRegime || null,
+        updatedBy: ctx.user.id,
+      };
+
+      if (input.alegraToken && !input.alegraToken.startsWith("****")) {
+        payload.alegraToken = input.alegraToken;
+      }
+      if (input.alegraEProviderToken && !input.alegraEProviderToken.startsWith("****")) {
+        payload.alegraEProviderToken = input.alegraEProviderToken;
+      }
+      if (input.siigoAccessKey && !input.siigoAccessKey.startsWith("****")) {
+        payload.siigoAccessKey = input.siigoAccessKey;
+      }
+      if (input.worldOfficeToken && !input.worldOfficeToken.startsWith("****")) {
+        payload.worldOfficeToken = input.worldOfficeToken;
+      }
+
+      await db.upsertTenantBillingSettings(null, payload);
+
+      // Sincronizar en platformSettings para compatibilidad legacy
+      if (input.provider === "alegra") {
+        await db.upsertPlatformSettings({
+          alegraEnabled: input.enabled ? 1 : 0,
+          alegraEmail: input.alegraEmail,
+          alegraTestMode: input.environment === "sandbox" ? 1 : 0,
+          alegraAutoInvoice: input.autoInvoice ? 1 : 0,
+          alegraDefaultItemId: input.alegraDefaultItemId,
+          alegraDefaultTaxId: input.alegraDefaultTaxId,
+          alegraPaymentMethodId: input.alegraPaymentMethodId || "transfer",
+          alegraPaymentAccountId: input.alegraPaymentAccountId,
+          alegraResolutionNumber: input.resolutionNumber,
+          ...(payload.alegraToken ? { alegraToken: payload.alegraToken } : {}),
+        });
+      }
+
+      return { success: true, message: "Configuración global de facturación electrónica guardada" };
+    }),
+
+  billingTestPlatformConnection: adminProcedure
+    .input(
+      z.object({
+        provider: z.enum(["alegra", "siigo", "world_office"]),
+        alegraEmail: z.string().optional(),
+        alegraToken: z.string().optional(),
+        siigoUsername: z.string().optional(),
+        siigoAccessKey: z.string().optional(),
+        siigoPartnerId: z.string().optional(),
+        worldOfficeToken: z.string().optional(),
+        worldOfficeCompanyId: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const current = await db.getTenantBillingSettings(null);
+      const legacy = await db.getPlatformSettings();
+      const testPayload: Record<string, any> = { ...input };
+
+      if ((!input.alegraToken || input.alegraToken.startsWith("****"))) {
+        testPayload.alegraToken = current?.alegraToken || legacy?.alegraToken || "";
+      }
+      if ((!input.siigoAccessKey || input.siigoAccessKey.startsWith("****")) && current?.siigoAccessKey) {
+        testPayload.siigoAccessKey = current.siigoAccessKey;
+      }
+      if ((!input.worldOfficeToken || input.worldOfficeToken.startsWith("****")) && current?.worldOfficeToken) {
+        testPayload.worldOfficeToken = current.worldOfficeToken;
+      }
+
+      const { testProviderConnection } = await import("./billing/billing-service");
+      const result = await testProviderConnection(input.provider, testPayload);
+
+      await db.upsertTenantBillingSettings(null, {
+        lastTestStatus: result.success ? "success" : "error",
+        lastTestMessage: result.message || result.error || null,
+        lastTestedAt: new Date().toISOString(),
+      });
+
+      return result;
+    }),
+
+  billingListPlatformCatalogs: adminProcedure
+    .input(z.object({
+      provider: z.enum(["alegra", "siigo", "world_office"]).optional(),
+      query: z.string().optional(),
+      contactsQuery: z.string().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      const settings = (await db.getTenantBillingSettings(null)) || (await db.getPlatformSettings());
+      if (!settings) return { items: [], taxes: [], paymentMethods: [], bankAccounts: [], documentTypes: [], contacts: [] };
+      const provider = input?.provider || (settings as any).provider || "alegra";
+      const { getProviderCatalogs } = await import("./billing/billing-service");
+      return getProviderCatalogs(provider, settings as any, input?.query, input?.contactsQuery);
+    }),
+
+  billingSearchPlatformContacts: adminProcedure
+    .input(z.object({
+      query: z.string().optional(),
+      provider: z.enum(["alegra", "siigo", "world_office"]).optional(),
+    }))
+    .query(async ({ input }) => {
+      const settings = (await db.getTenantBillingSettings(null)) || (await db.getPlatformSettings());
+      if (!settings) return [];
+      const provider = input.provider || (settings as any).provider || "alegra";
+      const { getAdapter } = await import("./billing/billing-service");
+      const adapter = getAdapter(provider as any);
+      if (!adapter.listContacts) return [];
+      return adapter.listContacts(settings as any, input.query);
+    }),
+
+  billingConfigurePlatformWebhook: adminProcedure
+    .input(z.object({
+      webhookUrl: z.string().url(),
+      provider: z.enum(["alegra", "siigo", "world_office"]).optional(),
+      alegraEProviderToken: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const current = await db.getTenantBillingSettings(null);
+      const legacy = await db.getPlatformSettings();
+      const provider = input.provider || current?.provider || "alegra";
+      const effectiveSettings: Record<string, any> = { ...(legacy || {}), ...(current || {}) };
+
+      if (input.alegraEProviderToken && !input.alegraEProviderToken.startsWith("****")) {
+        effectiveSettings.alegraEProviderToken = input.alegraEProviderToken;
+      }
+
+      let secret = current?.webhookSecret;
+      if (!secret) {
+        secret = (await import("crypto")).randomBytes(24).toString("hex");
+        await db.upsertTenantBillingSettings(null, {
+          webhookSecret: secret,
+        });
+      }
+
+      const { configureProviderWebhook } = await import("./billing/billing-service");
+      const result = await configureProviderWebhook(provider, effectiveSettings, input.webhookUrl, secret);
+      if (result.success) {
+        await db.upsertTenantBillingSettings(null, {
+          webhookConfiguredAt: new Date().toISOString(),
+          ...(input.alegraEProviderToken && !input.alegraEProviderToken.startsWith("****")
+            ? { alegraEProviderToken: input.alegraEProviderToken }
+            : {}),
+        });
+      }
+      return result;
+    }),
+
+  billingListInvoices: adminProcedure
+    .input(z.object({
+      organizationId: z.number().optional().nullable(),
+      status: z.string().optional(),
+      customerSource: z.enum(["USER", "FALLBACK"]).optional(),
+      limit: z.number().default(20),
+      offset: z.number().default(0),
+    }).optional())
+    .query(async ({ input }) => {
+      return db.getElectronicInvoicesByOrg({
+        organizationId: input?.organizationId,
+        status: input?.status,
+        customerSource: input?.customerSource,
+        limit: input?.limit,
+        offset: input?.offset,
+      });
+    }),
+
+  billingRetryInvoice: adminProcedure
+    .input(z.object({ invoiceRecordId: z.number(), forceSync: z.boolean().optional() }))
+    .mutation(async ({ input }) => {
+      const { retryElectronicInvoice } = await import("./billing/billing-service");
+      return retryElectronicInvoice(input.invoiceRecordId, !!input.forceSync);
+    }),
   // Resend: Test connection
   testResendConnection: adminProcedure
     .input(z.object({
@@ -4638,8 +5254,8 @@ const crowdfundingRouter = router({
     }),
   
   // Admin: Crear proyecto
-  createProject: adminProcedure
-    .input(z.object({
+	  createProject: adminProcedure
+	    .input(z.object({
       name: z.string().min(1),
       description: z.string().optional(),
       city: z.string().min(1),
@@ -4663,17 +5279,53 @@ const crowdfundingRouter = router({
       energyPurchaseCostPerKwh: z.string().optional(),
       hostName: z.string().optional(),
       hostUserId: z.number().optional(),
-      latitude: z.string().optional(),
-      longitude: z.string().optional(),
-    }))
-    .mutation(async ({ ctx, input }) => {
-      const { evgreenSharePercent, investorSharePercent, hostSharePercent, energyPurchaseCostPerKwh, hostName, hostUserId, latitude, longitude, ...projectInput } = input;
-      
-      // 1. Crear el proyecto crowdfunding
-      const projectId = await db.createCrowdfundingProject({
-        ...projectInput,
-        createdById: ctx.user.id,
-      });
+	      latitude: z.string().optional(),
+	      longitude: z.string().optional(),
+	      financialProjection: z.object({
+	        selectedScenario: z.enum(["PESSIMISTIC", "REALISTIC", "OPTIMISTIC"]),
+	        salePricePerKwh: z.number().positive(),
+	        energyCostPerKwh: z.number().min(0),
+	        hostSharePercent: z.number().min(0).max(50),
+	        investorSharePercent: z.number().min(0).max(100),
+	        evgreenSharePercent: z.number().min(0).max(100),
+	        efficiencyPercent: z.number().positive().max(100),
+	        fixedMonthlyExpenses: z.number().min(0).optional(),
+	      }).optional(),
+	    }))
+	    .mutation(async ({ ctx, input }) => {
+	      const { evgreenSharePercent, investorSharePercent, hostSharePercent, energyPurchaseCostPerKwh, hostName, hostUserId, latitude, longitude, financialProjection, ...projectInput } = input;
+	      if (!financialProjection) {
+	        throw new TRPCError({ code: "BAD_REQUEST", message: "Aplica un escenario del simulador antes de crear el proyecto." });
+	      }
+	      const projectionTimestamp = new Date().toISOString().slice(0, 19).replace("T", " ");
+	      const projectionSnapshot = financialProjection
+	        ? buildCrowdfundingProjectionSnapshot({
+	            investmentCop: projectInput.targetAmount,
+	            totalPowerKw: projectInput.totalPowerKw ?? 480,
+	            salePricePerKwh: financialProjection.salePricePerKwh,
+	            energyCostPerKwh: financialProjection.energyCostPerKwh,
+	            hostSharePercent: financialProjection.hostSharePercent,
+	            investorSharePercent: financialProjection.investorSharePercent,
+	            evgreenSharePercent: financialProjection.evgreenSharePercent,
+	            efficiencyPercent: financialProjection.efficiencyPercent,
+	            fixedMonthlyExpenses: financialProjection.fixedMonthlyExpenses ?? 0,
+	          }, financialProjection.selectedScenario)
+	        : null;
+	      const selectedProjection = projectionSnapshot ? getSelectedCrowdfundingProjection(projectionSnapshot) : null;
+
+	      // 1. Crear el proyecto crowdfunding
+	      const projectId = await db.createCrowdfundingProject({
+	        ...projectInput,
+	        ...(selectedProjection ? {
+	          estimatedRoiPercent: selectedProjection.roiAnnualPercent,
+	          estimatedPaybackMonths: Math.ceil(selectedProjection.paybackMonths),
+	          financialProjectionSnapshot: projectionSnapshot,
+	          financialProjectionScenario: projectionSnapshot!.selectedScenario,
+	          financialProjectionUpdatedAt: projectionTimestamp,
+	          financialProjectionUpdatedBy: ctx.user.id,
+	        } : {}),
+	        createdById: ctx.user.id,
+	      });
       
       // 2. Auto-crear estación física vinculada al proyecto
       const stationName = `${input.name}`;
@@ -4690,10 +5342,10 @@ const crowdfundingRouter = router({
         isActive: 0, // Inactiva hasta que se instale
         isPublic: 0,
         // Modelo financiero
-        evgreenSharePercent: evgreenSharePercent || '30.00',
-        investorSharePercent: investorSharePercent || '70.00',
-        hostSharePercent: hostSharePercent || '10.00',
-        energyPurchaseCostPerKwh: energyPurchaseCostPerKwh || '800.00',
+	        evgreenSharePercent: evgreenSharePercent || String(financialProjection?.evgreenSharePercent ?? 30),
+	        investorSharePercent: investorSharePercent || String(financialProjection?.investorSharePercent ?? 70),
+	        hostSharePercent: hostSharePercent || String(financialProjection?.hostSharePercent ?? 10),
+	        energyPurchaseCostPerKwh: energyPurchaseCostPerKwh || String(financialProjection?.energyCostPerKwh ?? 800),
         hostName: hostName || null,
         hostUserId: hostUserId || null,
       });
@@ -4744,12 +5396,74 @@ const crowdfundingRouter = router({
       targetDate: z.date().optional(),
 	      priority: z.number().optional(),
 	      stationId: z.number().optional(),
+	      evgreenSharePercent: z.string().optional(),
+	      investorSharePercent: z.string().optional(),
+	      hostSharePercent: z.string().optional(),
+	      energyPurchaseCostPerKwh: z.string().optional(),
+	      hostName: z.string().optional(),
+	      latitude: z.string().optional(),
+	      longitude: z.string().optional(),
+	      financialProjection: z.object({
+	        selectedScenario: z.enum(["PESSIMISTIC", "REALISTIC", "OPTIMISTIC"]),
+	        salePricePerKwh: z.number().positive(),
+	        energyCostPerKwh: z.number().min(0),
+	        hostSharePercent: z.number().min(0).max(50),
+	        investorSharePercent: z.number().min(0).max(100),
+	        evgreenSharePercent: z.number().min(0).max(100),
+	        efficiencyPercent: z.number().positive().max(100),
+	        fixedMonthlyExpenses: z.number().min(0).optional(),
+	      }).optional(),
 		financialOverrideReason: z.string().trim().min(15).max(2000).optional(),
 	    }))
 	    .mutation(async ({ input, ctx }) => {
-	      const { id, financialOverrideReason, ...data } = input;
+	      const {
+	        id,
+	        financialOverrideReason,
+	        financialProjection,
+	        evgreenSharePercent,
+	        investorSharePercent,
+	        hostSharePercent,
+	        energyPurchaseCostPerKwh,
+	        hostName,
+	        latitude,
+	        longitude,
+	        ...data
+	      } = input;
 			const current = await db.getCrowdfundingProjectById(id);
 			if (!current) throw new TRPCError({ code: "NOT_FOUND", message: "Proyecto no encontrado" });
+			const changesProjectionDrivers = ["targetAmount", "totalPowerKw", "estimatedRoiPercent", "estimatedPaybackMonths"].some((field) => {
+				const nextValue = (data as Record<string, unknown>)[field];
+				return nextValue !== undefined && Number(nextValue) !== Number((current as any)[field]);
+			});
+			const editsInheritedBeforeProjection = requiresFinancialOverride(current, data as Record<string, unknown>);
+			if (editsInheritedBeforeProjection && !financialOverrideReason) {
+				throw new TRPCError({ code: "BAD_REQUEST", message: "Indica el motivo de la excepción antes de cambiar valores heredados de Espacios." });
+			}
+			if (changesProjectionDrivers && !financialProjection) {
+				throw new TRPCError({ code: "BAD_REQUEST", message: "Aplica un escenario del simulador para recalcular ROI y payback antes de guardar." });
+			}
+			if (financialProjection) {
+				const projectionSnapshot = buildCrowdfundingProjectionSnapshot({
+					investmentCop: data.targetAmount ?? current.targetAmount,
+					totalPowerKw: data.totalPowerKw ?? current.totalPowerKw,
+					salePricePerKwh: financialProjection.salePricePerKwh,
+					energyCostPerKwh: financialProjection.energyCostPerKwh,
+					hostSharePercent: financialProjection.hostSharePercent,
+					investorSharePercent: financialProjection.investorSharePercent,
+					evgreenSharePercent: financialProjection.evgreenSharePercent,
+					efficiencyPercent: financialProjection.efficiencyPercent,
+					fixedMonthlyExpenses: financialProjection.fixedMonthlyExpenses ?? 0,
+				}, financialProjection.selectedScenario);
+				const selectedProjection = getSelectedCrowdfundingProjection(projectionSnapshot);
+				Object.assign(data, {
+					estimatedRoiPercent: selectedProjection.roiAnnualPercent,
+					estimatedPaybackMonths: Math.ceil(selectedProjection.paybackMonths),
+					financialProjectionSnapshot: projectionSnapshot,
+					financialProjectionScenario: projectionSnapshot.selectedScenario,
+					financialProjectionUpdatedAt: new Date().toISOString().slice(0, 19).replace("T", " "),
+					financialProjectionUpdatedBy: ctx.user.id,
+				});
+			}
 			const editsInheritedFinancialData = requiresFinancialOverride(current, data as Record<string, unknown>);
 			if (editsInheritedFinancialData && !financialOverrideReason) {
 				throw new TRPCError({ code: "BAD_REQUEST", message: "Indica el motivo de la excepción antes de cambiar valores heredados de Espacios." });
@@ -4762,8 +5476,20 @@ const crowdfundingRouter = router({
 				});
 			}
 	      await db.updateCrowdfundingProject(id, data);
-      return { success: true };
-    }),
+	      if (current.stationId) {
+	        const stationUpdate = Object.fromEntries(Object.entries({
+	          evgreenSharePercent,
+	          investorSharePercent,
+	          hostSharePercent,
+	          energyPurchaseCostPerKwh,
+	          hostName,
+	          latitude,
+	          longitude,
+	        }).filter(([, value]) => value !== undefined));
+	        if (Object.keys(stationUpdate).length > 0) await db.updateChargingStation(current.stationId, stationUpdate as any);
+	      }
+	      return { success: true };
+	    }),
   
   // Obtener participaciones de un proyecto
   getParticipations: adminProcedure
@@ -5149,8 +5875,8 @@ const crowdfundingRouter = router({
     }),
 
 	  bulkManageProjects: strictAdminProcedure
-		    .input(z.object({
-		      projectIds: z.array(z.number().int().positive()).min(1).max(500),
+	    .input(z.object({
+	      projectIds: z.array(z.number().int().positive()).min(1).max(500),
 		      action: z.discriminatedUnion("type", [
 		        z.object({ type: z.literal("PUBLISH") }),
 		        z.object({
@@ -5163,13 +5889,13 @@ const crowdfundingRouter = router({
 		          reason: z.string().trim().min(10, "La justificación debe tener al menos 10 caracteres").max(2000),
 		        }),
 		        z.object({ type: z.literal("DELETE") }),
-		      ]),
-		    }))
-		    .mutation(async ({ input, ctx }) => {
-		      return manageCrowdfundingProjectsBulk({
-		        projectIds: input.projectIds,
-		        action: input.action,
-		        actorId: ctx.user.id,
+	      ]),
+	    }))
+	    .mutation(async ({ input, ctx }) => {
+	      return manageCrowdfundingProjectsBulk({
+	        projectIds: input.projectIds,
+	        action: input.action,
+	        actorId: ctx.user.id,
 		      });
 		    }),
 
@@ -5195,7 +5921,7 @@ const crowdfundingRouter = router({
 		    }),
 
 		  // Admin: Eliminar proyecto de crowdfunding completo
-		  deleteProject: strictAdminProcedure
+	  deleteProject: strictAdminProcedure
 	    .input(z.object({ projectId: z.number() }))
 	    .mutation(async ({ input, ctx }) => {
 	      const result = await manageCrowdfundingProjectsBulk({
@@ -5532,6 +6258,7 @@ const userConfigRouter = router({
         waNotifyChargeStart: true,
         waNotifyChargeEnd: true,
         waNotifyReminder: false,
+        waNotifyReservations: true,
         waNotifyPenalty: true,
         waNotifyWallet: true,
       };
@@ -5541,6 +6268,7 @@ const userConfigRouter = router({
         waNotifyChargeStart: users.waNotifyChargeStart,
         waNotifyChargeEnd: users.waNotifyChargeEnd,
         waNotifyReminder: users.waNotifyReminder,
+        waNotifyReservations: users.waNotifyReservations,
         waNotifyPenalty: users.waNotifyPenalty,
         waNotifyWallet: users.waNotifyWallet,
       })
@@ -5552,6 +6280,7 @@ const userConfigRouter = router({
       waNotifyChargeStart: user?.waNotifyChargeStart ?? true,
       waNotifyChargeEnd: user?.waNotifyChargeEnd ?? true,
       waNotifyReminder: user?.waNotifyReminder ?? false,
+      waNotifyReservations: user?.waNotifyReservations ?? true,
       waNotifyPenalty: user?.waNotifyPenalty ?? true,
       waNotifyWallet: user?.waNotifyWallet ?? true,
     };
@@ -5563,6 +6292,7 @@ const userConfigRouter = router({
       waNotifyChargeStart: z.boolean().optional(),
       waNotifyChargeEnd: z.boolean().optional(),
       waNotifyReminder: z.boolean().optional(),
+      waNotifyReservations: z.boolean().optional(),
       waNotifyPenalty: z.boolean().optional(),
       waNotifyWallet: z.boolean().optional(),
     }))
@@ -5576,6 +6306,7 @@ const userConfigRouter = router({
       if (input.waNotifyChargeStart !== undefined) updateData.waNotifyChargeStart = input.waNotifyChargeStart;
       if (input.waNotifyChargeEnd !== undefined) updateData.waNotifyChargeEnd = input.waNotifyChargeEnd;
       if (input.waNotifyReminder !== undefined) updateData.waNotifyReminder = input.waNotifyReminder;
+      if (input.waNotifyReservations !== undefined) updateData.waNotifyReservations = input.waNotifyReservations;
       if (input.waNotifyPenalty !== undefined) updateData.waNotifyPenalty = input.waNotifyPenalty;
       if (input.waNotifyWallet !== undefined) updateData.waNotifyWallet = input.waNotifyWallet;
 
@@ -7514,11 +8245,15 @@ const whatsappRouter = router({
   getConfig: adminProcedure.query(async () => {
     const { getWhatsAppConfig } = await import("./whatsapp/whatsapp-service");
     const cfg = await getWhatsAppConfig();
-    // Mask the access token for security
-    if (cfg?.accessToken) {
-      return { ...cfg, accessToken: cfg.accessToken.slice(0, 8) + "*".repeat(20) + cfg.accessToken.slice(-4) };
-    }
-    return cfg;
+    if (!cfg) return cfg;
+    // Los secretos nunca vuelven al navegador; la UI sólo conoce si están configurados.
+    const { accessToken, appSecret, verifyToken, ...safeConfig } = cfg;
+    return {
+      ...safeConfig,
+      accessToken: accessToken ? accessToken.slice(0, 8) + "*".repeat(20) + accessToken.slice(-4) : "",
+      appSecretConfigured: Boolean(appSecret),
+      verifyTokenConfigured: Boolean(verifyToken),
+    };
   }),
 
   saveConfig: adminProcedure
@@ -7529,6 +8264,8 @@ const whatsappRouter = router({
       wabaId: z.string().optional(),
       fromPhone: z.string().optional(),
       adminPhone: z.string().optional(),
+      appSecret: z.string().min(16).optional(),
+      verifyToken: z.string().min(16).optional(),
       notifyChargeStart: z.boolean().optional(),
       notifyChargeEnd: z.boolean().optional(),
       notifyChargeProgress: z.boolean().optional(),
@@ -7537,6 +8274,8 @@ const whatsappRouter = router({
       notifyChargerOffline: z.boolean().optional(),
       notifyReservation: z.boolean().optional(),
       notifyMonthlySummary: z.boolean().optional(),
+      notifyStationAvailable: z.boolean().optional(),
+      stationAvailableTemplateName: z.string().regex(/^[a-z0-9_]{1,100}$/).optional(),
     }))
     .mutation(async ({ input }) => {
       const dbInst = await getDb();
@@ -7554,6 +8293,8 @@ const whatsappRouter = router({
           ...(input.wabaId && { wabaId: input.wabaId }),
           ...(input.fromPhone && { displayPhone: input.fromPhone }),
           ...(input.adminPhone !== undefined && { adminPhone: input.adminPhone }),
+          ...(input.appSecret && { appSecret: input.appSecret }),
+          ...(input.verifyToken && { verifyToken: input.verifyToken }),
           ...(input.notifyChargeStart !== undefined && { notifyChargeStart: input.notifyChargeStart }),
           ...(input.notifyChargeEnd !== undefined && { notifyChargeEnd: input.notifyChargeEnd }),
           ...(input.notifyChargeProgress !== undefined && { notifyChargeProgress: input.notifyChargeProgress }),
@@ -7562,6 +8303,8 @@ const whatsappRouter = router({
           ...(input.notifyChargerOffline !== undefined && { notifyChargerOffline: input.notifyChargerOffline }),
           ...(input.notifyReservation !== undefined && { notifyReservation: input.notifyReservation }),
           ...(input.notifyMonthlySummary !== undefined && { notifyMonthlySummary: input.notifyMonthlySummary }),
+          ...(input.notifyStationAvailable !== undefined && { notifyStationAvailable: input.notifyStationAvailable }),
+          ...(input.stationAvailableTemplateName !== undefined && { stationAvailableTemplateName: input.stationAvailableTemplateName }),
           updatedAt: new Date().toISOString(),
         }).where(eq(whatsappConfig.id, 1));
       } else {
@@ -7572,6 +8315,8 @@ const whatsappRouter = router({
           accessToken: tokenToSave ?? "",
           wabaId: input.wabaId ?? "",
           displayPhone: input.fromPhone ?? "",
+          appSecret: input.appSecret ?? "",
+          verifyToken: input.verifyToken ?? "",
           notifyChargeStart: input.notifyChargeStart ?? true,
           notifyChargeEnd: input.notifyChargeEnd ?? true,
           notifyChargeProgress: input.notifyChargeProgress ?? false,
@@ -7580,20 +8325,69 @@ const whatsappRouter = router({
           notifyChargerOffline: input.notifyChargerOffline ?? false,
           notifyReservation: input.notifyReservation ?? true,
           notifyMonthlySummary: input.notifyMonthlySummary ?? false,
+          notifyStationAvailable: input.notifyStationAvailable ?? true,
+          stationAvailableTemplateName: input.stationAvailableTemplateName ?? "evgreen_estacion_disponible_v1",
         } as any);
       }
       return { success: true };
     }),
 
+  getStationAvailabilityTemplate: adminProcedure.query(async () => {
+    const { getConfiguredStationAvailabilityTemplate } = await import("./whatsapp/whatsapp-service");
+    return getConfiguredStationAvailabilityTemplate();
+  }),
+
+  refreshStationAvailabilityTemplate: adminProcedure.mutation(async () => {
+    const { refreshStationAvailabilityTemplateStatus } = await import("./whatsapp/whatsapp-service");
+    return refreshStationAvailabilityTemplateStatus();
+  }),
+
+  createStationAvailabilityTemplate: adminProcedure.mutation(async () => {
+    const { createStationAvailabilityTemplate } = await import("./whatsapp/whatsapp-service");
+    return createStationAvailabilityTemplate();
+  }),
+
+  getReservationTemplate: adminProcedure.query(async () => {
+    const { getConfiguredReservationTemplate } = await import("./whatsapp/whatsapp-service");
+    return getConfiguredReservationTemplate();
+  }),
+
+  refreshReservationTemplate: adminProcedure.mutation(async () => {
+    const { refreshReservationTemplateStatus } = await import("./whatsapp/whatsapp-service");
+    return refreshReservationTemplateStatus();
+  }),
+
+  createReservationTemplate: adminProcedure.mutation(async () => {
+    const { createReservationTemplate } = await import("./whatsapp/whatsapp-service");
+    return createReservationTemplate();
+  }),
+
+  getChargerOfflineTemplate: adminProcedure.query(async () => {
+    const { getConfiguredChargerOfflineTemplate } = await import("./whatsapp/whatsapp-service");
+    return getConfiguredChargerOfflineTemplate();
+  }),
+
+  refreshChargerOfflineTemplate: adminProcedure.mutation(async () => {
+    const { refreshChargerOfflineTemplateStatus } = await import("./whatsapp/whatsapp-service");
+    return refreshChargerOfflineTemplateStatus();
+  }),
+
+  createChargerOfflineTemplate: adminProcedure.mutation(async () => {
+    const { createChargerOfflineTemplate } = await import("./whatsapp/whatsapp-service");
+    return createChargerOfflineTemplate();
+  }),
+
   sendTest: adminProcedure
-    .input(z.object({ toPhone: z.string(), message: z.string().optional() }))
+    .input(z.object({ toPhone: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      const { sendWhatsAppMessage } = await import("./whatsapp/whatsapp-service");
-      const ok = await sendWhatsAppMessage({
+      const { sendWhatsAppTemplate, WA_TEMPLATE_NAMES } = await import("./whatsapp/whatsapp-service");
+      const ok = await sendWhatsAppTemplate({
         toPhone: input.toPhone,
-        message: input.message ?? `✅ *EVGreen — Mensaje de prueba*\n\nHola! Este es un mensaje de prueba del sistema de notificaciones WhatsApp de EVGreen.\n\n_Enviado por: ${ctx.user.name || ctx.user.email}_`,
+        templateName: WA_TEMPLATE_NAMES.inicio_carga,
+        parameters: [ctx.user.name || "Administrador", "Estación de prueba EVGreen", "Conector de prueba", new Date().toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })],
         eventType: "charge_start",
-        skipConfigCheck: true, // Los mensajes de prueba siempre se envían sin importar los toggles
+        referenceType: "admin_template_test",
+        skipConfigCheck: true,
       });
       return { success: ok };
     }),
@@ -7920,6 +8714,13 @@ const nocRouter = router({
               ?? (tx.manualBatteryCapacityKwh !== null && tx.manualBatteryCapacityKwh !== undefined
                 ? parseFloat(String(tx.manualBatteryCapacityKwh))
                 : null);
+            const manualSocEffectiveCapacityKwh = liveData?.manualSocEffectiveCapacityKwh
+              ?? (tx.manualSocEffectiveCapacityKwh !== null && tx.manualSocEffectiveCapacityKwh !== undefined
+                ? parseFloat(String(tx.manualSocEffectiveCapacityKwh))
+                : null);
+            const manualSocCalibrationCount = liveData?.manualSocCalibrationCount
+              ?? tx.manualSocCalibrationCount
+              ?? 0;
             const manualSocCalibrationKwh = liveData?.manualSocCalibrationKwh
               ?? (tx.manualSocCalibrationKwh !== null && tx.manualSocCalibrationKwh !== undefined
                 ? parseFloat(String(tx.manualSocCalibrationKwh))
@@ -7930,7 +8731,7 @@ const nocRouter = router({
               chargeType: e.chargeType,
               chargerSoc,
               manualSoc,
-              batteryCapacityKwh: manualBatteryCapacityKwh,
+              batteryCapacityKwh: manualSocEffectiveCapacityKwh ?? manualBatteryCapacityKwh,
               currentEnergyKwh: currentKwh,
               calibrationEnergyKwh: manualSocCalibrationKwh,
               chargeCompleteDetected: liveData?.chargeCompleteDetected ?? false,
@@ -7945,6 +8746,8 @@ const nocRouter = router({
               socSource: operationalSoc.source,
               manualSoc,
               manualBatteryCapacityKwh,
+              manualSocEffectiveCapacityKwh,
+              manualSocCalibrationCount,
               manualSocCalibrationKwh,
               manualSocCalibratedAt,
               energySinceCalibrationKwh: operationalSoc.energySinceCalibrationKwh,
@@ -8219,10 +9022,12 @@ const feedbackRouter = router({
 
 export const appRouter = router({
   system: systemRouter,
+  reports: reportsRouter,
   auth: authRouter,
   users: usersRouter,
   stations: stationsRouter,
   evses: evseRouter,
+  chargers: chargersRouter,
   tariffs: tariffsRouter,
   transactions: transactionsRouter,
   reservations: reservationsRouter,

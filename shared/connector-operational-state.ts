@@ -69,3 +69,58 @@ export function resolveConnectorOperationalState(input: {
     isUnavailable: status === "UNAVAILABLE" || status === "FAULTED",
   };
 }
+
+export type ConnectorOperationalInput = {
+  id: number | string;
+  evseIdLocal?: number | string | null;
+  connectorStatus?: unknown;
+  activeTransactionId?: number | string | null;
+  liveOcppStatus?: unknown;
+};
+
+/**
+ * Proyecta conectores a su estado operativo único. La transacción activa tiene
+ * prioridad sobre una lectura OCPP o persistida que todavía no se haya
+ * reconciliado; con ello una UI nunca debe anunciar un conector ocupado como
+ * disponible.
+ */
+export function projectOperationalConnectorStates<T extends ConnectorOperationalInput>(connectors: T[]) {
+  return connectors.map((connector) => {
+    const operationalState = resolveConnectorOperationalState({
+      liveOcppStatus: connector.liveOcppStatus,
+      persistedStatus: connector.connectorStatus,
+      activeTransactionId: connector.activeTransactionId,
+    });
+    return {
+      ...connector,
+      connectorStatus: operationalState.status ?? "UNAVAILABLE",
+      operationalStatus: operationalState.status,
+      operationalStatusSource: operationalState.source,
+      isAvailable: operationalState.isAvailable,
+      isCharging: operationalState.isCharging,
+      isPreparing: operationalState.isPreparing,
+      isUnavailable: operationalState.isUnavailable,
+    };
+  });
+}
+
+/** Conteo derivado exclusivamente de la proyección canónica de conectores. */
+export function summarizeOperationalConnectorAvailability(connectors: ConnectorOperationalInput[]) {
+  const projected = projectOperationalConnectorStates(connectors);
+  return projected.reduce((summary, connector) => {
+    summary.totalConnectors++;
+    if (connector.isAvailable) summary.availableConnectors++;
+    if (connector.isCharging) summary.chargingConnectors++;
+    if (connector.connectorStatus === "RESERVED") summary.reservedConnectors++;
+    if (connector.connectorStatus === "FAULTED" || connector.connectorStatus === "UNAVAILABLE") {
+      summary.unavailableConnectors++;
+    }
+    return summary;
+  }, {
+    totalConnectors: 0,
+    availableConnectors: 0,
+    chargingConnectors: 0,
+    reservedConnectors: 0,
+    unavailableConnectors: 0,
+  });
+}

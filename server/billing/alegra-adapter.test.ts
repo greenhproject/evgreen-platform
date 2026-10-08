@@ -1,0 +1,255 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { AlegraAdapter } from "./adapters/alegra-adapter";
+
+describe("AlegraAdapter", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("normaliza contacto, método de pago, cuenta y resolución vigente", async () => {
+    // 2026-09-20 00:40 UTC todavía es 2026-09-19 19:40 en Colombia.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-20T00:40:09.000Z"));
+    const requests: Array<{ url: string; body?: any }> = [];
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+      requests.push({ url, body });
+
+      if (url.endsWith("/contacts?identification=1018273645")) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      if (url.endsWith("/contacts")) {
+        return new Response(JSON.stringify({ id: 1 }), { status: 200 });
+      }
+      if (url.endsWith("/items/1900")) {
+        return new Response(JSON.stringify({
+          id: "1900",
+          name: "Servicio de recarga de energia",
+          productKey: "81112100",
+          price: [{ price: 1 }],
+          inventory: { unit: "service" },
+          tax: [],
+        }), { status: 200 });
+      }
+      if (url.endsWith("/number-templates")) {
+        return new Response(JSON.stringify([
+          {
+            id: "21",
+            name: "Factura vencida",
+            documentType: "invoice",
+            isElectronic: true,
+            status: "active",
+            isDefault: true,
+            endDate: "2026-03-07",
+          },
+          {
+            id: "23",
+            name: "FACTURA ELECTRÓNICA DE VENTA",
+            documentType: "invoice",
+            isElectronic: true,
+            status: "active",
+            isDefault: false,
+            startDate: "2026-03-13",
+            endDate: "2028-03-13",
+            resolutionNumber: "18764107155503",
+          },
+        ]), { status: 200 });
+      }
+      if (url.endsWith("/bank-accounts")) {
+        return new Response(JSON.stringify([
+          { id: "1", name: "Caja general", status: "active", type: "cash" },
+        ]), { status: 200 });
+      }
+      if (url.endsWith("/invoices")) {
+        return new Response(JSON.stringify({
+          id: "invoice-1",
+          numberTemplate: { fullNumber: "FV-250" },
+        }), { status: 200 });
+      }
+      throw new Error(`Unexpected Alegra request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const adapter = new AlegraAdapter();
+    const result = await adapter.createInvoice({
+      alegraEmail: "billing@example.com",
+      alegraToken: "token",
+      provider: "alegra",
+      selectedProductId: "1900",
+      selectedProductName: "Servicio de recarga de energia",
+      alegraPaymentMethodId: "1",
+      alegraPaymentAccountId: "11100502",
+      alegraUseElectronicStamp: 1,
+      autoSendEmail: 0,
+    }, {
+      transactionId: 1001,
+      userName: "Andres Salas Lozano",
+      userEmail: "andres@example.com",
+      userDocumentType: "CC",
+      userDocumentNumber: "1018273645",
+      userKindOfPerson: "PERSON_ENTITY",
+      userRegime: "SIMPLIFIED_REGIME",
+      energyDelivered: 16.278,
+      appliedPricePerKwh: 1423,
+      energyCost: 23161,
+      timeCost: 0,
+      sessionCost: 0,
+      overstayCost: 0,
+      totalAmount: 23161,
+      dynamicUnitPrice: 1423,
+      billedConceptDescription: "Servicio de recarga de energia",
+      stationName: "Estación EVGreen",
+      startTime: new Date("2026-09-19T14:00:00Z"),
+      endTime: new Date("2026-09-19T14:30:00Z"),
+      durationMinutes: 30,
+    });
+
+    expect(result.success).toBe(true);
+    const contactRequest = requests.find((request) => request.url.endsWith("/contacts"));
+    expect(contactRequest?.body).toMatchObject({
+      kindOfPerson: "PERSON_ENTITY",
+      nameObject: { firstName: "Andres", lastName: "Salas Lozano" },
+    });
+
+    const invoiceRequest = requests.find((request) => request.url.endsWith("/invoices"));
+    expect(invoiceRequest?.body).toMatchObject({
+      date: "2026-09-19",
+      dueDate: "2026-09-19",
+      client: 1,
+      paymentForm: "CASH",
+      paymentMethod: "CASH",
+      numberTemplate: { id: "23" },
+      payments: [{ date: "2026-09-19", amount: 23161, paymentMethod: "cash", account: { id: 1 } }],
+    });
+    expect(invoiceRequest?.body.items).toEqual([
+      expect.objectContaining({ id: 1900, quantity: 16.28, tax: [] }),
+    ]);
+  });
+
+  it("registra las suscripciones REST con BasicAuth y evita duplicarlas", async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      requests.push({ url, init });
+      if (url.endsWith("/webhooks/subscriptions") && init?.method === "GET") {
+        return new Response(JSON.stringify({ subscriptions: [] }), { status: 200 });
+      }
+      if (url.endsWith("/webhooks/subscriptions") && init?.method === "POST") {
+        return new Response(JSON.stringify({ message: "Suscripción creada" }), { status: 200 });
+      }
+      throw new Error(`Unexpected webhook request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const adapter = new AlegraAdapter();
+    const result = await adapter.configureWebhook({
+      alegraEmail: "billing@example.com",
+      alegraToken: "rest-token",
+    }, "https://evgreen.example/api/billing/webhook", "webhook-secret");
+
+    expect(result.success).toBe(true);
+    expect(requests.filter((request) => request.init?.method === "POST")).toHaveLength(2);
+    expect(requests[0]?.init?.headers).toMatchObject({
+      Authorization: `Basic ${Buffer.from("billing@example.com:rest-token").toString("base64")}`,
+    });
+    const postRequests = requests.filter((request) => request.init?.method === "POST");
+    expect(JSON.parse(String(postRequests[1]?.init?.body))).toEqual({
+      event: "edit-invoice",
+      url: "evgreen.example/api/billing/webhook?secret=webhook-secret",
+    });
+  });
+
+  it("busca contactos mostrador y utiliza la numeración DIAN explícita configurada", async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      requests.push({ url, init });
+      if (url.includes("/contacts?")) {
+        return new Response(JSON.stringify([
+          {
+            id: 88,
+            name: "Cliente Mostrador EVGreen",
+            identification: "222222222222",
+            email: "mostrador@evgreen.lat",
+            kindOfPerson: "PERSON_ENTITY",
+            regime: "SIMPLIFIED_REGIME",
+          },
+        ]), { status: 200 });
+      }
+      if (url.endsWith("/contacts/88")) {
+        return new Response(JSON.stringify({
+          id: 88,
+          name: "Cliente Mostrador EVGreen",
+          identification: "222222222222",
+          email: "mostrador@evgreen.lat",
+        }), { status: 200 });
+      }
+      if (url.endsWith("/invoices")) {
+        return new Response(JSON.stringify({
+          id: "invoice-99",
+          numberTemplate: { fullNumber: "FV-500" },
+        }), { status: 200 });
+      }
+      if (url.endsWith("/number-templates")) {
+        return new Response(JSON.stringify([
+          {
+            id: "23",
+            name: "FACTURA ELECTRÓNICA DE VENTA",
+            documentType: "invoice",
+            isElectronic: true,
+            status: "active",
+            startDate: "2026-03-13",
+            endDate: "2028-03-13",
+            resolutionNumber: "18764107155503",
+          },
+        ]), { status: 200 });
+      }
+      if (url.endsWith("/items/1900")) {
+        return new Response(JSON.stringify({
+          id: "1900",
+          name: "Servicio de recarga",
+          price: [{ price: 1 }],
+        }), { status: 200 });
+      }
+      if (url.endsWith("/bank-accounts")) {
+        return new Response(JSON.stringify([
+          { id: "1", name: "Caja general", status: "active" },
+        ]), { status: 200 });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const adapter = new AlegraAdapter();
+    const contacts = await adapter.listContacts({
+      alegraEmail: "test@example.com",
+      alegraToken: "tok",
+    }, "Mostrador");
+
+    expect(contacts).toHaveLength(1);
+    expect(contacts[0].name).toBe("Cliente Mostrador EVGreen");
+    expect(contacts[0].id).toBe("88");
+
+    const invoiceRes = await adapter.createInvoice({
+      alegraEmail: "test@example.com",
+      alegraToken: "tok",
+      selectedProductId: "1900",
+      alegraNumberTemplateId: "23",
+      alegraPaymentMethodId: "transfer",
+      alegraPaymentAccountId: "1",
+    }, {
+      transactionId: 5005,
+      kwhConsumed: 10,
+      totalAmount: 15000,
+      userName: "Cliente Mostrador EVGreen",
+      userDocumentNumber: "222222222222",
+      userDocumentType: "CC",
+      customerSource: "FALLBACK",
+    });
+
+    expect(invoiceRes.success).toBe(true);
+    const invoicePost = requests.find((r) => r.url.endsWith("/invoices") && r.init?.method === "POST");
+    expect(invoicePost).toBeDefined();
+    const payload = JSON.parse(String(invoicePost?.init?.body));
+    expect(payload.numberTemplate).toEqual({ id: "23" });
+  });
+});

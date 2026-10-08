@@ -215,6 +215,7 @@ export default function ChargingMonitor() {
   const [showStopDialog, setShowStopDialog] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [socTargetNotified, setSocTargetNotified] = useState(false);
+  const [stopRequestedInUi, setStopRequestedInUi] = useState(false);
   
   // Estado para SoC manual
   const [showSocInput, setShowSocInput] = useState(false);
@@ -257,19 +258,35 @@ export default function ChargingMonitor() {
   // Mutation para detener carga
   const stopChargeMutation = trpc.charging.stopCharge.useMutation({
     onSuccess: (data) => {
-      toast.success("Carga detenida exitosamente");
       const txId = (data as { transactionId?: number }).transactionId;
-      if (txId) {
-        setLocation(`/charging-summary/${txId}`);
-      } else if (session?.transactionId) {
-        // Fallback: usar el transactionId de la sesión activa
-        setLocation(`/charging-summary/${session.transactionId}`);
+      const result = data as { status?: string; message?: string; isSimulation?: boolean };
+      setShowStopDialog(false);
+
+      // Una simulación se completa localmente; para una carga real, un comando
+      // enviado o aceptado NO es aún el final físico. Mantener el monitor vivo
+      // hasta StopTransaction / TransactionEvent.Ended para no mostrar un
+      // recibo, liberar un conector o cobrar antes de tiempo.
+      if (result.isSimulation || result.status === "completed") {
+        toast.success(result.message || "Carga finalizada exitosamente");
+        if (txId) {
+          setLocation(`/charging-summary/${txId}`);
+        } else if (session?.transactionId) {
+          setLocation(`/charging-summary/${session.transactionId}`);
+        } else {
+          setLocation("/charging-history");
+        }
+        return;
+      }
+
+      setStopRequestedInUi(result.status === "stopping");
+      if (result.status === "retryable") {
+        toast.error(result.message || "No fue posible confirmar la detención de la carga.");
       } else {
-        toast.info("Redirigiendo al historial...");
-        setLocation("/charging-history");
+        toast.info(result.message || "Orden enviada al cargador. Esperando confirmación física.");
       }
     },
     onError: (error) => {
+      setStopRequestedInUi(false);
       toast.error(`Error al detener la carga: ${error.message}`);
     },
   });
@@ -431,11 +448,11 @@ export default function ChargingMonitor() {
   
   const handleStopCharge = () => {
     if (!session) return;
-    
+
+    setStopRequestedInUi(true);
     stopChargeMutation.mutate({
       transactionId: session.transactionId,
     });
-    setShowStopDialog(false);
   };
   
   if (isLoading) {
@@ -467,6 +484,10 @@ export default function ChargingMonitor() {
   const lowPowerMinutes = (session as any).lowPowerMinutes as number | null;
   const manualSocAvailable = (session as any).manualSocAvailable !== false;
   const manualSocUnavailableReason = (session as any).manualSocUnavailableReason as string | null | undefined;
+  const stopRequestStatus = (session as any).stopRequestStatus as string | undefined;
+  const stopRequestMessage = (session as any).stopRequestMessage as string | undefined;
+  const isStopFinalizing = stopRequestedInUi || stopRequestStatus === "REQUESTED" || stopRequestStatus === "ACCEPTED";
+  const canRetryStop = stopRequestStatus === "REJECTED" || stopRequestStatus === "TIMED_OUT";
   const energySinceCalibrationKwh = Number((session as any).energySinceCalibrationKwh || 0);
   const manualSocCalibratedAt = (session as any).manualSocCalibratedAt as string | Date | null | undefined;
   const telemetryStatus = ((session as any).telemetryStatus || "unavailable") as ChargingTelemetryStatus;
@@ -1033,7 +1054,44 @@ export default function ChargingMonitor() {
           </Card>
         )}
         
-        {/* Información adicional */}
+        {/* Estado operacional: la orden remota no se presenta como finalización. */}
+        {isStopFinalizing ? (
+          <Card className="mt-4 overflow-hidden border-sky-500/35 bg-gradient-to-br from-sky-500/10 via-background to-emerald-500/10 shadow-lg">
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-sky-500/15">
+                  <span className="absolute inset-0 rounded-full border-2 border-sky-400/60 animate-ping motion-reduce:animate-none" />
+                  <Loader2 className="relative h-5 w-5 animate-spin text-sky-500" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-sm text-sky-700 dark:text-sky-300">Finalizando con el cargador</p>
+                  <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                    {stopRequestMessage || "La orden fue enviada. Esperamos la confirmación física antes de generar tu recibo y cerrar el cobro."}
+                  </p>
+                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-sky-500/15">
+                    <div className="h-full w-2/3 rounded-full bg-gradient-to-r from-sky-500 to-emerald-400 animate-pulse motion-reduce:animate-none" />
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ) : canRetryStop ? (
+          <Card className="mt-4 border-amber-500/35 bg-amber-500/5">
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-full bg-amber-500/10">
+                  <AlertTriangle className="w-5 h-5 text-amber-600" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-sm text-amber-700 dark:text-amber-300">Se requiere confirmar la detención</p>
+                  <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                    {stopRequestMessage || "El cargador no confirmó el final de la carga. La sesión sigue abierta para proteger los datos y el cobro; puedes reintentar."}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
         <Card className="mt-4 border-dashed">
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
@@ -1049,6 +1107,7 @@ export default function ChargingMonitor() {
             </div>
           </CardContent>
         </Card>
+        )}
         
         {/* Botón de detener carga */}
         <Button
@@ -1056,12 +1115,17 @@ export default function ChargingMonitor() {
           size="lg"
           className="w-full mt-6 h-14 text-lg font-semibold"
           onClick={() => setShowStopDialog(true)}
-          disabled={stopChargeMutation.isPending}
+          disabled={stopChargeMutation.isPending || isStopFinalizing}
         >
-          {stopChargeMutation.isPending ? (
+          {stopChargeMutation.isPending || isStopFinalizing ? (
             <>
               <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-              Deteniendo...
+              Finalizando con el cargador...
+            </>
+          ) : canRetryStop ? (
+            <>
+              <StopCircle className="w-5 h-5 mr-2" />
+              Reintentar detener carga
             </>
           ) : (
             <>
@@ -1113,8 +1177,9 @@ export default function ChargingMonitor() {
             <AlertDialogAction
               onClick={handleStopCharge}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={stopChargeMutation.isPending || isStopFinalizing}
             >
-              Sí, detener carga
+              {canRetryStop ? "Sí, reintentar detención" : "Sí, detener carga"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

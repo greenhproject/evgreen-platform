@@ -18,9 +18,9 @@ vi.mock("../db", () => ({
   createOcppLog: vi.fn(),
 }));
 
-// Mock FCM module
-vi.mock("../firebase/fcm", () => ({
-  sendPushNotification: vi.fn().mockResolvedValue(true),
+// Mock del enrutador unificado (Web Push + todos los dispositivos FCM).
+vi.mock("../push/unified-push", () => ({
+  sendUserPush: vi.fn().mockResolvedValue(true),
 }));
 
 // Mock OCPP
@@ -44,7 +44,7 @@ vi.mock("../wompi/recurring-billing", () => ({
 }));
 
 import * as db from "../db";
-import { sendPushNotification } from "../firebase/fcm";
+import { sendUserPush } from "../push/unified-push";
 
 describe("Balance Monitor - Push Notifications", () => {
   beforeEach(() => {
@@ -58,21 +58,20 @@ describe("Balance Monitor - Push Notifications", () => {
       expect(typeof mod.sendBalancePush).toBe("function");
     });
 
-    it("should send push notification when user has valid FCM token", async () => {
+    it("should send Push through the unified delivery service", async () => {
       const mockUser = {
         id: 1,
         email: "test@evgreen.co",
         name: "Test User",
         fcmToken: "fcm_real_token_abc123",
       };
-      vi.mocked(db.getUserById).mockResolvedValue(mockUser as any);
-      vi.mocked(sendPushNotification).mockResolvedValue(true);
+      void mockUser;
+      vi.mocked(sendUserPush).mockResolvedValue(true);
 
       const { sendBalancePush } = await import("./balance-monitor");
       await sendBalancePush(1, "low_balance", "Saldo bajo", "Tu saldo es bajo", "/wallet");
 
-      expect(db.getUserById).toHaveBeenCalledWith(1);
-      expect(sendPushNotification).toHaveBeenCalledWith("fcm_real_token_abc123", {
+      expect(sendUserPush).toHaveBeenCalledWith(1, {
         type: "low_balance",
         title: "Saldo bajo",
         body: "Tu saldo es bajo",
@@ -84,46 +83,37 @@ describe("Balance Monitor - Push Notifications", () => {
       });
     });
 
-    it("should skip push when user has no FCM token", async () => {
+    it("should route through unified Push even without the legacy FCM field", async () => {
       const mockUser = {
         id: 2,
         email: "notoken@evgreen.co",
         name: "No Token User",
         fcmToken: null,
       };
-      vi.mocked(db.getUserById).mockResolvedValue(mockUser as any);
-
       const { sendBalancePush } = await import("./balance-monitor");
       await sendBalancePush(2, "low_balance", "Saldo bajo", "Tu saldo es bajo", "/wallet");
 
-      expect(db.getUserById).toHaveBeenCalledWith(2);
-      expect(sendPushNotification).not.toHaveBeenCalled();
+      expect(sendUserPush).toHaveBeenCalledWith(2, expect.objectContaining({ type: "low_balance" }));
     });
 
-    it("should skip push when user has local token (not real FCM)", async () => {
+    it("should route through unified Push when only a legacy local token exists", async () => {
       const mockUser = {
         id: 3,
         email: "local@evgreen.co",
         name: "Local Token User",
         fcmToken: "local_1234567890_abcdef",
       };
-      vi.mocked(db.getUserById).mockResolvedValue(mockUser as any);
-
       const { sendBalancePush } = await import("./balance-monitor");
       await sendBalancePush(3, "low_balance", "Saldo bajo", "Tu saldo es bajo", "/wallet");
 
-      expect(db.getUserById).toHaveBeenCalledWith(3);
-      expect(sendPushNotification).not.toHaveBeenCalled();
+      expect(sendUserPush).toHaveBeenCalledWith(3, expect.objectContaining({ type: "low_balance" }));
     });
 
-    it("should skip push when user is not found", async () => {
-      vi.mocked(db.getUserById).mockResolvedValue(undefined);
-
+    it("delegates a missing-user decision to unified Push", async () => {
       const { sendBalancePush } = await import("./balance-monitor");
       await sendBalancePush(999, "low_balance", "Saldo bajo", "Tu saldo es bajo", "/wallet");
 
-      expect(db.getUserById).toHaveBeenCalledWith(999);
-      expect(sendPushNotification).not.toHaveBeenCalled();
+      expect(sendUserPush).toHaveBeenCalledWith(999, expect.objectContaining({ type: "low_balance" }));
     });
 
     it("should not throw when push notification fails", async () => {
@@ -133,8 +123,8 @@ describe("Balance Monitor - Push Notifications", () => {
         name: "Fail User",
         fcmToken: "fcm_token_that_will_fail",
       };
-      vi.mocked(db.getUserById).mockResolvedValue(mockUser as any);
-      vi.mocked(sendPushNotification).mockRejectedValue(new Error("FCM error"));
+      void mockUser;
+      vi.mocked(sendUserPush).mockRejectedValue(new Error("Push error"));
 
       const { sendBalancePush } = await import("./balance-monitor");
 
@@ -151,36 +141,36 @@ describe("Balance Monitor - Push Notifications", () => {
         name: "Types User",
         fcmToken: "fcm_valid_token_xyz",
       };
-      vi.mocked(db.getUserById).mockResolvedValue(mockUser as any);
-      vi.mocked(sendPushNotification).mockResolvedValue(true);
+      void mockUser;
+      vi.mocked(sendUserPush).mockResolvedValue(true);
 
       const { sendBalancePush } = await import("./balance-monitor");
 
       // Test balance_added (auto-recharge success)
       await sendBalancePush(5, "balance_added", "Recarga exitosa", "Se recargaron $20,000", "/wallet");
-      expect(sendPushNotification).toHaveBeenLastCalledWith(
-        "fcm_valid_token_xyz",
+      expect(sendUserPush).toHaveBeenLastCalledWith(
+        5,
         expect.objectContaining({ type: "balance_added" })
       );
 
       // Test system_alert (auto-recharge failed)
       await sendBalancePush(5, "system_alert", "Recarga fallida", "No se pudo recargar", "/wallet");
-      expect(sendPushNotification).toHaveBeenLastCalledWith(
-        "fcm_valid_token_xyz",
+      expect(sendUserPush).toHaveBeenLastCalledWith(
+        5,
         expect.objectContaining({ type: "system_alert" })
       );
 
       // Test charging_error (charge stopped)
       await sendBalancePush(5, "charging_error", "Carga detenida", "Saldo insuficiente", "/wallet");
-      expect(sendPushNotification).toHaveBeenLastCalledWith(
-        "fcm_valid_token_xyz",
+      expect(sendUserPush).toHaveBeenLastCalledWith(
+        5,
         expect.objectContaining({ type: "charging_error" })
       );
 
       // Test low_balance
       await sendBalancePush(5, "low_balance", "Saldo bajo", "Tu saldo es bajo", "/wallet");
-      expect(sendPushNotification).toHaveBeenLastCalledWith(
-        "fcm_valid_token_xyz",
+      expect(sendUserPush).toHaveBeenLastCalledWith(
+        5,
         expect.objectContaining({ type: "low_balance" })
       );
     });

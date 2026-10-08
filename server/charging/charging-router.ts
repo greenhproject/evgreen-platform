@@ -20,22 +20,24 @@ import { sendUserPush } from "../push/unified-push";
 import { dispatchOrganizationWebhookEvent } from "../api/webhook-dispatcher";
 import { calculateSocEstimation, getManualSocAvailability, resolveOperationalSoc } from "./soc-estimation";
 import { resolveChargingTelemetryFreshness, shouldAdvanceTelemetrySample } from "../../shared/charging-telemetry";
+import { learnEffectiveSocCapacity } from "../../shared/soc-calibration-learning";
+import {
+  getChargeStopMessage,
+  isAcceptedRemoteStopResponse,
+} from "../../shared/charge-stop-confirmation-policy";
+import { estimateChargePlan } from "../../shared/charge-plan-estimate";
+import { evaluateReservationChargeProtection } from "../../shared/reservation-charge-protection-policy";
+import { canStartOnConnectorWithinCharger } from "../../shared/station-charger-hierarchy";
+import { isValidConnectorQrToken, resolveConnectorQrTarget } from "../../shared/connector-qr-policy";
+import { resolveOcppCommandTarget } from "../../shared/charger-command-target";
 
 // Helper: buscar conexión por stationId en dualCSMS primero, luego fallback a legacy
 // Si ocppIdentity se provee, también busca en dualCSMS por identidad cuando stationId=null
 // (ocurre después de reinicio del servidor antes de que se resuelva el stationId)
 function getConnectionByStationId(stationId: number, ocppIdentity?: string) {
-  // 1. Intento principal: buscar por stationId en dualCSMS (camino más rápido)
-  const dualConn = dualCSMS.getConnectionByStationId(stationId);
-  if (dualConn) {
-    return {
-      ocppIdentity: dualConn.ocppIdentity,
-      ws: dualConn.ws,
-      connectorStatuses: new Map<number, string>(),
-    };
-  }
-
-  // 2. Fallback: buscar en dualCSMS por ocppIdentity (maneja stationId=null tras reinicio)
+  // 1. Un EVSE asignado a un gabinete físico debe resolver primero la identidad
+  // del gabinete, no la primera conexión de la estación. Esto es esencial para
+  // OCPP 1.6 cuando varios equipos usan connectorId 1/2.
   if (ocppIdentity) {
     const conn = (dualCSMS as any).connections?.get(ocppIdentity);
     if (conn && conn.ws?.readyState === 1) {
@@ -46,9 +48,21 @@ function getConnectionByStationId(stationId: number, ocppIdentity?: string) {
       return {
         ocppIdentity,
         ws: conn.ws,
-        connectorStatuses: new Map<number, string>(),
+        ocppVersion: conn.ocppVersion,
+        connectorStatuses: conn.connectorStatuses || new Map<number, string>(),
       };
     }
+  }
+
+  // 2. Fallback por stationId para instalaciones legacy de un solo equipo.
+  const dualConn = dualCSMS.getConnectionByStationId(stationId);
+  if (dualConn) {
+    return {
+      ocppIdentity: dualConn.ocppIdentity,
+      ws: dualConn.ws,
+      ocppVersion: (dualConn as any).ocppVersion,
+      connectorStatuses: (dualConn as any).connectorStatuses || new Map<number, string>(),
+    };
   }
 
   // 3. Fallback legacy
@@ -114,6 +128,8 @@ const activeChargeSessions = new Map<number, {
   manualBatteryCapacityKwh: number | null;
   manualSocCalibrationKwh?: number | null;
   manualSocCalibratedAt?: Date | null;
+  manualSocEffectiveCapacityKwh?: number | null;
+  manualSocCalibrationCount?: number;
   // Detección de batería llena por caída de potencia
   lowPowerSince: Date | null; // Timestamp desde cuando la potencia está < umbral
   chargeCompleteDetected: boolean; // Si se detectó que la batería está llena
@@ -182,6 +198,26 @@ export async function recalibrateManualSocTransaction(input: {
       : 60;
   }
 
+  const previousEffectiveCapacityKwh = session?.manualSocEffectiveCapacityKwh
+    ?? (transaction.manualSocEffectiveCapacityKwh !== null && transaction.manualSocEffectiveCapacityKwh !== undefined
+      ? parseFloat(String(transaction.manualSocEffectiveCapacityKwh))
+      : null);
+  const previousCalibrationCount = session?.manualSocCalibrationCount
+    ?? transaction.manualSocCalibrationCount
+    ?? 0;
+  const learning = learnEffectiveSocCapacity({
+    previousSoc: session?.manualSoc ?? (transaction.manualSoc !== null && transaction.manualSoc !== undefined ? Number(transaction.manualSoc) : null),
+    previousEnergyKwh: session?.manualSocCalibrationKwh
+      ?? (transaction.manualSocCalibrationKwh !== null && transaction.manualSocCalibrationKwh !== undefined
+        ? parseFloat(String(transaction.manualSocCalibrationKwh))
+        : null),
+    observedSoc: input.soc,
+    currentEnergyKwh: currentKwh,
+    declaredCapacityKwh: batteryCapacityKwh,
+    effectiveCapacityKwh: previousEffectiveCapacityKwh,
+    calibrationCount: previousCalibrationCount,
+    capacityWasExplicitlyProvided: input.batteryCapacityKwh !== undefined,
+  });
   const calibratedAt = new Date();
 
   if (!session) {
@@ -216,6 +252,8 @@ export async function recalibrateManualSocTransaction(input: {
       manualBatteryCapacityKwh: batteryCapacityKwh,
       manualSocCalibrationKwh: currentKwh,
       manualSocCalibratedAt: calibratedAt,
+      manualSocEffectiveCapacityKwh: learning.effectiveCapacityKwh,
+      manualSocCalibrationCount: learning.calibrationCount,
       lowPowerSince: null,
       chargeCompleteDetected: false,
       chargeCompleteNotified: false,
@@ -228,6 +266,8 @@ export async function recalibrateManualSocTransaction(input: {
     session.manualBatteryCapacityKwh = batteryCapacityKwh;
     session.manualSocCalibrationKwh = currentKwh;
     session.manualSocCalibratedAt = calibratedAt;
+    session.manualSocEffectiveCapacityKwh = learning.effectiveCapacityKwh;
+    session.manualSocCalibrationCount = learning.calibrationCount;
     session.energyBasedSoc = input.soc;
   }
 
@@ -236,15 +276,21 @@ export async function recalibrateManualSocTransaction(input: {
     manualBatteryCapacityKwh: batteryCapacityKwh.toFixed(2),
     manualSocCalibrationKwh: currentKwh.toFixed(4),
     manualSocCalibratedAt: calibratedAt.toISOString().slice(0, 19).replace("T", " "),
+    manualSocEffectiveCapacityKwh: learning.effectiveCapacityKwh.toFixed(2),
+    manualSocCalibrationCount: learning.calibrationCount,
   });
 
-  console.log(`[setManualSoc] Actor ${input.actorUserId} recalibrated transaction ${transaction.id} to ${input.soc}% at ${currentKwh.toFixed(4)} kWh`);
+  console.log(`[setManualSoc] Actor ${input.actorUserId} recalibrated transaction ${transaction.id} to ${input.soc}% at ${currentKwh.toFixed(4)} kWh; effective capacity=${learning.effectiveCapacityKwh}kWh (${learning.reason})`);
 
   return {
     success: true,
     transactionId: transaction.id,
     soc: input.soc,
     batteryCapacityKwh,
+    effectiveBatteryCapacityKwh: learning.effectiveCapacityKwh,
+    calibrationCount: learning.calibrationCount,
+    learningApplied: learning.learned,
+    learningReason: learning.reason,
     calibrationEnergyKwh: currentKwh,
     calibratedAt,
   };
@@ -418,13 +464,20 @@ export const chargingRouter = router({
         };
       });
       
-      // Verificar si el usuario tiene una reserva activa en esta estación
+      // Verificar si el usuario tiene una reserva activa y operativa en esta estación
       let userActiveReservation = null;
       if (ctx.user) {
         const userReservations = await db.getReservationsByUserId(ctx.user.id);
-        userActiveReservation = userReservations.find(
-          (r: any) => r.stationId === station.id && r.status === 'ACTIVE'
-        ) || null;
+        const nowMs = Date.now();
+        userActiveReservation = userReservations.find((r: any) => {
+          const status = r.reservationStatus || r.status;
+          if (status !== "ACTIVE") return false;
+          if (r.stationId !== station.id) return false;
+          const startMs = new Date(r.startTime).getTime();
+          const endMs = new Date(r.endTime).getTime();
+          // Permite check-in automático desde 30 minutos antes hasta el fin de la reserva
+          return (startMs - 30 * 60_000 <= nowMs && endMs >= nowMs);
+        }) || null;
       }
       
       return {
@@ -436,6 +489,22 @@ export const chargingRouter = router({
         demoTopUp: isDemo ? demoTopUp : undefined,
         userActiveReservation,
       };
+    }),
+
+  /**
+   * Resuelve un QR específico de pistola/conector. El token opaco sólo guía la
+   * selección; el flujo posterior conserva autenticación, saldo, reserva y
+   * validación de estado. Los QR históricos de estación siguen usando
+   * getStationByCode sin este endpoint.
+  */
+  resolveConnectorQr: protectedProcedure
+    .input(z.object({ token: z.string().trim().refine(isValidConnectorQrToken, "El código QR del conector no es válido.") }))
+    .query(async ({ input }) => {
+      const connector = await db.getEvseByQrToken(input.token);
+      const station = connector ? await db.getChargingStationById(connector.stationId) : undefined;
+      const resolution = resolveConnectorQrTarget({ token: input.token, connector, station });
+      if (!resolution.ok) throw new TRPCError({ code: "NOT_FOUND", message: resolution.reason });
+      return resolution.target;
     }),
 
   /**
@@ -480,8 +549,10 @@ export const chargingRouter = router({
         return {
           id: c.id,
           evseId: c.id,
+          chargerId: c.chargerId,
           connectorNumber: c.evseIdLocal,
           connectorId: c.evseIdLocal,
+          connectorLabel: c.connectorLabel,
           type: c.connectorType,
           powerKw: c.powerKw,
           status: normalizedStatus,
@@ -500,11 +571,13 @@ export const chargingRouter = router({
     .input(z.object({
       stationId: z.number(),
       connectorId: z.number(),
+      evseId: z.number().optional(),
       chargeMode: z.enum(["fixed_amount", "percentage", "full_charge"]),
       targetValue: z.number(), // $ para fixed_amount, % para percentage
     }))
     .query(async ({ ctx, input }) => {
-      const { stationId, connectorId, chargeMode, targetValue } = input;
+      const { stationId, connectorId, evseId: requestedEvseId, chargeMode, targetValue } = input;
+      // Prefer EVSE primary key when the client has it, avoiding duplicated OCPP 1.6 connector numbers.
       
       // Obtener saldo del usuario
       const wallet = await db.getWalletByUserId(ctx.user.id);
@@ -521,7 +594,6 @@ export const chargingRouter = router({
       
       // Calcular precio usando la MISMA lógica que startCharge para evitar discrepancias
       const evsesForPrice = await db.getEvsesByStationId(stationId);
-      const firstEvse = evsesForPrice[0];
       
       // Obtener tarifa de la estación para verificar si usa precio automático
       const tariff = await db.getActiveTariffByStationId(stationId);
@@ -529,8 +601,13 @@ export const chargingRouter = router({
       const useAutoPricing = tariff?.autoPricing === true || (tariff?.autoPricing as any) === 1;
       
       // Obtener el conector seleccionado para determinar tipo AC/DC
-      const selectedConnector = evsesForPrice.find(c => c.connectorId === connectorId) || firstEvse;
-      const evseId = selectedConnector?.id || firstEvse?.id;
+      const selectedConnector = requestedEvseId
+        ? evsesForPrice.find((connector) => connector.id === requestedEvseId)
+        : evsesForPrice.find((connector) => connector.connectorId === connectorId || connector.evseIdLocal === connectorId);
+      if (!selectedConnector) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "El conector seleccionado no pertenece a esta estación." });
+      }
+      const evseId = selectedConnector.id;
       
       // Obtener el precio efectivo de la estación (tarifa propia o global)
       const effectivePriceData = await db.getEffectiveStationPrice(stationId);
@@ -589,44 +666,22 @@ export const chargingRouter = router({
         console.warn(`[validateAndEstimate] Error checking subscription:`, subErr);
       }
       
-      // Calcular estimación según modo de carga
-      let estimatedKwh = 0;
-      let estimatedCost = 0;
-      let estimatedTime = 0; // en minutos
-      
-      // Obtener potencia del conector
-      const connectors = await db.getEvsesByStationId(stationId);
-      const connector = connectors.find(c => c.connectorId === connectorId);
-      const powerKw = connector?.powerKw ? parseFloat(connector.powerKw) : 22; // Default 22kW
-      
-      switch (chargeMode) {
-        case "fixed_amount":
-          // Usuario quiere gastar X pesos
-          estimatedCost = targetValue;
-          estimatedKwh = estimatedCost / pricePerKwh;
-          estimatedTime = (estimatedKwh / powerKw) * 60;
-          break;
-          
-        case "percentage":
-          // Usuario quiere cargar hasta X% (asumiendo batería promedio de 60kWh)
-          const batteryCapacity = 60; // kWh promedio
-          const currentPercent = 20; // Asumimos 20% inicial (esto vendría del vehículo en un caso real)
-          const targetPercent = targetValue;
-          estimatedKwh = ((targetPercent - currentPercent) / 100) * batteryCapacity;
-          estimatedCost = estimatedKwh * pricePerKwh;
-          estimatedTime = (estimatedKwh / powerKw) * 60;
-          break;
-          
-        case "full_charge":
-          // Carga completa (asumiendo de 20% a 100%)
-          const fullBatteryCapacity = 60;
-          estimatedKwh = 0.8 * fullBatteryCapacity; // 80% de la batería
-          estimatedCost = estimatedKwh * pricePerKwh;
-          estimatedTime = (estimatedKwh / powerKw) * 60;
-          break;
-      }
-      
-      const hasSufficientBalance = balance >= estimatedCost;
+      // La potencia pertenece al EVSE seleccionado, no al primer connectorId
+      // coincidente de otro gabinete OCPP 1.6.
+      const powerKw = selectedConnector.powerKw ? parseFloat(selectedConnector.powerKw) : 22;
+      const chargePlan = estimateChargePlan({
+        chargeMode,
+        targetValue,
+        pricePerKwh,
+        powerKw,
+      });
+      const nextReservation = evseId ? await db.getNextActiveReservationForEvse(evseId) : undefined;
+      const reservationProtection = evaluateReservationChargeProtection({
+        currentUserId: ctx.user.id,
+        estimatedMinutes: chargePlan.estimatedTimeMinutes,
+        nextReservation,
+      });
+      const hasSufficientBalance = balance >= chargePlan.estimatedCost;
       
       // Calcular precio base (sin descuentos) para mostrar en UI
       const basePricePerKwh = useAutoPricing
@@ -643,14 +698,15 @@ export const chargingRouter = router({
         basePricePerKwh, // Precio base sin descuentos dinámicos
         demandDiscountPercent, // % de descuento por baja demanda (0 si no aplica)
         useAutoPricing, // Si la estación usa precio dinámico por IA (controla qué muestra la UI)
-        estimatedKwh: Math.round(estimatedKwh * 100) / 100,
-        estimatedCost: Math.round(estimatedCost),
-        estimatedTime: Math.round(estimatedTime),
+        estimatedKwh: chargePlan.estimatedKwh,
+        estimatedCost: chargePlan.estimatedCost,
+        estimatedTime: chargePlan.estimatedTimeMinutes,
         hasSufficientBalance,
-        shortfall: hasSufficientBalance ? 0 : Math.ceil(estimatedCost - balance),
+        shortfall: hasSufficientBalance ? 0 : Math.ceil(chargePlan.estimatedCost - balance),
         dynamicMultiplier,
         demandLevel: dynamicPricing.getDemandLevel(dynamicMultiplier),
         subscriptionDiscount, // % de descuento aplicado por suscripción (0 si no tiene)
+        reservationProtection,
       };
     }),
 
@@ -661,11 +717,12 @@ export const chargingRouter = router({
     .input(z.object({
       stationId: z.number(),
       connectorId: z.number(),
+      evseId: z.number().optional(),
       chargeMode: z.enum(["fixed_amount", "percentage", "full_charge"]),
       targetValue: z.number(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { stationId, connectorId, chargeMode, targetValue } = input;
+      const { stationId, connectorId, evseId: requestedEvseId, chargeMode, targetValue } = input;
       
       // Validar saldo
       const wallet = await db.getWalletByUserId(ctx.user.id);
@@ -673,7 +730,6 @@ export const chargingRouter = router({
       
       // Calcular costo estimado
       const evsesForPrice = await db.getEvsesByStationId(stationId);
-      const firstEvse = evsesForPrice[0];
       
       // Obtener tarifa de la estación para verificar si usa precio automático
       const tariff = await db.getActiveTariffByStationId(stationId);
@@ -681,8 +737,13 @@ export const chargingRouter = router({
       const useAutoPricing = tariff?.autoPricing === true || (tariff?.autoPricing as any) === 1;
       
       // Obtener el conector seleccionado para determinar tipo AC/DC
-      const selectedConnector = evsesForPrice.find(c => c.connectorId === connectorId) || firstEvse;
-      const evseId = selectedConnector?.id || firstEvse?.id;
+      const selectedConnector = requestedEvseId
+        ? evsesForPrice.find((connector) => connector.id === requestedEvseId)
+        : evsesForPrice.find((connector) => connector.connectorId === connectorId || connector.evseIdLocal === connectorId);
+      if (!selectedConnector) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "El conector seleccionado no pertenece a esta estación." });
+      }
+      const evseId = selectedConnector.id;
       
       // Obtener el precio efectivo de la estación (tarifa propia o global)
       const effectivePriceData = await db.getEffectiveStationPrice(stationId);
@@ -733,20 +794,15 @@ export const chargingRouter = router({
       
       // Usar el conector ya obtenido arriba (selectedConnector) para cálculos de potencia
       
-      let estimatedCost = 0;
-      switch (chargeMode) {
-        case "fixed_amount":
-          estimatedCost = targetValue;
-          break;
-        case "percentage":
-          const batteryCapacity = 60;
-          const estimatedKwh = ((targetValue - 20) / 100) * batteryCapacity;
-          estimatedCost = estimatedKwh * pricePerKwh;
-          break;
-        case "full_charge":
-          estimatedCost = 0.8 * 60 * pricePerKwh;
-          break;
-      }
+      // La misma estimación se usa para la UI y para impedir que una nueva sesión
+      // invada la ventana de liberación de una reserva posterior de otro cliente.
+      const chargePlan = estimateChargePlan({
+        chargeMode,
+        targetValue,
+        pricePerKwh,
+        powerKw: Number(selectedConnector?.powerKw) || 22,
+      });
+      const estimatedCost = chargePlan.estimatedCost;
       
       if (balance < estimatedCost) {
         throw new TRPCError({
@@ -755,21 +811,55 @@ export const chargingRouter = router({
         });
       }
       
-      // Check-in automático: si el usuario tiene una reserva activa para este EVSE, marcarla como FULFILLED
-      if (evseId) {
-        const activeReservation = await db.getActiveReservation(evseId);
-        if (activeReservation && activeReservation.userId === ctx.user.id) {
-          console.log(`[startCharge] Check-in automático: reserva ${activeReservation.id} para EVSE ${evseId} marcada como FULFILLED`);
-          // @ts-ignore
-          await db.updateReservation(activeReservation.id, { status: "FULFILLED" });
-          // Notificar al usuario del check-in exitoso
-          await db.createNotification({
-            userId: ctx.user.id,
-            title: "\u2705 Check-in exitoso",
-            message: `Tu reserva ha sido confirmada. Se canceló la penalización por no-show. \u00a1Disfruta tu carga!`,
-            type: "RESERVATION_CHECKIN",
-          });
+      // Una reserva se cumple sólo cuando OCPP confirme que existe una transacción.
+      // Antes de eso protege el conector para su titular, pero jamás se marca como usada.
+      const activeReservation = evseId ? await db.getActiveReservation(evseId) : undefined;
+      const isReservationOwner = !!activeReservation && activeReservation.userId === ctx.user.id;
+      if (activeReservation && !isReservationOwner) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Este conector está reservado temporalmente para otro usuario.",
+        });
+      }
+
+      // La disponibilidad del conector no basta para equipos multi-salida: se
+      // valida también el cupo físico del gabinete. En un Liboltek configurado
+      // con 2 sesiones simultáneas, A y B pueden iniciar/ reservar de forma
+      // independiente; en un equipo no simultáneo el segundo conector queda
+      // bloqueado aunque se vea libre a nivel eléctrico.
+      let physicalCharger: any = null;
+      if (selectedConnector?.chargerId) {
+        const { charger, evses: chargerConnectors } = await db.getChargerWithEvses(selectedConnector.chargerId);
+        physicalCharger = charger;
+        if (charger) {
+          const physicalCapacity = canStartOnConnectorWithinCharger(
+            charger as any,
+            chargerConnectors as any,
+            selectedConnector.id,
+          );
+          if (!physicalCapacity.allowed) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: physicalCapacity.reason || "El cargador físico no tiene cupo operativo disponible.",
+            });
+          }
         }
+      }
+
+      // Un conector puede no estar reservado todavía y aun así tener una reserva
+      // posterior. No se detiene una carga ya iniciada: se bloquea la nueva orden
+      // que, por su duración estimada, no podría liberar el activo a tiempo.
+      const nextReservation = evseId ? await db.getNextActiveReservationForEvse(evseId) : undefined;
+      const reservationProtection = evaluateReservationChargeProtection({
+        currentUserId: ctx.user.id,
+        estimatedMinutes: chargePlan.estimatedTimeMinutes,
+        nextReservation,
+      });
+      if (reservationProtection.status === "BLOCKED") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: reservationProtection.message || "La carga estimada invade una reserva posterior.",
+        });
       }
       
       // Verificar si es usuario de prueba o estación demo para usar simulador
@@ -780,20 +870,19 @@ export const chargingRouter = router({
       const isTestUser = simulator.isTestUser(userEmail);
       const useSimulation = isTestUser || isDemo;
       
-      // Verificar que la estación está conectada (solo si no es simulación)
-      const ocppConnection = getConnectionByStationId(stationId);
-      
-      // Para estaciones reales: también permitir iniciar carga si el conector está RESERVED por el usuario actual
-      // (el check-in ya marcó la reserva como FULFILLED arriba)
+      // Para estaciones reales, RESERVED sólo puede ser iniciado por el titular.
       
       if (!useSimulation) {
         // Obtener datos de la estación y conectores de la BD
         const stationData = await db.getChargingStationById(stationId);
-        const connectors = await db.getEvsesByStationId(stationId);
         
-        // Buscar conexión OCPP: primero por stationId, luego por ocppIdentity
+        // Buscar primero la conexión del gabinete físico seleccionado. Los
+        // equipos OCPP 1.6 pueden repetir connectorId=1/2 entre gabinetes.
+        const preferredOcppIdentity = physicalCharger?.ocppIdentity || stationData?.ocppIdentity || undefined;
+        const ocppConnection = getConnectionByStationId(stationId, preferredOcppIdentity);
         const hasOcppConnection = !!ocppConnection && ocppConnection.ws.readyState === 1;
-                const ocppIdentityForCommand = ocppConnection?.ocppIdentity || stationData?.ocppIdentity || '';
+        const ocppIdentityForCommand = ocppConnection?.ocppIdentity || preferredOcppIdentity || '';
+        const commandConnectorId = resolveOcppCommandTarget(selectedConnector, ocppConnection?.ocppVersion, connectorId);
         // ===== FUENTE ÚNICA DE VERDAD: dualCSMS.isStationOnline() =====
         // Retorna true si WebSocket OPEN o grace period activo en dualCSMS.
         const stationOcppIdForStart = ocppIdentityForCommand || stationData?.ocppIdentity || '';
@@ -809,25 +898,25 @@ export const chargingRouter = router({
         
         // Verificar que el conector específico está disponible
         if (hasOcppConnection) {
-          const connectorStatus = ocppConnection!.connectorStatuses.get(connectorId);
-          if (connectorStatus && connectorStatus !== "Available" && connectorStatus !== "AVAILABLE" && connectorStatus !== "Preparing" && connectorStatus !== "PREPARING") {
+          const connectorStatus = ocppConnection!.connectorStatuses.get(commandConnectorId);
+          const normalizedOcppStatus = connectorStatus?.toUpperCase();
+          const isAllowedOcppStatus = ["AVAILABLE", "PREPARING"].includes(normalizedOcppStatus || "")
+            || (normalizedOcppStatus === "RESERVED" && isReservationOwner);
+          if (connectorStatus && !isAllowedOcppStatus) {
             throw new TRPCError({
               code: "BAD_REQUEST",
               message: `El conector no está disponible. Estado actual: ${connectorStatus}`,
             });
           }
         } else {
-          const connector = connectors.find((c: any) => c.connectorId === connectorId || c.evseIdLocal === connectorId);
-          if (connector) {
-                // @ts-ignore
-                const dbStatus = (connector.status || '').toUpperCase();
-            // Permitir RESERVED si es la reserva del usuario actual (ya fue marcada FULFILLED arriba)
-            if (dbStatus && dbStatus !== 'AVAILABLE' && dbStatus !== 'PREPARING' && dbStatus !== 'RESERVED') {
-              throw new TRPCError({
-                code: "BAD_REQUEST",
-                message: `El conector no está disponible. Estado actual: ${dbStatus}`,
-              });
-            }
+          const dbStatus = (selectedConnector.connectorStatus || (selectedConnector as any).status || '').toUpperCase();
+          const isAllowedDbStatus = ['AVAILABLE', 'PREPARING'].includes(dbStatus)
+            || (dbStatus === 'RESERVED' && isReservationOwner);
+          if (dbStatus && !isAllowedDbStatus) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `El conector no está disponible. Estado actual: ${dbStatus}`,
+            });
           }
         }
         
@@ -843,11 +932,11 @@ export const chargingRouter = router({
         const sessionId = uuidv4();
         
         // Guardar sesión pendiente (memoria + BD para multi-instancia)
-        console.log(`[startCharge] Creating pending session: sessionId=${sessionId}, userId=${ctx.user.id}, stationId=${stationId}, connectorId=${connectorId}, ocppIdentity=${ocppIdentityForCommand}`);
+        console.log(`[startCharge] Creating pending session: sessionId=${sessionId}, userId=${ctx.user.id}, stationId=${stationId}, connectorId=${commandConnectorId}, evseId=${evseId}, ocppIdentity=${ocppIdentityForCommand}`);
         pendingChargeSessions.set(sessionId, {
           userId: ctx.user.id,
           stationId,
-          connectorId,
+          connectorId: commandConnectorId,
           chargeMode,
           targetValue,
           estimatedCost,
@@ -860,7 +949,7 @@ export const chargingRouter = router({
           sessionId,
           userId: ctx.user.id,
           stationId,
-          connectorId,
+          connectorId: commandConnectorId,
           ocppIdentity: ocppIdentityForCommand,
           chargeMode,
           targetValue,
@@ -894,10 +983,10 @@ export const chargingRouter = router({
         
         for (let attempt = 1; attempt <= 3; attempt++) {
           try {
-            console.log(`[startCharge] Attempt ${attempt}/3: Sending RemoteStartTransaction to ${ocppIdentityForCommand}, connectorId=${connectorId}, idTag=${idTag}`);
+            console.log(`[startCharge] Attempt ${attempt}/3: Sending RemoteStartTransaction to ${ocppIdentityForCommand}, connectorId=${commandConnectorId}, idTag=${idTag}`);
             remoteStartResponse = await dualCSMS.requestStartTransaction(
               ocppIdentityForCommand,
-              connectorId,
+              commandConnectorId,
               idTag
             );
             sent = true;
@@ -933,7 +1022,7 @@ export const chargingRouter = router({
             ocppIdentityForCommand,
             messageId,
             "RemoteStartTransaction",
-            { connectorId, idTag }
+            { connectorId: commandConnectorId, idTag }
           );
           if (sent) {
             console.log(`[startCharge] Fallback sendCommandIfConnected succeeded for ${ocppIdentityForCommand}`);
@@ -948,21 +1037,22 @@ export const chargingRouter = router({
           
           if (commandMaySentAlready) {
             console.log(`[startCharge] Command may have been sent before connection died. Starting deferred retry with EVSE status check.`);
-            startDeferredRemoteStart(sessionId, ocppIdentityForCommand, connectorId, idTag, { commandMaySentAlready: true });
+            startDeferredRemoteStart(sessionId, ocppIdentityForCommand, commandConnectorId, idTag, { commandMaySentAlready: true });
           } else if (isAvailable) {
             // Había conexión pero el envío falló completamente - iniciar deferred retry en vez de error
             console.log(`[startCharge] Connection existed but send failed. Starting deferred retry for session ${sessionId}`);
-            startDeferredRemoteStart(sessionId, ocppIdentityForCommand, connectorId, idTag);
+            startDeferredRemoteStart(sessionId, ocppIdentityForCommand, commandConnectorId, idTag);
           } else {
             // No hay conexión OCPP pero la estación tiene conector AVAILABLE en BD.
             console.log(`[startCharge] No OCPP connection available. Starting deferred retry for session ${sessionId}`);
-            startDeferredRemoteStart(sessionId, ocppIdentityForCommand, connectorId, idTag);
+            startDeferredRemoteStart(sessionId, ocppIdentityForCommand, commandConnectorId, idTag);
           }
         }
         
         // Si el cargador rechazó explícitamente, limpiar y notificar
         if (remoteStartResponse?.status === "Rejected") {
           pendingChargeSessions.delete(sessionId);
+          await db.consumePendingChargeSession(sessionId);
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "El cargador rechazó la solicitud de inicio. Verifica que el vehículo esté correctamente conectado e intenta de nuevo.",
@@ -975,7 +1065,7 @@ export const chargingRouter = router({
         await db.createNotification({
           userId: ctx.user.id,
           title: "Carga solicitada",
-          message: `Se ha enviado la orden de carga al conector ${connectorId} de ${stationNameForNotif}. Tarifa: $${formattedPrice} COP/kWh. Conecta tu vehículo si aún no lo has hecho.`,
+          message: `Se ha enviado la orden de carga al ${selectedConnector.connectorLabel || `conector ${commandConnectorId}`} de ${stationNameForNotif}. Tarifa: $${formattedPrice} COP/kWh. Conecta tu vehículo si aún no lo has hecho.`,
           type: "CHARGE_REQUESTED",
         });
 
@@ -1150,7 +1240,11 @@ export const chargingRouter = router({
             const station = await db.getChargingStationById(session.stationId);
             // Obtener tipo de conector real desde la BD
             const evses = await db.getEvsesByStationId(session.stationId);
-            const evse = evses.find((e: any) => e.evseIdLocal === session.connectorId || e.connectorId === session.connectorId);
+            const physicalCharger = await db.getChargerByOcppIdentity(session.ocppIdentity);
+            const evse = evses.find((connector: any) =>
+              (!physicalCharger || connector.chargerId === physicalCharger.id)
+              && (connector.evseIdLocal === session.connectorId || connector.connectorId === session.connectorId),
+            );
             // CORREGIDO: Usar el precio dinámico de la sesión pendiente (calculado en startCharge)
             // En vez del precio base fijo de la estación
             return {
@@ -1364,6 +1458,8 @@ export const chargingRouter = router({
       let manualBatteryCapacity = activeSessionInfo?.manualBatteryCapacityKwh ?? null;
       let manualSocCalibrationKwh = activeSessionInfo?.manualSocCalibrationKwh ?? null;
       let manualSocCalibratedAt = activeSessionInfo?.manualSocCalibratedAt ?? null;
+      let manualSocEffectiveCapacityKwh = activeSessionInfo?.manualSocEffectiveCapacityKwh ?? null;
+      let manualSocCalibrationCount = activeSessionInfo?.manualSocCalibrationCount ?? 0;
       
       // Si no hay manualSoc en memoria, intentar restaurar desde la DB (transacción activa)
       if (manualSoc === null && activeTransaction.manualSoc !== null && activeTransaction.manualSoc !== undefined) {
@@ -1396,6 +1492,16 @@ export const chargingRouter = router({
           activeSessionInfo.manualSocCalibratedAt = manualSocCalibratedAt;
         }
       }
+
+      if (manualSocEffectiveCapacityKwh === null && activeTransaction.manualSocEffectiveCapacityKwh !== null && activeTransaction.manualSocEffectiveCapacityKwh !== undefined) {
+        manualSocEffectiveCapacityKwh = parseFloat(String(activeTransaction.manualSocEffectiveCapacityKwh));
+        if (activeSessionInfo) activeSessionInfo.manualSocEffectiveCapacityKwh = manualSocEffectiveCapacityKwh;
+      }
+
+      if (!manualSocCalibrationCount && activeTransaction.manualSocCalibrationCount) {
+        manualSocCalibrationCount = activeTransaction.manualSocCalibrationCount;
+        if (activeSessionInfo) activeSessionInfo.manualSocCalibrationCount = manualSocCalibrationCount;
+      }
       
       // Si no hay capacidad de batería en la sesión ni en DB, intentar cargar del vehículo del usuario
       if (manualBatteryCapacity === null) {
@@ -1423,7 +1529,7 @@ export const chargingRouter = router({
         chargeType,
         chargerSoc: soc,
         manualSoc,
-        batteryCapacityKwh: manualBatteryCapacity,
+        batteryCapacityKwh: manualSocEffectiveCapacityKwh ?? manualBatteryCapacity,
         currentEnergyKwh: currentKwh,
         calibrationEnergyKwh: manualSocCalibrationKwh,
         chargeCompleteDetected,
@@ -1507,6 +1613,10 @@ export const chargingRouter = router({
         hasFreshMeterData: telemetryFreshness.isFresh,
         ocppConnected,
         status: activeTransaction.status,
+        transactionStatus: activeTransaction.transactionStatus,
+        stopRequestedAt: activeTransaction.stopRequestedAt,
+        stopRequestStatus: activeTransaction.stopRequestStatus,
+        stopRequestMessage: activeTransaction.stopRequestMessage,
         chargeMode,
         targetPercentage: chargeMode === "percentage" ? targetValue : 100,
         targetAmount: chargeMode === "fixed_amount" ? targetValue : currentCost * 2,
@@ -1515,6 +1625,8 @@ export const chargingRouter = router({
         socSource: operationalSoc.source,
         manualSoc: manualSoc, // SoC original ingresado por el usuario
         manualBatteryCapacityKwh: manualBatteryCapacity,
+        manualSocEffectiveCapacityKwh,
+        manualSocCalibrationCount,
         chargeType,
         manualSocAvailable: operationalSoc.manualSocAvailable,
         manualSocUnavailableReason: operationalSoc.manualSocUnavailableReason,
@@ -1637,11 +1749,27 @@ export const chargingRouter = router({
         });
       }
       
-      if (transaction.status !== "IN_PROGRESS") {
+      if (transaction.status !== "IN_PROGRESS" && transaction.transactionStatus !== "IN_PROGRESS") {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "Esta carga ya ha finalizado",
         });
+      }
+
+      // Idempotencia: no duplicar RemoteStop mientras el cargador está
+      // confirmando físicamente el cierre de la misma sesión.
+      const now = new Date();
+      const wasClaimed = await db.claimChargeStopRequest(transactionId, now);
+      if (!wasClaimed) {
+        const current = await db.getTransactionById(transactionId);
+        const requestStatus = current?.stopRequestStatus || "REQUESTED";
+        return {
+          status: requestStatus === "TIMED_OUT" || requestStatus === "REJECTED" ? "retryable" : "stopping",
+          message: getChargeStopMessage(requestStatus),
+          isSimulation: false,
+          transactionId,
+          stopRequestStatus: requestStatus,
+        };
       }
       
       // Obtener ocppIdentity de la estación
@@ -1718,12 +1846,13 @@ export const chargingRouter = router({
         }
       }
       
-      // === ENVIAR RemoteStopTransaction ===
+      // === ENVIAR ORDEN DE DETENCIÓN OCPP ===
       let remoteStopSent = false;
+      let remoteStopResponse: unknown = null;
+      let commandAcknowledged = false;
       if (ocppIdentityForCommand) {
-        const messageId = uuidv4();
-        // OCPP 1.6 requiere transactionId numérico
-        // Prioridad: 1) ocppNumericTxId (guardado al crear tx), 2) transactionId de la BD
+        // Prioridad: 1) ocppNumericTxId asignado por OCPP 1.6, 2) id interno
+        // (únicamente como compatibilidad con equipos antiguos).
         const ocppTxId = (transaction as any).ocppNumericTxId 
           || transactionId;
         
@@ -1731,49 +1860,55 @@ export const chargingRouter = router({
           console.warn(`[stopCharge] ⚠️ ocppNumericTxId is NULL in DB for txId=${transactionId}. Using DB id=${transactionId} as fallback. This may not match the cargador's transactionId.`);
         }
         
-        console.log(`[stopCharge] Sending RemoteStopTransaction to "${ocppIdentityForCommand}", ocppTxId=${ocppTxId}, messageId=${messageId}`);
-        
-        // Intentar enviar por connection-manager
-        remoteStopSent = legacySendOcppCommand(
-          ocppIdentityForCommand,
-          messageId,
-          "RemoteStopTransaction",
-          { transactionId: ocppTxId }
-        );
-        
-        if (!remoteStopSent) {
-          console.log(`[stopCharge] legacySendOcppCommand failed, trying dualCSMS...`);
-          remoteStopSent = dualCSMS.sendCommandIfConnected(
-            ocppIdentityForCommand,
-            messageId,
-            "RemoteStopTransaction",
-            { transactionId: ocppTxId }
+        console.log(`[stopCharge] Requesting protocol-aware remote stop to "${ocppIdentityForCommand}", ocppTxId=${ocppTxId}`);
+
+        try {
+          // El Dual CSMS usa RemoteStopTransaction en 1.6 y
+          // RequestStopTransaction en 2.0.1, y espera el CALLRESULT del equipo.
+          remoteStopResponse = await dualCSMS.requestStopTransaction(ocppIdentityForCommand, ocppTxId);
+          commandAcknowledged = true;
+          remoteStopSent = isAcceptedRemoteStopResponse(remoteStopResponse);
+          await db.updateChargeStopRequestStatus(
+            transactionId,
+            remoteStopSent ? "ACCEPTED" : "REJECTED",
+            remoteStopSent
+              ? "El cargador aceptó la orden; esperando confirmación física de finalización."
+              : "El cargador rechazó la orden de detención.",
           );
+        } catch (requestError: any) {
+          console.warn(`[stopCharge] Protocol-aware stop acknowledgement failed: ${requestError?.message || requestError}`);
         }
-        
-        // Si aún no se envió y tenemos el ws directo, intentar enviar directamente
-        if (!remoteStopSent && connectionWs && connectionWs.readyState === 1) {
+
+        // Fallback excepcional para cargadores 1.6 que no enrutan CALLRESULT;
+        // sólo acredita que el frame salió, nunca que la carga haya terminado.
+        if (!remoteStopSent && !commandAcknowledged && connectionWs && connectionWs.readyState === 1) {
           try {
+            const messageId = uuidv4();
             const directMessage = JSON.stringify([2, messageId, "RemoteStopTransaction", { transactionId: ocppTxId }]);
             connectionWs.send(directMessage);
             remoteStopSent = true;
-            console.log(`[stopCharge] ✓ RemoteStopTransaction sent DIRECTLY via ws.send()`);
+            await db.updateChargeStopRequestStatus(
+              transactionId,
+              "REQUESTED",
+              "Orden enviada al cargador; esperando confirmación OCPP de finalización.",
+            );
+            console.log(`[stopCharge] RemoteStopTransaction sent through legacy fallback.`);
           } catch (directErr) {
-            console.error(`[stopCharge] ✗ Direct ws.send() failed:`, directErr);
+            console.error(`[stopCharge] Legacy stop fallback failed:`, directErr);
           }
         }
         
         if (remoteStopSent) {
           console.log(`[stopCharge] ✓✓ RemoteStopTransaction sent successfully to "${ocppIdentityForCommand}"`);
           
-          // Registrar log OCPP
+          // Registrar la orden emitida, diferenciándola del evento físico final.
           try {
             await db.createOcppLog({
               ocppIdentity: ocppIdentityForCommand,
               stationId: transaction.stationId,
               direction: "OUT",
-              messageType: "RemoteStopTransaction",
-              payload: { transactionId: ocppTxId },
+              messageType: "ChargeStopRequested",
+              payload: { transactionId: ocppTxId, response: remoteStopResponse },
             });
           } catch (logErr) {
             console.error(`[stopCharge] Error logging OCPP:`, logErr);
@@ -1788,36 +1923,33 @@ export const chargingRouter = router({
       
       // === COMPLETAR TRANSACCIÓN ===
       if (!remoteStopSent) {
-        console.log(`[stopCharge] Completing transaction locally (no OCPP connection). txId=${transactionId}`);
-        await completeTransactionLocally(transactionId, transaction);
-        
+        await db.updateChargeStopRequestStatus(
+          transactionId,
+          "REJECTED",
+          "No fue posible entregar la orden al cargador. La sesión continúa abierta para evitar un cobro o cierre ficticio.",
+        );
         return {
-          status: "completed",
-          message: "Carga detenida (sin conexión al cargador). El cargador puede seguir activo - desconecte el cable manualmente.",
+          status: "retryable",
+          message: "No se pudo comunicar la orden al cargador. La carga no se ha finalizado; verifica el equipo y reintenta.",
           isSimulation: false,
           transactionId: transactionId,
-          warning: "remote_stop_failed",
+          stopRequestStatus: "REJECTED",
         };
       }
       
-      // Si se envió RemoteStopTransaction, programar timeout de seguridad (45s)
-      setTimeout(async () => {
-        try {
-          const txCheck = await db.getTransactionById(transactionId!);
-          if (txCheck && txCheck.status === "IN_PROGRESS") {
-            console.warn(`[stopCharge] Timeout: StopTransaction not received after 45s for txId=${transactionId}. Completing locally.`);
-            await completeTransactionLocally(transactionId!, txCheck);
-          }
-        } catch (err) {
-          console.error(`[stopCharge] Timeout handler error:`, err);
-        }
-      }, 45000);
+      // Sólo StopTransaction (1.6) o TransactionEvent.Ended (2.0.1) cierra la
+      // sesión, liquida el cobro y libera el conector. La reconciliación de
+      // expiración corre en una ruta Heartbeat autenticada (no en un timer en
+      // memoria), por lo que sobrevive reinicios y múltiples instancias.
       
       return {
         status: "stopping",
-        message: "Deteniendo la carga...",
+        message: remoteStopResponse && isAcceptedRemoteStopResponse(remoteStopResponse)
+          ? "El cargador aceptó la orden. Confirmando el final físico de la carga..."
+          : "Orden enviada al cargador. Esperando confirmación de finalización...",
         isSimulation: false,
         transactionId: transactionId,
+        stopRequestStatus: "REQUESTED",
       };
     }),
 
@@ -2169,6 +2301,8 @@ export type ActiveSessionOperationalSnapshot = {
   manualBatteryCapacityKwh: number | null;
   manualSocCalibrationKwh: number | null;
   manualSocCalibratedAt: Date | null;
+  manualSocEffectiveCapacityKwh: number | null;
+  manualSocCalibrationCount: number;
   chargeCompleteDetected: boolean;
 };
 
@@ -2185,6 +2319,8 @@ export function getAllActiveSessionsPower(): Map<number, ActiveSessionOperationa
       manualBatteryCapacityKwh: session.manualBatteryCapacityKwh ?? null,
       manualSocCalibrationKwh: session.manualSocCalibrationKwh ?? null,
       manualSocCalibratedAt: session.manualSocCalibratedAt ?? null,
+      manualSocEffectiveCapacityKwh: session.manualSocEffectiveCapacityKwh ?? null,
+      manualSocCalibrationCount: session.manualSocCalibrationCount ?? 0,
       chargeCompleteDetected: session.chargeCompleteDetected ?? false,
     });
   }

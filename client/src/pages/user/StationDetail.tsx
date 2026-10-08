@@ -31,6 +31,13 @@ import {
 import { toast } from "sonner";
 import { AIInsightCard } from "@/components/AIInsightCard";
 import { useAuth } from "@/_core/hooks/useAuth";
+import {
+  formatStationDate,
+  formatStationDateTime,
+  formatStationTime,
+  getStationDateTimeParts,
+  stationLocalDateTimeToUtc,
+} from "@shared/station-timezone";
 
 // Componente de tarifa dinámica del kWh
 function DynamicPricingCard({ stationId }: { stationId: number }) {
@@ -187,14 +194,34 @@ export default function StationDetail() {
   const { user } = useAuth();
 
   const { data: station, isLoading } = trpc.stations.getById.useQuery({ 
-    id: stationId 
+    id: stationId,
+  }, {
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
   });
   
   // Obtener EVSEs de la estación
   const { data: evses } = trpc.stations.getEvses.useQuery(
     { stationId },
-    { enabled: !!station }
+    { enabled: !!station, refetchInterval: 12_000, refetchOnWindowFocus: true }
   );
+
+  // La estación es el contenedor; el cargador es el gabinete físico y cada
+  // EVSE representa una manguera/conector utilizable. El backend conserva el
+  // fallback para estaciones históricas sin cargador asignado.
+  const { data: chargerHierarchy } = trpc.chargers.listByStation.useQuery(
+    { stationId },
+    { enabled: !!station, refetchInterval: 12_000, refetchOnWindowFocus: true },
+  );
+  const chargerGroupByConnectorId = useMemo(() => {
+    const groups = new Map<number, any>();
+    for (const group of chargerHierarchy ?? []) {
+      for (const connector of group.connectors ?? []) {
+        groups.set(connector.id, group);
+      }
+    }
+    return groups;
+  }, [chargerHierarchy]);
 
   // Obtener mis reservas activas para esta estación
   const { data: myReservations } = trpc.reservations.myReservations.useQuery(
@@ -229,12 +256,13 @@ export default function StationDetail() {
   const totalReviews = reviewsData?.totalReviews ?? 0;
 
   // Obtener tarifa dinámica
+  const stationTimezone = station?.timezone || "America/Bogota";
   const requestedDate = useMemo(() => {
     if (reservationDate && reservationTime) {
-      return new Date(`${reservationDate}T${reservationTime}`);
+      return stationLocalDateTimeToUtc(reservationDate, reservationTime, stationTimezone);
     }
     return new Date();
-  }, [reservationDate, reservationTime]);
+  }, [reservationDate, reservationTime, stationTimezone]);
 
   const { data: dynamicPrice, isLoading: priceLoading } = trpc.reservations.getDynamicPrice.useQuery(
     {
@@ -252,10 +280,10 @@ export default function StationDetail() {
     { enabled: showReservationModal }
   );
 
-  // Obtener ocupación de la zona
+  // Obtener demanda física agregada de esta estación
   const { data: occupancy } = trpc.reservations.getZoneOccupancy.useQuery(
     { stationId },
-    { enabled: !!station }
+    { enabled: !!station, refetchInterval: 12_000, refetchOnWindowFocus: true }
   );
 
   // Obtener precio dinámico actual para pasar a la sugerencia de IA
@@ -310,11 +338,13 @@ export default function StationDetail() {
 
   const handleReserve = (evse: any) => {
     setSelectedEvse(evse);
-    // Establecer fecha y hora por defecto (próxima hora)
-    const now = new Date();
-    now.setHours(now.getHours() + 1, 0, 0, 0);
-    setReservationDate(now.toISOString().split("T")[0]);
-    setReservationTime(now.toTimeString().slice(0, 5));
+    // Establecer fecha y hora por defecto usando la zona horaria local del dispositivo
+    // Los controles representan el horario del sitio. No se toman de la zona
+    // del teléfono ni del WebView, que puede ser UTC o una zona distinta.
+    const stationNow = new Date(Date.now() + 60 * 60 * 1000);
+    const parts = getStationDateTimeParts(stationNow, stationTimezone);
+    setReservationDate(formatStationDate(stationNow, stationTimezone));
+    setReservationTime(`${String(parts.hour).padStart(2, "0")}:00`);
     setShowReservationModal(true);
   };
 
@@ -324,7 +354,7 @@ export default function StationDetail() {
       return;
     }
 
-    const startTime = new Date(`${reservationDate}T${reservationTime}`);
+    const startTime = stationLocalDateTimeToUtc(reservationDate, reservationTime, stationTimezone);
     const endTime = new Date(startTime.getTime() + parseInt(estimatedDuration) * 60 * 1000);
 
     createReservation.mutate({
@@ -332,6 +362,7 @@ export default function StationDetail() {
       stationId,
       startTime,
       endTime,
+      stationLocalStart: { date: reservationDate, time: reservationTime },
       estimatedDurationMinutes: parseInt(estimatedDuration),
     });
   };
@@ -507,7 +538,7 @@ export default function StationDetail() {
                          "Demanda muy alta"}
                       </div>
                       <div className="text-sm text-muted-foreground">
-                        {occupancy.availableConnectors} de {occupancy.totalConnectors} conectores libres
+                        {occupancy.availableConcurrentCapacity} de {occupancy.totalConcurrentCapacity} cupos de carga libres en esta estación
                       </div>
                     </div>
                   </div>
@@ -536,7 +567,7 @@ export default function StationDetail() {
             transition={{ delay: 0.1 }}
           >
             <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold">Conectores disponibles</h3>
+              <h3 className="font-semibold">Puntos de carga</h3>
               {station.isOnline === false && (
                 <span className="text-xs text-orange-400 flex items-center gap-1">
                   <AlertTriangle className="w-3 h-3" />
@@ -559,15 +590,33 @@ export default function StationDetail() {
             <div className="space-y-3">
               {evses?.map((evse: any, index: number) => {
                 const statusStyle = getConnectorStatus(evse.connectorStatus);
+                const chargerGroup = chargerGroupByConnectorId.get(evse.id);
+                const isFirstConnectorInCharger = !!chargerGroup && chargerGroup.connectors?.[0]?.id === evse.id;
                 return (
-                  <Card key={evse.id} className="p-4 bg-card/50 backdrop-blur border-border/50">
+                  <div key={evse.id} className="space-y-2">
+                    {isFirstConnectorInCharger && (
+                      <div className="flex items-center justify-between rounded-xl border border-primary/20 bg-primary/5 px-3 py-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold truncate">{chargerGroup.label}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {chargerGroup.isLegacyUnassigned
+                              ? "Conectores por organizar"
+                              : `${chargerGroup.concurrentCapacity} carga${chargerGroup.concurrentCapacity === 1 ? "" : "s"} simultánea${chargerGroup.concurrentCapacity === 1 ? "" : "s"} · ${chargerGroup.availableSlots} cupo${chargerGroup.availableSlots === 1 ? "" : "s"} disponible${chargerGroup.availableSlots === 1 ? "" : "s"}`}
+                          </p>
+                        </div>
+                        {chargerGroup.supportsIndependentSessions && (
+                          <Badge variant="outline" className="border-primary/40 text-primary text-[10px]">Salidas independientes</Badge>
+                        )}
+                      </div>
+                    )}
+                  <Card className="p-4 bg-card/50 backdrop-blur border-border/50">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <div className={`w-12 h-12 rounded-xl ${statusStyle.bg} flex items-center justify-center`}>
                           <Zap className={`w-6 h-6 ${statusStyle.text}`} />
                         </div>
                         <div>
-                          <div className="font-medium">Conector {index + 1}</div>
+                          <div className="font-medium">{chargerGroup?.connectors?.find((connector: any) => connector.id === evse.id)?.label || `Conector ${index + 1}`}</div>
                           <div className="text-sm text-muted-foreground">
                             {evse.connectorType?.replace("_", " ")} • {evse.powerKw} kW
                           </div>
@@ -592,11 +641,9 @@ export default function StationDetail() {
                                 {isMyNextRes ? "Tu pr\u00f3xima reserva" : "Reserva programada"}
                               </div>
                               <div className="text-xs text-muted-foreground">
-                                {new Date(nextRes.startTime).toLocaleDateString("es-CO", { weekday: "short", day: "numeric", month: "short" })}
-                                {" a las "}
-                                {new Date(nextRes.startTime).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })}
+                                {formatStationDateTime(nextRes.startTime, stationTimezone, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
                                 {" - "}
-                                {new Date(nextRes.endTime).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })}
+                                {formatStationTime(nextRes.endTime, stationTimezone)}
                               </div>
                               {isMyNextRes && myNextResDetail?.reservationFee && (
                                 <div className="text-xs text-blue-300 mt-1">Tarifa: ${Number(myNextResDetail.reservationFee).toLocaleString()} COP</div>
@@ -656,7 +703,7 @@ export default function StationDetail() {
                         <div className="flex gap-2">
                           <Button
                             className="flex-1 gradient-primary text-white"
-                            onClick={() => setLocation(`/start-charge?code=${station.ocppIdentity || station.id}`)}
+                            onClick={() => setLocation(`/start-charge?code=${encodeURIComponent(String(station.ocppIdentity || station.id))}&evseId=${evse.id}`)}
                             disabled={station.isOnline === false}
                           >
                             <Zap className="w-4 h-4 mr-2" />
@@ -690,12 +737,10 @@ export default function StationDetail() {
                                 </div>
                                 <div className="text-xs text-muted-foreground space-y-1">
                                   <div>
-                                    {new Date(myRes.startTime).toLocaleDateString("es-CO", { weekday: "short", day: "numeric", month: "short" })}
-                                    {" a las "}
-                                    {new Date(myRes.startTime).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })}
+                                    {formatStationDateTime(myRes.startTime, stationTimezone, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
                                   </div>
                                   {myRes.endTime && (
-                                    <div>Hasta: {new Date(myRes.endTime).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })}</div>
+                                    <div>Hasta: {formatStationTime(myRes.endTime, stationTimezone)}</div>
                                   )}
                                   {myRes.reservationFee && (
                                     <div className="text-purple-300">Tarifa: ${Number(myRes.reservationFee).toLocaleString()} COP</div>
@@ -740,6 +785,7 @@ export default function StationDetail() {
                       );
                     })()}
                   </Card>
+                  </div>
                 );
               })}
             </div>
@@ -978,7 +1024,7 @@ export default function StationDetail() {
                     type="date"
                     value={reservationDate}
                     onChange={(e) => setReservationDate(e.target.value)}
-                    min={new Date().toISOString().split("T")[0]}
+                    min={formatStationDate(new Date(), stationTimezone)}
                     className="bg-background/50 text-sm h-9"
                   />
                 </div>
@@ -1088,11 +1134,11 @@ export default function StationDetail() {
                           className="border-green-500/50 text-green-400 hover:bg-green-500/10 text-xs h-7 px-2"
                           onClick={() => {
                             const d = new Date(slot.time);
-                            setReservationDate(d.toISOString().split("T")[0]);
-                            setReservationTime(d.toTimeString().slice(0, 5));
+                            setReservationDate(formatStationDate(d, stationTimezone));
+                            setReservationTime(formatStationTime(d, stationTimezone));
                           }}
                         >
-                          {new Date(slot.time).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })}
+                          {formatStationTime(slot.time, stationTimezone)}
                         </Button>
                       ))}
                   </div>

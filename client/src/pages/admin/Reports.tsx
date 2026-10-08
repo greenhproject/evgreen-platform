@@ -24,6 +24,8 @@ import {
   Cell,
 } from "recharts";
 import { toast } from "sonner";
+import { FinancialReconciliationReport } from "@/components/FinancialReconciliationReport";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 type Period = "week" | "month" | "quarter" | "year";
 
@@ -209,6 +211,13 @@ export default function AdminReports() {
         </div>
       </div>
 
+      <Tabs defaultValue="operations" className="space-y-4">
+        <TabsList className="w-full sm:w-auto overflow-x-auto justify-start h-auto p-1">
+          <TabsTrigger value="operations" className="min-w-max">Operación</TabsTrigger>
+          <TabsTrigger value="reconciliations" className="min-w-max">Conciliaciones</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="operations" className="space-y-6 mt-0">
       {/* KPIs del período */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="p-4">
@@ -387,6 +396,12 @@ export default function AdminReports() {
           </Card>
         </div>
       </Card>
+        </TabsContent>
+
+        <TabsContent value="reconciliations" className="mt-0">
+          <FinancialReconciliationReport />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

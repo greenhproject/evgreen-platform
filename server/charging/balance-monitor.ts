@@ -503,7 +503,8 @@ async function incrementAutoRechargeFailCount(userId: number) {
 
 /**
  * Send a push notification to a user for balance-related events.
- * Silently fails if user has no FCM token or Firebase is not configured.
+ * El enrutador consulta Web Push, token histórico y todos los dispositivos
+ * activos; no debe bloquear un usuario que migró del campo fcmToken legado.
  */
 async function sendBalancePush(
   userId: number,
@@ -513,11 +514,6 @@ async function sendBalancePush(
   clickAction: string
 ): Promise<void> {
   try {
-    const user = await db.getUserById(userId);
-    if (!user?.fcmToken && !user?.pushSubscription) {
-      return; // User has no push token or subscription registered
-    }
-
     const sent = await sendUserPush(userId, {
       type,
       title,

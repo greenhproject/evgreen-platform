@@ -18,7 +18,10 @@ import {
   transactions,
   userConsumptionProfile,
   userDataConsents,
+  chargingStations,
 } from "../../drizzle/schema";
+import { summarizeChargingHabits } from "../../shared/charging-habit-policy";
+import { isEnabledDatabaseFlag } from "../../shared/database-boolean";
 
 const WINDOW_DAYS = 90;
 
@@ -45,7 +48,7 @@ export async function hasActiveConsent(
     .orderBy(desc(userDataConsents.updatedAt))
     .limit(1);
 
-  return !!consent?.granted;
+  return isEnabledDatabaseFlag(consent?.granted);
 }
 
 export async function grantConsent(params: {
@@ -116,10 +119,13 @@ export async function computeProfileForUser(userId: number): Promise<boolean> {
       totalCost: transactions.totalCost,
       endTime: transactions.endTime,
       stationId: transactions.stationId,
+      stationName: chargingStations.name,
       chargeMode: transactions.chargeMode,
       appliedPricePerKwh: transactions.appliedPricePerKwh,
+      stationTimezone: chargingStations.timezone,
     })
     .from(transactions)
+    .leftJoin(chargingStations, eq(chargingStations.id, transactions.stationId))
     .where(
       and(
         eq(transactions.userId, userId),
@@ -131,19 +137,14 @@ export async function computeProfileForUser(userId: number): Promise<boolean> {
 
   if (sessions.length === 0) return false;
 
-  // 3. Distribuciones temporales
-  const hourly = new Array(24).fill(0);
-  const weekday = new Array(7).fill(0);
-  for (const s of sessions) {
-    if (s.startTime) {
-      // @ts-ignore
-      hourly[s.startTime.getHours()]++;
-      // @ts-ignore
-      weekday[s.startTime.getDay()]++;
-    }
-  }
-  const peakHour = hourly.indexOf(Math.max(...hourly));
-  const peakWeekday = weekday.indexOf(Math.max(...weekday));
+  // 3. Distribuciones temporales en la hora local de cada estación.
+  // Nunca se usa `Date#getHours()` aquí: ese valor depende del servidor UTC.
+  const habitSummary = summarizeChargingHabits(
+    sessions.map(session => ({
+      startTime: session.startTime,
+      timezone: session.stationTimezone,
+    }))
+  );
 
   // 4. Promedios de consumo
   const num = (v: string | null) => (v ? parseFloat(v) : 0);
@@ -157,6 +158,67 @@ export async function computeProfileForUser(userId: number): Promise<boolean> {
     ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
     : 0;
 
+  const datedSessions = sessions
+    .filter(session => session.startTime)
+    .sort(
+      (a, b) =>
+        new Date(b.startTime!).getTime() - new Date(a.startTime!).getTime()
+    );
+  const latestSession = datedSessions[0];
+  const chargeIntervalsDays = datedSessions
+    .slice(1)
+    .map(
+      (session, index) =>
+        (new Date(datedSessions[index].startTime!).getTime() -
+          new Date(session.startTime!).getTime()) /
+        (24 * 60 * 60 * 1000)
+    )
+    .filter(interval => Number.isFinite(interval) && interval > 0)
+    .slice(0, 10);
+  const typicalChargeFrequencyDays = chargeIntervalsDays.length
+    ? chargeIntervalsDays.reduce((sum, interval) => sum + interval, 0) /
+      chargeIntervalsDays.length
+    : null;
+  const lastChargeAt = latestSession
+    ? new Date(latestSession.endTime ?? latestSession.startTime!)
+    : null;
+  const nextPredictedChargeAt =
+    lastChargeAt && typicalChargeFrequencyDays
+      ? new Date(
+          lastChargeAt.getTime() +
+            typicalChargeFrequencyDays * 24 * 60 * 60 * 1000
+        )
+      : null;
+
+  const stationVisits = new Map<
+    number,
+    { name: string; visits: number; lastVisit: Date }
+  >();
+  for (const session of datedSessions) {
+    const visit = stationVisits.get(session.stationId) ?? {
+      name: session.stationName ?? `Estación #${session.stationId}`,
+      visits: 0,
+      lastVisit: new Date(session.startTime!),
+    };
+    visit.visits += 1;
+    if (new Date(session.startTime!).getTime() > visit.lastVisit.getTime()) {
+      visit.lastVisit = new Date(session.startTime!);
+    }
+    stationVisits.set(session.stationId, visit);
+  }
+  const topStations = [...stationVisits.entries()]
+    .sort(
+      ([, a], [, b]) =>
+        b.visits - a.visits || b.lastVisit.getTime() - a.lastVisit.getTime()
+    )
+    .slice(0, 3)
+    .map(([stationId, visit]) => ({
+      stationId,
+      name: visit.name,
+      visits: visit.visits,
+      lastVisit: visit.lastVisit.toISOString(),
+    }));
+
   // 5. Sensibilidad al precio
   const pricedSessions = sessions.filter(s => num(s.appliedPricePerKwh) > 0);
   const avgPrice = pricedSessions.length
@@ -165,16 +227,17 @@ export async function computeProfileForUser(userId: number): Promise<boolean> {
     : null;
 
   // 6. Confianza del perfil
-  const confidence: "HIGH" | "MEDIUM" | "LOW" =
-    sessions.length > 20 ? "HIGH" : sessions.length >= 5 ? "MEDIUM" : "LOW";
+  const confidence = habitSummary.confidence;
 
   // 7. Upsert del perfil — usa las columnas existentes + las nuevas
   const profileData = {
     // Columnas nuevas (perfilamiento avanzado)
-    hourlyDistribution: hourly,
-    weekdayDistribution: weekday,
-    peakHour,
-    peakWeekday,
+    hourlyDistribution: habitSummary.hourlyDistribution,
+    weekdayDistribution: habitSummary.weekdayDistribution,
+    habitSlotDistribution: habitSummary.slotDistribution,
+    habitTimezone: habitSummary.timezone,
+    peakHour: habitSummary.peakHour,
+    peakWeekday: habitSummary.peakWeekday,
     sessionsPerWeek: ((sessions.length / WINDOW_DAYS) * 7).toFixed(2),
     priceSensitivity: avgPrice ? "0.300" : null, // placeholder heurístico v1
     avgPricePaidPerKwh: avgPrice?.toFixed(2) ?? null,
@@ -189,11 +252,22 @@ export async function computeProfileForUser(userId: number): Promise<boolean> {
     avgKwhPerSession: (totalKwh / sessions.length).toFixed(4),
     avgCostPerSession: (totalCost / sessions.length).toFixed(2),
     avgSessionDurationMin: avgMinutes,
-    preferredHours: hourly.map((v: number, i: number) => ({ h: i, c: v }))
+    monthlyAvgSpent: (totalCost / Math.max(1, WINDOW_DAYS / 30)).toFixed(2),
+    monthlyAvgKwh: (totalKwh / Math.max(1, WINDOW_DAYS / 30)).toFixed(4),
+    monthlyAvgSessions: (
+      sessions.length / Math.max(1, WINDOW_DAYS / 30)
+    ).toFixed(2),
+    topStations,
+    lastChargeAt,
+    typicalChargeFrequencyDays: typicalChargeFrequencyDays?.toFixed(2) ?? null,
+    nextPredictedChargeAt,
+    preferredHours: habitSummary.hourlyDistribution
+      .map((v: number, i: number) => ({ h: i, c: v }))
       .sort((a: { c: number }, b: { c: number }) => b.c - a.c)
       .slice(0, 3)
       .map((x: { h: number }) => x.h),
-    preferredDays: weekday.map((v: number, i: number) => ({ d: i, c: v }))
+    preferredDays: habitSummary.weekdayDistribution
+      .map((v: number, i: number) => ({ d: i, c: v }))
       .sort((a: { c: number }, b: { c: number }) => b.c - a.c)
       .slice(0, 3)
       .map((x: { d: number }) => x.d),
@@ -257,7 +331,13 @@ export async function computeAllProfiles(batchSize = 100): Promise<{
 // ============================================================================
 
 const DAY_NAMES = [
-  "domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado",
+  "domingo",
+  "lunes",
+  "martes",
+  "miércoles",
+  "jueves",
+  "viernes",
+  "sábado",
 ];
 
 /**
@@ -288,7 +368,7 @@ export async function buildPersonalizationContext(
 
   const peakDayName = DAY_NAMES[profile.peakWeekday ?? 0];
   const peakHourStr = `${profile.peakHour ?? 0}:00`;
-  const topStationsStr = (profile.topStations as any[] ?? [])
+  const topStationsStr = ((profile.topStations as any[]) ?? [])
     .slice(0, 3)
     .map((s: any) => `#${s.stationId ?? s.name ?? "?"}`)
     .join(", ");

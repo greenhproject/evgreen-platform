@@ -7,7 +7,7 @@
 import { router, publicProcedure, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { getDb } from "../db";
+import { getDb, getPlatformSettings } from "../db";
 import { getResendClient } from "../email/resend-client";
 import { buildCrowdfundingProjectInheritanceUpdate, getCrowdfundingInheritanceSnapshot } from "./crowdfunding-inheritance";
 import {
@@ -21,11 +21,22 @@ import {
 import { eq, desc, and, sql, like, or, inArray, count, gte, lte, isNull, isNotNull } from "drizzle-orm";
 import { randomBytes } from "crypto";
 import { storagePut } from "../storage";
-import { invokeLLM } from "../_core/llm";
+import { scoreSpaceInvestment } from "./space-ai-scoring";
 import { buildEmailParams } from "../utils/email-helper";
 import { optionalFormInteger, optionalFormNumber } from "./space-input-normalization";
 import { canManageCommercialPipeline, canManageSpaceAdministration } from "./pipeline-access";
 import { assertCommercialTransition, type SpacePipelineStatus } from "./pipeline-transitions";
+import {
+  buildCrowdfundingProjectionSnapshot,
+  getSelectedCrowdfundingProjection,
+  type CrowdfundingProjectionSnapshot,
+} from "../../shared/crowdfunding-financial-projection";
+import {
+  assertProspectoFinancialScenarioIsDocumented,
+  resolveProspectoTechnicalCondition,
+} from "../../shared/prospecto-financial-scenario";
+import { buildProspectoGridUpgradeNote } from "./prospecto-grid-upgrade-note";
+import { getRevenueDistributionForSpaceType } from "../../shared/space-investment-scoring-policy";
 
 // ============================================================================
 // ROLE GUARDS
@@ -58,6 +69,75 @@ async function getDatabase() {
 
 function toSqlTimestamp(date = new Date()) {
   return date.toISOString().slice(0, 19).replace("T", " ");
+}
+
+function firstPositiveNumber(...values: unknown[]): number | null {
+  for (const value of values) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && numeric > 0) return numeric;
+  }
+  return null;
+}
+
+function parseProjectionSnapshot(value: unknown): CrowdfundingProjectionSnapshot | null {
+  if (!value) return null;
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value) as CrowdfundingProjectionSnapshot;
+    } catch {
+      return null;
+    }
+  }
+  return typeof value === "object" ? value as CrowdfundingProjectionSnapshot : null;
+}
+
+async function buildSpaceCrowdfundingProjection(input: {
+  investmentCop: number;
+  totalPowerKw: number;
+  spaceType?: string | null;
+  currentProject?: any;
+}) {
+  if (input.investmentCop <= 0 || input.totalPowerKw <= 0) return null;
+
+  const settings = await getPlatformSettings();
+  const stored = parseProjectionSnapshot(input.currentProject?.financialProjectionSnapshot);
+  const distribution = getRevenueDistributionForSpaceType(input.spaceType);
+  const investorSharePercent = Number(
+    distribution.investorSharePercent,
+  );
+  const evgreenSharePercent = Number(
+    distribution.evgreenSharePercent,
+  );
+  const selectedScenario = stored?.selectedScenario ?? "REALISTIC";
+  const snapshot = buildCrowdfundingProjectionSnapshot({
+    investmentCop: input.investmentCop,
+    totalPowerKw: input.totalPowerKw,
+    salePricePerKwh: Number(stored?.assumptions.salePricePerKwh ?? settings?.precioVentaDefault ?? 1800),
+    energyCostPerKwh: Number(
+      input.currentProject?.energyPurchaseCostPerKwh
+        ?? stored?.assumptions.energyCostPerKwh
+        ?? settings?.costoEnergiaRed
+        ?? 850,
+    ),
+    hostSharePercent: Number(
+      input.currentProject?.hostSharePercent
+        ?? stored?.assumptions.hostSharePercent
+        ?? 10,
+    ),
+    investorSharePercent,
+    evgreenSharePercent,
+    efficiencyPercent: Number(stored?.assumptions.efficiencyPercent ?? settings?.eficienciaCargaDc ?? 92),
+    fixedMonthlyExpenses: Number(stored?.assumptions.fixedMonthlyExpenses ?? 0),
+  }, selectedScenario);
+  const selected = getSelectedCrowdfundingProjection(snapshot);
+
+  return {
+    snapshot,
+    selected,
+    selectedScenario,
+    investorSharePercent,
+    evgreenSharePercent,
+  };
 }
 
 async function recordSpaceStatusChange(
@@ -818,7 +898,7 @@ export const spacesRouter = router({
 		minimumInvestmentCop: z.number().optional(),
 		estimatedRoiPercent: z.string().optional(),
 		estimatedPaybackMonths: z.number().int().optional(),
-        estimatedPowerKw: z.number().int().optional(),
+        estimatedPowerKw: z.number().int().min(120, "EVGreen solo instala cargadores rápidos DC desde 120 kW.").optional(),
         estimatedChargerCount: z.number().int().optional(),
         recommendedChargerType: z.string().optional(),
       }))
@@ -888,9 +968,11 @@ export const spacesRouter = router({
 				submissionId: spacePhotos.submissionId, url: spacePhotos.photoUrl, type: spacePhotos.photoType,
 				caption: spacePhotos.caption, sortOrder: spacePhotos.sortOrder,
 			}).from(spacePhotos).where(eq(spacePhotos.submissionId, input.id)).orderBy(spacePhotos.sortOrder);
-			const inherited = getCrowdfundingInheritanceSnapshot(submission, inheritedPhotos);
-			const targetAmount = inherited.targetAmount ?? 0;
-            const [cfResult] = await db.insert(crowdfundingProjects).values({
+				const inherited = getCrowdfundingInheritanceSnapshot(submission, inheritedPhotos);
+				const targetAmount = inherited.targetAmount ?? 0;
+				const totalPowerKw = inherited.totalPowerKw ?? 0;
+          const projection = await buildSpaceCrowdfundingProjection({ investmentCop: targetAmount, totalPowerKw, spaceType: submission.spaceType });
+	            const [cfResult] = await db.insert(crowdfundingProjects).values({
 				name: inherited.name,
 				description: inherited.description,
 				city: inherited.city,
@@ -898,14 +980,18 @@ export const spacesRouter = router({
 				address: inherited.address,
               targetAmount,
 				minimumInvestment: inherited.minimumInvestment ?? 0,
-				totalPowerKw: inherited.totalPowerKw ?? 0,
+					totalPowerKw,
 				chargerCount: inherited.chargerCount ?? 0,
 				chargerPowerKw: inherited.chargerPowerKw ?? 0,
                             hasSolarPanels: 0,
               raisedAmount: 0,
-				estimatedRoiPercent: inherited.estimatedRoiPercent ?? "0.00",
-				estimatedPaybackMonths: inherited.estimatedPaybackMonths ?? 0,
-              status: "DRAFT",
+					estimatedRoiPercent: projection ? projection.selected.roiAnnualPercent.toFixed(2) : "0.00",
+					estimatedPaybackMonths: projection ? Math.ceil(projection.selected.paybackMonths) : 0,
+					financialProjectionSnapshot: projection?.snapshot ?? null,
+					financialProjectionScenario: projection?.selectedScenario ?? null,
+					financialProjectionUpdatedAt: projection ? toSqlTimestamp() : null,
+					financialProjectionUpdatedBy: projection ? ctx.user.id : null,
+					status: "DRAFT",
               spaceSubmissionId: input.id,
 				spaceInheritanceSnapshot: inherited,
               createdById: ctx.user.id,
@@ -1088,96 +1174,46 @@ export const spacesRouter = router({
           throw new TRPCError({ code: "NOT_FOUND", message: "Postulación no encontrada" });
         }
 
-        const prompt = `Eres un analista experto en infraestructura de carga de vehículos eléctricos en Colombia. Evalúa el siguiente espacio postulado para instalar cargadores EV y genera un puntaje de 0 a 100 junto con un análisis detallado.
+        const photos = await db
+          .select({ photoUrl: spacePhotos.photoUrl, photoType: spacePhotos.photoType, caption: spacePhotos.caption })
+          .from(spacePhotos)
+          .where(eq(spacePhotos.submissionId, input.id))
+          .orderBy(spacePhotos.sortOrder);
 
-DATOS DEL ESPACIO:
-- Nombre: ${submission.spaceName}
-- Tipo: ${SPACE_TYPE_LABELS[submission.spaceType] || submission.spaceType}
-- Ciudad: ${submission.city}${submission.department ? `, ${submission.department}` : ""}
-- Dirección: ${submission.address}
-- Área disponible: ${submission.availableAreaM2 || "No especificada"} m²
-- Puestos de parqueo: ${submission.parkingSpots || "No especificado"}
-- Capacidad del transformador: ${submission.transformerCapacityKva || "No especificada"} kVA
-- Tablero eléctrico accesible: ${submission.hasElectricalPanel ? "Sí" : "No"}
-- Distancia tablero-punto de carga: ${submission.electricalDistance || "No especificada"} metros
-- Internet disponible: ${submission.hasInternet ? "Sí" : "No"}
-- Horario: ${submission.is24Hours ? "24 horas" : `${submission.operatingHoursStart} - ${submission.operatingHoursEnd}`}
-- Vehículos diarios estimados: ${submission.estimatedDailyVehicles || "No especificado"}
-- % vehículos eléctricos estimado: ${submission.estimatedEvPercent || "No especificado"}%
-- Estrato socioeconómico: ${submission.socioeconomicStratum || "No especificado"}
-- Puntos de interés cercanos: ${submission.nearbyAttractions || "No especificados"}
-- Notas adicionales: ${submission.additionalNotes || "Ninguna"}
-
-CRITERIOS DE EVALUACIÓN:
-1. Viabilidad eléctrica (capacidad del transformador, acceso al tablero)
-2. Potencial de tráfico vehicular y demanda de carga EV
-3. Ubicación estratégica (estrato, tipo de zona, puntos de interés)
-4. Infraestructura existente (internet, área, parqueo)
-5. Horario de operación y accesibilidad
-6. Potencial de retorno de inversión para inversionistas
-
-Responde en formato JSON con la siguiente estructura:`;
-
-        const response = await invokeLLM({
-          messages: [
-            { role: "system", content: "Eres un analista experto en infraestructura de carga de vehículos eléctricos en Colombia. Responde siempre en español." },
-            { role: "user", content: prompt },
-          ],
-          response_format: {
-            type: "json_schema",
-            json_schema: {
-              name: "space_analysis",
-              strict: true,
-              schema: {
-                type: "object",
-                properties: {
-                  score: { type: "integer", description: "Puntaje general de 0 a 100" },
-                  summary: { type: "string", description: "Resumen ejecutivo de 2-3 oraciones" },
-                  strengths: {
-                    type: "array",
-                    items: { type: "string" },
-                    description: "Lista de fortalezas del espacio",
-                  },
-                  weaknesses: {
-                    type: "array",
-                    items: { type: "string" },
-                    description: "Lista de debilidades o riesgos",
-                  },
-                  recommendation: { type: "string", description: "Recomendación de tipo de cargador y potencia" },
-                  estimatedChargers: { type: "integer", description: "Número estimado de cargadores recomendados" },
-                  estimatedPowerKw: { type: "integer", description: "Potencia total estimada en kW" },
-                  investmentAppeal: { type: "string", description: "Atractivo para inversionistas (alto/medio/bajo)" },
-                  electricalViability: { type: "string", description: "Viabilidad eléctrica: viable, requires_upgrade, not_viable" },
-                },
-                required: ["score", "summary", "strengths", "weaknesses", "recommendation", "estimatedChargers", "estimatedPowerKw", "investmentAppeal", "electricalViability"],
-                additionalProperties: false,
-              },
-            },
-          },
-        });
-
-        const content = response.choices[0]?.message?.content;
-        let analysis: any;
-
+        let analysis;
         try {
-          analysis = JSON.parse(typeof content === "string" ? content : JSON.stringify(content));
-        } catch {
+          analysis = await scoreSpaceInvestment({ space: submission, photos });
+        } catch (error) {
+          console.error("[Spaces] Error generating multimodal AI scoring:", error);
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",
-            message: "Error al parsear respuesta de IA",
+            message: "No fue posible completar el análisis visual y técnico. Inténtalo de nuevo.",
           });
         }
+
+        let technicalNotes: Record<string, unknown>;
+        try {
+          technicalNotes = submission.technicalNotes ? JSON.parse(submission.technicalNotes) : {};
+        } catch {
+          technicalNotes = submission.technicalNotes ? { legacyText: submission.technicalNotes } : {};
+        }
+        technicalNotes.requiresNewTransformer = true;
+        technicalNotes.proposedTransformerKva = analysis.dcInfrastructure.requiredTransformerKva;
+        technicalNotes.dcPowerFactor = analysis.dcInfrastructure.transformerPowerFactor;
+        technicalNotes.dcMinimumChargerPowerKw = analysis.dcInfrastructure.minimumChargerPowerKw;
+        technicalNotes.dcScoringVersion = analysis.version;
 
         // Guardar en BD
         await db.update(spaceSubmissions)
           .set({
-            aiScore: Math.min(100, Math.max(0, analysis.score)),
+            aiScore: analysis.score,
             aiAnalysis: JSON.stringify(analysis),
             aiScoredAt: new Date().toISOString().slice(0, 19).replace("T", " "),
-            // Auto-llenar datos de inversión estimados si no existen
-            ...(submission.estimatedPowerKw ? {} : { estimatedPowerKw: analysis.estimatedPowerKw }),
-            ...(submission.estimatedChargerCount ? {} : { estimatedChargerCount: analysis.estimatedChargers }),
-            ...(submission.electricalViability ? {} : { electricalViability: analysis.electricalViability as any }),
+            technicalNotes: JSON.stringify(technicalNotes),
+            // Una recomendación antigua inferior a 120 kW no puede persistir como una oferta DC EVGreen válida.
+            ...(Number(submission.estimatedPowerKw) >= 120 ? {} : { estimatedPowerKw: analysis.estimatedPowerKw }),
+            ...(Number(submission.estimatedChargerCount) > 0 ? {} : { estimatedChargerCount: analysis.estimatedChargers }),
+            electricalViability: analysis.electricalViability,
           })
           .where(eq(spaceSubmissions.id, input.id));
 
@@ -1221,23 +1257,44 @@ Responde en formato JSON con la siguiente estructura:`;
 			caption: spacePhotos.caption, sortOrder: spacePhotos.sortOrder,
 		}).from(spacePhotos).where(eq(spacePhotos.submissionId, input.id)).orderBy(spacePhotos.sortOrder);
 		const inherited = getCrowdfundingInheritanceSnapshot(submission, inheritedPhotos);
-		const targetAmount = inherited.targetAmount ?? input.targetAmount;
-		if (!targetAmount) {
-			throw new TRPCError({ code: "BAD_REQUEST", message: "Completa la meta de inversión en Espacios antes de publicar." });
-		}
+			const [currentProject] = submission.crowdfundingProjectId
+				? await db.select().from(crowdfundingProjects).where(eq(crowdfundingProjects.id, submission.crowdfundingProjectId)).limit(1)
+				: [];
+			const targetAmount = firstPositiveNumber(currentProject?.targetAmount, inherited.targetAmount, input.targetAmount);
+			if (!targetAmount) {
+				throw new TRPCError({ code: "BAD_REQUEST", message: "Completa la meta de inversión en Espacios antes de publicar." });
+			}
+			const totalPowerKw = firstPositiveNumber(currentProject?.totalPowerKw, inherited.totalPowerKw, 120)!;
+			const projection = await buildSpaceCrowdfundingProjection({
+				investmentCop: targetAmount,
+				totalPowerKw,
+				spaceType: submission.spaceType,
+				currentProject,
+			});
+			if (!projection) {
+				throw new TRPCError({ code: "BAD_REQUEST", message: "Completa inversión y potencia para calcular los escenarios antes de publicar." });
+			}
+			const projectionValues = {
+				estimatedRoiPercent: projection.selected.roiAnnualPercent.toFixed(2),
+				estimatedPaybackMonths: Math.ceil(projection.selected.paybackMonths),
+				financialProjectionSnapshot: projection.snapshot,
+				financialProjectionScenario: projection.selectedScenario,
+				financialProjectionUpdatedAt: toSqlTimestamp(),
+				financialProjectionUpdatedBy: ctx.user.id,
+			};
 
         let crowdfundingProjectId: number;
 
         if (submission.crowdfundingProjectId) {
 	          // Ya existe un proyecto CF (creado auto al aprobar) → actualizar
-	          await db.update(crowdfundingProjects)
-	            .set({
-					spaceInheritanceSnapshot: inherited,
-					targetAmount,
-				minimumInvestment: inherited.minimumInvestment ?? input.minimumInvestment ?? 50000000,
-				estimatedRoiPercent: inherited.estimatedRoiPercent ?? input.estimatedRoiPercent ?? "85.00",
-				estimatedPaybackMonths: inherited.estimatedPaybackMonths ?? input.estimatedPaybackMonths ?? 14,
-              status: "OPEN",
+		          await db.update(crowdfundingProjects)
+		            .set({
+						spaceInheritanceSnapshot: inherited,
+						targetAmount,
+					minimumInvestment: firstPositiveNumber(currentProject?.minimumInvestment, inherited.minimumInvestment, input.minimumInvestment, 50000000)!,
+					totalPowerKw,
+					...projectionValues,
+	              status: "OPEN",
               launchDate: new Date().toISOString().slice(0, 19).replace("T", " "),
             })
             .where(eq(crowdfundingProjects.id, submission.crowdfundingProjectId));
@@ -1250,15 +1307,14 @@ Responde en formato JSON con la siguiente estructura:`;
 			city: inherited.city,
 			zone: inherited.zone,
 			address: inherited.address,
-			targetAmount,
-			minimumInvestment: inherited.minimumInvestment ?? input.minimumInvestment ?? 50000000,
-			totalPowerKw: inherited.totalPowerKw ?? 120,
+				targetAmount,
+				minimumInvestment: inherited.minimumInvestment ?? input.minimumInvestment ?? 50000000,
+				totalPowerKw,
 			chargerCount: inherited.chargerCount ?? 2,
 			chargerPowerKw: inherited.chargerPowerKw ?? 60,
             hasSolarPanels: 0,
             raisedAmount: 0,
-			estimatedRoiPercent: inherited.estimatedRoiPercent ?? input.estimatedRoiPercent ?? "85.00",
-			estimatedPaybackMonths: inherited.estimatedPaybackMonths ?? input.estimatedPaybackMonths ?? 14,
+				...projectionValues,
             status: "OPEN",
             launchDate: new Date().toISOString().slice(0, 19).replace("T", " "),
             spaceSubmissionId: input.id,
@@ -1432,6 +1488,9 @@ Responde en formato JSON con la siguiente estructura:`;
         }
         if (cleanFields.electricalDistance === undefined && electricalDistanceM !== undefined) {
           cleanFields.electricalDistance = electricalDistanceM;
+        }
+        if (cleanFields.estimatedPowerKw !== undefined && cleanFields.estimatedPowerKw < 120) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "EVGreen solo instala cargadores rápidos DC desde 120 kW." });
         }
         if (
           cleanFields.estimatedInvestmentCop !== undefined ||
@@ -1809,9 +1868,12 @@ Responde en formato JSON con la siguiente estructura:`;
       allySharePercent: z.number().min(0).max(50).default(10),
       investorSharePercent: z.number().min(1).max(99).default(70),
       platformSharePercent: z.number().min(1).max(99).default(30),
-      installedPowerKw: z.number().optional(),
-      tarifaKwhCop: z.number().default(1800),
-      energyCostPerKwhCop: z.number().min(0).max(10000).default(700),
+      installedPowerKw: z.number().positive().max(5000).optional(),
+      tarifaKwhCop: z.number().positive().max(10000).optional(),
+      energyCostPerKwhCop: z.number().min(0).max(10000).optional(),
+      fixedMonthlyExpensesCop: z.number().min(0).max(100000000).default(0),
+      capexIncludesGridUpgrade: z.boolean().default(false),
+      technicalConditionNote: z.string().trim().max(2000).optional(),
     }).refine(
       data => Math.abs(data.investorSharePercent + data.platformSharePercent - 100) < 0.001,
       { message: "La participación de Inversionista y EVGreen debe sumar exactamente 100 % del margen neto" },
@@ -1845,8 +1907,29 @@ Responde en formato JSON con la siguiente estructura:`;
         try { aiData = JSON.parse(submission.aiAnalysis as string); } catch { /* ignore */ }
       }
 
-      // Generar PDF
-      const { generateProspectoPdf } = await import("./prospecto-pdf-service");
+	      // Construir un escenario auditable con la tarifa vigente y con la condición eléctrica explícita.
+	      const platformSettings = await getPlatformSettings();
+	      const requestedPowerKw = input.installedPowerKw ?? Number(submission.estimatedPowerKw ?? 0);
+	      const technicalCondition = resolveProspectoTechnicalCondition({
+	        totalPowerKw: requestedPowerKw,
+	        transformerCapacityKva: submission.transformerCapacityKva ? Number(submission.transformerCapacityKva) : null,
+	        electricalViability: submission.electricalViability,
+	      });
+	      const technicalConditionNote = buildProspectoGridUpgradeNote(
+	        submission.technicalNotes,
+	        input.technicalConditionNote,
+	      );
+	      const revenueDistribution = getRevenueDistributionForSpaceType(submission.spaceType);
+	      try {
+	        assertProspectoFinancialScenarioIsDocumented({
+	          technicalCondition,
+	          capexIncludesGridUpgrade: input.capexIncludesGridUpgrade,
+	          technicalConditionNote,
+	        });
+	      } catch (error) {
+	        throw new TRPCError({ code: "PRECONDITION_FAILED", message: error instanceof Error ? error.message : "La condición técnica debe documentarse" });
+	      }
+	      const { generateProspectoPdf } = await import("./prospecto-pdf-service");
       const pdfBuffer = await generateProspectoPdf({
         code: submission.code,
         spaceName: submission.spaceName,
@@ -1877,11 +1960,16 @@ Responde en formato JSON con la siguiente estructura:`;
         estimatedPowerKw: submission.estimatedPowerKw ? parseFloat(String(submission.estimatedPowerKw)) : null,
         estimatedChargerCount: submission.estimatedChargerCount,
         allySharePercent: input.allySharePercent,
-        investorSharePercent: input.investorSharePercent,
-        platformSharePercent: input.platformSharePercent,
-        installedPowerKw: input.installedPowerKw,
-        tarifaKwhCop: input.tarifaKwhCop,
-        energyCostPerKwhCop: input.energyCostPerKwhCop,
+	        investorSharePercent: revenueDistribution.investorSharePercent,
+	        platformSharePercent: revenueDistribution.evgreenSharePercent,
+	        installedPowerKw: requestedPowerKw,
+	        tarifaKwhCop: input.tarifaKwhCop ?? Number(platformSettings?.precioVentaDefault ?? 1800),
+	        energyCostPerKwhCop: input.energyCostPerKwhCop ?? Number(platformSettings?.costoEnergiaRed ?? 850),
+	        efficiencyPercent: Number(platformSettings?.eficienciaCargaDc ?? 92),
+	        fixedMonthlyExpensesCop: input.fixedMonthlyExpensesCop,
+	        technicalCondition,
+	        capexIncludesGridUpgrade: input.capexIncludesGridUpgrade,
+	        technicalConditionNote,
         photos: photos.map(p => ({ url: p.photoUrl, caption: p.caption })),
         generatedAt: new Date(),
       });

@@ -105,6 +105,11 @@ COPY drizzle.config.ts ./
 # Copiar shared constants
 COPY shared/ ./shared/
 
+# Runner externo OCPP para el servicio aislado de load test en Railway.
+# No se ejecuta desde el servicio web salvo que se configure explícitamente
+# el Start Command de un servicio separado.
+COPY loadtest/ ./loadtest/
+
 # Variables de entorno por defecto
 ENV NODE_ENV=production \
     PUPPETEER_SKIP_DOWNLOAD=true \

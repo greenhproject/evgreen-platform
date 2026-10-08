@@ -9,6 +9,8 @@ import { Settings, Bell, CreditCard, Globe, Loader2, Calculator, RefreshCw, Cale
 import { LoyaltyAdminPanel } from "@/components/LoyaltyAdminPanel";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import ElectronicBillingConfigCard from "@/components/billing/ElectronicBillingConfigCard";
+import ElectronicInvoicesHistory from "@/components/billing/ElectronicInvoicesHistory";
 
 export default function AdminSettings() {
   const { data: settings, isLoading, refetch } = trpc.settings.get.useQuery();
@@ -1508,171 +1510,10 @@ export default function AdminSettings() {
           </Card>
         </TabsContent>
 
-        {/* Alegra - Facturación Electrónica */}
-        <TabsContent value="alegra">
-          <Card className="p-6 space-y-6">
-            <div>
-              <h3 className="font-semibold mb-1 flex items-center gap-2">
-                <FileText className="w-5 h-5 text-primary" />
-                Facturación Electrónica - Alegra
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                Configura la integración con Alegra para emitir facturas electrónicas DIAN automáticamente al completar cada carga.
-              </p>
-            </div>
-
-            {/* Habilitar/Deshabilitar */}
-            <div className="flex items-center justify-between p-4 rounded-lg border border-border">
-              <div>
-                <Label className="text-base">Facturación automática</Label>
-                <p className="text-sm text-muted-foreground">Emitir factura electrónica al completar cada carga</p>
-              </div>
-              <Switch
-                checked={alegraForm.alegraEnabled}
-                onCheckedChange={(checked) => setAlegraForm(prev => ({ ...prev, alegraEnabled: checked }))}
-              />
-            </div>
-
-            {/* Credenciales */}
-            <div className="space-y-4">
-              <h4 className="font-medium">Credenciales de Alegra</h4>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Email de Alegra</Label>
-                  <Input
-                    type="email"
-                    value={alegraForm.alegraEmail}
-                    onChange={(e) => setAlegraForm(prev => ({ ...prev, alegraEmail: e.target.value }))}
-                    placeholder="tu-email@empresa.com"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Token API</Label>
-                  <Input
-                    type="password"
-                    value={alegraForm.alegraToken}
-                    onChange={(e) => {
-                      setAlegraForm(prev => ({ ...prev, alegraToken: e.target.value }));
-                      setAlegraTokenTouched(true);
-                    }}
-                    placeholder={alegraTokenSaved ? "•••••••• (guardado)" : "Token de API de Alegra"}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Obténlo en Alegra &gt; Configuración &gt; Integraciones &gt; API
-                  </p>
-                </div>
-              </div>
-
-              {/* Test connection */}
-              <div className="flex items-center gap-3">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleTestAlegraConnection}
-                  disabled={alegraTestMutation.isPending}
-                >
-                  {alegraTestMutation.isPending ? (
-                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Probando...</>
-                  ) : (
-                    <><Zap className="w-4 h-4 mr-2" />Probar conexión</>
-                  )}
-                </Button>
-                {alegraConnectionStatus === "success" && (
-                  <span className="flex items-center gap-1 text-sm text-green-500">
-                    <CheckCircle className="w-4 h-4" />
-                    Conectado: {alegraCompanyName}
-                  </span>
-                )}
-                {alegraConnectionStatus === "error" && (
-                  <span className="flex items-center gap-1 text-sm text-red-500">
-                    <XCircle className="w-4 h-4" />
-                    Error de conexión
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Configuración avanzada */}
-            <div className="space-y-4">
-              <h4 className="font-medium">Configuración de facturación</h4>
-              
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label>Emisión automática</Label>
-                  <p className="text-xs text-muted-foreground">Crear factura automáticamente al completar carga</p>
-                </div>
-                <Switch
-                  checked={alegraForm.alegraAutoInvoice}
-                  onCheckedChange={(checked) => setAlegraForm(prev => ({ ...prev, alegraAutoInvoice: checked }))}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Número de resolución DIAN</Label>
-                  <Input
-                    value={alegraForm.alegraResolutionNumber}
-                    onChange={(e) => setAlegraForm(prev => ({ ...prev, alegraResolutionNumber: e.target.value }))}
-                    placeholder="Ej: 18764002345678"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>ID Ítem por defecto (Alegra)</Label>
-                  <Input
-                    value={alegraForm.alegraDefaultItemId}
-                    onChange={(e) => setAlegraForm(prev => ({ ...prev, alegraDefaultItemId: e.target.value }))}
-                    placeholder="ID del servicio de carga en Alegra"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Crea un servicio \"Carga de VE\" en Alegra y copia su ID aquí
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>ID Impuesto (Alegra)</Label>
-                  <Input
-                    value={alegraForm.alegraDefaultTaxId}
-                    onChange={(e) => setAlegraForm(prev => ({ ...prev, alegraDefaultTaxId: e.target.value }))}
-                    placeholder="ID del impuesto (0 para excluido)"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Energía para VE está excluida de IVA (Concepto DIAN 840)
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <Label>ID Método de pago (Alegra)</Label>
-                  <Input
-                    value={alegraForm.alegraPaymentMethodId}
-                    onChange={(e) => setAlegraForm(prev => ({ ...prev, alegraPaymentMethodId: e.target.value }))}
-                    placeholder="ID del método de pago"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label>ID Cuenta bancaria (Alegra)</Label>
-                <Input
-                  value={alegraForm.alegraPaymentAccountId}
-                  onChange={(e) => setAlegraForm(prev => ({ ...prev, alegraPaymentAccountId: e.target.value }))}
-                  placeholder="ID de la cuenta bancaria para registrar pagos"
-                />
-              </div>
-            </div>
-
-            <Button
-              onClick={handleSaveAlegra}
-              disabled={updateMutation.isPending}
-              className="w-full"
-            >
-              {updateMutation.isPending ? (
-                <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Guardando...</>
-              ) : (
-                "Guardar configuración de facturación"
-              )}
-            </Button>
-          </Card>
+        {/* Facturación Electrónica Multi-Proveedor (Alegra, Siigo, World Office) */}
+        <TabsContent value="alegra" className="space-y-6">
+          <ElectronicBillingConfigCard mode="admin" />
+          <ElectronicInvoicesHistory mode="admin" />
         </TabsContent>
 
         <TabsContent value="soporte">

@@ -8,22 +8,27 @@
  */
 
 import { useEffect } from "react";
-import { useParams, useLocation } from "wouter";
+import { useParams, useLocation, useSearch } from "wouter";
 import { Loader2, Zap } from "lucide-react";
 
 export default function QRRedirect() {
   const { code } = useParams<{ code: string }>();
   const [, setLocation] = useLocation();
+  const search = useSearch();
 
   useEffect(() => {
     if (code) {
-      // Redirigir a StartCharge con el código
-      setLocation(`/start-charge?code=${code}`);
+      // QR de estación legacy: solo code. QR de conector: también conserva el
+      // token opaco `connector`, que StartCharge valida en servidor.
+      const token = new URLSearchParams(search).get("connector");
+      const query = new URLSearchParams({ code });
+      if (token) query.set("connector", token);
+      setLocation(`/start-charge?${query.toString()}`);
     } else {
       // Si no hay código, ir al escáner
       setLocation("/scan");
     }
-  }, [code, setLocation]);
+  }, [code, search, setLocation]);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-primary/10 to-background flex flex-col items-center justify-center p-6">

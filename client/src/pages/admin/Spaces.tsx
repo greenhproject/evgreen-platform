@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { getSpacePipelineAction } from "@shared/space-pipeline-actions";
+import { getRevenueDistributionForSpaceType, resolveDcInfrastructureRequirement } from "@shared/space-investment-scoring-policy";
 import {
   MapPin, Search, Filter, Eye, Zap, Star, Send, Globe, Brain,
   CheckCircle2, XCircle, Clock, FileText, Loader2, ChevronLeft,
@@ -76,6 +77,16 @@ function toOptionalInteger(value: unknown): number | undefined {
   if (value === undefined || value === null || value === "") return undefined;
   const numberValue = typeof value === "number" ? value : Number(String(value).trim());
   return Number.isInteger(numberValue) ? numberValue : undefined;
+}
+
+function parseAiAnalysis(value: string | null | undefined): Record<string, any> | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 // ============================================================================
@@ -1058,6 +1069,7 @@ function SpaceDetailDialog({
 }) {
   const { user } = useAuth();
   const { data: space, isLoading, refetch } = trpc.spaces.admin.getById.useQuery({ id });
+  const { data: calculatorParams } = trpc.settings.getCalculatorParams.useQuery();
   const { data: statusHistory } = trpc.spaces.admin.getStatusHistory.useQuery({ id });
   const updateStatusMutation = trpc.spaces.admin.updateStatus.useMutation();
   const sendLetterMutation = trpc.spaces.admin.sendLetter.useMutation();
@@ -1081,7 +1093,10 @@ function SpaceDetailDialog({
     platformSharePercent: 30,
     installedPowerKw: undefined as number | undefined,
     tarifaKwhCop: 1800,
-    energyCostPerKwhCop: 700,
+    energyCostPerKwhCop: 850,
+    fixedMonthlyExpensesCop: 0,
+    capexIncludesGridUpgrade: false,
+    technicalConditionNote: "",
   });
   const [publishAmount, setPublishAmount] = useState("");
   const [manualFormalizationReason, setManualFormalizationReason] = useState("");
@@ -1117,10 +1132,41 @@ function SpaceDetailDialog({
 
   const statusInfo = STATUS_LABELS[space.spaceStatus as string] || STATUS_LABELS.pending;
   const StatusIcon = statusInfo.icon;
-  const aiAnalysis = space.aiAnalysis ? JSON.parse(space.aiAnalysis) : null;
+  const aiAnalysis = parseAiAnalysis(space.aiAnalysis);
   const commercialNextStep = COMMERCIAL_NEXT_STEPS[space.spaceStatus as string];
   const pipelineAction = getSpacePipelineAction(space.spaceStatus as string);
   const canManageAdministrativeDetails = user?.role === "admin" || user?.role === "staff";
+
+  const requestedProspectoPowerKw = prospectoConfig.installedPowerKw || Number(space.estimatedPowerKw || 0);
+  const transformerCapacityKva = Number(space.transformerCapacityKva || 0);
+  const dcInfrastructure = resolveDcInfrastructureRequirement({
+    requestedPowerKw: requestedProspectoPowerKw,
+    chargerCount: Number(space.estimatedChargerCount || 1),
+    transformerCapacityKva,
+  });
+  const revenueDistribution = aiAnalysis?.revenueDistribution || getRevenueDistributionForSpaceType(space.spaceType);
+  const prospectoRequiresGridUpgrade = dcInfrastructure.requiresGridUpgrade
+    || space.electricalViability === "requires_upgrade"
+    || space.electricalViability === "not_viable"
+    || (transformerCapacityKva > 0 && requestedProspectoPowerKw > transformerCapacityKva);
+  const prospectoTechnicalReady = !prospectoRequiresGridUpgrade
+    || (dcInfrastructure.meetsDcMinimum && prospectoConfig.capexIncludesGridUpgrade && prospectoConfig.technicalConditionNote.trim().length >= 10);
+
+  const handleOpenProspectoDialog = () => {
+    const distribution = getRevenueDistributionForSpaceType(space.spaceType);
+    setProspectoConfig({
+      allySharePercent: 10,
+      investorSharePercent: distribution.investorSharePercent,
+      platformSharePercent: distribution.evgreenSharePercent,
+      installedPowerKw: Math.max(120, Number(space.estimatedPowerKw || 0)) || 120,
+      tarifaKwhCop: Number(calculatorParams?.precioVentaDefault ?? 1800),
+      energyCostPerKwhCop: Number(calculatorParams?.costoEnergiaRed ?? 850),
+      fixedMonthlyExpensesCop: 0,
+      capexIncludesGridUpgrade: false,
+      technicalConditionNote: "",
+    });
+    setShowProspectoDialog(true);
+  };
 
   const handleStatusUpdate = async (status: string) => {
     try {
@@ -1369,7 +1415,7 @@ function SpaceDetailDialog({
             )}
               {/* Row 2: Permanent actions - always visible 2x2 grid */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <Button size="sm" onClick={() => setShowProspectoDialog(true)} className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs w-full">
+                <Button size="sm" onClick={handleOpenProspectoDialog} className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs w-full">
                   <FileDown className="w-3.5 h-3.5 mr-1" /> Prospecto PDF
                 </Button>
                 {canManageAdministrativeDetails && <Button size="sm" variant="outline" onClick={handleGenerateAI} disabled={generateAIMutation.isPending} className="border-[#374151] text-gray-300 text-xs w-full">
@@ -1498,6 +1544,22 @@ function SpaceDetailDialog({
                 {aiAnalysis && (
                   <DetailSection title={`Análisis IA — Score: ${space.aiScore}/100`} icon={<Brain className="w-4 h-4 text-purple-400" />}>
                     <p className="text-xs sm:text-sm text-gray-300 mb-3 leading-relaxed">{aiAnalysis.summary}</p>
+                    {aiAnalysis.scoreComponents && (
+                      <div className="mb-3 grid grid-cols-2 gap-1.5 text-[11px] sm:grid-cols-5">
+                        {[
+                          ["Técnica", aiAnalysis.scoreComponents.technical, 25],
+                          ["Tráfico", aiAnalysis.scoreComponents.traffic, 30],
+                          ["Predio", aiAnalysis.scoreComponents.visualSite, 20],
+                          ["Demanda", aiAnalysis.scoreComponents.demandContext, 15],
+                          ["Acceso", aiAnalysis.scoreComponents.operatingAccess, 10],
+                        ].map(([label, value, maximum]) => (
+                          <div key={String(label)} className="rounded-md border border-purple-400/20 bg-purple-500/5 px-2 py-1.5 text-center">
+                            <p className="text-purple-200/75">{label}</p>
+                            <p className="font-semibold text-purple-100">{String(value)}/{String(maximum)}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     {aiAnalysis.strengths?.length > 0 && (
                       <div className="mb-2">
                         <p className="text-xs text-gray-500 mb-1">Fortalezas:</p>
@@ -1528,6 +1590,29 @@ function SpaceDetailDialog({
                         <DetailRow label="Viabilidad" value={aiAnalysis.electricalViability || "—"} />
                       </div>
                     </div>
+                    {aiAnalysis.visualAnalysis && (
+                      <div className="mt-3 rounded-lg border border-sky-400/20 bg-sky-500/5 p-2.5">
+                        <p className="mb-1.5 text-xs font-medium text-sky-200">Lectura visual del predio <span className="font-normal text-sky-200/65">(confianza {aiAnalysis.visualAnalysis.confidence || "media"})</span></p>
+                        <div className="space-y-1 text-[11px] leading-relaxed text-slate-300">
+                          <p><span className="text-slate-500">Área:</span> {aiAnalysis.visualAnalysis.usableArea}</p>
+                          <p><span className="text-slate-500">Accesos:</span> {aiAnalysis.visualAnalysis.accessRoads}</p>
+                          <p><span className="text-slate-500">Circulación:</span> {aiAnalysis.visualAnalysis.circulationSafety}</p>
+                          <p><span className="text-slate-500">Evidencia eléctrica:</span> {aiAnalysis.visualAnalysis.electricalEvidence}</p>
+                        </div>
+                      </div>
+                    )}
+                    {aiAnalysis.dcInfrastructure && (
+                      <div className="mt-3 rounded-lg border border-amber-400/25 bg-amber-400/10 p-2.5 text-[11px] leading-relaxed text-amber-100">
+                        <p className="font-semibold text-amber-200">Diseño técnico EVGreen: DC desde 120 kW</p>
+                        <p className="mt-1">{aiAnalysis.dcInfrastructure.estimatedPowerKw || aiAnalysis.estimatedPowerKw} kW DC · transformador dedicado mínimo {aiAnalysis.dcInfrastructure.requiredTransformerKva} kVA (FP {aiAnalysis.dcInfrastructure.transformerPowerFactor}) · ampliación y aprobación del operador de red requeridas.</p>
+                      </div>
+                    )}
+                    {aiAnalysis.revenueDistribution && (
+                      <div className="mt-3 rounded-lg border border-emerald-400/20 bg-emerald-500/5 p-2.5 text-[11px] text-emerald-100">
+                        <p className="font-semibold text-emerald-200">Distribución aplicable sobre margen neto</p>
+                        <p className="mt-1">{aiAnalysis.revenueDistribution.summary}</p>
+                      </div>
+                    )}
                   </DetailSection>
                 )}
 
@@ -2310,7 +2395,7 @@ function SpaceDetailDialog({
 
       {/* ===== MODAL PROSPECTO DE INVERSIÓN ===== */}
       <Dialog open={showProspectoDialog} onOpenChange={setShowProspectoDialog}>
-        <DialogContent className="bg-[#111827] border-[#1f2937] text-white max-w-lg">
+        <DialogContent className="w-[calc(100vw-1rem)] max-w-2xl max-h-[90dvh] overflow-y-auto bg-[#111827] border-[#1f2937] text-white">
           <DialogHeader>
             <DialogTitle className="text-white flex items-center gap-2">
               <FileDown className="w-5 h-5 text-emerald-400" />
@@ -2318,9 +2403,8 @@ function SpaceDetailDialog({
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <p className="text-gray-400 text-sm">
-              Configura los parámetros financieros del prospecto antes de generarlo.
-              El PDF incluirá fotos, mapa, análisis IA y proyección de retorno.
+            <p className="text-gray-400 text-sm leading-relaxed">
+              El prospecto usa la tarifa, costo de energía y eficiencia vigentes de la plataforma. ROI y payback se calculan desde el waterfall; no se ingresan manualmente.
             </p>
 
             {/* Reparto */}
@@ -2328,8 +2412,9 @@ function SpaceDetailDialog({
               <h4 className="text-emerald-400 text-sm font-semibold flex items-center gap-2">
                 <Settings2 className="w-4 h-4" /> Modelo de Reparto de Ingresos
               </h4>
-              <p className="text-gray-500 text-xs">Ingreso bruto − costo de energía = margen bruto. El aliado participa sobre ese margen; Inversor y EVGreen se reparten exclusivamente el margen neto resultante.</p>
-              <div className="grid grid-cols-3 gap-2">
+              <p className="text-gray-500 text-xs leading-relaxed">Ingreso bruto − energía − gastos fijos = margen bruto. El aliado participa sobre ese margen; Inversor y EVGreen se reparten exclusivamente el margen neto resultante.</p>
+              <p className="rounded-md border border-emerald-400/20 bg-emerald-500/5 px-2.5 py-2 text-xs leading-relaxed text-emerald-100">Política aplicada: <strong>{revenueDistribution.investorSharePercent}% inversionista / {revenueDistribution.evgreenSharePercent}% EVGreen</strong> sobre margen neto ({revenueDistribution.basis === "EDS" ? "EDS" : "otros negocios"}). La comisión del dueño del sitio, cuando aplique, permanece separada como porcentaje del aliado sobre el margen bruto.</p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">Aliado (% margen bruto)</Label>
                   <Input
@@ -2347,11 +2432,9 @@ function SpaceDetailDialog({
                   <Input
                     type="number" min={1} max={99}
                     value={prospectoConfig.investorSharePercent}
-                    onChange={e => {
-                      const v = Math.min(99, Math.max(1, parseInt(e.target.value) || 70));
-                      setProspectoConfig(c => ({ ...c, investorSharePercent: v, platformSharePercent: 100 - v }));
-                    }}
-                    className="bg-[#111827] border-[#374151] text-white h-8 text-sm"
+                    readOnly
+                    aria-readonly="true"
+                    className="bg-[#111827] border-[#374151] text-white h-8 text-sm opacity-80"
                   />
                 </div>
                 <div>
@@ -2359,11 +2442,9 @@ function SpaceDetailDialog({
                   <Input
                     type="number" min={1} max={99}
                     value={prospectoConfig.platformSharePercent}
-                    onChange={e => {
-                      const v = Math.min(99, Math.max(1, parseInt(e.target.value) || 30));
-                      setProspectoConfig(c => ({ ...c, platformSharePercent: v, investorSharePercent: 100 - v }));
-                    }}
-                    className="bg-[#111827] border-[#374151] text-white h-8 text-sm"
+                    readOnly
+                    aria-readonly="true"
+                    className="bg-[#111827] border-[#374151] text-white h-8 text-sm opacity-80"
                   />
                 </div>
               </div>
@@ -2378,8 +2459,8 @@ function SpaceDetailDialog({
                       <div className="bg-emerald-500 transition-all duration-300" style={{ width: `${invNetPct}%` }} />
                       <div className="bg-gray-500 flex-1" />
                     </div>
-                    <p className="text-gray-500 text-xs text-center">
-                      <span className="text-blue-400">Aliado {allyPct}% del margen bruto</span> · <span className="text-emerald-400">Inversor {invNetPct}%</span> · <span className="text-gray-400">EVGreen {platformNetPct}%</span> <span className="text-gray-600">(sobre margen neto)</span>
+                    <p className="text-gray-500 text-xs text-center leading-relaxed">
+                      <span className="text-blue-400">Aliado {allyPct}% del margen bruto</span><span className="hidden sm:inline"> · </span><br className="sm:hidden" /> <span className="text-emerald-400">Inversor {invNetPct}%</span><span className="hidden sm:inline"> · </span><br className="sm:hidden" /> <span className="text-gray-400">EVGreen {platformNetPct}%</span> <span className="text-gray-600">(sobre margen neto)</span>
                     </p>
                   </>
                 );
@@ -2391,8 +2472,8 @@ function SpaceDetailDialog({
               <h4 className="text-emerald-400 text-sm font-semibold flex items-center gap-2">
                 <TrendingUp className="w-4 h-4" /> Parámetros de Proyección
               </h4>
-              <p className="text-xs text-gray-400 -mt-1">El modelo calcula 3 escenarios: pesimista (4h/día), realista (6h/día) y optimista (9h/día).</p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <p className="text-xs text-gray-400 -mt-1 leading-relaxed">Escenarios de horas equivalentes de entrega a potencia proyectada: Pesimista 4 h/día, Realista 6 h/día y Optimista 9 h/día.</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">Potencia instalada (kW)</Label>
                   <Input
@@ -2421,8 +2502,48 @@ function SpaceDetailDialog({
                     className="bg-[#111827] border-[#374151] text-white h-8 text-sm"
                   />
                 </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Gastos fijos mensuales (COP)</Label>
+                  <Input
+                    type="number" min={0}
+                    value={prospectoConfig.fixedMonthlyExpensesCop}
+                    onChange={e => setProspectoConfig(c => ({ ...c, fixedMonthlyExpensesCop: Math.max(0, parseInt(e.target.value) || 0) }))}
+                    className="bg-[#111827] border-[#374151] text-white h-8 text-sm"
+                  />
+                  <p className="mt-1 text-[11px] leading-snug text-gray-500">Incluya seguros, fiducia u otros costos recurrentes cuando apliquen.</p>
+                </div>
               </div>
             </div>
+
+            {prospectoRequiresGridUpgrade && (
+              <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-4 space-y-3">
+                <div className="flex gap-2 text-amber-300">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-semibold">La potencia proyectada requiere ampliación eléctrica</p>
+                    <p className="text-xs leading-relaxed text-amber-100/80 mt-1">
+                      {requestedProspectoPowerKw} kW DC proyectados requieren un transformador dedicado de al menos {dcInfrastructure.requiredTransformerKva} kVA con factor de potencia de {dcInfrastructure.transformerPowerFactor}. {transformerCapacityKva > 0 ? `El transformador declarado es de ${transformerCapacityKva} kVA y no se presume capacidad libre.` : "No hay transformador declarado."} El PDF solo mostrará ROI y payback como escenario condicionado si el CAPEX total incorpora la ampliación.
+                    </p>
+                    {!dcInfrastructure.meetsDcMinimum && <p className="mt-2 text-xs font-medium text-amber-200">EVGreen solo proyecta cargadores rápidos DC desde 120 kW. Ajusta la potencia para continuar.</p>}
+                  </div>
+                </div>
+                <label className="flex items-start gap-2 text-xs text-gray-200 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={prospectoConfig.capexIncludesGridUpgrade}
+                    onChange={e => setProspectoConfig(c => ({ ...c, capexIncludesGridUpgrade: e.target.checked }))}
+                    className="mt-0.5 h-4 w-4 accent-emerald-500"
+                  />
+                  <span>Confirmo que la inversión total contempla la ampliación de red requerida o que existe soporte técnico y presupuestal vigente.</span>
+                </label>
+                <Textarea
+                  value={prospectoConfig.technicalConditionNote}
+                  onChange={e => setProspectoConfig(c => ({ ...c, technicalConditionNote: e.target.value }))}
+                  placeholder="Soporte técnico, alcance de la ampliación y/o referencia del presupuesto. Mínimo 10 caracteres."
+                  className="min-h-[84px] bg-[#111827] border-amber-400/30 text-white placeholder:text-gray-600 text-sm"
+                />
+              </div>
+            )}
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setShowProspectoDialog(false)} className="border-[#374151] text-gray-300">
@@ -2439,6 +2560,9 @@ function SpaceDetailDialog({
                     installedPowerKw: prospectoConfig.installedPowerKw,
                     tarifaKwhCop: prospectoConfig.tarifaKwhCop,
                     energyCostPerKwhCop: prospectoConfig.energyCostPerKwhCop,
+                    fixedMonthlyExpensesCop: prospectoConfig.fixedMonthlyExpensesCop,
+                    capexIncludesGridUpgrade: prospectoConfig.capexIncludesGridUpgrade,
+                    technicalConditionNote: prospectoConfig.technicalConditionNote.trim() || undefined,
                   });
                   if (result.pdfUrl) {
                     // Usar elemento <a> para compatibilidad con Android WebView
@@ -2457,8 +2581,8 @@ function SpaceDetailDialog({
                   toast.error(err.message || "Error al generar el prospecto");
                 }
               }}
-              disabled={generateProspectoMutation.isPending}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              disabled={generateProspectoMutation.isPending || !prospectoTechnicalReady}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50"
             >
               {generateProspectoMutation.isPending ? (
                 <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Generando PDF...</>

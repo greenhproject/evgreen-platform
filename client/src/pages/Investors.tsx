@@ -68,6 +68,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { MapView } from "@/components/Map";
 import { resolveInheritedProjectPhotos } from "@shared/project-gallery";
+import { hasValidInvestorMapCoordinates } from "@shared/investor-map-policy";
 
 // ============================================================================
 // NOTA: Todos los parámetros financieros (costos de energía, precios de venta,
@@ -862,11 +863,14 @@ export default function Investors() {
     const selectedPremiumPhotos = resolveInheritedProjectPhotos(selectedPremium);
     const activeGalleryPhotos = selectedPremium ? selectedPremiumPhotos : (selectedSpace?.photos || []);
 
-    // Premium stations from crowdfunding (OPEN, ACTIVE, IN_PROGRESS, FUNDED) with coordinates
+    // Premium stations from crowdfunding (OPEN, ACTIVE, IN_PROGRESS, FUNDED) with coordinates.
+    // The public project query inherits coordinates from the linked space/station as
+    // `linkedLatitude` / `linkedLongitude`; do not require a second, stale copy.
     const premiumStations = useMemo(() => {
       if (!cfProjects) return [];
       return (cfProjects as any[]).filter((p: any) => 
-        p.status !== 'DRAFT' && p.linkedLatitude && p.linkedLongitude
+        p.status !== 'DRAFT'
+        && hasValidInvestorMapCoordinates({ latitude: p.linkedLatitude, longitude: p.linkedLongitude })
       ).map((p: any) => ({
         ...p,
         _isPremium: true,
@@ -906,6 +910,25 @@ export default function Investors() {
       if (spaceFilter === "all") return individualSpaces;
       return individualSpaces.filter((s: any) => s.spaceType === spaceFilter);
     }, [spaces, spaceFilter]);
+
+    // A map only represents locations with valid coordinates. This protects the
+    // public experience from incomplete historical records while still allowing
+    // staff to complete those records in the administration flow.
+    const mappableIndividualSpaces = useMemo(() => (
+      filteredSpaces.filter((space: any) => (
+        hasValidInvestorMapCoordinates({ latitude: space.latitude, longitude: space.longitude })
+      ))
+    ), [filteredSpaces]);
+
+    const visiblePremiumStations = useMemo(
+      () => mapFilter === "individual" ? [] : premiumStations,
+      [mapFilter, premiumStations],
+    );
+    const visibleIndividualSpaces = useMemo(
+      () => mapFilter === "premium" ? [] : mappableIndividualSpaces,
+      [mapFilter, mappableIndividualSpaces],
+    );
+    const hasVisibleMapPoints = visiblePremiumStations.length > 0 || visibleIndividualSpaces.length > 0;
 
     const handleMapReady = useCallback((map: google.maps.Map) => {
       mapRef.current = map;
@@ -998,9 +1021,11 @@ export default function Investors() {
       return clusters;
     }, []);
 
-    // Add markers when spaces load and map is ready
+    // Add markers when either published project type is available and the map is ready.
+    // Premium projects and individual spaces are independent sources: a station
+    // must never disappear merely because there are no individual opportunities.
     useEffect(() => {
-      if (!mapRef.current || !mapReady || !filteredSpaces?.length) return;
+      if (!mapRef.current || !mapReady) return;
       if (!window.google?.maps) return;
       // Clear old overlays
       try {
@@ -1020,8 +1045,7 @@ export default function Investors() {
         const zoom = mapRef.current.getZoom() || 6;
 
         // ========== PREMIUM STATION MARKERS (Gold Star) ==========
-        if (mapFilter === 'all' || mapFilter === 'premium') {
-          premiumStations.forEach((project: any) => {
+        visiblePremiumStations.forEach((project: any) => {
             const lat = parseFloat(project.latitude);
             const lng = parseFloat(project.longitude);
             if (isNaN(lat) || isNaN(lng)) return;
@@ -1077,13 +1101,11 @@ export default function Investors() {
             );
             overlaysRef.current.push(overlay);
           });
-        }
 
         // ========== INDIVIDUAL SPACE MARKERS (Green Bolt) ==========
-        if (mapFilter === 'all' || mapFilter === 'individual') {
-          const clusters = clusterSpaces(filteredSpaces, zoom);
+        const clusters = clusterSpaces(visibleIndividualSpaces, zoom);
 
-          clusters.forEach((cluster) => {
+        clusters.forEach((cluster) => {
             if (cluster.type === 'cluster' && cluster.spaces.length > 1) {
               // Render cluster marker
               const totalKw = cluster.spaces.reduce((sum: number, s: any) => sum + (s.estimatedPowerKw || 0), 0);
@@ -1178,8 +1200,7 @@ export default function Investors() {
               );
               overlaysRef.current.push(overlay);
             }
-          });
-        }
+        });
       };
 
       // Initial render
@@ -1194,7 +1215,7 @@ export default function Investors() {
       try {
         const bounds = new google.maps.LatLngBounds();
         let hasValidCoords = false;
-        filteredSpaces.forEach((space: any) => {
+        [...visiblePremiumStations, ...visibleIndividualSpaces].forEach((space: any) => {
           if (!space.latitude || !space.longitude) return;
           const lat = parseFloat(space.latitude);
           const lng = parseFloat(space.longitude);
@@ -1216,7 +1237,7 @@ export default function Investors() {
       return () => {
         try { google.maps.event.removeListener(zoomListener); } catch {}
       };
-    }, [filteredSpaces, mapReady, createCustomOverlay, clusterSpaces, premiumStations, mapFilter]);
+    }, [visibleIndividualSpaces, visiblePremiumStations, mapReady, createCustomOverlay, clusterSpaces]);
 
     const contactAdvisor = (space: any) => {
       const message = encodeURIComponent(
@@ -1784,14 +1805,53 @@ export default function Investors() {
                     </div>
                   </div>
                 </div>
-              ) : filteredSpaces.length === 0 ? (
+              ) : !hasVisibleMapPoints ? (
                 <div className="text-center py-16">
                   <MapPin className="w-10 h-10 text-gray-600 mx-auto mb-3" />
                   <p className="text-gray-400">No hay puntos disponibles con este filtro</p>
                 </div>
               ) : (
                 /* LIST VIEW */
-                filteredSpaces.map((space: any) => {
+                <>
+                  {visiblePremiumStations.map((project: any) => {
+                    const fundingPct = Number(project.targetAmount) > 0
+                      ? Math.min(100, Math.round((Number(project.raisedAmount) / Number(project.targetAmount)) * 100))
+                      : 0;
+                    return (
+                      <button
+                        key={`premium-${project.id}`}
+                        onClick={() => {
+                          setSelectedSpace(null);
+                          setSelectedPremium(project);
+                          if (mapRef.current) {
+                            mapRef.current.panTo({ lat: Number(project.latitude), lng: Number(project.longitude) });
+                            mapRef.current.setZoom(12);
+                          }
+                        }}
+                        className="w-full text-left rounded-xl border border-amber-500/30 bg-gradient-to-br from-amber-900/25 to-slate-800/80 p-4 transition-all hover:border-amber-400/70"
+                      >
+                        <div className="mb-2 flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-amber-400">
+                              <Star className="h-3.5 w-3.5 fill-current" />
+                              Estación Premium · Colectiva
+                            </div>
+                            <h4 className="truncate text-sm font-semibold text-white">{project.name || `Estación ${project.city}`}</h4>
+                            <p className="text-xs text-gray-400">{project.city}{project.zone ? ` · ${project.zone}` : ""}</p>
+                          </div>
+                          <span className="rounded-full border border-amber-400/25 bg-amber-500/15 px-2 py-0.5 text-xs font-bold text-amber-300">{fundingPct}%</span>
+                        </div>
+                        <div className="mb-3 flex items-center gap-4 text-xs text-gray-300">
+                          <span className="flex items-center gap-1"><Zap className="h-3 w-3 text-amber-400" />{project.totalPowerKw} kW</span>
+                          <span className="flex items-center gap-1"><Battery className="h-3 w-3 text-amber-400" />{project.chargerCount} cargadores</span>
+                        </div>
+                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-700">
+                          <div className="h-full rounded-full bg-gradient-to-r from-amber-500 to-yellow-400" style={{ width: `${fundingPct}%` }} />
+                        </div>
+                      </button>
+                    );
+                  })}
+                  {visibleIndividualSpaces.map((space: any) => {
                   const fundingPct = space.crowdfunding
                     ? Math.min(100, Math.round((space.crowdfunding.raisedAmount / space.crowdfunding.targetAmount) * 100))
                     : 0;
@@ -1877,7 +1937,8 @@ export default function Investors() {
                       )}
                     </button>
                   );
-                })
+                  })}
+                </>
               )}
             </div>
           </div>

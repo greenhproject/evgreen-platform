@@ -4,75 +4,107 @@
  */
 
 import { notifyOwner } from "../_core/notification";
-import { getDb } from "../db";
-import { reservations, users, chargingStations, notifications, evses } from "../../drizzle/schema";
-import { eq, and, lte, gte, isNull } from "drizzle-orm";
+import {
+  getActiveReservation,
+  getActiveTransaction,
+  getDb,
+  getNotificationByKey,
+  markReservationServiceUnavailable,
+  updateEvseStatus,
+} from "../db";
+import { reservations, users, chargingStations, notifications, evses, whatsappNotificationLog } from "../../drizzle/schema";
+import { eq, and, lte, gte, isNull, desc, or, sql } from "drizzle-orm";
+import { dualCSMS } from "../ocpp/csms-dual";
+import { getOcppConnectorId, isOcppReservationAccepted } from "../../shared/reservation-lifecycle-policy";
+import {
+  getReservationEventMessage,
+  getReservationEventTitle,
+  getReservationWhatsAppEventType,
+  getReservationWhatsAppParameters,
+  type ReservationMessageContext,
+  type ReservationNotificationEvent,
+} from "../../shared/reservation-notification-policy";
 
-interface ReservationNotification {
+interface ReservationNotificationInput {
   userId: number;
   reservationId: number;
-  type: "CONFIRMATION" | "REMINDER_30MIN" | "REMINDER_5MIN" | "NO_SHOW_WARNING" | "PENALTY_APPLIED";
-  title: string;
-  message: string;
+  userName?: string | null;
+  userPhone?: string | null;
+  event: ReservationNotificationEvent;
+  context: ReservationMessageContext;
 }
 
 /**
- * Envía una notificación al usuario
+ * Registra primero la alerta interna y luego intenta WhatsApp con una plantilla
+ * Utility aprobada. Es idempotente por reserva y estado: una reejecución del
+ * Heartbeat nunca duplica el aviso ni afirma una entrega que Meta no confirmó.
  */
-export async function sendUserNotification(notification: ReservationNotification): Promise<boolean> {
+export async function sendReservationLifecycleNotification(input: ReservationNotificationInput): Promise<boolean> {
   try {
     const db = (await getDb())!;
     if (!db) return false;
+    const key = `reservation:${input.reservationId}:${input.event}`;
+    const existing = await getNotificationByKey(input.userId, key);
+    if (existing) return true;
 
-    // Guardar notificación en la base de datos
+    const title = getReservationEventTitle(input.event);
+    const message = getReservationEventMessage(input.event, input.context);
     await db.insert(notifications).values({
-      userId: notification.userId,
-      title: notification.title,
-      message: notification.message,
+      userId: input.userId,
+      title,
+      message,
       type: "RESERVATION",
+      referenceId: input.reservationId,
+      referenceType: "reservation",
       isRead: 0,
+      data: JSON.stringify({ key, event: input.event }),
     } as any);
 
-    // En producción, aquí se integraría con:
-    // - Push notifications (Firebase Cloud Messaging)
-    // - Email (SendGrid, AWS SES)
-    // - SMS (Twilio)
-    // - WhatsApp Business API
+    if (input.userPhone) {
+      const {
+        getConfiguredReservationTemplate,
+        sendWhatsAppTemplate,
+      } = await import("../whatsapp/whatsapp-service");
+      const template = await getConfiguredReservationTemplate();
+      if (template.canSend) {
+        await sendWhatsAppTemplate({
+          toPhone: input.userPhone,
+          templateName: template.name,
+          parameters: getReservationWhatsAppParameters(input.userName, input.event, input.context),
+          eventType: getReservationWhatsAppEventType(input.event),
+          userId: input.userId,
+          referenceId: input.reservationId,
+          referenceType: "reservation",
+        });
+      } else {
+        console.log(`[ReservationNotification] WhatsApp pendiente para reserva ${input.reservationId}: ${template.status}`);
+      }
+    }
 
-    console.log(`[Notification] Sent to user ${notification.userId}: ${notification.title}`);
+    console.log(`[ReservationNotification] ${input.event} registrada para usuario ${input.userId}`);
     return true;
   } catch (error) {
-    console.error("[Notification] Error sending notification:", error);
+    console.error("[ReservationNotification] Error sending notification:", error);
     return false;
   }
 }
 
-/**
- * Envía confirmación de reserva
- */
 export async function sendReservationConfirmation(
   userId: number,
   reservationId: number,
   stationName: string,
   startTime: Date,
-  reservationFee: number
+  reservationFee: number,
+  user?: { name?: string | null; phone?: string | null },
+  connectorLabel?: string | number | null,
 ): Promise<boolean> {
-  const formattedDate = startTime.toLocaleDateString("es-CO", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-  });
-  const formattedTime = startTime.toLocaleTimeString("es-CO", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-
-  return sendUserNotification({
+  return sendReservationLifecycleNotification({
     userId,
     reservationId,
-    type: "CONFIRMATION",
-    title: "Reserva confirmada",
-    message: `Tu reserva en ${stationName} para el ${formattedDate} a las ${formattedTime} ha sido confirmada. Tarifa de reserva: $${reservationFee.toLocaleString()} COP. Recuerda llegar a tiempo para evitar penalizaciones.`,
+    userName: user?.name,
+    userPhone: user?.phone,
+    event: "confirmed",
+    context: { stationName, startTime, connectorLabel, reservationFee },
   });
 }
 
@@ -83,14 +115,17 @@ export async function sendReminder30Min(
   userId: number,
   reservationId: number,
   stationName: string,
-  stationAddress: string
+  stationAddress: string,
+  user?: { name?: string | null; phone?: string | null },
+  connectorLabel?: string | number | null,
 ): Promise<boolean> {
-  return sendUserNotification({
+  return sendReservationLifecycleNotification({
     userId,
     reservationId,
-    type: "REMINDER_30MIN",
-    title: "Tu reserva es en 30 minutos",
-    message: `Recuerda que tienes una reserva en ${stationName} (${stationAddress}) en 30 minutos. ¡No llegues tarde!`,
+    userName: user?.name,
+    userPhone: user?.phone,
+    event: "reminder_30m",
+    context: { stationName: stationAddress ? `${stationName} (${stationAddress})` : stationName, connectorLabel },
   });
 }
 
@@ -100,14 +135,17 @@ export async function sendReminder30Min(
 export async function sendReminder5Min(
   userId: number,
   reservationId: number,
-  stationName: string
+  stationName: string,
+  user?: { name?: string | null; phone?: string | null },
+  connectorLabel?: string | number | null,
 ): Promise<boolean> {
-  return sendUserNotification({
+  return sendReservationLifecycleNotification({
     userId,
     reservationId,
-    type: "REMINDER_5MIN",
-    title: "Tu reserva comienza en 5 minutos",
-    message: `Tu reserva en ${stationName} comienza en 5 minutos. Si no llegas a tiempo, se aplicará una penalización.`,
+    userName: user?.name,
+    userPhone: user?.phone,
+    event: "reminder_5m",
+    context: { stationName, connectorLabel },
   });
 }
 
@@ -118,14 +156,17 @@ export async function sendNoShowWarning(
   userId: number,
   reservationId: number,
   stationName: string,
-  graceMinutesLeft: number
+  graceMinutesLeft: number,
+  user?: { name?: string | null; phone?: string | null },
+  connectorLabel?: string | number | null,
 ): Promise<boolean> {
-  return sendUserNotification({
+  return sendReservationLifecycleNotification({
     userId,
     reservationId,
-    type: "NO_SHOW_WARNING",
-    title: "¡Tu reserva está activa!",
-    message: `Tu reserva en ${stationName} ya comenzó. Tienes ${graceMinutesLeft} minutos de gracia antes de que se aplique la penalización por no presentarte.`,
+    userName: user?.name,
+    userPhone: user?.phone,
+    event: "no_show_warning",
+    context: { stationName, graceMinutesLeft, connectorLabel },
   });
 }
 
@@ -136,14 +177,39 @@ export async function sendPenaltyNotification(
   userId: number,
   reservationId: number,
   stationName: string,
-  penaltyAmount: number
+  penaltyAmount: number,
+  user?: { name?: string | null; phone?: string | null },
+  connectorLabel?: string | number | null,
 ): Promise<boolean> {
-  return sendUserNotification({
+  return sendReservationLifecycleNotification({
     userId,
     reservationId,
-    type: "PENALTY_APPLIED",
-    title: "Penalización aplicada",
-    message: `Se ha aplicado una penalización de $${penaltyAmount.toLocaleString()} COP por no presentarte a tu reserva en ${stationName}. Este monto ha sido debitado de tu billetera.`,
+    userName: user?.name,
+    userPhone: user?.phone,
+    event: "no_show_penalty",
+    context: { stationName, penaltyAmount, connectorLabel },
+  });
+}
+
+/**
+ * Una indisponibilidad atribuible al activo o a una carga ajena no puede tratarse
+ * como no-show. El aviso interno es inmediato; WhatsApp usa plantilla Utility sólo
+ * si está aprobada y el usuario lo autorizó.
+ */
+export async function sendReservationServiceIssue(
+  userId: number,
+  reservationId: number,
+  stationName: string,
+  user?: { name?: string | null; phone?: string | null },
+  connectorLabel?: string | number | null,
+): Promise<boolean> {
+  return sendReservationLifecycleNotification({
+    userId,
+    reservationId,
+    userName: user?.name,
+    userPhone: user?.phone,
+    event: "service_issue",
+    context: { stationName, connectorLabel },
   });
 }
 
@@ -166,10 +232,12 @@ export async function processReservationReminders(): Promise<void> {
         reservation: reservations,
         user: users,
         station: chargingStations,
+        evse: evses,
       })
       .from(reservations)
       .innerJoin(users, eq(reservations.userId, users.id))
       .innerJoin(chargingStations, eq(reservations.stationId, chargingStations.id))
+      .leftJoin(evses, eq(reservations.evseId, evses.id))
       .where(
         and(
           eq(reservations.reservationStatus, "ACTIVE"),
@@ -181,8 +249,15 @@ export async function processReservationReminders(): Promise<void> {
         )
       );
 
-    for (const { reservation, user, station } of reservations30Min) {
-      await sendReminder30Min(user.id, reservation.id, station.name, station.address);
+    for (const { reservation, user, station, evse } of reservations30Min) {
+      await sendReminder30Min(
+        user.id,
+        reservation.id,
+        station.name,
+        station.address,
+        user,
+        evse?.connectorId ?? reservation.evseId,
+      );
       
       // Marcar como enviado
       await db
@@ -197,10 +272,12 @@ export async function processReservationReminders(): Promise<void> {
         reservation: reservations,
         user: users,
         station: chargingStations,
+        evse: evses,
       })
       .from(reservations)
       .innerJoin(users, eq(reservations.userId, users.id))
       .innerJoin(chargingStations, eq(reservations.stationId, chargingStations.id))
+      .leftJoin(evses, eq(reservations.evseId, evses.id))
       .where(
         and(
           eq(reservations.reservationStatus, "ACTIVE"),
@@ -212,8 +289,14 @@ export async function processReservationReminders(): Promise<void> {
         )
       );
 
-    for (const { reservation, user, station } of reservations5Min) {
-      await sendReminder5Min(user.id, reservation.id, station.name);
+    for (const { reservation, user, station, evse } of reservations5Min) {
+      await sendReminder5Min(
+        user.id,
+        reservation.id,
+        station.name,
+        user,
+        evse?.connectorId ?? reservation.evseId,
+      );
       
       // Marcar como enviado
       await db
@@ -237,30 +320,90 @@ export async function processNoShows(): Promise<void> {
   if (!db) return;
 
   const now = new Date();
-  const gracePeriodMinutes = 15; // 15 minutos de gracia
-  const graceExpired = new Date(now.getTime() - gracePeriodMinutes * 60 * 1000);
-
+  // Una reserva sólo se evalúa para no-show cuando su ventana reservada ha finalizado (endTime <= now),
+  // garantizando que el usuario tenga su tiempo completo de reserva sin cancelaciones prematuras.
   try {
-    // Buscar reservas que han pasado el período de gracia sin iniciar carga
-    const expiredReservations = await db
+    // 1. Notificación de aviso al iniciar la reserva (idempotente)
+    const graceWindowReservations = await db
       .select({
         reservation: reservations,
         user: users,
         station: chargingStations,
+        evse: evses,
       })
       .from(reservations)
       .innerJoin(users, eq(reservations.userId, users.id))
       .innerJoin(chargingStations, eq(reservations.stationId, chargingStations.id))
+      .leftJoin(evses, eq(reservations.evseId, evses.id))
+      .where(and(
+        eq(reservations.reservationStatus, "ACTIVE"),
+        sql`${reservations.startTime} <= UTC_TIMESTAMP()`,
+        sql`${reservations.endTime} > UTC_TIMESTAMP()`
+      ));
+
+    for (const { reservation, user, station, evse } of graceWindowReservations) {
+      const minutesSinceStart = Math.max(0, Math.floor((now.getTime() - new Date(reservation.startTime).getTime()) / 60_000));
+      await sendNoShowWarning(
+        user.id,
+        reservation.id,
+        station.name,
+        Math.max(0, 15 - minutesSinceStart),
+        user,
+        evse?.connectorId ?? reservation.evseId,
+      );
+    }
+
+    // 2. Evaluar expiración formal únicamente cuando el tiempo reservado ha finalizado
+    const candidateReservations = await db
+      .select({
+        reservation: reservations,
+        user: users,
+        station: chargingStations,
+        evse: evses,
+      })
+      .from(reservations)
+      .innerJoin(users, eq(reservations.userId, users.id))
+      .innerJoin(chargingStations, eq(reservations.stationId, chargingStations.id))
+      .leftJoin(evses, eq(reservations.evseId, evses.id))
       .where(
         and(
           eq(reservations.reservationStatus, "ACTIVE"),
-          // @ts-ignore
-          lte(reservations.startTime, graceExpired)
+          sql`${reservations.endTime} <= UTC_TIMESTAMP()`
         )
       );
 
-    for (const { reservation, user, station } of expiredReservations) {
-      // Marcar como NO_SHOW
+    for (const { reservation, user, station, evse } of candidateReservations) {
+      // 1. Verificar si el usuario efectivamente inició una carga en este conector o estación
+      const { transactions } = await import("../../drizzle/schema");
+      const matchingTxs = await db
+        .select()
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.userId, reservation.userId),
+            eq(transactions.stationId, reservation.stationId),
+            or(
+              eq(transactions.status, "IN_PROGRESS"),
+              eq(transactions.status, "COMPLETED")
+            )
+          )
+        )
+        .limit(1);
+
+      if (matchingTxs.length > 0) {
+        // El usuario sí utilizó la estación: marcar como FULFILLED, nunca como NO_SHOW
+        await db
+          .update(reservations)
+          .set({
+            reservationStatus: "FULFILLED",
+            transactionId: matchingTxs[0].id,
+          } as any)
+          .where(eq(reservations.id, reservation.id));
+        console.log(`[NoShowProtection] Reserva #${reservation.id} cumplida por transacción #${matchingTxs[0].id}`);
+        continue;
+      }
+
+      // 2. Si no inició carga y su tiempo reservado terminó formalmente, marcar como NO_SHOW
       await db
         .update(reservations)
         .set({ 
@@ -269,13 +412,18 @@ export async function processNoShows(): Promise<void> {
         } as any)
         .where(eq(reservations.id, reservation.id));
 
-      // Liberar el EVSE a AVAILABLE
+      // Liberar el EVSE a AVAILABLE, conservando una posible reserva consecutiva.
       if (reservation.evseId) {
-        await db
-          .update(evses)
-          .set({ status: "AVAILABLE" } as any)
-          .where(eq(evses.id, reservation.evseId));
-        console.log(`[NoShow] Released EVSE ${reservation.evseId} back to AVAILABLE`);
+        const replacementReservation = await getActiveReservation(reservation.evseId);
+        await updateEvseStatus(
+          reservation.evseId,
+          replacementReservation ? "RESERVED" : "AVAILABLE",
+          {
+            triggeredBy: "RESERVATION",
+            reason: replacementReservation ? "Consecutive active reservation" : "Reservation no-show",
+          },
+        );
+        console.log(`[NoShow] EVSE ${reservation.evseId} transitioned after no-show`);
       }
 
       // Aplicar penalización a la billetera (se descuenta del saldo)
@@ -299,13 +447,20 @@ export async function processNoShows(): Promise<void> {
       }
       
       // Enviar notificación
-      await sendPenaltyNotification(user.id, reservation.id, station.name, penaltyAmount);
+      await sendPenaltyNotification(
+        user.id,
+        reservation.id,
+        station.name,
+        penaltyAmount,
+        user,
+        evse?.connectorId ?? reservation.evseId,
+      );
 
       console.log(`[NoShow] Applied penalty of ${penaltyAmount} COP to user ${user.id} for reservation ${reservation.id}`);
     }
 
-    if (expiredReservations.length > 0) {
-      console.log(`[NoShow] Processed ${expiredReservations.length} no-show reservations`);
+    if (candidateReservations.length > 0) {
+      console.log(`[NoShow] Processed ${candidateReservations.length} candidate reservations`);
     }
   } catch (error) {
     console.error("[NoShow] Error processing no-shows:", error);
@@ -328,34 +483,139 @@ async function processUpcomingReservations(): Promise<void> {
       .select({
         id: reservations.id,
         evseId: reservations.evseId,
+        stationId: reservations.stationId,
+        userId: reservations.userId,
         startTime: reservations.startTime,
         endTime: reservations.endTime,
+        expiryTime: reservations.expiryTime,
+        ocppReservationId: reservations.ocppReservationId,
       })
       .from(reservations)
       .where(
         and(
           eq(reservations.reservationStatus, "ACTIVE"),
-          // @ts-ignore
-          lte(reservations.startTime, in15Min),
-          // @ts-ignore
-          gte(reservations.endTime, now)
+          sql`${reservations.startTime} <= DATE_ADD(UTC_TIMESTAMP(), INTERVAL 15 MINUTE)`,
+          sql`${reservations.endTime} >= UTC_TIMESTAMP()`
         )
       );
 
     for (const res of upcomingReservations) {
       // Verificar estado actual del EVSE
       const [evse] = await db
-        .select({ status: evses.connectorStatus })
+        .select({
+          connectorStatus: evses.connectorStatus,
+          evseIdLocal: evses.evseIdLocal,
+          connectorId: evses.connectorId,
+        })
         .from(evses)
         .where(eq(evses.id, res.evseId));
 
-      // @ts-ignore
-      if (evse && evse.connectorStatus === "AVAILABLE") {
-        await db
-          .update(evses)
-          .set({ status: "RESERVED", lastStatusUpdate: now } as any)
-          .where(eq(evses.id, res.evseId));
-        console.log(`[ReservationActivation] EVSE ${res.evseId} marcado como RESERVED (reserva #${res.id} inicia pronto)`);
+      if (evse) {
+        // No se interrumpe una sesión física ya iniciada para “hacer espacio”.
+        // Si otra persona ocupa el conector cuando la reserva entra en vigencia,
+        // protegemos al titular: incidencia explícita, cero no-show y cero penalidad.
+        const activeTransaction = await getActiveTransaction(res.evseId);
+        const physicalStatuses = ["CHARGING", "OCCUPIED", "SUSPENDED_EV", "SUSPENDED_EVSE", "FINISHING"];
+        const physicallyOccupied = physicalStatuses.includes((evse.connectorStatus || "").toUpperCase());
+        const occupiedByAnotherUser = activeTransaction && activeTransaction.userId !== res.userId;
+
+        if (activeTransaction?.userId === res.userId) {
+          await db.update(reservations)
+            .set({ reservationStatus: "FULFILLED", transactionId: activeTransaction.id } as any)
+            .where(and(eq(reservations.id, res.id), eq(reservations.reservationStatus, "ACTIVE")));
+          console.log(`[ReservationProtection] Reserva #${res.id} cumplida por carga activa de su titular #${activeTransaction.id}`);
+          continue;
+        }
+
+        const reservationHasStarted = new Date(res.startTime).getTime() <= now.getTime();
+        if ((occupiedByAnotherUser || physicallyOccupied) && reservationHasStarted) {
+          const issueCode = occupiedByAnotherUser
+            ? "CONNECTOR_OCCUPIED_BY_ACTIVE_CHARGE"
+            : "CONNECTOR_PHYSICALLY_OCCUPIED";
+          const marked = await markReservationServiceUnavailable(res.id, issueCode, now);
+          if (marked) {
+            const [userRows, stationRows] = await Promise.all([
+              db.select({ id: users.id, name: users.name, phone: users.phone })
+                .from(users).where(eq(users.id, res.userId)).limit(1),
+              db.select({ name: chargingStations.name })
+                .from(chargingStations).where(eq(chargingStations.id, res.stationId)).limit(1),
+            ]);
+            const user = userRows[0];
+            const station = stationRows[0];
+            if (user && station) {
+              await sendReservationServiceIssue(
+                user.id,
+                res.id,
+                station.name,
+                user,
+                evse.connectorId ?? res.evseId,
+              );
+            }
+            await notifyOwner({
+              title: "Reserva afectada por conector ocupado",
+              content: `Reserva #${res.id} en ${station?.name ?? `estación #${res.stationId}`} protegida: ${issueCode}. No se aplicará no-show ni penalidad; revisar operación y alternativas para el cliente.`,
+            });
+          }
+          console.warn(`[ReservationProtection] Reserva #${res.id} marcada SERVICE_UNAVAILABLE: ${issueCode}`);
+          continue;
+        }
+
+        // Antes de la hora exacta no se corta una sesión ajena ni se declara una
+        // reserva incumplida. El selector de carga ya impide nuevas sesiones que
+        // invadan esta franja; esta sesión existente se reevaluará al iniciar.
+        if (occupiedByAnotherUser || physicallyOccupied) {
+          console.info(`[ReservationProtection] EVSE ${res.evseId} sigue ocupado; reserva #${res.id} se reevaluará al iniciar.`);
+          continue;
+        }
+
+        // Intento OCPP idempotente: sólo se persiste el identificador cuando el
+        // cargador confirma Accepted. La reserva de plataforma permanece visible
+        // si el equipo está offline, sin declarar un bloqueo físico inexistente.
+        if (!res.ocppReservationId) {
+          const [stationRows, userRows] = await Promise.all([
+            db.select({ ocppIdentity: chargingStations.ocppIdentity })
+              .from(chargingStations)
+              .where(eq(chargingStations.id, res.stationId))
+              .limit(1),
+            db.select({ idTag: users.idTag })
+              .from(users)
+              .where(eq(users.id, res.userId))
+              .limit(1),
+          ]);
+          const station = stationRows[0];
+          const user = userRows[0];
+          const ocppIdentity = station?.ocppIdentity;
+          const idTag = user?.idTag || `USER-${res.userId}`;
+          if (ocppIdentity && dualCSMS.isStationOnline(ocppIdentity)) {
+            try {
+              const response = await dualCSMS.reserveNow(
+                ocppIdentity,
+                getOcppConnectorId(evse),
+                res.id,
+                new Date(res.expiryTime),
+                idTag,
+              );
+              if (isOcppReservationAccepted(response)) {
+                await db.update(reservations)
+                  .set({ ocppReservationId: res.id } as any)
+                  .where(eq(reservations.id, res.id));
+                console.log(`[ReservationActivation] OCPP reservation accepted for #${res.id}`);
+              } else {
+                console.warn(`[ReservationActivation] OCPP reservation rejected for #${res.id}: ${response.status}`);
+              }
+            } catch (error: any) {
+              console.warn(`[ReservationActivation] OCPP reservation pending for #${res.id}: ${error.message}`);
+            }
+          }
+        }
+
+        if (evse.connectorStatus === "AVAILABLE") {
+          await updateEvseStatus(res.evseId, "RESERVED", {
+            triggeredBy: "RESERVATION",
+            reason: `Reservation #${res.id} hold window opened`,
+          });
+          console.log(`[ReservationActivation] EVSE ${res.evseId} marcado como RESERVED (reserva #${res.id} inicia pronto)`);
+        }
       }
     }
 
@@ -369,24 +629,22 @@ async function processUpcomingReservations(): Promise<void> {
       .where(
         and(
           eq(reservations.reservationStatus, "ACTIVE"),
-          // @ts-ignore
-          lte(reservations.endTime, now)
+          sql`${reservations.endTime} <= UTC_TIMESTAMP()`
         )
       );
 
     for (const res of expiredReservations) {
       const [evse] = await db
-        .select({ status: evses.connectorStatus })
+        .select({ connectorStatus: evses.connectorStatus })
         .from(evses)
         .where(eq(evses.id, res.evseId));
 
       // Solo liberar si está RESERVED (no si está CHARGING u otro estado activo)
-      // @ts-ignore
       if (evse && evse.connectorStatus === "RESERVED") {
-        await db
-          .update(evses)
-          .set({ status: "AVAILABLE", lastStatusUpdate: now } as any)
-          .where(eq(evses.id, res.evseId));
+        await updateEvseStatus(res.evseId, "AVAILABLE", {
+          triggeredBy: "RESERVATION",
+          reason: `Reservation #${res.id} ended`,
+        });
         console.log(`[ReservationActivation] EVSE ${res.evseId} liberado a AVAILABLE (reserva #${res.id} terminó)`);
       }
     }
@@ -399,9 +657,91 @@ async function processUpcomingReservations(): Promise<void> {
   }
 }
 
+const RESERVATION_EVENTS: ReservationNotificationEvent[] = [
+  "confirmed",
+  "reminder_30m",
+  "reminder_5m",
+  "check_in",
+  "cancelled",
+  "no_show_warning",
+  "no_show_penalty",
+  "service_issue",
+];
+
+/**
+ * Reintenta sólo avisos internos que nunca llegaron a Meta. Esto cubre eventos
+ * creados mientras la plantilla estaba en revisión y evita duplicar cualquier
+ * `wamid` ya registrado, incluso si Meta reintenta su propio webhook.
+ */
+export async function retryPendingReservationWhatsAppNotifications(): Promise<{ attempted: number; skipped: number }> {
+  const db = (await getDb())!;
+  if (!db) return { attempted: 0, skipped: 0 };
+  const { getConfiguredReservationTemplate, sendWhatsAppTemplate } = await import("../whatsapp/whatsapp-service");
+  const template = await getConfiguredReservationTemplate();
+  if (!template.canSend) return { attempted: 0, skipped: 0 };
+
+  const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const candidates = await db
+    .select({ notification: notifications, user: users, station: chargingStations, evse: evses })
+    .from(notifications)
+    .innerJoin(reservations, eq(notifications.referenceId, reservations.id))
+    .innerJoin(users, eq(notifications.userId, users.id))
+    .innerJoin(chargingStations, eq(reservations.stationId, chargingStations.id))
+    .leftJoin(evses, eq(reservations.evseId, evses.id))
+    .where(and(
+      eq(notifications.type, "RESERVATION"),
+      eq(notifications.referenceType, "reservation"),
+      gte(notifications.createdAt, cutoff),
+    ))
+    .orderBy(desc(notifications.createdAt))
+    .limit(200);
+
+  let attempted = 0;
+  let skipped = 0;
+  for (const { notification, user, station, evse } of candidates) {
+    let event: ReservationNotificationEvent | null = null;
+    try {
+      const parsed = notification.data ? JSON.parse(notification.data) : null;
+      event = RESERVATION_EVENTS.includes(parsed?.event) ? parsed.event : null;
+    } catch {
+      event = null;
+    }
+    if (!event || !user.phone || !notification.referenceId) {
+      skipped++;
+      continue;
+    }
+    const eventType = getReservationWhatsAppEventType(event);
+    const [priorProviderAttempt] = await db.select({ id: whatsappNotificationLog.id })
+      .from(whatsappNotificationLog)
+      .where(and(
+        eq(whatsappNotificationLog.referenceId, notification.referenceId),
+        eq(whatsappNotificationLog.referenceType, "reservation"),
+        eq(whatsappNotificationLog.eventType, eventType),
+      ))
+      .limit(1);
+    if (priorProviderAttempt) {
+      skipped++;
+      continue;
+    }
+    const accepted = await sendWhatsAppTemplate({
+      toPhone: user.phone,
+      templateName: template.name,
+      parameters: getReservationWhatsAppParameters(user.name, event, { stationName: station.name, connectorLabel: evse?.connectorId }),
+      eventType,
+      userId: user.id,
+      referenceId: notification.referenceId,
+      referenceType: "reservation",
+    });
+    if (accepted) attempted++;
+    else skipped++;
+  }
+  return { attempted, skipped };
+}
+
 // Exportar funciones para uso en cron jobs
 export const reservationJobs = {
   processReminders: processReservationReminders,
   processNoShows: processNoShows,
   processUpcomingReservations: processUpcomingReservations,
+  retryPendingWhatsApp: retryPendingReservationWhatsAppNotifications,
 };

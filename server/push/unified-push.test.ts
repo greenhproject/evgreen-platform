@@ -12,9 +12,10 @@ describe("Unified Push Service", () => {
     vi.clearAllMocks();
   });
 
-  it("should export sendUserPush and sendUserPushToMultiple", async () => {
+  it("should export boolean compatibility and detailed delivery APIs", async () => {
     const mod = await import("./unified-push");
     expect(typeof mod.sendUserPush).toBe("function");
+    expect(typeof mod.sendUserPushDetailed).toBe("function");
     expect(typeof mod.sendUserPushToMultiple).toBe("function");
   });
 
@@ -40,13 +41,13 @@ describe("Unified Push Service", () => {
     expect(content).toContain('from "../db"');
   });
 
-  it("should try Web Push first before FCM fallback", () => {
+  it("should route Web Push and all active FCM devices", () => {
     const filePath = path.join(__dirname, "unified-push.ts");
     const content = fs.readFileSync(filePath, "utf-8");
     
-    // Web Push should be attempted first
+    // Web Push is evaluated before the native FCM device set.
     const webPushIndex = content.indexOf("pushSubscription && isWebPushAvailable");
-    const fcmIndex = content.indexOf("fcmToken && !user.fcmToken.startsWith");
+    const fcmIndex = content.indexOf("const registeredDevices = await getActivePushDevicesForUser");
     
     expect(webPushIndex).toBeGreaterThan(-1);
     expect(fcmIndex).toBeGreaterThan(-1);
@@ -74,17 +75,18 @@ describe("Unified Push Service", () => {
     const filePath = path.join(__dirname, "unified-push.ts");
     const content = fs.readFileSync(filePath, "utf-8");
     
-    expect(content).toContain("parseError");
-    expect(content).toContain("Invalid pushSubscription JSON");
+    expect(content).toContain("JSON.parse(user.pushSubscription)");
+    expect(content).toContain("WEB_PUSH_ERROR");
   });
 
-  it("should log success and failure for debugging", () => {
+  it("should persist an honest provider acknowledgement lifecycle", () => {
     const filePath = path.join(__dirname, "unified-push.ts");
     const content = fs.readFileSync(filePath, "utf-8");
     
-    expect(content).toContain("[UnifiedPush] Web Push sent");
-    expect(content).toContain("[UnifiedPush] FCM sent");
-    expect(content).toContain("[UnifiedPush] All push methods failed");
+    expect(content).toContain("createPushDeliveryEvent");
+    expect(content).toContain("markPushDeliveryAccepted");
+    expect(content).toContain("markPushDeliveryFailed");
+    expect(content).toContain("acceptedCount");
   });
 
   it("sendUserPushToMultiple should process in parallel", () => {
@@ -192,8 +194,9 @@ describe("Charging modules use unified push", () => {
     
     expect(content).toContain('from "../push/unified-push"');
     expect(content).toContain("sendUserPush");
-    // Should also check for pushSubscription, not just fcmToken
-    expect(content).toContain("pushSubscription");
+    // El monitor no debe filtrar por los campos legados: el unificador consulta
+    // Web Push, token de compatibilidad y los dispositivos activos.
+    expect(content).not.toContain("if (!user?.fcmToken && !user?.pushSubscription)");
   });
 
   it("proactive-notifications should use unified-push", () => {

@@ -25,6 +25,7 @@ import { sendWhatsAppTemplate, WA_TEMPLATE_NAMES } from "../whatsapp/whatsapp-se
 import { autoChargeIfNeeded } from "../wompi/auto-charge";
 import { createOverstayLifecycle } from "./overstay-lifecycle";
 import { resolveOverstayPolicy } from "./overstay-policy";
+import { shouldAutoReleaseStaleFinishing } from "../../shared/ocpp-status-notification-policy";
 import crypto from "crypto";
 
 // Unique instance ID for this server process (survives restarts with different ID)
@@ -564,9 +565,15 @@ async function scanForUnmonitoredOverstay() {
       
       const hoursSinceEnd = (Date.now() - endTime.getTime()) / (1000 * 60 * 60);
       if (hoursSinceEnd > 2) {
-        // Transaction ended more than 2 hours ago - likely stale EVSE status, reset it
-        console.log(`[OverstayMonitor] EVSE ${evse.id} in ${evse.connectorStatus} but last tx ended ${hoursSinceEnd.toFixed(1)}h ago. Resetting to AVAILABLE.`);
-        await db.updateEvseStatus(evse.id, "AVAILABLE", { triggeredBy: "OVERSTAY" });
+        // A completed transaction is not proof that the cable was disconnected.
+        // Wallbox can keep reporting Finishing for a connected vehicle many hours
+        // later; only connector-specific Available or EVDisconnected may release it.
+        if (shouldAutoReleaseStaleFinishing()) {
+          console.warn(`[OverstayMonitor] Legacy stale-release enabled for EVSE ${evse.id}; resetting FINISHING after ${hoursSinceEnd.toFixed(1)}h.`);
+          await db.updateEvseStatus(evse.id, "AVAILABLE", { triggeredBy: "OVERSTAY" });
+        } else {
+          console.log(`[OverstayMonitor] EVSE ${evse.id} remains FINISHING after ${hoursSinceEnd.toFixed(1)}h; awaiting a connector-specific physical disconnect.`);
+        }
         continue;
       }
 

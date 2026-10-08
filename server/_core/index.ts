@@ -17,7 +17,8 @@ import { createHeartbeatJob, listHeartbeatJobs } from "./heartbeat";
 import { startReconciliationCron } from "../wompi/reconciliation-cron";
 import { startTransactionCleanupJob } from "../jobs/transaction-cleanup";
 import { startBalanceMonitor } from "../charging/balance-monitor";
-import { startProactiveNotifications } from "../ai/proactive-notifications";
+import { runHabitualChargingReminderChecks } from "../ai/proactive-notifications";
+import { computeAllProfiles } from "../profiles/consumption-profile-service";
 import { startDemandForecastJob } from "../ai/demand-forecast-service";
 import { startOverstayMonitor, onChargingFinished, onCableDisconnected, onStationReportedAvailable } from "../charging/overstay-monitor";
 import { getOverstayStatusAction, shouldStartOverstayFromStopTransaction } from "../charging/overstay-guards";
@@ -36,6 +37,10 @@ import { ensureContractDocumentStorage } from "../contracts/ensure-contract-docu
 import { registerStorageProxy } from "./storageProxy";
 import { calculateSocEstimation } from "../charging/soc-estimation";
 import { estimatePowerFromEnergySamples, shouldAdvanceTelemetrySample } from "../../shared/charging-telemetry";
+import { createOcpp16StartFingerprint } from "../../shared/ocpp-start-idempotency";
+import { handleBillingWebhook } from "../billing/webhook";
+import { handleWhatsAppWebhook, verifyWhatsAppWebhook } from "../whatsapp/webhook";
+import { sdk } from "./sdk";
 
 // Grace period para desconexiones temporales del legacy CSMS
 // Evita notificaciones por reconexiones intermitentes (WiFi inestable, reinicios breves)
@@ -174,6 +179,10 @@ async function startServer() {
   app.post("/api/resend/webhook", express.text({ type: "application/json", limit: "1mb" }), handleResendWebhook);
   // DocuSign Connect firma el cuerpo JSON exacto con HMAC; nunca debe pasar primero por express.json().
   app.post("/api/docusign/webhook", express.text({ type: ["application/json", "application/*+json"], limit: "2mb" }), handleDocusignWebhook);
+  // Meta firma el cuerpo crudo con X-Hub-Signature-256. Esta ruta debe montarse
+  // antes del parser JSON global para preservar exactamente el payload firmado.
+  app.get("/api/whatsapp/webhook", verifyWhatsAppWebhook);
+  app.post("/api/whatsapp/webhook", express.text({ type: ["application/json", "application/*+json"], limit: "3mb" }), handleWhatsAppWebhook);
   // PDF contractual manual: token opaco, revocable y con vencimiento; el archivo se entrega mediante URL temporal de almacenamiento.
   app.get("/api/contracts/manual/:token", handleManualContractDownload);
   // Configure body parser with larger size limit for file uploads
@@ -181,6 +190,8 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   // Wompi webhook
   app.post("/api/wompi/webhook", express.json(), handleWompiWebhook);
+  // Webhook de facturación electrónica multi-proveedor (Alegra / Siigo / World Office / DIAN)
+  app.post("/api/billing/webhook", express.json(), handleBillingWebhook);
 
   // ─── Heartbeat: Renovación automática de suscripciones (diario 6am Colombia) ───
   app.post("/api/scheduled/billing", express.json(), async (req, res) => {
@@ -196,6 +207,138 @@ async function startServer() {
     } catch (err: any) {
       console.error("[Heartbeat] Error en billing:", err);
       return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // ─── Heartbeat: reintento seguro de alertas de disponibilidad ───────────────
+  // Sólo procesa solicitudes explícitas pendientes; nunca crea alertas nuevas.
+  app.post("/api/scheduled/availability-alerts", express.json(), async (req, res) => {
+    const authHeader = req.headers.authorization || "";
+    const expectedToken = process.env.BUILT_IN_FORGE_API_KEY || "";
+    if (expectedToken && authHeader !== `Bearer ${expectedToken}`) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    try {
+      const { getRetryableAvailabilityAlertStationIds, getEvsesByStationId } = await import("../db");
+      const { dispatchAvailabilityAlerts } = await import("../notifications/availability-alert-dispatcher");
+      const stationIds = await getRetryableAvailabilityAlertStationIds();
+      // La aprobación ocurre asíncronamente en Meta; este Heartbeat autenticado
+      // evita depender de un timer en memoria para habilitar plantillas Utility.
+      const {
+        refreshStationAvailabilityTemplateStatus,
+        refreshReservationTemplateStatus,
+        refreshChargerOfflineTemplateStatus,
+      } = await import("../whatsapp/whatsapp-service");
+      await refreshReservationTemplateStatus();
+      await refreshChargerOfflineTemplateStatus();
+      if (stationIds.length > 0) {
+        await refreshStationAvailabilityTemplateStatus();
+      }
+      let processedConnectors = 0;
+      for (const candidateStationId of stationIds) {
+        const stationEvses = await getEvsesByStationId(candidateStationId);
+        const availableConnectorTypes = [...new Set(
+          stationEvses
+            .filter((evse: any) => String(evse.connectorStatus || evse.status || "").toUpperCase() === "AVAILABLE")
+            .map((evse: any) => evse.connectorType)
+            .filter(Boolean),
+        )];
+        // Evita avisar tarde: el reintento sólo ocurre si el conector continúa libre.
+        for (const availableConnectorType of availableConnectorTypes) {
+          await dispatchAvailabilityAlerts(candidateStationId, String(availableConnectorType));
+          processedConnectors++;
+        }
+      }
+      return res.json({ ok: true, candidateStations: stationIds.length, processedConnectors });
+    } catch (err: any) {
+      console.error("[Heartbeat] Error reintentando alertas de disponibilidad:", err);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // ─── Heartbeat: reintento de avisos de reserva pendientes de Meta ──────────
+  app.post("/api/scheduled/reservation-whatsapp", express.json(), async (req, res) => {
+    const authHeader = req.headers.authorization || "";
+    const expectedToken = process.env.BUILT_IN_FORGE_API_KEY || "";
+    if (expectedToken && authHeader !== `Bearer ${expectedToken}`) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    try {
+      const { refreshReservationTemplateStatus } = await import("../whatsapp/whatsapp-service");
+      const { retryPendingReservationWhatsAppNotifications } = await import("../notifications/reservation-notifications");
+      const template = await refreshReservationTemplateStatus();
+      const result = template.canSend
+        ? await retryPendingReservationWhatsAppNotifications()
+        : { attempted: 0, skipped: 0 };
+      return res.json({ ok: true, template: { status: template.status, canSend: template.canSend }, ...result });
+    } catch (err: any) {
+      console.error("[Heartbeat] Error reintentando avisos de reserva:", err);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // ─── Heartbeat: reconciliación de órdenes de detener carga ─────────────────
+  // Una orden RemoteStop aceptada no es el evento físico de cierre. Si el
+  // cargador no entrega StopTransaction / TransactionEvent.Ended en un minuto,
+  // se marca como reintentable sin liquidar ni liberar prematuramente.
+  app.post("/api/scheduled/charge-stop-reconciliation", express.json(), async (req, res) => {
+    const authHeader = req.headers.authorization || "";
+    const expectedToken = process.env.BUILT_IN_FORGE_API_KEY || "";
+    if (expectedToken && authHeader !== `Bearer ${expectedToken}`) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    try {
+      const { reconcileTimedOutChargeStopRequests } = await import("../db");
+      const timedOut = await reconcileTimedOutChargeStopRequests();
+      return res.json({ ok: true, timedOut });
+    } catch (err: any) {
+      console.error("[Heartbeat] Error reconciliando órdenes de detener carga:", err);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // ─── Heartbeat: recordatorios habituales de carga ─────────────────────────
+  // Evalúa la franja día+hora local del usuario y respeta su opt-in de WhatsApp.
+  app.post("/api/scheduled/charging-habit-reminders", express.json(), async (req, res) => {
+    try {
+      const cronUser = await sdk.authenticateRequest(req as any);
+      if (!cronUser.isCron || !cronUser.taskUid) {
+        return res.status(403).json({ error: "cron-only" });
+      }
+      const result = await runHabitualChargingReminderChecks();
+      return res.json({ taskUid: cronUser.taskUid, ...result });
+    } catch (err: any) {
+      console.error("[Heartbeat] Error ejecutando recordatorios de hábito:", err);
+      if (err?.code === "FORBIDDEN" || /Invalid session cookie|Cron session missing/.test(String(err?.message))) {
+        return res.status(403).json({ error: "cron-only" });
+      }
+      return res.status(500).json({
+        ok: false,
+        error: err?.message ?? "Error ejecutando recordatorios de hábito",
+        timestamp: new Date().toISOString(),
+      });
+    }
+  });
+
+  // ─── Heartbeat: recálculo nocturno de perfiles consentidos ─────────────────
+  app.post("/api/scheduled/consumption-profile-refresh", express.json(), async (req, res) => {
+    try {
+      const cronUser = await sdk.authenticateRequest(req as any);
+      if (!cronUser.isCron || !cronUser.taskUid) {
+        return res.status(403).json({ error: "cron-only" });
+      }
+      const result = await computeAllProfiles();
+      return res.json({ ok: true, taskUid: cronUser.taskUid, ...result });
+    } catch (err: any) {
+      console.error("[Heartbeat] Error recalculando perfiles de consumo:", err);
+      if (err?.code === "FORBIDDEN" || /Invalid session cookie|Cron session missing/.test(String(err?.message))) {
+        return res.status(403).json({ error: "cron-only" });
+      }
+      return res.status(500).json({
+        ok: false,
+        error: err?.message ?? "Error recalculando perfiles de consumo",
+        timestamp: new Date().toISOString(),
+      });
     }
   });
 
@@ -638,8 +781,54 @@ async function startServer() {
         } else {
           console.log("[Heartbeat] Job de billing ya existe, omitiendo registro.");
         }
+
+        const availabilityJobExists = existing.jobs?.some((j: any) => j.name === "evgreen-availability-alerts");
+        if (!availabilityJobExists) {
+          const job = await createHeartbeatJob({
+            name: "evgreen-availability-alerts",
+            cron: "0 */5 * * * *",
+            path: "/api/scheduled/availability-alerts",
+            method: "POST",
+            description: "Reintentos idempotentes de alertas de disponibilidad EVGreen; sólo notifica si el conector continúa Available",
+          }, "");
+          console.log(`[Heartbeat] Job de alertas de disponibilidad registrado: ${job.taskUid}`);
+        } else {
+          console.log("[Heartbeat] Job de alertas de disponibilidad ya existe, omitiendo registro.");
+        }
+
+        const reservationWhatsAppJobExists = existing.jobs?.some((j: any) => j.name === "evgreen-reservation-whatsapp");
+        if (!reservationWhatsAppJobExists) {
+          const job = await createHeartbeatJob({
+            name: "evgreen-reservation-whatsapp",
+            cron: "30 */5 * * * *",
+            path: "/api/scheduled/reservation-whatsapp",
+            method: "POST",
+            description: "Reintentos idempotentes de avisos de reserva EVGreen una vez Meta apruebe la plantilla Utility",
+          }, "");
+          console.log(`[Heartbeat] Job de avisos de reserva registrado: ${job.taskUid}`);
+        } else {
+          console.log("[Heartbeat] Job de avisos de reserva ya existe, omitiendo registro.");
+        }
+
+        const chargeStopReconciliationExists = existing.jobs?.some((j: any) => j.name === "evgreen-charge-stop-reconciliation");
+        if (!chargeStopReconciliationExists) {
+          const job = await createHeartbeatJob({
+            name: "evgreen-charge-stop-reconciliation",
+            cron: "15 * * * * *",
+            path: "/api/scheduled/charge-stop-reconciliation",
+            method: "POST",
+            description: "Reconciliación durable de órdenes RemoteStop sin confirmación física OCPP; nunca liquida una sesión no confirmada",
+          }, "");
+          console.log(`[Heartbeat] Job de reconciliación de detener carga registrado: ${job.taskUid}`);
+        } else {
+          console.log("[Heartbeat] Job de reconciliación de detener carga ya existe, omitiendo registro.");
+        }
+
+        // Los jobs de hábitos se administran como Heartbeats de proyecto, no
+        // desde este proceso. Crear un Heartbeat con una cookie vacía produce
+        // ejecuciones sin identidad cron y nunca debe reintentarse al arrancar.
       } catch (err) {
-        console.warn("[Heartbeat] No se pudo registrar el job de billing (no crítico):", err);
+        console.warn("[Heartbeat] No se pudieron registrar jobs operativos (no crítico):", err);
       }
     })();
     
@@ -655,8 +844,8 @@ async function startServer() {
     // Iniciar monitoreo de tarifa de ocupación (overstay) cada 60s
     startOverstayMonitor();
     
-    // Fase 2 IA: Iniciar notificaciones proactivas basadas en perfil de consumo (cada 30 min)
-    startProactiveNotifications();
+    // Los recordatorios de hábito se ejecutan con Heartbeat durable; nunca con
+    // timers del proceso, que se pierden ante reinicios o escalado de Railway.
     
     // Fase 3 IA: Iniciar predicción de demanda por estación (cada 6h)
     startDemandForecastJob();
@@ -723,9 +912,15 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
 
   // Registrar conexión - usar stationId restaurado si es reconexión seamless
   let stationId: number | null = connection.stationId;
+  let chargerId: number | null = null;
 
   // PRE-RESOLVER stationId inmediatamente al conectarse (no esperar a BootNotification)
   try {
+    const charger = await db.getChargerByOcppIdentity(ocppIdentity);
+    if (charger) {
+      chargerId = charger.id;
+      console.log(`[OCPP] Resolved physical charger ${chargerId} for ${ocppIdentity}`);
+    }
     const station = await db.getChargingStationByOcppIdentity(ocppIdentity);
     if (station) {
       stationId = station.id;
@@ -824,9 +1019,9 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
 
           // Manejar mensajes según versión
           if (ocppVersion === "1.6") {
-            response = await handleOCPP16Message(action, payload, ocppIdentity, stationId, db, ocpp16Transactions, transactionIdCounter++);
+            response = await handleOCPP16Message(action, payload, ocppIdentity, stationId, chargerId, db, ocpp16Transactions, transactionIdCounter++);
           } else {
-            response = await handleOCPP201Message(action, payload, ocppIdentity, stationId, db);
+            response = await handleOCPP201Message(action, payload, ocppIdentity, stationId, chargerId, db);
           }
 
           // Actualizar stationId si se obtuvo en BootNotification
@@ -1034,6 +1229,7 @@ async function handleOCPP16Message(
   payload: any,
   ocppIdentity: string,
   stationId: number | null,
+  chargerId: number | null,
   db: any,
   ocpp16Transactions: Map<number, string>,
   transactionIdCounter: number
@@ -1079,7 +1275,8 @@ async function handleOCPP16Message(
       }
       if (resolvedStationId && payload.connectorId > 0) {
         const evses = await db.getEvsesByStationId(resolvedStationId);
-        const evse = evses.find((e: any) => e.evseIdLocal === payload.connectorId);
+        const scopedEvses = chargerId ? evses.filter((e: any) => e.chargerId === chargerId) : evses;
+        const evse = scopedEvses.find((e: any) => e.evseIdLocal === payload.connectorId || e.connectorId === payload.connectorId);
         if (evse) {
           const statusMap: Record<string, string> = {
             Available: "AVAILABLE",
@@ -1235,10 +1432,11 @@ async function handleOCPP16Message(
         return { idTagInfo: { status: "Invalid" }, transactionId: 0 };
       }
       const evses = await db.getEvsesByStationId(resolvedStId);
-      let evse = evses.find((e: any) => e.evseIdLocal === payload.connectorId);
+      const scopedEvses = chargerId ? evses.filter((e: any) => e.chargerId === chargerId) : evses;
+      let evse = scopedEvses.find((e: any) => e.evseIdLocal === payload.connectorId || e.connectorId === payload.connectorId);
       // Fallback: si no encuentra el conector exacto, usar el primero disponible
-      if (!evse && evses.length > 0) {
-        evse = evses[0];
+      if (!evse && scopedEvses.length > 0) {
+        evse = scopedEvses[0];
         console.log(`[OCPP] StartTransaction - Connector ${payload.connectorId} not found, using first EVSE ${evse.id}`);
       }
       if (!evse) {
@@ -1311,14 +1509,21 @@ async function handleOCPP16Message(
       const txChargeMode = pendingSessionForTx?.session?.chargeMode || "full_charge";
       const txTargetValue = pendingSessionForTx?.session?.targetValue || 0;
       const txPricePerKwh = pendingSessionForTx?.session?.pricePerKwh || (tariff ? parseFloat(tariff.pricePerKwh) : 1800);
+      const ocppStartFingerprint = createOcpp16StartFingerprint({
+        stationId: resolvedStId,
+        evseId: evse.id,
+        meterStart: payload.meterStart,
+        timestamp: payload.timestamp,
+      });
       
-      const newTxId = await db.createTransaction({
+      const persistedStart = await db.createOcpp16TransactionOnce({
         evseId: evse.id,
         userId: userId || 1, // Usar usuario encontrado o fallback a 1 (admin)
         stationId: resolvedStId,
         tariffId: tariff?.id,
         ocppTransactionId: internalTransactionId,
         ocppNumericTxId: transactionIdCounter, // ID numérico OCPP 1.6 para RemoteStopTransaction
+        ocppStartFingerprint,
         startTime: new Date(payload.timestamp),
         status: "IN_PROGRESS",
         meterStart: String(payload.meterStart),
@@ -1326,10 +1531,31 @@ async function handleOCPP16Message(
         targetValue: String(txTargetValue),
         appliedPricePerKwh: String(txPricePerKwh),
       });
-      console.log(`[OCPP] StartTransaction - Created tx: dbId=${newTxId}, ocppNumericTxId=${transactionIdCounter}, internalId=${internalTransactionId}`);
+      const newTxId = persistedStart.transactionId;
+      const effectiveOcppTransactionId = persistedStart.transaction.ocppTransactionId || internalTransactionId;
+      const effectiveOcppNumericTxId = persistedStart.transaction.ocppNumericTxId || transactionIdCounter;
+      console.log(`[OCPP] StartTransaction - ${persistedStart.created ? "Created" : "Deduplicated"} tx: dbId=${newTxId}, ocppNumericTxId=${effectiveOcppNumericTxId}, internalId=${effectiveOcppTransactionId}`);
       
-      ocpp16Transactions.set(transactionIdCounter, internalTransactionId);
+      ocpp16Transactions.set(effectiveOcppNumericTxId, effectiveOcppTransactionId);
       await db.updateEvseStatus(evse.id, "CHARGING", { triggeredBy: "OCPP" });
+
+      // Una retransmisión del cargador no representa una sesión nueva: responder
+      // con el mismo id físico sin reenviar WhatsApp, recibos ni crear cobros.
+      if (!persistedStart.created) {
+        alertsService.handleTransactionReplay({
+          ocppIdentity,
+          stationId: resolvedStId,
+          transactionId: newTxId,
+          connectorId: payload.connectorId,
+          protocol: "OCPP 1.6",
+        }).catch((alertError) => {
+          console.error("[OCPP] Could not record contained StartTransaction replay:", alertError);
+        });
+        return {
+          idTagInfo: { status: "Accepted" },
+          transactionId: effectiveOcppNumericTxId,
+        };
+      }
       
       // Enviar notificación al usuario cuando inicia la carga
       if (userId) {
@@ -1392,7 +1618,7 @@ async function handleOCPP16Message(
       
       return {
         idTagInfo: { status: userId ? "Accepted" : "Accepted" }, // Aceptar incluso sin usuario para permitir cargas anónimas
-        transactionId: transactionIdCounter,
+        transactionId: effectiveOcppNumericTxId,
       };
     }
     case "StopTransaction": {
@@ -1449,27 +1675,11 @@ async function handleOCPP16Message(
         }
       }
       
-      // Si no se encontró transacción, aceptar y limpiar EVSEs
+      // Una StopTransaction sin correlación local no prueba que una pistola se
+      // haya desconectado. El estado físico sólo cambia con StatusNotification
+      // del conector o con EVDisconnected; nunca se libera toda la estación.
       if (!transaction) {
-        console.warn(`[OCPP] StopTransaction - No transaction found for txId=${payload.transactionId}, idTag=${payload.idTag}. Accepting and cleaning up.`);
-        // Limpiar EVSEs de la estación a AVAILABLE
-        let cleanupStId = stationId;
-        if (!cleanupStId) {
-          try {
-            const station = await db.getChargingStationByOcppIdentity(ocppIdentity);
-            if (station) cleanupStId = station.id;
-          } catch (err) { /* ignore */ }
-        }
-        if (cleanupStId) {
-          try {
-            const evses = await db.getEvsesByStationId(cleanupStId);
-            for (const e of evses) {
-              if (e.connectorStatus !== "AVAILABLE") {
-                await db.updateEvseStatus(e.id, "AVAILABLE", { triggeredBy: "OCPP" });
-              }
-            }
-          } catch (err) { /* ignore */ }
-        }
+        console.warn(`[OCPP] StopTransaction - No transaction found for txId=${payload.transactionId}, idTag=${payload.idTag}. Accepting without altering connector state.`);
         return { idTagInfo: { status: "Accepted" } };
       }
       const meterStart = transaction.meterStart ? parseFloat(transaction.meterStart) : 0;
@@ -1526,7 +1736,7 @@ async function handleOCPP16Message(
       } catch (socCalcErr) {
         console.error(`[OCPP] Error calculando manualSocEnd:`, socCalcErr);
       }
-      await db.updateTransaction(transaction.id, {
+      const settledNow = await db.completeTransactionOnce(transaction.id, {
         endTime,
         meterEnd: String(payload.meterStop),
         kwhConsumed: energyDelivered.toFixed(4),
@@ -1540,6 +1750,11 @@ async function handleOCPP16Message(
         stopReason: payload.reason || "Remote",
         ...(manualSocEndValue !== null ? { manualSocEnd: manualSocEndValue } : {}),
       });
+
+      if (!settledNow) {
+        console.warn(`[OCPP] StopTransaction replay ignored for already-settled transaction ${transaction.id}`);
+        return { idTagInfo: { status: "Accepted" } };
+      }
       
       // StopTransaction cierra el cobro de energía, pero no prueba que el cable continúe conectado.
       // Solo EVDisconnected es una confirmación física que cancela de inmediato todo sobretiempo.
@@ -1580,23 +1795,14 @@ async function handleOCPP16Message(
               }
             }
             
-            const newBalance = Math.max(0, currentBalance - totalCost);
-            await db.updateWalletBalance(transaction.userId, newBalance.toString());
-            
-            await db.createWalletTransaction({
-              walletId: wallet.id,
+            const settlement = await db.deductChargePaymentOnce({
               userId: transaction.userId,
-              type: "CHARGE_PAYMENT",
-              amount: (-totalCost).toString(),
-              balanceBefore: currentBalance.toString(),
-              balanceAfter: newBalance.toString(),
-              referenceId: transaction.id,
-              referenceType: "TRANSACTION",
-              status: "COMPLETED",
+              transactionId: transaction.id,
+              amount: totalCost,
               description: `Pago por carga de ${energyDelivered.toFixed(2)} kWh`,
             });
             
-            console.log(`[OCPP] StopTransaction - Wallet deducted: $${Math.round(totalCost)} from user ${transaction.userId}. Balance: $${currentBalance} -> $${newBalance}`);
+            console.log(`[OCPP] StopTransaction - Wallet ${settlement.deducted ? "deducted" : "deduped"}: $${Math.round(totalCost)} for user ${transaction.userId}. Balance: ${currentBalance} -> ${settlement.balance ?? "N/A"}`);
           }
         } catch (walletErr: any) {
           console.error(`[OCPP] Error deducting user wallet:`, walletErr?.message || walletErr);
@@ -1774,6 +1980,13 @@ async function handleOCPP16Message(
             }
           } catch (emailErr: any) {
             console.error(`[Email] receipt (legacy) exception:`, emailErr?.message);
+          }
+          // Facturación electrónica multi-proveedor (Alegra, Siigo, World Office)
+          try {
+            const { queueChargingInvoice } = await import("../billing/billing-service");
+            await queueChargingInvoice(transaction.id);
+          } catch (billingErr: any) {
+            console.error(`[OCPP] Electronic invoice queue error:`, billingErr?.message);
           }
         } catch (notifErr) {
           console.error(`[OCPP] Error sending charge complete notification:`, notifErr);
@@ -2059,6 +2272,10 @@ async function handleOCPP16Message(
                 manualSocCalibratedAt: (transaction as any).manualSocCalibratedAt
                   ? new Date((transaction as any).manualSocCalibratedAt)
                   : null,
+                manualSocEffectiveCapacityKwh: (transaction as any).manualSocEffectiveCapacityKwh !== null && (transaction as any).manualSocEffectiveCapacityKwh !== undefined
+                  ? parseFloat(String((transaction as any).manualSocEffectiveCapacityKwh))
+                  : null,
+                manualSocCalibrationCount: (transaction as any).manualSocCalibrationCount ?? 0,
                 lowPowerSince: null,
                 chargeCompleteDetected: false,
                 chargeCompleteNotified: false,
@@ -2192,6 +2409,10 @@ async function handleOCPP16Message(
               manualSocCalibratedAt: (transaction as any).manualSocCalibratedAt
                 ? new Date((transaction as any).manualSocCalibratedAt)
                 : null,
+              manualSocEffectiveCapacityKwh: (transaction as any).manualSocEffectiveCapacityKwh !== null && (transaction as any).manualSocEffectiveCapacityKwh !== undefined
+                ? parseFloat(String((transaction as any).manualSocEffectiveCapacityKwh))
+                : null,
+              manualSocCalibrationCount: (transaction as any).manualSocCalibrationCount ?? 0,
               lowPowerSince: null,
               chargeCompleteDetected: false,
               chargeCompleteNotified: false,
@@ -2307,6 +2528,7 @@ async function handleOCPP201Message(
   payload: any,
   ocppIdentity: string,
   stationId: number | null,
+  chargerId: number | null,
   db: any
 ): Promise<any> {
   switch (action) {
@@ -2335,7 +2557,8 @@ async function handleOCPP201Message(
     case "StatusNotification": {
       if (stationId) {
         const evses = await db.getEvsesByStationId(stationId);
-        const evse = evses.find((e: any) => e.evseIdLocal === payload.evseId);
+        const scopedEvses = chargerId ? evses.filter((e: any) => e.chargerId === chargerId) : evses;
+        const evse = scopedEvses.find((e: any) => e.evseIdLocal === payload.evseId || e.connectorId === payload.evseId);
         if (evse) {
           const statusMap: Record<string, string> = {
             Available: "AVAILABLE",

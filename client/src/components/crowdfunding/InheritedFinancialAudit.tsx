@@ -11,6 +11,7 @@ const rows = [
 ] as const;
 
 function display(value: unknown, kind: (typeof rows)[number]["kind"]) {
+	if (value === null || value === undefined || value === "") return "Sin dato";
   const number = Number(value ?? 0);
   if (kind === "currency") return new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(number);
   if (kind === "percent") return `${number.toFixed(2)}%`;
@@ -33,7 +34,7 @@ export function InheritedFinancialAudit({
   if (!snapshot) return null;
 
   const original = (key: string) => snapshot[key];
-  const changed = (key: string) => Number(original(key)) !== Number(current[key]);
+	  const changed = (key: string) => original(key) !== null && original(key) !== undefined && Number(original(key)) !== Number(current[key]);
 
   return (
     <section className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-3" aria-label="Comparación de proyección heredada">

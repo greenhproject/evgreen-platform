@@ -28,6 +28,14 @@ describe("formulario contractual responsive", () => {
     expect(source).toContain("selectedSpace?.eligibilityReason");
   });
 
+  it("separa los sitios pendientes de los expedientes ya creados y permite prepararlos directamente", () => {
+    expect(source).toContain("Pendientes de emitir contrato");
+    expect(source).toContain("availableSpaces.map");
+    expect(source).toContain("prepareContractForSpace");
+    expect(source).toContain("Expedientes ya creados");
+    expect(source).toContain("los pendientes están en la cola superior");
+  });
+
   it("presenta el asistente de importación como flujo responsive de fuente, mapeo y vista previa", () => {
     expect(source).toContain("Importar y mapear plantilla contractual");
     expect(source).toContain('label: "Fuente"');

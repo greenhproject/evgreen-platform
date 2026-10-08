@@ -7,8 +7,11 @@
  */
 
 import * as db from "../db";
-import { sendPushNotification } from "../firebase/fcm";
-import { sendWhatsAppMessage } from "../whatsapp/whatsapp-service";
+import { sendUserPush } from "../push/unified-push";
+import {
+  getConfiguredStationAvailabilityTemplate,
+  sendWhatsAppTemplate,
+} from "../whatsapp/whatsapp-service";
 
 /**
  * Disparar alertas de disponibilidad para una estación/EVSE que acaba de quedar libre.
@@ -42,68 +45,116 @@ export async function dispatchAvailabilityAlerts(
       return;
     }
 
-    // Procesar cada alerta
+    const availabilityTemplate = await getConfiguredStationAvailabilityTemplate();
+
+    // Procesar cada alerta. claimAvailabilityAlert garantiza que una alerta no
+    // se procesa dos veces cuando OCPP reintenta el mismo StatusNotification.
     for (const alert of relevantAlerts) {
       try {
-        const user = await db.getUserById(alert.userId);
+        const claimedAlert = await db.claimAvailabilityAlert(alert.id);
+        if (!claimedAlert) continue;
+
+        const user = await db.getUserById(claimedAlert.userId);
         if (!user) continue;
 
-        const stationName = alert.stationName || `Estación #${stationId}`;
-        const connectorLabel = alert.connectorType || "disponible";
+        const stationName = claimedAlert.stationName || `Estación #${stationId}`;
+        const connectorLabel = claimedAlert.connectorType || connectorType || "compatible";
 
-        let pushSent = false;
-        let waSent = false;
+        let pushStatus: "PENDING" | "SENT" | "FAILED" | "NOT_AVAILABLE" | "NOT_REQUESTED" = claimedAlert.pushStatus === "SENT"
+          ? "SENT"
+          : claimedAlert.sendPush ? "PENDING" : "NOT_REQUESTED";
+        let whatsappStatus: "PENDING" | "SENT" | "FAILED" | "WAITING_TEMPLATE" | "NO_PHONE" | "NOT_AVAILABLE" | "NOT_REQUESTED" = claimedAlert.whatsappStatus === "SENT"
+          ? "SENT"
+          : claimedAlert.sendWhatsapp ? "PENDING" : "NOT_REQUESTED";
+        let pushError: string | undefined;
+        let whatsappError: string | undefined;
 
-        // ── Push Notification (FCM) ──────────────────────────────────────────
-        if (alert.sendPush && user.fcmToken) {
-          try {
-            pushSent = await sendPushNotification(user.fcmToken, {
-              type: "station_available",
-              title: "¡Cargador disponible!",
-              body: `${stationName} tiene un conector ${connectorLabel} libre. ¡Ve a cargar ahora!`,
-              clickAction: "/map",
-              data: {
-                stationId: String(stationId),
-                alertId: String(alert.id),
-              },
-            });
-            if (pushSent) {
-              console.log(`[AvailabilityAlert] Push enviado al usuario ${alert.userId} para estación ${stationId}`);
+        // ── Push Notification (Web Push → FCM) ────────────────────────────────
+        if (claimedAlert.sendPush && pushStatus !== "SENT") {
+          const hasPushChannel = Boolean(user.pushSubscription || (user.fcmToken && !user.fcmToken.startsWith("local_")));
+          if (!hasPushChannel) {
+            pushStatus = "NOT_AVAILABLE";
+            pushError = "El usuario no tiene una suscripción Push activa";
+          } else {
+            try {
+              const sent = await sendUserPush(claimedAlert.userId, {
+                type: "station_available",
+                title: "¡Conector disponible!",
+                body: `${stationName} tiene un conector ${connectorLabel} libre. Sujeto a disponibilidad al llegar.`,
+                clickAction: "/map",
+                data: {
+                  stationId: String(stationId),
+                  alertId: String(claimedAlert.id),
+                },
+              });
+              pushStatus = sent ? "SENT" : "FAILED";
+              if (!sent) pushError = "El proveedor Push no confirmó el envío";
+            } catch (error) {
+              pushStatus = "FAILED";
+              pushError = error instanceof Error ? error.message : String(error);
             }
-          } catch (err) {
-            console.error(`[AvailabilityAlert] Error enviando push al usuario ${alert.userId}:`, err);
           }
         }
 
-        // ── WhatsApp ─────────────────────────────────────────────────────────
-        if (alert.sendWhatsapp && alert.userPhone) {
-          try {
-            const waMessage =
-              `🔌 *¡Cargador disponible!*\n\n` +
-              `Hola ${alert.userName || user.name || ""}! 👋\n\n` +
-              `La estación *${stationName}* que estabas esperando ya tiene un conector libre.\n\n` +
-              `⚡ *Conector:* ${connectorLabel}\n` +
-              `📍 *Estación:* ${stationName}\n\n` +
-              `¡Date prisa, puede ocuparse pronto! Abre la app EVGreen para iniciar tu carga.`;
-
-            waSent = await sendWhatsAppMessage({
-              toPhone: alert.userPhone,
-              message: waMessage,
-              eventType: "charge_start", // Usar tipo existente como proxy
-              skipConfigCheck: true,     // Siempre enviar alertas de disponibilidad
-            });
-
-            if (waSent) {
-              console.log(`[AvailabilityAlert] WhatsApp enviado al usuario ${alert.userId} (${alert.userPhone})`);
+        // ── WhatsApp por plantilla de utilidad aprobada ───────────────────────
+        if (claimedAlert.sendWhatsapp && whatsappStatus !== "SENT") {
+          if (!claimedAlert.userPhone) {
+            whatsappStatus = "NO_PHONE";
+            whatsappError = "El usuario no cuenta con un número WhatsApp registrado";
+          } else if (availabilityTemplate.status === "APPROVED" && availabilityTemplate.canSend) {
+            try {
+              const sent = await sendWhatsAppTemplate({
+                toPhone: claimedAlert.userPhone,
+                templateName: availabilityTemplate.name,
+                parameters: [claimedAlert.userName || user.name || "Usuario", connectorLabel, stationName],
+                eventType: "station_available",
+                userId: claimedAlert.userId,
+                referenceId: claimedAlert.id,
+                referenceType: "availability_alert",
+              });
+              whatsappStatus = sent ? "SENT" : "FAILED";
+              if (!sent) whatsappError = "Meta no confirmó la aceptación de la plantilla";
+            } catch (error) {
+              whatsappStatus = "FAILED";
+              whatsappError = error instanceof Error ? error.message : String(error);
             }
-          } catch (err) {
-            console.error(`[AvailabilityAlert] Error enviando WhatsApp al usuario ${alert.userId}:`, err);
+          } else if (availabilityTemplate.status === "IN_REVIEW" || availabilityTemplate.status === "NOT_CONFIGURED") {
+            whatsappStatus = "WAITING_TEMPLATE";
+            whatsappError = availabilityTemplate.reason || "La plantilla de disponibilidad espera aprobación de Meta";
+          } else if (availabilityTemplate.status === "ERROR") {
+            whatsappStatus = "FAILED";
+            whatsappError = availabilityTemplate.reason || "No fue posible verificar la disponibilidad de la plantilla en Meta";
+          } else {
+            whatsappStatus = "NOT_AVAILABLE";
+            whatsappError = availabilityTemplate.reason || `La plantilla no está disponible (${availabilityTemplate.status})`;
           }
         }
 
-        // ── Marcar alerta como enviada ────────────────────────────────────────
-        await db.markAlertSent(alert.id);
-        console.log(`[AvailabilityAlert] Alerta ${alert.id} marcada como SENT (push=${pushSent}, wa=${waSent})`);
+        // Siempre queda un aviso dentro de la aplicación. Se crea sólo en el
+        // primer intento para que los reintentos de proveedor no dupliquen inbox.
+        if (Number(claimedAlert.attemptCount || 0) === 1) {
+          try {
+            await db.createNotification({
+              userId: claimedAlert.userId,
+              title: "¡Conector disponible!",
+              message: `${stationName} tiene un conector ${connectorLabel} libre. La disponibilidad puede cambiar antes de tu llegada.`,
+              type: "STATION_AVAILABLE",
+              referenceId: claimedAlert.id,
+              referenceType: "availability_alert",
+            });
+          } catch (error) {
+            console.error(`[AvailabilityAlert] Error creando notificación interna para alerta ${claimedAlert.id}:`, error);
+          }
+        }
+
+        await db.completeAvailabilityAlertAttempt({
+          alertId: claimedAlert.id,
+          pushStatus,
+          whatsappStatus,
+          pushError,
+          whatsappError,
+        });
+        console.log(`[AvailabilityAlert] Alerta ${claimedAlert.id} procesada (push=${pushStatus}, wa=${whatsappStatus})`);
 
       } catch (alertErr) {
         console.error(`[AvailabilityAlert] Error procesando alerta ${alert.id}:`, alertErr);

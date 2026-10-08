@@ -4,7 +4,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Bell, BellRing, Mail, MessageSquare, Zap, DollarSign, AlertTriangle, Send, Loader2, MapPin, Navigation, Wallet, ShieldAlert, FileText, TrendingUp, Tag } from "lucide-react";
+import { ArrowLeft, Bell, BellRing, Mail, MessageSquare, Zap, DollarSign, AlertTriangle, Send, Loader2, MapPin, Navigation, Wallet, ShieldAlert, FileText, TrendingUp, Tag, Calendar } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
@@ -24,6 +24,7 @@ export default function UserNotifications() {
     disableNotifications,
     updatePreferences,
     sendTestNotification,
+    deliveryHealth,
   } = useNotifications();
 
   // Preferencias de proximidad
@@ -59,7 +60,7 @@ export default function UserNotifications() {
     },
   });
 
-  const handleWaToggle = (key: "waNotifyChargeStart" | "waNotifyChargeEnd" | "waNotifyReminder" | "waNotifyPenalty" | "waNotifyWallet") => {
+  const handleWaToggle = (key: "waNotifyChargeStart" | "waNotifyChargeEnd" | "waNotifyReminder" | "waNotifyReservations" | "waNotifyPenalty" | "waNotifyWallet") => {
     if (!waPrefs.data) return;
     updateWaMut.mutate({ [key]: !waPrefs.data[key] });
   };
@@ -92,6 +93,8 @@ export default function UserNotifications() {
   };
 
   const emailEnabled = emailPrefs.data?.emailNotifyEnabled ?? true;
+  const latestPushEvent = deliveryHealth?.events?.[0];
+  const activeNativeDevices = deliveryHealth?.devices?.filter((device) => device.status === "ACTIVE").length ?? 0;
 
   return (
     <UserLayout showHeader={false} showBottomNav={false}>
@@ -187,6 +190,24 @@ export default function UserNotifications() {
                     Enviar notificación de prueba
                   </Button>
                 </div>
+                {deliveryHealth && (
+                  <div className="rounded-xl border border-border/60 bg-muted/30 p-3 space-y-1.5" aria-live="polite">
+                    <div className="flex items-center justify-between gap-3 text-xs">
+                      <span className="font-medium">Estado del dispositivo</span>
+                      <Badge variant={activeNativeDevices > 0 ? "secondary" : "destructive"} className="text-[10px]">
+                        {activeNativeDevices > 0 ? `${activeNativeDevices} activo${activeNativeDevices === 1 ? "" : "s"}` : "Sin dispositivo registrado"}
+                      </Badge>
+                    </div>
+                    {latestPushEvent ? (
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        Última prueba: <span className="font-medium text-foreground">{latestPushEvent.status === "ACCEPTED" ? "Aceptada por el proveedor" : latestPushEvent.status === "RECEIVED" ? "Recibida por la app" : latestPushEvent.status === "OPENED" ? "Abierta en la app" : latestPushEvent.status === "FAILED" ? "Falló" : "Solicitada"}</span>
+                        {latestPushEvent.errorCode ? ` (${latestPushEvent.errorCode})` : ""}.
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground leading-relaxed">Aún no hay una entrega Push verificable para este dispositivo.</p>
+                    )}
+                  </div>
+                )}
               </CardContent>
             )}
           </Card>
@@ -252,6 +273,10 @@ export default function UserNotifications() {
                   <p className="flex items-center gap-1.5">
                     <Bell className="w-3 h-3" />
                     Máximo 1 alerta cada 30 minutos
+                  </p>
+                  <p className="flex items-center gap-1.5">
+                    <Navigation className="w-3 h-3" />
+                    Verifica tu ubicación mientras usas la aplicación
                   </p>
                 </div>
               </CardContent>
@@ -346,6 +371,23 @@ export default function UserNotifications() {
                         disabled={updateWaMut.isPending}
                       />
                     </div>
+                  </div>
+
+                  <div className="flex items-center justify-between py-3">
+                    <div className="flex items-center gap-3">
+                      <Calendar className="w-4 h-4 text-green-500" />
+                      <div>
+                        <Label htmlFor="waReservations" className="text-sm cursor-pointer">Reservas</Label>
+                        <p className="text-xs text-muted-foreground">Confirmación, recordatorios, uso, cancelación y no presentación</p>
+                      </div>
+                    </div>
+                    <Switch
+                      id="waReservations"
+                      // @ts-ignore
+                      checked={waPrefs.data?.waNotifyReservations ?? true}
+                      onCheckedChange={() => handleWaToggle("waNotifyReservations")}
+                      disabled={updateWaMut.isPending}
+                    />
                   </div>
 
                   <div className="flex items-center justify-between py-3">

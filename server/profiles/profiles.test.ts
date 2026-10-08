@@ -15,10 +15,30 @@ vi.mock("../db", () => ({
 
 // Mock schema imports
 vi.mock("../../drizzle/schema", () => ({
-  transactions: { userId: "userId", status: "status", startTime: "startTime", kwhConsumed: "kwhConsumed", totalCost: "totalCost", endTime: "endTime", stationId: "stationId", chargeMode: "chargeMode", appliedPricePerKwh: "appliedPricePerKwh" },
+  transactions: {
+    userId: "userId",
+    status: "status",
+    startTime: "startTime",
+    kwhConsumed: "kwhConsumed",
+    totalCost: "totalCost",
+    endTime: "endTime",
+    stationId: "stationId",
+    chargeMode: "chargeMode",
+    appliedPricePerKwh: "appliedPricePerKwh",
+  },
   userConsumptionProfile: { userId: "userId" },
-  userDataConsents: { userId: "userId", consentType: "consentType", granted: "granted", updatedAt: "updatedAt" },
-  personalizedOffers: { userId: "userId", id: "id", status: "status", createdAt: "createdAt" },
+  userDataConsents: {
+    userId: "userId",
+    consentType: "consentType",
+    granted: "granted",
+    updatedAt: "updatedAt",
+  },
+  personalizedOffers: {
+    userId: "userId",
+    id: "id",
+    status: "status",
+    createdAt: "createdAt",
+  },
 }));
 
 import { getDb } from "../db";
@@ -72,6 +92,12 @@ describe("Profiles - Consent Service", () => {
 
     it("returns false when consent is revoked", async () => {
       mockDb.limit.mockResolvedValueOnce([{ granted: false }]);
+      const result = await hasActiveConsent(1, "AI_PROFILING");
+      expect(result).toBe(false);
+    });
+
+    it("does not treat the historical string value '0' as consent", async () => {
+      mockDb.limit.mockResolvedValueOnce([{ granted: "0" }]);
       const result = await hasActiveConsent(1, "AI_PROFILING");
       expect(result).toBe(false);
     });
@@ -168,18 +194,20 @@ describe("Profiles - Consent Service", () => {
       // First call: hasActiveConsent → granted
       mockDb.limit.mockResolvedValueOnce([{ granted: true }]);
       // Second call: getProfile → LOW confidence
-      mockDb.limit.mockResolvedValueOnce([{
-        confidence: "LOW",
-        sessionsAnalyzed: 2,
-        windowDays: 90,
-        peakHour: 18,
-        peakWeekday: 1,
-        sessionsPerWeek: "0.50",
-        avgKwhPerSession: "15.00",
-        avgCostPerSession: "12000.00",
-        avgSessionDurationMin: 45,
-        topStations: [],
-      }]);
+      mockDb.limit.mockResolvedValueOnce([
+        {
+          confidence: "LOW",
+          sessionsAnalyzed: 2,
+          windowDays: 90,
+          peakHour: 18,
+          peakWeekday: 1,
+          sessionsPerWeek: "0.50",
+          avgKwhPerSession: "15.00",
+          avgCostPerSession: "12000.00",
+          avgSessionDurationMin: 45,
+          topStations: [],
+        },
+      ]);
       const result = await buildPersonalizationContext(1);
       expect(result).toBeNull();
     });
@@ -188,18 +216,20 @@ describe("Profiles - Consent Service", () => {
       // hasActiveConsent → granted
       mockDb.limit.mockResolvedValueOnce([{ granted: true }]);
       // getProfile → HIGH confidence
-      mockDb.limit.mockResolvedValueOnce([{
-        confidence: "HIGH",
-        sessionsAnalyzed: 30,
-        windowDays: 90,
-        peakHour: 18,
-        peakWeekday: 1,
-        sessionsPerWeek: "3.50",
-        avgKwhPerSession: "22.50",
-        avgCostPerSession: "18000.00",
-        avgSessionDurationMin: 55,
-        topStations: [{ stationId: 1 }, { stationId: 5 }],
-      }]);
+      mockDb.limit.mockResolvedValueOnce([
+        {
+          confidence: "HIGH",
+          sessionsAnalyzed: 30,
+          windowDays: 90,
+          peakHour: 18,
+          peakWeekday: 1,
+          sessionsPerWeek: "3.50",
+          avgKwhPerSession: "22.50",
+          avgCostPerSession: "18000.00",
+          avgSessionDurationMin: 55,
+          topStations: [{ stationId: 1 }, { stationId: 5 }],
+        },
+      ]);
       const result = await buildPersonalizationContext(1);
       expect(result).not.toBeNull();
       expect(result).toContain("PERFIL DE CONSUMO DEL USUARIO");

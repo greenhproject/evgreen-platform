@@ -15,9 +15,10 @@ import * as db from "../db";
 import { nanoid } from "nanoid";
 import { findPendingSessionByOcppIdentity, findPendingSessionFromDb, removePendingSession, setActiveSession, getActiveSessionById, removeActiveSession } from "../charging/charging-router";
 import { sendChargingCompleteNotification } from "../firebase/fcm";
-// alertsService ya no se usa directamente aquí — las alertas se manejan en index.ts
+import * as alertsService from "./alerts-service";
 import mysql from "mysql2/promise";
 import { calculateSocEstimation } from "../charging/soc-estimation";
+import { shouldTreatOcpp16AvailableAsPhysicalDisconnect } from "../../shared/ocpp-status-notification-policy";
 
 // BUILD VERSION para diagnóstico de deploys
 const BUILD_VERSION = "v2026.02.18.B";
@@ -790,7 +791,11 @@ export class DualCSMS {
             console.error(`[CSMS-DUAL] StatusNotification: Error starting overstay tracking:`, e);
           }
         }
-        if (req.status === "Available" && oldStatus === "FINISHING") {
+        if (shouldTreatOcpp16AvailableAsPhysicalDisconnect({
+          connectorId: req.connectorId,
+          status: req.status,
+          previousConnectorStatus: oldStatus,
+        })) {
           try {
             const { onCableDisconnected } = await import("../charging/overstay-monitor");
             await onCableDisconnected(evse.id);
@@ -818,16 +823,25 @@ export class DualCSMS {
           if (!isOnlineVal) {
             try {
               const station = await db.getChargingStationById(stationId);
-              const { sendWhatsAppMessage, WaTemplates, getWhatsAppConfig } = await import("../whatsapp/whatsapp-service");
+              const {
+                getConfiguredChargerOfflineTemplate,
+                sendWhatsAppTemplate,
+                getWhatsAppConfig,
+              } = await import("../whatsapp/whatsapp-service");
               const waCfg = await getWhatsAppConfig();
               const adminPhone = waCfg?.adminPhone;
-              if (adminPhone) {
-                sendWhatsAppMessage({
+              const template = await getConfiguredChargerOfflineTemplate();
+              if (adminPhone && template.canSend) {
+                sendWhatsAppTemplate({
                   toPhone: adminPhone,
-                  message: WaTemplates.chargerOffline({ stationName: station?.name || conn.ocppIdentity }),
+                  templateName: template.name,
+                  parameters: ["Equipo EVGreen", station?.name || conn.ocppIdentity],
                   eventType: "charger_offline",
-                  skipConfigCheck: false,
+                  referenceId: stationId,
+                  referenceType: "station",
                 }).catch((e: Error) => console.error("[WhatsApp] charger_offline error:", e.message));
+              } else if (adminPhone) {
+                console.warn(`[WhatsApp] charger_offline omitido: ${template.reason || `plantilla ${template.status}`}`);
               }
             } catch (waOfflineErr) {
               console.error("[CSMS-DUAL] WhatsApp charger_offline error:", waOfflineErr);
@@ -1100,6 +1114,15 @@ export class DualCSMS {
     // Mapear ID de transacción OCPP 1.6 a interno
     this.ocpp16Transactions.set(ocpp16TransactionId, internalTransactionId);
 
+    // Sólo el inicio confirmado por el cargador cumple la reserva. Así el
+    // inversionista y el usuario pueden auditar la relación reserva ↔ recarga.
+    const fulfilledReservationId = userId > 0
+      ? await db.fulfillActiveReservationForTransaction(evse.id, userId, transactionId)
+      : null;
+    if (fulfilledReservationId) {
+      console.log(`[CSMS-DUAL] StartTransaction: Reservation ${fulfilledReservationId} linked to transaction ${transactionId}`);
+    }
+
     // Actualizar estado del EVSE
     await db.updateEvseStatus(evse.id, "CHARGING", { triggeredBy: "OCPP" });
     
@@ -1136,6 +1159,7 @@ export class DualCSMS {
       });
       
       removePendingSession(pendingSessionData.sessionId);
+      await db.consumePendingChargeSession(pendingSessionData.sessionId);
       console.log(`[CSMS-DUAL] StartTransaction: Activated session for user ${session.userId}, transactionId: ${transactionId}`);
     } else {
       // Crear sesión activa básica incluso sin sesión pendiente (para tracking)
@@ -1188,6 +1212,17 @@ export class DualCSMS {
       if (userId) {
         const userForWa = await db.getUserById(userId);
         console.log(`[WhatsApp] charge_start: user found=${!!userForWa}, phone=${userForWa?.phone || 'NULL'}`);
+        if (fulfilledReservationId) {
+          const { sendReservationLifecycleNotification } = await import("../notifications/reservation-notifications");
+          await sendReservationLifecycleNotification({
+            userId,
+            reservationId: fulfilledReservationId,
+            userName: userForWa?.name,
+            userPhone: userForWa?.phone,
+            event: "check_in",
+            context: { stationName, connectorLabel: req.connectorId },
+          });
+        }
         if (userForWa?.phone) {
           const { sendWhatsAppTemplate, WA_TEMPLATE_NAMES } = await import("../whatsapp/whatsapp-service");
           const { getStationTimezone, formatTimeInTz } = await import("../utils/timezone");
@@ -1385,7 +1420,7 @@ export class DualCSMS {
       console.error(`[CSMS-DUAL] Error calculando manualSocEnd:`, socCalcErr);
     }
     // Actualizar transacción
-    await db.updateTransaction(transaction.id, {
+    const settledNow = await db.completeTransactionOnce(transaction.id, {
       // @ts-ignore
       endTime,
       meterEnd: String(req.meterStop),
@@ -1398,8 +1433,17 @@ export class DualCSMS {
       platformFee: platformFee.toString(),
       status: "COMPLETED",
       stopReason: req.reason,
+      ...(transaction.stopRequestStatus && transaction.stopRequestStatus !== "NONE" ? {
+        stopRequestStatus: "CONFIRMED",
+        stopRequestMessage: "Finalización física confirmada por StopTransaction OCPP.",
+      } : {}),
       ...(manualSocEndValue !== null ? { manualSocEnd: manualSocEndValue } : {}),
     });
+
+    if (!settledNow) {
+      console.warn(`[CSMS-DUAL] StopTransaction replay ignored for already-settled transaction ${transaction.id}`);
+      return { idTagInfo: { status: "Accepted" } };
+    }
 
     // Actualizar estado del EVSE
     await db.updateEvseStatus(transaction.evseId, "AVAILABLE", { triggeredBy: "OCPP" });
@@ -1426,24 +1470,14 @@ export class DualCSMS {
           }
         }
 
-        const newBalance = Math.max(0, currentBalance - totalCost);
-        await db.updateWalletBalance(transaction.userId, newBalance.toString());
-
-        await db.createWalletTransaction({
-          walletId: wallet.id,
+        const settlement = await db.deductChargePaymentOnce({
           userId: transaction.userId,
-          type: "CHARGE_PAYMENT",
-          amount: (-totalCost).toString(),
-          balanceBefore: currentBalance.toString(),
-          balanceAfter: newBalance.toString(),
-          referenceId: transaction.id,
-          referenceType: "TRANSACTION",
-          // @ts-ignore
-          status: "COMPLETED",
+          transactionId: transaction.id,
+          amount: totalCost,
           description: `Pago por carga de ${energyDelivered.toFixed(2)} kWh`,
         });
         
-        console.log(`[CSMS-DUAL] Wallet deducted: $${Math.round(totalCost)} from user ${transaction.userId}. Balance: $${currentBalance} -> $${newBalance}`);
+        console.log(`[CSMS-DUAL] Wallet ${settlement.deducted ? "deducted" : "deduped"}: $${Math.round(totalCost)} for user ${transaction.userId}. Balance: ${currentBalance} -> ${settlement.balance ?? "N/A"}`);
       }
     } catch (walletError) {
       console.error(`[CSMS-DUAL] Error deducting wallet for user ${transaction.userId}:`, walletError);
@@ -1545,65 +1579,12 @@ export class DualCSMS {
       console.error(`[CSMS-DUAL] Error sending receipt email:`, emailError);
     }
 
-    // Emitir factura electrónica via Alegra (si está configurado)
+    // Emitir factura electrónica multi-proveedor (Alegra, Siigo, World Office)
     try {
-      const settings = await db.getPlatformSettings();
-      if (settings?.alegraEnabled && settings?.alegraEmail && settings?.alegraToken) {
-        const { createChargingInvoice } = await import("../alegra/invoice-builder");
-        const invoiceResult = await createChargingInvoice(
-          {
-            credentials: { email: settings.alegraEmail, token: settings.alegraToken },
-            defaultItemId: settings.alegraDefaultItemId || undefined,
-            defaultTaxId: settings.alegraDefaultTaxId || undefined,
-            // @ts-ignore
-            autoInvoice: settings.alegraAutoInvoice ?? true,
-            paymentMethodId: settings.alegraPaymentMethodId || undefined,
-            paymentAccountId: settings.alegraPaymentAccountId || undefined,
-          },
-          {
-            transactionId: transaction.id,
-            userName: userForEmail?.name || "Cliente",
-            userEmail: userForEmail?.email || "",
-            userPhone: userForEmail?.phone || undefined,
-            userDocumentType: userForEmail?.documentType || undefined,
-            userDocumentNumber: userForEmail?.documentNumber || undefined,
-            userFiscalAddress: userForEmail?.fiscalAddress || undefined,
-            userFiscalCity: userForEmail?.fiscalCity || undefined,
-            userFiscalDepartment: userForEmail?.fiscalDepartment || undefined,
-            userKindOfPerson: userForEmail?.kindOfPerson || undefined,
-            userRegime: userForEmail?.regime || undefined,
-            userAlegraContactId: userForEmail?.alegraContactId || undefined,
-            energyDelivered,
-            appliedPricePerKwh: pricePerKwh,
-            energyCost,
-            timeCost,
-            sessionCost: connectionFee,
-            overstayCost: 0,
-            totalAmount: Math.round(totalCost),
-            stationName: stationForEmail?.name || "Estación EVGreen",
-            stationAddress: stationForEmail?.address || "",
-            stationCity: stationForEmail?.city || "Colombia",
-            connectorType: transaction.connectorType || undefined,
-            chargeType: transaction.chargeType || undefined,
-            startTime,
-            endTime,
-            durationMinutes,
-          }
-        );
-        if (invoiceResult.success) {
-          console.log(`[CSMS-DUAL] Alegra invoice created: ${invoiceResult.invoiceNumber} for tx=${transaction.id}`);
-          // Update user's Alegra contact ID if it was created/updated
-          if (invoiceResult.alegraContactId && userForEmail?.id) {
-            try {
-              await db.updateUser(userForEmail.id, { alegraContactId: invoiceResult.alegraContactId });
-            } catch (e) { /* ignore */ }
-          }
-        } else {
-          console.warn(`[CSMS-DUAL] Alegra invoice failed for tx=${transaction.id}: ${invoiceResult.error}`);
-        }
-      }
-    } catch (alegraError) {
-      console.error(`[CSMS-DUAL] Error creating Alegra invoice:`, alegraError);
+      const { queueChargingInvoice } = await import("../billing/billing-service");
+      await queueChargingInvoice(transaction.id);
+    } catch (billingError) {
+      console.error(`[CSMS-DUAL] Error queuing electronic invoice for tx=${transaction.id}:`, billingError);
     }
 
     // =========================================================================
@@ -2219,24 +2200,122 @@ export class DualCSMS {
 
     switch (req.eventType) {
       case "Started": {
-        const tariff = await db.getActiveTariffByStationId(conn.stationId);
+        const existingTransaction = await db.getTransactionByOcppId(req.transactionInfo.transactionId);
+        if (existingTransaction) {
+          await db.updateEvseStatus(evse.id, "CHARGING", { triggeredBy: "OCPP" });
+          break;
+        }
 
-        const pricePerKwh201 = tariff ? parseFloat(tariff.pricePerKwh) : 1800;
-        await db.createTransaction({
+        // Igual que OCPP 1.6: la sesión pendiente de la app es la fuente más
+        // precisa para la titularidad; el idToken es el fallback para RFID.
+        let pendingSession = findPendingSessionByOcppIdentity(conn.ocppIdentity, req.evse?.id);
+        if (!pendingSession) {
+          pendingSession = await findPendingSessionFromDb(conn.ocppIdentity, req.evse?.id);
+        }
+
+        let userId = pendingSession?.session?.userId ?? 0;
+        if (!userId && req.idToken?.idToken) {
+          try {
+            const resolved = await db.resolveUserByIdTag(req.idToken.idToken);
+            userId = resolved.user?.id ?? 0;
+          } catch (resolveError: any) {
+            console.error(`[CSMS-DUAL] OCPP 2.0.1: cannot resolve idToken: ${resolveError.message}`);
+          }
+        }
+
+        const tariff = await db.getActiveTariffByStationId(conn.stationId);
+        const effectivePrice = await db.getEffectiveStationPrice(conn.stationId);
+        const pricePerKwh201 = pendingSession?.session?.pricePerKwh
+          ?? (tariff ? parseFloat(tariff.pricePerKwh) : effectivePrice.pricePerKwh);
+        const persistedStart = await db.createTransactionOnceByOcppId({
           evseId: evse.id,
-          userId: 1,
+          userId,
           stationId: conn.stationId,
           tariffId: tariff?.id,
           ocppTransactionId: req.transactionInfo.transactionId,
           // @ts-ignore
           startTime: new Date(req.timestamp),
           status: "IN_PROGRESS",
-          chargeMode: "full_charge",
-          targetValue: "0",
+          chargeMode: pendingSession?.session?.chargeMode || "full_charge",
+          targetValue: String(pendingSession?.session?.targetValue || 0),
           appliedPricePerKwh: String(pricePerKwh201),
         });
+        const transactionId = persistedStart.transactionId;
+
+        if (!persistedStart.created) {
+          console.warn(`[CSMS-DUAL] OCPP 2.0.1 Started replay ignored for transaction ${transactionId}`);
+          await db.updateEvseStatus(evse.id, "CHARGING", { triggeredBy: "OCPP" });
+          alertsService.handleTransactionReplay({
+            ocppIdentity: conn.ocppIdentity,
+            stationId: conn.stationId,
+            transactionId,
+            connectorId: req.evse?.connectorId ?? evse.connectorId ?? undefined,
+            protocol: "OCPP 2.0.1",
+          }).catch((alertError) => {
+            console.error("[CSMS-DUAL] Could not record contained TransactionEvent replay:", alertError);
+          });
+          break;
+        }
+
+        const fulfilledReservationId = userId > 0
+          ? await db.fulfillActiveReservationForTransaction(evse.id, userId, transactionId)
+          : null;
+        if (fulfilledReservationId) {
+          console.log(`[CSMS-DUAL] OCPP 2.0.1: Reservation ${fulfilledReservationId} linked to transaction ${transactionId}`);
+          try {
+            const [reservationUser, station] = await Promise.all([
+              db.getUserById(userId),
+              db.getChargingStationById(conn.stationId),
+            ]);
+            const { sendReservationLifecycleNotification } = await import("../notifications/reservation-notifications");
+            await sendReservationLifecycleNotification({
+              userId,
+              reservationId: fulfilledReservationId,
+              userName: reservationUser?.name,
+              userPhone: reservationUser?.phone,
+              event: "check_in",
+              context: {
+                stationName: station?.name || conn.ocppIdentity,
+                connectorLabel: req.evse?.connectorId || evse.connectorId,
+              },
+            });
+          } catch (notificationError) {
+            console.error("[CSMS-DUAL] OCPP 2.0.1 reservation check-in notification failed:", notificationError);
+          }
+        }
 
         await db.updateEvseStatus(evse.id, "CHARGING", { triggeredBy: "OCPP" });
+
+        setActiveSession(transactionId, {
+          transactionId,
+          userId,
+          stationId: conn.stationId,
+          connectorId: req.evse?.id || evse.evseIdLocal,
+          chargeMode: (pendingSession?.session?.chargeMode || "full_charge") as any,
+          targetValue: Number(pendingSession?.session?.targetValue || 100),
+          startTime: new Date(req.timestamp),
+          currentKwh: 0,
+          currentCost: 0,
+          pricePerKwh: pricePerKwh201,
+          soc: null,
+          currentPower: 0,
+          voltage: null,
+          current: null,
+          lastMeterUpdate: null,
+          powerHistory: [],
+          socTargetNotified: false,
+          manualSoc: null,
+          manualBatteryCapacityKwh: null,
+          lowPowerSince: null,
+          chargeCompleteDetected: false,
+          chargeCompleteNotified: false,
+          autoStopSent: false,
+          energyBasedSoc: null,
+        });
+        if (pendingSession) {
+          removePendingSession(pendingSession.sessionId);
+          await db.consumePendingChargeSession(pendingSession.sessionId);
+        }
         break;
       }
 
@@ -2309,7 +2388,7 @@ export class DualCSMS {
           const investorShare201 = totalCost * (revenueConfig201.investorPercent / 100);
           const platformFee201 = totalCost * (revenueConfig201.platformPercent / 100);
 
-          await db.updateTransaction(transaction.id, {
+          const settledNow = await db.completeTransactionOnce(transaction.id, {
             // @ts-ignore
             endTime: endTime201,
             kwhConsumed: energyDelivered.toString(),
@@ -2321,7 +2400,16 @@ export class DualCSMS {
             platformFee: platformFee201.toString(),
             status: "COMPLETED",
             stopReason: req.transactionInfo.stoppedReason,
+            ...(transaction.stopRequestStatus && transaction.stopRequestStatus !== "NONE" ? {
+              stopRequestStatus: "CONFIRMED",
+              stopRequestMessage: "Finalización física confirmada por TransactionEvent.Ended OCPP.",
+            } : {}),
           });
+
+          if (!settledNow) {
+            console.warn(`[CSMS-DUAL] OCPP 2.0.1 Ended replay ignored for already-settled transaction ${transaction.id}`);
+            break;
+          }
 
           await db.updateEvseStatus(evse.id, "AVAILABLE", { triggeredBy: "OCPP" });
 
@@ -2341,22 +2429,13 @@ export class DualCSMS {
                   console.warn(`[CSMS-DUAL] 2.0.1 Error en auto-cobro:`, autoErr201);
                 }
               }
-              const newBalance201 = Math.max(0, currentBalance201 - totalCost);
-              await db.updateWalletBalance(transaction.userId, newBalance201.toString());
-              await db.createWalletTransaction({
-                walletId: wallet201.id,
+              const settlement = await db.deductChargePaymentOnce({
                 userId: transaction.userId,
-                type: "CHARGE_PAYMENT",
-                amount: (-totalCost).toString(),
-                balanceBefore: currentBalance201.toString(),
-                balanceAfter: newBalance201.toString(),
-                referenceId: transaction.id,
-                referenceType: "TRANSACTION",
-                // @ts-ignore
-                status: "COMPLETED",
+                transactionId: transaction.id,
+                amount: totalCost,
                 description: `Pago por carga de ${energyDelivered.toFixed(2)} kWh`,
               });
-              console.log(`[CSMS-DUAL] 2.0.1 Wallet deducted: $${Math.round(totalCost)} from user ${transaction.userId}`);
+              console.log(`[CSMS-DUAL] 2.0.1 Wallet ${settlement.deducted ? "deducted" : "deduped"}: $${Math.round(totalCost)} for user ${transaction.userId}`);
             }
           } catch (walletErr201) {
             console.error(`[CSMS-DUAL] 2.0.1 Error deducting wallet:`, walletErr201);

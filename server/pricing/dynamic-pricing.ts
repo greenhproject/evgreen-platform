@@ -3,7 +3,7 @@
  * Similar al modelo de surge pricing de Uber
  * 
  * Factores que afectan el precio:
- * 1. Ocupación de la zona (disponibilidad de conectores)
+ * 1. Ocupación física de la estación (capacidad concurrente de sus cargadores)
  * 2. Horario pico vs valle
  * 3. Día de la semana
  * 4. Historial de demanda
@@ -11,6 +11,9 @@
  */
 
 import * as db from "../db";
+import { dualCSMS } from "../ocpp/csms-dual";
+import { projectOperationalConnectorStates, summarizeOperationalConnectorAvailability } from "../../shared/connector-operational-state";
+import { calculatePhysicalStationOccupancy } from "../../shared/station-charger-hierarchy";
 
 // ============================================================================
 // CONFIGURACIÓN DE TARIFA DINÁMICA
@@ -72,57 +75,65 @@ export const DEFAULT_PRICING_CONFIG: DynamicPricingConfig = {
 // ============================================================================
 
 export interface OccupancyData {
+  /** Salidas/EVSE instalados; se conserva para compatibilidad de UI y API. */
   totalConnectors: number;
   availableConnectors: number;
   chargingConnectors: number;
   reservedConnectors: number;
   faultedConnectors: number;
+  /** Capacidad concurrente física agregada de los gabinetes de la estación. */
+  totalConcurrentCapacity: number;
+  occupiedOrHeldCapacity: number;
+  availableConcurrentCapacity: number;
   occupancyRate: number;
 }
 
-// Contador global de simulaciones activas para calcular demanda
-let activeSimulationCount = 0;
-
-export function incrementActiveSimulations(): void {
-  activeSimulationCount++;
-  console.log(`[DynamicPricing] Active simulations: ${activeSimulationCount}`);
-}
-
-export function decrementActiveSimulations(): void {
-  activeSimulationCount = Math.max(0, activeSimulationCount - 1);
-  console.log(`[DynamicPricing] Active simulations: ${activeSimulationCount}`);
-}
-
-export function getActiveSimulationCount(): number {
-  return activeSimulationCount;
-}
-
-export async function getZoneOccupancy(stationId: number): Promise<OccupancyData> {
-  // Obtener todos los EVSEs de la estación
-  const evses = await db.getEvsesByStationId(stationId);
-  
-  const totalConnectors = evses.length;
-  let availableConnectors = evses.filter(e => e.connectorStatus === "AVAILABLE").length;
-  let chargingConnectors = evses.filter(e => e.connectorStatus === "CHARGING").length;
-  const reservedConnectors = evses.filter(e => e.connectorStatus === "RESERVED").length;
-  const faultedConnectors = evses.filter(e => e.connectorStatus === "FAULTED" || e.connectorStatus === "UNAVAILABLE").length;
-  
-  // Incluir simulaciones activas en el cálculo de ocupación
-  // Cada simulación activa cuenta como un conector ocupado adicional
-  const simulationOccupancy = activeSimulationCount;
-  if (simulationOccupancy > 0) {
-    // Añadir simulaciones al conteo de cargando
-    chargingConnectors += simulationOccupancy;
-    // Reducir disponibles (pero no menos de 0)
-    availableConnectors = Math.max(0, availableConnectors - simulationOccupancy);
-    console.log(`[DynamicPricing] Including ${simulationOccupancy} active simulations in occupancy calculation`);
-  }
-  
-  const occupancyRate = totalConnectors > 0 
-    ? ((totalConnectors - availableConnectors) / totalConnectors) * 100 
+/**
+ * Demanda de una estación, no de una manguera ni de una zona geográfica.
+ * Todos los conectores de la estación reciben el mismo multiplicador resultante.
+ */
+export async function getStationOccupancy(stationId: number): Promise<OccupancyData> {
+  // La misma proyección operativa que consume el mapa: transacción activa >
+  // OCPP vivo > último estado persistido. Nunca calcular demanda desde un
+  // AVAILABLE persistido cuando el conector ya está cargando.
+  const [station, evses, chargers, activeTransactions] = await Promise.all([
+    db.getChargingStationById(stationId),
+    db.getEvsesByStationId(stationId),
+    db.getChargersByStationId(stationId),
+    db.getActiveTransactionsByStationId(stationId),
+  ]);
+  const activeTransactionByEvse = new Map(activeTransactions.map(transaction => [transaction.evseId, transaction.id]));
+  const stationConnection = station?.ocppIdentity ? dualCSMS.getConnectionInfo(station.ocppIdentity) : null;
+  const connectionByChargerId = new Map(chargers.map((charger: any) => [
+    charger.id,
+    charger.ocppIdentity ? dualCSMS.getConnectionInfo(charger.ocppIdentity) : null,
+  ]));
+  const projectedConnectors = projectOperationalConnectorStates(evses.map((evse: any) => ({
+    id: evse.id,
+    chargerId: evse.chargerId,
+    connectorId: evse.connectorId,
+    connectorLabel: evse.connectorLabel,
+    connectorType: evse.connectorType,
+    powerKw: evse.powerKw,
+    isActive: evse.isActive,
+    evseIdLocal: evse.evseIdLocal,
+    connectorStatus: evse.connectorStatus,
+    activeTransactionId: activeTransactionByEvse.get(evse.id) ?? null,
+    liveOcppStatus: connectionByChargerId.get(evse.chargerId)?.connectorStatuses?.[evse.evseIdLocal]
+      ?? stationConnection?.connectorStatuses?.[evse.evseIdLocal],
+  })));
+  const summary = summarizeOperationalConnectorAvailability(projectedConnectors);
+  const physicalOccupancy = calculatePhysicalStationOccupancy(chargers as any, projectedConnectors as any);
+  const totalConnectors = summary.totalConnectors;
+  const availableConnectors = summary.availableConnectors;
+  const chargingConnectors = summary.chargingConnectors;
+  const reservedConnectors = summary.reservedConnectors;
+  const faultedConnectors = summary.unavailableConnectors;
+  const occupancyRate = physicalOccupancy.totalConcurrentCapacity > 0
+    ? (physicalOccupancy.occupiedOrHeldCapacity / physicalOccupancy.totalConcurrentCapacity) * 100
     : 0;
-  
-  console.log(`[DynamicPricing] Zone occupancy for station ${stationId}: ${occupancyRate.toFixed(1)}% (${chargingConnectors} charging, ${availableConnectors} available, ${totalConnectors} total)`);
+
+  console.log(`[DynamicPricing] Station occupancy for ${stationId}: ${occupancyRate.toFixed(1)}% (${physicalOccupancy.occupiedOrHeldCapacity}/${physicalOccupancy.totalConcurrentCapacity} physical sessions, ${totalConnectors} connector outputs)`);
   
   return {
     totalConnectors,
@@ -130,9 +141,15 @@ export async function getZoneOccupancy(stationId: number): Promise<OccupancyData
     chargingConnectors,
     reservedConnectors,
     faultedConnectors,
+    totalConcurrentCapacity: physicalOccupancy.totalConcurrentCapacity,
+    occupiedOrHeldCapacity: physicalOccupancy.occupiedOrHeldCapacity,
+    availableConcurrentCapacity: physicalOccupancy.availableConcurrentCapacity,
     occupancyRate,
   };
 }
+
+/** @deprecated Compatibility alias. This result is station scoped. */
+export const getZoneOccupancy = getStationOccupancy;
 
 // Obtener ocupación de una zona geográfica (radio de X km)
 export async function getAreaOccupancy(
@@ -148,13 +165,26 @@ export async function getAreaOccupancy(
   let reservedConnectors = 0;
   let faultedConnectors = 0;
   
-  for (const station of stations) {
-    const evses = await db.getEvsesByStationId(station.station.id);
-    totalConnectors += evses.length;
-    availableConnectors += evses.filter(e => e.connectorStatus === "AVAILABLE").length;
-    chargingConnectors += evses.filter(e => e.connectorStatus === "CHARGING").length;
-    reservedConnectors += evses.filter(e => e.connectorStatus === "RESERVED").length;
-    faultedConnectors += evses.filter(e => e.connectorStatus === "FAULTED" || e.connectorStatus === "UNAVAILABLE").length;
+  const stationIds = stations.map((entry: any) => entry.station.id);
+  const activeTransactions = await db.getActiveTransactionsForStations(stationIds);
+  const activeTransactionByEvse = new Map(activeTransactions.map(transaction => [transaction.evseId, transaction.id]));
+
+  for (const stationEntry of stations) {
+    const station = stationEntry.station;
+    const evses = await db.getEvsesByStationId(station.id);
+    const liveConnection = station.ocppIdentity ? dualCSMS.getConnectionInfo(station.ocppIdentity) : null;
+    const summary = summarizeOperationalConnectorAvailability(evses.map((evse: any) => ({
+      id: evse.id,
+      evseIdLocal: evse.evseIdLocal,
+      connectorStatus: evse.connectorStatus,
+      activeTransactionId: activeTransactionByEvse.get(evse.id) ?? null,
+      liveOcppStatus: liveConnection?.connectorStatuses?.[evse.evseIdLocal],
+    })));
+    totalConnectors += summary.totalConnectors;
+    availableConnectors += summary.availableConnectors;
+    chargingConnectors += summary.chargingConnectors;
+    reservedConnectors += summary.reservedConnectors;
+    faultedConnectors += summary.unavailableConnectors;
   }
   
   const occupancyRate = totalConnectors > 0 
@@ -167,6 +197,9 @@ export async function getAreaOccupancy(
     chargingConnectors,
     reservedConnectors,
     faultedConnectors,
+    totalConcurrentCapacity: totalConnectors,
+    occupiedOrHeldCapacity: Math.max(0, totalConnectors - availableConnectors),
+    availableConcurrentCapacity: availableConnectors,
     occupancyRate,
   };
 }
@@ -300,8 +333,8 @@ export async function calculateDynamicPrice(
   const evse = await db.getEvseById(evseId);
   const powerKw = parseFloat(evse?.powerKw?.toString() || "22");
   
-  // Calcular ocupación
-  const occupancy = await getZoneOccupancy(stationId);
+  // Calcular demanda física agregada de la estación.
+  const occupancy = await getStationOccupancy(stationId);
   
   // Calcular multiplicadores
   const occupancyMultiplier = calculateOccupancyMultiplier(occupancy.occupancyRate, config);
@@ -383,8 +416,8 @@ export async function calculateDynamicKwhPrice(
   const effectivePrice = await db.getEffectiveStationPrice(stationId);
   const basePricePerKwh = effectivePrice.pricePerKwh;
   
-  // Obtener ocupación de la estación
-  const occupancy = await getZoneOccupancy(stationId);
+  // La tarifa de todos los conectores se basa en la misma demanda de estación.
+  const occupancy = await getStationOccupancy(stationId);
   
   // Calcular multiplicadores
   const now = new Date();
@@ -502,7 +535,7 @@ export function getDemandVisualization(factors: PricingFactors): DemandVisualiza
         level: "HIGH",
         color: "#f59e0b", // Amarillo/Naranja
         icon: "trending-up",
-        message: "Alta demanda en esta zona",
+        message: "Alta demanda en esta estación",
         savingsOrSurge: `+${surgeHigh}% por demanda`,
       };
     
