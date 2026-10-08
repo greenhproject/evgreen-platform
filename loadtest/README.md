@@ -24,6 +24,16 @@ pnpm loadtest:simulate -- --config loadtest/config.example.json
 pnpm loadtest:deactivate -- --config loadtest/config.example.json --confirm
 ```
 
+Para inicializar un MySQL nuevo de **staging**, el servicio de Railway debe ejecutar antes de arrancar la aplicación:
+
+```bash
+pnpm db:sync:runtime
+```
+
+Este comando aplica, en orden, los archivos SQL versionados de `drizzle/` y registra lo aplicado en
+`__evgreen_runtime_migrations`. Es idempotente y está pensado para el entorno aislado de pruebas;
+no se debe configurar como pre-deploy de `production`.
+
 En Railway se recomienda usar los nombres en español. Los nombres `LOAD_TEST_*` siguen disponibles como alias técnicos para scripts existentes.
 
 | Variable | Descripción |

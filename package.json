@@ -22,7 +22,8 @@
     "loadtest:deactivate": "node loadtest/deactivate.mjs",
     "format": "prettier --write .",
     "test": "vitest run",
-    "db:push": "drizzle-kit generate && drizzle-kit migrate"
+    "db:push": "drizzle-kit generate && drizzle-kit migrate",
+    "db:sync:runtime": "node loadtest/runtime-schema-sync.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1116.0",
