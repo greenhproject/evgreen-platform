@@ -87,4 +87,33 @@ describe("OCPP fleet runner", () => {
       "StopTransaction",
     ]));
   }, 20000);
+
+  it("permanece vivo en modo idle sin terminar por top-level await pendiente", async () => {
+    const child = spawn("node", ["loadtest/ocpp-fleet-simulator.mjs"], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        EVGREEN_PRUEBAS_ENTORNO: "loadtest",
+        EVGREEN_PRUEBAS_ACTIVAR: "false",
+        EVGREEN_PRUEBAS_URL_OBJETIVO: "",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const output = await new Promise<string>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error("El modo idle no inició a tiempo")), 5000);
+      child.stdout.on("data", chunk => {
+        clearTimeout(timeout);
+        resolve(chunk.toString());
+      });
+      child.once("exit", code => {
+        clearTimeout(timeout);
+        reject(new Error(`El modo idle terminó inesperadamente con ${code}`));
+      });
+    });
+    expect(output).toContain("Runner en modo idle");
+    child.kill("SIGTERM");
+    const [code, signal] = await once(child, "exit") as [number | null, NodeJS.Signals | null];
+    expect(code).toBeNull();
+    expect(signal).toBe("SIGTERM");
+  }, 10000);
 });

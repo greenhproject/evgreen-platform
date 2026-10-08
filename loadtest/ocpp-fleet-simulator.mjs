@@ -8,7 +8,9 @@ if (config.loadTestEnvironment !== "loadtest") {
 }
 if (!config.allowRun) {
   console.log("[loadtest:guard] Runner en modo idle. Define LOAD_TEST_ALLOW_RUN=true para iniciar la flota.");
-  await new Promise(() => {});
+  // El contenedor debe permanecer saludable sin usar un top-level await
+  // pendiente, porque Node termina esos módulos con código 13.
+  setInterval(() => {}, 60000);
 } else {
   assertSafeRun(config);
 }
@@ -379,16 +381,18 @@ class FleetRunner {
   }
 }
 
-const runner = new FleetRunner();
-let stopping = false;
-const stop = async signal => {
-  if (stopping) return;
-  stopping = true;
-  log("info", `stopping fleet (${signal})`);
-  await runner.stop();
-  process.exit(0);
-};
-process.on("SIGINT", () => void stop("SIGINT"));
-process.on("SIGTERM", () => void stop("SIGTERM"));
+if (config.allowRun) {
+  const runner = new FleetRunner();
+  let stopping = false;
+  const stop = async signal => {
+    if (stopping) return;
+    stopping = true;
+    log("info", `stopping fleet (${signal})`);
+    await runner.stop();
+    process.exit(0);
+  };
+  process.on("SIGINT", () => void stop("SIGINT"));
+  process.on("SIGTERM", () => void stop("SIGTERM"));
 
-await runner.start();
+  await runner.start();
+}
