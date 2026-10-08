@@ -48,13 +48,19 @@ function reportDeliveryEvent(
   });
 }
 
+export type NativePushResult = "granted" | "denied" | "unavailable";
+
 /**
- * Solicita permisos, registra el token FCM y engancha listeners nativos. El
- * resultado true exige permiso + token real: un permiso concedido sin token no
- * se anuncia como Push operativo.
+ * Solicita permisos, registra el token FCM y engancha listeners nativos.
+ * Distingue por qué no quedó operativo: "denied" es una decisión del usuario
+ * (puede revertirla en ajustes del sistema); "unavailable" es una limitación
+ * del dispositivo (p. ej. sin Google Play Services/APNs) que el usuario no
+ * puede resolver — el llamador no debe tratar ambos casos como el mismo
+ * "error". El resultado "granted" exige permiso + token real: un permiso
+ * concedido sin token no se anuncia como Push operativo.
  */
-export async function initNativePush(options: InitNativePushOptions): Promise<boolean> {
-  if (!isCapacitorNative()) return false;
+export async function initNativePush(options: InitNativePushOptions): Promise<NativePushResult> {
+  if (!isCapacitorNative()) return "unavailable";
 
   try {
     const { FirebaseMessaging } = await import("@capacitor-firebase/messaging");
@@ -80,7 +86,7 @@ export async function initNativePush(options: InitNativePushOptions): Promise<bo
       const requested = await FirebaseMessaging.requestPermissions();
       granted = requested.receive === "granted";
     }
-    if (!granted) return false;
+    if (!granted) return "denied";
 
     if (isAndroidNative()) {
       const { LocalNotifications } = await import("@capacitor/local-notifications");
@@ -135,14 +141,14 @@ export async function initNativePush(options: InitNativePushOptions): Promise<bo
     try {
       const { token } = await FirebaseMessaging.getToken();
       await options.onToken(token);
-      return true;
+      return "granted";
     } catch (error) {
       console.error("[NativePush] Error obteniendo el token FCM:", error);
-      return false;
+      return "unavailable";
     }
   } catch (error) {
-    console.warn("[NativePush] Push nativo no disponible en este dispositivo:", error);
-    return false;
+    console.warn("[NativePush] Push nativo no disponible en este dispositivo (¿sin Google Play Services/APNs?):", error);
+    return "unavailable";
   }
 }
 
