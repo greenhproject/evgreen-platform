@@ -62,6 +62,10 @@ import { contractsRouter } from "./contracts/contracts-router";
 import { resolveConnectorOperationalState } from "../shared/connector-operational-state";
 import { CROWDFUNDING_PROJECT_STATUSES } from "./crowdfunding/project-bulk-policy";
 import { manageCrowdfundingProjectsBulk } from "./crowdfunding/project-bulk-operations";
+import {
+  listOrphanedCrowdfundingStationLinks,
+  repairOrphanedCrowdfundingStationLinks,
+} from "./crowdfunding/orphaned-station-links";
 
 // ============================================================================
 // ROLE-BASED PROCEDURES
@@ -968,8 +972,8 @@ const stationsRouter = router({
   // Eliminar estación (admin/técnico)
   delete: technicianProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
-      await db.deleteChargingStation(input.id);
+    .mutation(async ({ input, ctx }) => {
+      await db.deleteChargingStation(input.id, ctx.user.id);
       return { success: true };
     }),
   
@@ -4613,6 +4617,25 @@ const crowdfundingRouter = router({
   getAllProjects: adminProcedure.query(async () => {
     return db.getCrowdfundingProjects({ includePrivate: true });
   }),
+
+  // Admin: detectar vínculos a estaciones físicas que ya no existen
+  listOrphanedStationLinks: strictAdminProcedure.query(async () => {
+    return listOrphanedCrowdfundingStationLinks();
+  }),
+
+  // Admin: desvincular únicamente proyectos sin recaudo ni participaciones, dejando auditoría
+  repairOrphanedStationLinks: strictAdminProcedure
+    .input(z.object({
+      projectIds: z.array(z.number().int().positive()).min(1).max(500),
+      reason: z.string().trim().min(10, "La justificación debe tener al menos 10 caracteres").max(2000),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      return repairOrphanedCrowdfundingStationLinks({
+        projectIds: input.projectIds,
+        reason: input.reason,
+        actorId: ctx.user.id,
+      });
+    }),
   
   // Admin: Crear proyecto
   createProject: adminProcedure

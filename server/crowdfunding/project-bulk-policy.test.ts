@@ -35,6 +35,7 @@ describe("política de gestión masiva de crowdfunding", () => {
     expect(evaluateCrowdfundingBulkAction(project({ participationCount: 1 }), { type: "DELETE" }).allowed).toBe(false);
     expect(evaluateCrowdfundingBulkAction(project({ raisedAmount: 1 }), { type: "DELETE" }).allowed).toBe(false);
     expect(evaluateCrowdfundingBulkAction(project({ stationId: 15 }), { type: "DELETE" }).allowed).toBe(false);
+    expect(evaluateCrowdfundingBulkAction(project({ stationId: 15, stationExists: false }), { type: "DELETE" }).allowed).toBe(true);
   });
 
   it("impide cancelar proyectos con participaciones o recaudo", () => {

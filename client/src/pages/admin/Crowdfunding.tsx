@@ -9,6 +9,7 @@ import { trpc } from "@/lib/trpc";
 import { InheritedFinancialAudit } from "@/components/crowdfunding/InheritedFinancialAudit";
 import { InheritedSpaceGallery } from "@/components/crowdfunding/InheritedSpaceGallery";
 import { CrowdfundingBulkActions, type BulkProjectStatus, type BulkExecutableAction } from "@/components/crowdfunding/CrowdfundingBulkActions";
+import { CrowdfundingOrphanedStationLinks } from "@/components/crowdfunding/CrowdfundingOrphanedStationLinks";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -731,6 +732,8 @@ const handleSubmit = () => {
           <p className="text-lg sm:text-2xl font-bold">{stats.totalInvestors}</p>
         </Card>
       </div>
+
+      {canManageInBulk && <CrowdfundingOrphanedStationLinks onRepaired={() => void refetch()} />}
 
       {/* Lista de proyectos con tabs */}
       {isLoading ? (

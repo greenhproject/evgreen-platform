@@ -1,5 +1,6 @@
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import {
+  chargingStations,
   crowdfundingParticipations,
   crowdfundingProjects,
   spaceSubmissions,
@@ -41,7 +42,10 @@ export async function manageCrowdfundingProjectsBulk(input: {
     totalPowerKw: crowdfundingProjects.totalPowerKw,
     chargerCount: crowdfundingProjects.chargerCount,
     stationId: crowdfundingProjects.stationId,
-  }).from(crowdfundingProjects).where(inArray(crowdfundingProjects.id, projectIds));
+    stationExists: chargingStations.id,
+  }).from(crowdfundingProjects)
+    .leftJoin(chargingStations, eq(chargingStations.id, crowdfundingProjects.stationId))
+    .where(inArray(crowdfundingProjects.id, projectIds));
 
   const participationRows = await db.select({
     projectId: crowdfundingParticipations.projectId,
@@ -73,6 +77,7 @@ export async function manageCrowdfundingProjectsBulk(input: {
       totalPowerKw: project.totalPowerKw,
       chargerCount: project.chargerCount,
       stationId: project.stationId,
+      stationExists: project.stationExists !== null,
       participationCount: metrics.total,
       completedParticipationCount: metrics.completed,
     };

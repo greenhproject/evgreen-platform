@@ -20,6 +20,9 @@ import {
   InsertUser,
 	users,
 	chargingStations,
+	crowdfundingProjects,
+	crowdfundingParticipations,
+	crowdfundingStationLinkRepairs,
 	organizations,
 	evses,
   transactions,
@@ -777,13 +780,54 @@ export async function updateStationOnlineStatus(ocppIdentity: string, isOnline: 
     .where(eq(chargingStations.ocppIdentity, ocppIdentity));
 }
 
-export async function deleteChargingStation(id: number) {
+export async function deleteChargingStation(id: number, actorId?: number) {
   const db = (await getDb())!;
   if (!db) return;
-  // Primero eliminar los EVSEs asociados
-  await db.delete(evses).where(eq(evses.stationId, id));
-  // Luego eliminar la estación
-  await db.delete(chargingStations).where(eq(chargingStations.id, id));
+
+  const linkedProjects = await db
+    .select({
+      id: crowdfundingProjects.id,
+      name: crowdfundingProjects.name,
+      status: crowdfundingProjects.status,
+      raisedAmount: crowdfundingProjects.raisedAmount,
+      participationCount: sql<number>`count(${crowdfundingParticipations.id})`,
+    })
+    .from(crowdfundingProjects)
+    .leftJoin(crowdfundingParticipations, eq(crowdfundingParticipations.projectId, crowdfundingProjects.id))
+    .where(eq(crowdfundingProjects.stationId, id))
+    .groupBy(crowdfundingProjects.id);
+
+  const blockingProjects = linkedProjects.filter((project) =>
+    Number(project.raisedAmount) !== 0
+      || Number(project.participationCount) > 0
+      || project.status === "FUNDED"
+      || project.status === "COMPLETED",
+  );
+  if (blockingProjects.length > 0) {
+    const names = blockingProjects.slice(0, 3).map((project) => project.name).join(", ");
+    throw new Error(
+      `No se puede eliminar la estación: está vinculada a un proyecto con actividad financiera (${names}).`,
+    );
+  }
+
+  await db.transaction(async (tx) => {
+    const unlinkableProjects = linkedProjects.filter((project) => !blockingProjects.some((blocked) => blocked.id === project.id));
+    for (const project of unlinkableProjects) {
+      await tx.update(crowdfundingProjects)
+        .set({ stationId: null })
+        .where(eq(crowdfundingProjects.id, project.id));
+      await tx.insert(crowdfundingStationLinkRepairs).values({
+        projectId: project.id,
+        orphanedStationId: id,
+        action: "PHYSICAL_STATION_DELETED_AUTO_UNLINKED",
+        reason: "Desvinculación automática al eliminar estación física sin recaudo ni participaciones.",
+        actorId: actorId ?? null,
+      });
+    }
+    // Primero eliminar los EVSEs asociados y luego la estación.
+    await tx.delete(evses).where(eq(evses.stationId, id));
+    await tx.delete(chargingStations).where(eq(chargingStations.id, id));
+  });
 }
 
 // ============================================================================

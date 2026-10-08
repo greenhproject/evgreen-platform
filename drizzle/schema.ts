@@ -428,6 +428,23 @@ export const crowdfundingProjects = mysqlTable("crowdfunding_projects", {
 	cancelledBy: int("cancelled_by"),
 });
 
+/**
+ * Bitácora administrativa de desvinculaciones de estaciones físicas.
+ * Conserva el proyecto, el ID físico que quedó huérfano, el actor y la justificación.
+ */
+export const crowdfundingStationLinkRepairs = mysqlTable("crowdfunding_station_link_repairs", {
+	id: int().autoincrement().notNull().primaryKey(),
+	projectId: int().notNull(),
+	orphanedStationId: int().notNull(),
+	action: varchar({ length: 64 }).notNull(),
+	reason: text().notNull(),
+	actorId: int(),
+	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
+}, (table) => [
+	index("idx_cf_station_link_repairs_project_created").on(table.projectId, table.createdAt),
+	index("idx_cf_station_link_repairs_station").on(table.orphanedStationId),
+]);
+
 export const demoRequests = mysqlTable("demoRequests", {
 	id: int().autoincrement().notNull(),
 	name: varchar({ length: 120 }).notNull(),

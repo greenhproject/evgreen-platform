@@ -24,6 +24,8 @@ export type CrowdfundingProjectSafetySnapshot = {
   totalPowerKw: number | null;
   chargerCount: number | null;
   stationId: number | null;
+  /** undefined mantiene compatibilidad con snapshots antiguos; false indica vínculo huérfano. */
+  stationExists?: boolean;
   participationCount: number;
   completedParticipationCount: number;
 };
@@ -91,7 +93,7 @@ export function evaluateCrowdfundingBulkAction(
     if (project.raisedAmount !== 0) {
       return { allowed: false, reason: "El proyecto tiene dinero recaudado." };
     }
-    if (project.stationId !== null) {
+    if (project.stationId !== null && project.stationExists !== false) {
       return { allowed: false, reason: "El proyecto está vinculado a una estación física." };
     }
     return { allowed: true };

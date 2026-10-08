@@ -131,4 +131,35 @@ describe("gestión masiva de proyectos de crowdfunding", () => {
       }
     }
   });
+
+  it("permite eliminar un borrador sin actividad cuando su stationId es huérfano", async () => {
+    const db = await getDb();
+    const orphanProjectId = await createCrowdfundingProject({
+      name: `${FIXTURE_NAME} Orphan Station`,
+      city: "Bogotá",
+      zone: "QA",
+      targetAmount: 250_000_000,
+      minimumInvestment: 25_000_000,
+      totalPowerKw: 120,
+      chargerCount: 1,
+      chargerPowerKw: 120,
+      status: "DRAFT",
+      createdById: 1,
+    });
+
+    await db!.update(crowdfundingProjects)
+      .set({ stationId: 99887766 })
+      .where(eq(crowdfundingProjects.id, orphanProjectId));
+
+    try {
+      const caller = appRouter.createCaller(context("admin"));
+      const deleted = await caller.crowdfunding.bulkManageProjects({
+        projectIds: [orphanProjectId],
+        action: { type: "DELETE" },
+      });
+      expect(deleted.affected.map((item) => item.id)).toContain(orphanProjectId);
+    } finally {
+      await db!.delete(crowdfundingProjects).where(eq(crowdfundingProjects.id, orphanProjectId));
+    }
+  });
 });
