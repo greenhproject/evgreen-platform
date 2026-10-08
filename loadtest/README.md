@@ -7,9 +7,9 @@ Este directorio contiene un runner externo de cargadores simulados y herramienta
 El runner exige explícitamente:
 
 ```bash
-LOAD_TEST_ENVIRONMENT=loadtest
-LOAD_TEST_ALLOW_RUN=true
-LOAD_TEST_TARGET_URL=wss://staging.example.com/api/ocpp/ws
+EVGREEN_PRUEBAS_ENTORNO=loadtest
+EVGREEN_PRUEBAS_ACTIVAR=true
+EVGREEN_PRUEBAS_URL_OBJETIVO=wss://staging.example.com/api/ocpp/ws
 ```
 
 El código bloquea `app.evgreen.lat` salvo que se establezca manualmente `LOAD_TEST_ALLOW_PRODUCTION=true`. No se recomienda habilitarlo.
@@ -24,22 +24,41 @@ pnpm loadtest:simulate -- --config loadtest/config.example.json
 pnpm loadtest:deactivate -- --config loadtest/config.example.json --confirm
 ```
 
-También se pueden usar variables de Railway. Los principales overrides son:
+En Railway se recomienda usar los nombres en español. Los nombres `LOAD_TEST_*` siguen disponibles como alias técnicos para scripts existentes.
 
 | Variable | Descripción |
 |---|---|
-| `LOAD_TEST_STATIONS` | Número de estaciones sintéticas |
-| `LOAD_TEST_CHARGERS_PER_STATION` | Cargadores físicos por estación |
-| `LOAD_TEST_CONNECTORS_PER_CHARGER` | Conectores por cargador |
-| `LOAD_TEST_PROTOCOL` | `ocpp1.6` o `ocpp2.0.1` |
-| `LOAD_TEST_OCCUPANCY_PERCENT` | Probabilidad de iniciar sesiones |
-| `LOAD_TEST_METER_INTERVAL_SEC` | Intervalo de `MeterValues` |
-| `LOAD_TEST_SESSION_DURATION_SEC` | Duración de cada sesión |
-| `LOAD_TEST_RAMP_UP_MS` | Separación entre conexiones |
-| `LOAD_TEST_FAULT_LATENCY_MS` | Latencia artificial en respuestas |
-| `LOAD_TEST_RUN_ID` | Identificador de la corrida y del seed |
-| `LOAD_TEST_TARGET_URL` | Endpoint WebSocket de EVGreen |
-| `LOAD_TEST_ALLOW_RUN` | Interruptor explícito del runner |
+| `EVGREEN_PRUEBAS_ESTACIONES` | Número de estaciones sintéticas |
+| `EVGREEN_PRUEBAS_CARGADORES_POR_ESTACION` | Cargadores físicos por estación |
+| `EVGREEN_PRUEBAS_CONECTORES_POR_CARGADOR` | Conectores por cargador |
+| `EVGREEN_PRUEBAS_PROTOCOLO` | `ocpp1.6` o `ocpp2.0.1` |
+| `EVGREEN_PRUEBAS_OCUPACION_PORCENTAJE` | Probabilidad de iniciar sesiones |
+| `EVGREEN_PRUEBAS_INTERVALO_MEDIDORES_SEG` | Intervalo de `MeterValues` |
+| `EVGREEN_PRUEBAS_DURACION_SESION_SEG` | Duración de cada sesión |
+| `EVGREEN_PRUEBAS_ESCALONAMIENTO_MS` | Separación entre conexiones |
+| `EVGREEN_PRUEBAS_LATENCIA_FALLA_MS` | Latencia artificial en respuestas |
+| `EVGREEN_PRUEBAS_ID_CORRIDA` | Identificador de la corrida y del seed |
+| `EVGREEN_PRUEBAS_URL_OBJETIVO` | Endpoint WebSocket de EVGreen |
+| `EVGREEN_PRUEBAS_ACTIVAR` | Interruptor explícito del runner |
+| `EVGREEN_PRUEBAS_ENTORNO` | Debe ser exactamente `loadtest` |
+
+Ejemplo de variables para dejar el servicio listo pero **apagado**:
+
+```dotenv
+EVGREEN_PRUEBAS_ENTORNO=loadtest
+EVGREEN_PRUEBAS_ACTIVAR=false
+EVGREEN_PRUEBAS_URL_OBJETIVO=
+EVGREEN_PRUEBAS_PREFIJO_ESTACION=LT
+EVGREEN_PRUEBAS_ID_CORRIDA=baseline-100
+EVGREEN_PRUEBAS_ESTACIONES=100
+EVGREEN_PRUEBAS_CARGADORES_POR_ESTACION=2
+EVGREEN_PRUEBAS_CONECTORES_POR_CARGADOR=2
+EVGREEN_PRUEBAS_PROTOCOLO=ocpp1.6
+EVGREEN_PRUEBAS_OCUPACION_PORCENTAJE=25
+EVGREEN_PRUEBAS_INTERVALO_MEDIDORES_SEG=15
+EVGREEN_PRUEBAS_DURACION_SESION_SEG=300
+EVGREEN_PRUEBAS_RECONEXION=true
+```
 
 ## Primera corrida recomendada
 

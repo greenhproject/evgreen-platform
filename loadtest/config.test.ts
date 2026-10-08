@@ -49,4 +49,22 @@ describe("loadtest config", () => {
       loadTestEnvironment: "loadtest",
     })).not.toThrow();
   });
+
+  it("lee los aliases de variables en español", async () => {
+    process.env.EVGREEN_PRUEBAS_ENTORNO = "loadtest";
+    process.env.EVGREEN_PRUEBAS_ACTIVAR = "true";
+    process.env.EVGREEN_PRUEBAS_URL_OBJETIVO = "wss://staging.evgreen.example";
+    process.env.EVGREEN_PRUEBAS_ESTACIONES = "100";
+    process.env.EVGREEN_PRUEBAS_CARGADORES_POR_ESTACION = "2";
+
+    const { loadConfig } = await import("./config.mjs");
+    const config = loadConfig([]);
+    expect(config).toMatchObject({
+      loadTestEnvironment: "loadtest",
+      allowRun: true,
+      targetUrl: "wss://staging.evgreen.example/api/ocpp/ws",
+      stationCount: 100,
+      chargersPerStation: 2,
+    });
+  });
 });
