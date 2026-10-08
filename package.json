@@ -17,6 +17,9 @@
     "start": "NODE_ENV=production node dist/index.js",
     "check": "tsc --noEmit",
     "version:bump": "node scripts/bump-version.mjs",
+    "loadtest:seed": "node loadtest/seed.mjs",
+    "loadtest:simulate": "node loadtest/ocpp-fleet-simulator.mjs",
+    "loadtest:deactivate": "node loadtest/deactivate.mjs",
     "format": "prettier --write .",
     "test": "vitest run",
     "db:push": "drizzle-kit generate && drizzle-kit migrate"

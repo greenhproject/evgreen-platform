@@ -861,9 +861,15 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
 
   // Registrar conexión - usar stationId restaurado si es reconexión seamless
   let stationId: number | null = connection.stationId;
+  let chargerId: number | null = null;
 
   // PRE-RESOLVER stationId inmediatamente al conectarse (no esperar a BootNotification)
   try {
+    const charger = await db.getChargerByOcppIdentity(ocppIdentity);
+    if (charger) {
+      chargerId = charger.id;
+      console.log(`[OCPP] Resolved physical charger ${chargerId} for ${ocppIdentity}`);
+    }
     const station = await db.getChargingStationByOcppIdentity(ocppIdentity);
     if (station) {
       stationId = station.id;
@@ -962,9 +968,9 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
 
           // Manejar mensajes según versión
           if (ocppVersion === "1.6") {
-            response = await handleOCPP16Message(action, payload, ocppIdentity, stationId, db, ocpp16Transactions, transactionIdCounter++);
+            response = await handleOCPP16Message(action, payload, ocppIdentity, stationId, chargerId, db, ocpp16Transactions, transactionIdCounter++);
           } else {
-            response = await handleOCPP201Message(action, payload, ocppIdentity, stationId, db);
+            response = await handleOCPP201Message(action, payload, ocppIdentity, stationId, chargerId, db);
           }
 
           // Actualizar stationId si se obtuvo en BootNotification
@@ -1172,6 +1178,7 @@ async function handleOCPP16Message(
   payload: any,
   ocppIdentity: string,
   stationId: number | null,
+  chargerId: number | null,
   db: any,
   ocpp16Transactions: Map<number, string>,
   transactionIdCounter: number
@@ -1217,7 +1224,8 @@ async function handleOCPP16Message(
       }
       if (resolvedStationId && payload.connectorId > 0) {
         const evses = await db.getEvsesByStationId(resolvedStationId);
-        const evse = evses.find((e: any) => e.evseIdLocal === payload.connectorId);
+        const scopedEvses = chargerId ? evses.filter((e: any) => e.chargerId === chargerId) : evses;
+        const evse = scopedEvses.find((e: any) => e.evseIdLocal === payload.connectorId || e.connectorId === payload.connectorId);
         if (evse) {
           const statusMap: Record<string, string> = {
             Available: "AVAILABLE",
@@ -1373,10 +1381,11 @@ async function handleOCPP16Message(
         return { idTagInfo: { status: "Invalid" }, transactionId: 0 };
       }
       const evses = await db.getEvsesByStationId(resolvedStId);
-      let evse = evses.find((e: any) => e.evseIdLocal === payload.connectorId);
+      const scopedEvses = chargerId ? evses.filter((e: any) => e.chargerId === chargerId) : evses;
+      let evse = scopedEvses.find((e: any) => e.evseIdLocal === payload.connectorId || e.connectorId === payload.connectorId);
       // Fallback: si no encuentra el conector exacto, usar el primero disponible
-      if (!evse && evses.length > 0) {
-        evse = evses[0];
+      if (!evse && scopedEvses.length > 0) {
+        evse = scopedEvses[0];
         console.log(`[OCPP] StartTransaction - Connector ${payload.connectorId} not found, using first EVSE ${evse.id}`);
       }
       if (!evse) {
@@ -2468,6 +2477,7 @@ async function handleOCPP201Message(
   payload: any,
   ocppIdentity: string,
   stationId: number | null,
+  chargerId: number | null,
   db: any
 ): Promise<any> {
   switch (action) {
@@ -2496,7 +2506,8 @@ async function handleOCPP201Message(
     case "StatusNotification": {
       if (stationId) {
         const evses = await db.getEvsesByStationId(stationId);
-        const evse = evses.find((e: any) => e.evseIdLocal === payload.evseId);
+        const scopedEvses = chargerId ? evses.filter((e: any) => e.chargerId === chargerId) : evses;
+        const evse = scopedEvses.find((e: any) => e.evseIdLocal === payload.evseId || e.connectorId === payload.evseId);
         if (evse) {
           const statusMap: Record<string, string> = {
             Available: "AVAILABLE",

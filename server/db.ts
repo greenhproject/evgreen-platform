@@ -601,8 +601,22 @@ export async function getChargingStationById(id: number) {
 export async function getChargingStationByOcppIdentity(ocppIdentity: string) {
   const db = (await getDb())!;
   if (!db) return undefined;
-  const result = await db.select().from(chargingStations).where(eq(chargingStations.ocppIdentity, ocppIdentity)).limit(1);
-  return result.length > 0 ? result[0] : undefined;
+  const directResult = await db.select().from(chargingStations).where(eq(chargingStations.ocppIdentity, ocppIdentity)).limit(1);
+  if (directResult.length > 0) return directResult[0];
+
+  // Una estación puede contener varios cargadores físicos, cada uno con su
+  // propia identidad OCPP. Mantener este fallback aquí permite que el CSMS
+  // conserve el stationId común sin mezclar sus EVSEs.
+  const charger = await db.select({ stationId: chargers.stationId })
+    .from(chargers)
+    .where(eq(chargers.ocppIdentity, ocppIdentity))
+    .limit(1);
+  if (charger.length === 0) return undefined;
+
+  const parentResult = await db.select().from(chargingStations)
+    .where(eq(chargingStations.id, charger[0].stationId))
+    .limit(1);
+  return parentResult.length > 0 ? parentResult[0] : undefined;
 }
 
 export async function getAllChargingStations(filters?: { ownerId?: number; isActive?: boolean; isPublic?: boolean }) {
@@ -784,9 +798,18 @@ export async function updateChargingStation(id: number, data: Partial<InsertChar
 export async function updateStationOnlineStatus(ocppIdentity: string, isOnline: boolean) {
   const db = (await getDb())!;
   if (!db) return;
-  await db.update(chargingStations)
-    .set({ isOnline: isOnline ? 1 : 0, lastBootNotification: isOnline ? new Date().toISOString() : undefined } as any)
-    .where(eq(chargingStations.ocppIdentity, ocppIdentity));
+  const station = await getChargingStationByOcppIdentity(ocppIdentity);
+  if (station) {
+    await db.update(chargingStations)
+      .set({ isOnline: isOnline ? 1 : 0, lastBootNotification: isOnline ? new Date().toISOString() : undefined } as any)
+      .where(eq(chargingStations.id, station.id));
+  }
+
+  // Mantener también el estado operativo del cargador físico cuando la
+  // identidad no vive directamente en charging_stations.
+  await db.update(chargers)
+    .set({ isOnline: isOnline ? 1 : 0, chargerStatus: isOnline ? "ONLINE" : "OFFLINE" } as any)
+    .where(eq(chargers.ocppIdentity, ocppIdentity));
 }
 
 export async function deleteChargingStation(id: number) {
