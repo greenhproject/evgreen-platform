@@ -148,7 +148,6 @@ import {
 	  InsertUserVehicle,
 	  spaceSubmissions,
 	  spacePhotos,
-	  crowdfundingProjects,
 	} from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { ConnectorStatus, TriggeredBy } from "./charging/connector-state.service";
