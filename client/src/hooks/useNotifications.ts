@@ -152,8 +152,8 @@ export function useNotifications() {
         window.dispatchEvent(new CustomEvent("evgreen:native-navigate", { detail: path }));
       },
       onDeliveryEvent: acknowledgeNativeDelivery,
-    }).then((registered) => {
-      if (registered) setIsEnabled(true);
+    }).then((result) => {
+      if (result === "granted") setIsEnabled(true);
       else writeNativePushEnabledCache(false);
     });
   }, [acknowledgeNativeDelivery, registerNativeToken]);
@@ -200,7 +200,7 @@ export function useNotifications() {
 
       // Rama nativa (Capacitor: iOS/Android) — usa el plugin de push nativo en vez de las APIs web
       if (isCapacitorNative()) {
-        const nativeRegistered = await initNativePush({
+        const nativeResult = await initNativePush({
           onToken: registerNativeToken,
           onForegroundNotification: (title, body) => {
             toast.info(title, { description: body, duration: 5000 });
@@ -211,17 +211,23 @@ export function useNotifications() {
           onDeliveryEvent: acknowledgeNativeDelivery,
         });
 
-        setPermissionStatus(nativeRegistered ? "granted" : "denied");
-
-        if (nativeRegistered) {
+        if (nativeResult === "granted") {
+          setPermissionStatus("granted");
           nativeAutoInitDone.current = true;
           writeNativePushEnabledCache(true);
           setIsEnabled(true);
           toast.success("Push activado y dispositivo registrado");
           preferencesQuery.refetch();
+        } else if (nativeResult === "denied") {
+          setPermissionStatus("denied");
+          toast.error("Permiso de notificaciones denegado. Revisa la configuración de tu dispositivo.");
+          setError("Permiso denegado");
         } else {
-          toast.error("No se obtuvo un token Push real. Revisa permisos y la configuración de Google Play Services o APNs.");
-          setError("No fue posible registrar el dispositivo Push");
+          // "unavailable": el dispositivo no puede recibir Push nativo (p. ej.
+          // sin Google Play Services/APNs) — no es un error del usuario ni de
+          // la app, así que se informa sin alarmar.
+          setPermissionStatus("denied");
+          toast.info("Este dispositivo no tiene Google Play Services o APNs disponible, así que no puede recibir notificaciones push nativas.");
         }
         return;
       }
