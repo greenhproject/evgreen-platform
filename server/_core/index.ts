@@ -914,34 +914,6 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
   let stationId: number | null = connection.stationId;
   let chargerId: number | null = null;
 
-  // PRE-RESOLVER stationId inmediatamente al conectarse (no esperar a BootNotification)
-  try {
-    const charger = await db.getChargerByOcppIdentity(ocppIdentity);
-    if (charger) {
-      chargerId = charger.id;
-      console.log(`[OCPP] Resolved physical charger ${chargerId} for ${ocppIdentity}`);
-    }
-    const station = await db.getChargingStationByOcppIdentity(ocppIdentity);
-    if (station) {
-      stationId = station.id;
-      // CRÍTICO: Actualizar stationId en el connection-manager para que getConnectionByStationId funcione
-      connection.stationId = station.id;
-      // CRÍTICO: Actualizar stationId en dualCSMS también (fuente única de verdad)
-      dualCSMS.updateExternalConnectionStationId(ocppIdentity, station.id);
-      console.log(`[OCPP] Pre-resolved stationId=${stationId} for ${ocppIdentity} at connection time (updated in connection-manager AND dualCSMS)`);
-      // Marcar como online
-      await db.updateStationOnlineStatus(ocppIdentity, true);
-      
-      // Auto-resolver alertas de desconexión activas al reconectar
-      alertsService.handleReconnection(ocppIdentity)
-        .catch(err => console.error(`[OCPP Alert] Error auto-resolving on reconnect for ${ocppIdentity}:`, err));
-    } else {
-      console.warn(`[OCPP] Could not pre-resolve stationId for ${ocppIdentity} - station not found in DB`);
-    }
-  } catch (err) {
-    console.error(`[OCPP] Error pre-resolving stationId for ${ocppIdentity}:`, err);
-  }
-
   // Registrar el event listener PRIMERO, antes de cualquier operación async
   ws.on("message", async (data) => {
       // Actualizar timestamps de actividad (crítico para evitar desconexiones falsas)
@@ -1209,6 +1181,36 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
     ws.on("error", (error) => {
       console.error(`[OCPP] WebSocket error from ${ocppIdentity}:`, error);
     });
+
+  // PRE-RESOLVER stationId después de configurar los listeners (no antes: un
+  // BootNotification que llegue mientras estos await están pendientes se
+  // perdía en silencio, porque "message" todavía no tenía handler).
+  try {
+    const charger = await db.getChargerByOcppIdentity(ocppIdentity);
+    if (charger) {
+      chargerId = charger.id;
+      console.log(`[OCPP] Resolved physical charger ${chargerId} for ${ocppIdentity}`);
+    }
+    const station = await db.getChargingStationByOcppIdentity(ocppIdentity);
+    if (station) {
+      stationId = station.id;
+      // CRÍTICO: Actualizar stationId en el connection-manager para que getConnectionByStationId funcione
+      connection.stationId = station.id;
+      // CRÍTICO: Actualizar stationId en dualCSMS también (fuente única de verdad)
+      dualCSMS.updateExternalConnectionStationId(ocppIdentity, station.id);
+      console.log(`[OCPP] Pre-resolved stationId=${stationId} for ${ocppIdentity} at connection time (updated in connection-manager AND dualCSMS)`);
+      // Marcar como online
+      await db.updateStationOnlineStatus(ocppIdentity, true);
+
+      // Auto-resolver alertas de desconexión activas al reconectar
+      alertsService.handleReconnection(ocppIdentity)
+        .catch(err => console.error(`[OCPP Alert] Error auto-resolving on reconnect for ${ocppIdentity}:`, err));
+    } else {
+      console.warn(`[OCPP] Could not pre-resolve stationId for ${ocppIdentity} - station not found in DB`);
+    }
+  } catch (err) {
+    console.error(`[OCPP] Error pre-resolving stationId for ${ocppIdentity}:`, err);
+  }
 
   // Registrar conexión después de configurar los listeners
   try {
