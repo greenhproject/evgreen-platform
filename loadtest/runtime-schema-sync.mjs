@@ -55,6 +55,18 @@ function isAlreadyAppliedError(error) {
   return [1050, 1060, 1061, 1091, 1826, 1831].includes(Number(error?.errno));
 }
 
+function repairMissingAutoPrimaryKey(sql) {
+  if (!/CREATE\s+TABLE/i.test(sql) || !/AUTO_INCREMENT/i.test(sql) || /PRIMARY\s+KEY/i.test(sql)) {
+    return sql;
+  }
+
+  const autoColumn = sql.match(/`([^`]+)`[^,\n]*AUTO_INCREMENT/i)?.[1];
+  const closingParen = sql.lastIndexOf(")");
+  if (!autoColumn || closingParen < 0) return sql;
+
+  return `${sql.slice(0, closingParen)}\tPRIMARY KEY (\`${autoColumn}\`)\n${sql.slice(closingParen)}`;
+}
+
 async function main() {
   const connection = await mysql.createConnection(getConnectionOptions());
   try {
@@ -83,6 +95,14 @@ async function main() {
         try {
           await connection.query(chunk);
         } catch (error) {
+          if (Number(error?.errno) === 1075) {
+            const repairedChunk = repairMissingAutoPrimaryKey(chunk);
+            if (repairedChunk !== chunk) {
+              console.warn(`[RuntimeSchema] Reparando PRIMARY KEY faltante en ${file}`);
+              await connection.query(repairedChunk);
+              continue;
+            }
+          }
           if (!isAlreadyAppliedError(error)) {
             throw new Error(`Falló ${file}: ${error.message}`, { cause: error });
           }
