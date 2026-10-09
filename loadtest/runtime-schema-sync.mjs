@@ -56,7 +56,10 @@ function isAlreadyAppliedError(error) {
 }
 
 function repairLegacyMysqlSql(sql) {
-  let repairedSql = sql.replace(/DEFAULT\s+'CURRENT_TIMESTAMP'/gi, "DEFAULT CURRENT_TIMESTAMP");
+  let repairedSql = sql
+    .replace(/DEFAULT\s+'CURRENT_TIMESTAMP'/gi, "DEFAULT CURRENT_TIMESTAMP")
+    .replace(/ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS/gi, "ADD COLUMN")
+    .replace(/INDEX\s+IF\s+NOT\s+EXISTS/gi, "INDEX");
 
   if (!/CREATE\s+TABLE/i.test(repairedSql) || !/AUTO_INCREMENT/i.test(repairedSql) || /PRIMARY\s+KEY/i.test(repairedSql)) {
     return repairedSql;
