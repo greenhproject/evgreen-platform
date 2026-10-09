@@ -2,7 +2,8 @@
  * ActiveChargingBanner - Banner flotante que aparece en todas las páginas de usuario
  * cuando hay una sesión de carga activa, permitiendo volver al monitor de carga.
  * 
- * Se oculta automáticamente cuando el usuario ya está en /charging-monitor.
+ * Se oculta automáticamente cuando el usuario ya está en /charging-monitor
+ * o en la conversación de soporte, que ya reserva toda la altura útil.
  */
 import { useLocation, Link } from "wouter";
 import { useActiveChargingSession } from "@/hooks/useActiveChargingSession";
@@ -15,7 +16,8 @@ export function ActiveChargingBanner() {
   const { hasActiveSession, session } = useActiveChargingSession();
   const [elapsedText, setElapsedText] = useState("");
 
-  // No mostrar en páginas de carga (monitor, summary, waiting, start-charge)
+  // No mostrar en páginas de carga ni en soporte. En soporte, el banner fijo
+  // tapaba el encabezado y el compositor de mensajes en pantallas pequeñas.
   const chargingPages = [
     "/charging-monitor",
     "/charging-summary",
@@ -24,6 +26,7 @@ export function ActiveChargingBanner() {
     "/charging/",
   ];
   const isOnChargingPage = chargingPages.some(p => location.startsWith(p));
+  const isOnSupportPage = location === "/support" || location.startsWith("/support/");
 
   // Actualizar tiempo transcurrido
   useEffect(() => {
@@ -48,7 +51,7 @@ export function ActiveChargingBanner() {
     return () => clearInterval(interval);
   }, [session?.startTime]);
 
-  if (!hasActiveSession || isOnChargingPage) return null;
+  if (!hasActiveSession || isOnChargingPage || isOnSupportPage) return null;
 
   const sessionAny = session as any;
   const kwhConsumed = sessionAny?.kwhConsumed ?? sessionAny?.currentKwh ?? 0;
