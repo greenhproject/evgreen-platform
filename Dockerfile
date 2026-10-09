@@ -1,3 +1,12 @@
+# check=skip=SecretsUsedInArgOrEnv
+# El linter marca 4 de las VITE_* de abajo (FIREBASE_API_KEY,
+# FIREBASE_AUTH_DOMAIN, FIREBASE_VAPID_KEY, GOOGLE_MAPS_API_KEY) como
+# "secreto". Vite las reemplaza en el bundle del frontend durante el build,
+# así que por diseño terminan públicas en el JS servido a cualquier
+# visitante del sitio — son la config pública de Firebase y una API key de
+# Google Maps restringida por dominio en Google Cloud Console, no
+# credenciales que se puedan ocultar en esta capa. (VITE_FRONTEND_FORGE_*,
+# que también disparaba este warning, se eliminó más abajo por no usarse.)
 # =============================================================================
 # EVGreen Platform - Dockerfile para Railway
 # Plataforma de carga de vehículos eléctricos con OCPP WebSocket
@@ -31,8 +40,6 @@ ARG VITE_APP_ID
 ARG VITE_APP_TITLE
 ARG VITE_APP_LOGO
 ARG VITE_OAUTH_PORTAL_URL
-ARG VITE_FRONTEND_FORGE_API_KEY
-ARG VITE_FRONTEND_FORGE_API_URL
 ARG VITE_ANALYTICS_ENDPOINT
 ARG VITE_ANALYTICS_WEBSITE_ID
 ARG VITE_VAPID_PUBLIC_KEY
@@ -50,8 +57,6 @@ ENV VITE_APP_ID=$VITE_APP_ID
 ENV VITE_APP_TITLE=$VITE_APP_TITLE
 ENV VITE_APP_LOGO=$VITE_APP_LOGO
 ENV VITE_OAUTH_PORTAL_URL=$VITE_OAUTH_PORTAL_URL
-ENV VITE_FRONTEND_FORGE_API_KEY=$VITE_FRONTEND_FORGE_API_KEY
-ENV VITE_FRONTEND_FORGE_API_URL=$VITE_FRONTEND_FORGE_API_URL
 ENV VITE_ANALYTICS_ENDPOINT=$VITE_ANALYTICS_ENDPOINT
 ENV VITE_ANALYTICS_WEBSITE_ID=$VITE_ANALYTICS_WEBSITE_ID
 ENV VITE_VAPID_PUBLIC_KEY=$VITE_VAPID_PUBLIC_KEY
