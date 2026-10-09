@@ -87,6 +87,56 @@ Cualquier cambio en `ios/`, `android/`, `capacitor.config.ts`, o ajustes de
 safe-area/viewport, afecta builds ya publicados en las tiendas. Revisar con
 el encargado de mobile antes de fusionar a `main`.
 
+## Plan de pruebas
+
+Regla de oro: ningún ajuste se sube sin haber probado todos los caminos y
+escenarios posibles contra el flujo real de producción — no sustitutos
+sintéticos (mocks, payloads inventados, datos de prueba fijos) para la
+parte exacta que se está verificando. El checklist mínimo de GOBERNANZA.md
+§4 es lo que un aprobador exige ver; esto es cómo llegar a poder marcarlo.
+
+**Fases**
+
+1. **Alcance y escenarios** — antes de escribir código: listar camino feliz,
+   casos borde (vacío/cero/máximo), caminos de error, y qué plataformas
+   toca (Android / iOS / Web / solo backend). No se empieza a programar
+   sin esta lista.
+2. **Pruebas automatizadas** — unit/integration tests que cubran cada
+   escenario de la fase 1. Deben estar en verde antes de pasar a prueba
+   manual.
+3. **Prueba real end-to-end** — ejercitar el camino de producción real
+   (branch correcta, build real, base de datos real) para el escenario
+   crítico. Confirmar la rama con `git branch --show-current` antes de
+   compilar — no asumir qué código tiene el simulador/dispositivo instalado.
+4. **Verificación multiplataforma** — Android + iOS (+ Web si aplica) hasta
+   que exista suite automatizada end-to-end. Un comportamiento confirmado
+   en una plataforma no se asume válido en las otras.
+5. **Documentación de evidencia** — ver abajo qué capturas sí van en el PR.
+
+**Checklist interno (antes de abrir o actualizar el PR)**
+
+- [ ] Rama correcta confirmada antes de compilar/instalar.
+- [ ] Escenarios enumerados: camino feliz, bordes, errores, concurrencia si
+      aplica.
+- [ ] Pruebas automatizadas escritas y en verde.
+- [ ] Camino real ejercitado para el escenario crítico (no solo mocks).
+- [ ] Probado en cada plataforma que el cambio toca.
+- [ ] Datos de prueba (notificaciones, usuarios, registros) limpiados de la
+      base real al terminar.
+- [ ] Capturas limitadas a lo relevante (ver siguiente sección).
+- [ ] La descripción del PR dice cómo se probó y con qué resultado real —
+      nunca "debería funcionar".
+
+**Documentación — qué capturas van en el PR**
+
+Una captura es evidencia de un resultado, no una narración de cada paso.
+Por defecto: un par antes/después por cada comportamiento material que el
+PR prueba (p. ej. "el diálogo ahora dice X en vez de Y", "el badge muestra
+el conteo real N en vez de un valor fijo"), nada de pantallas intermedias
+de navegación, carga o permisos repetidos. La mayoría de los PRs necesitan
+entre 1 y 4 capturas en total — si hace falta más, probablemente el PR está
+probando más de una cosa y conviene dividirlo.
+
 ## Housekeeping mensual
 
 Al cierre de cada mes de contrato (coincide con la reunión de seguimiento
