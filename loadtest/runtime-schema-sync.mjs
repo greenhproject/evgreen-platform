@@ -43,12 +43,12 @@ function migrationFiles(files) {
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 }
 
-function sqlChunks(sql) {
+export function sqlChunks(sql) {
   return sql
     .replace(/^\uFEFF/, "")
     .split(/-->\s*statement-breakpoint/g)
     .map(chunk => chunk.trim())
-    .filter(chunk => chunk && !/^--(?:[^\n]*\n?)*$/.test(chunk));
+    .filter(chunk => chunk && !chunk.split("\n").every(line => /^\s*(--.*)?$/.test(line)));
 }
 
 function isAlreadyAppliedError(error) {
@@ -134,7 +134,9 @@ async function main() {
   }
 }
 
-main().catch(error => {
-  console.error("[RuntimeSchema] Error fatal:", error);
-  process.exitCode = 1;
-});
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch(error => {
+    console.error("[RuntimeSchema] Error fatal:", error);
+    process.exitCode = 1;
+  });
+}
