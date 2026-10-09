@@ -64,7 +64,7 @@ function repairMissingAutoPrimaryKey(sql) {
   const closingParen = sql.lastIndexOf(")");
   if (!autoColumn || closingParen < 0) return sql;
 
-  return `${sql.slice(0, closingParen)}\tPRIMARY KEY (\`${autoColumn}\`)\n${sql.slice(closingParen)}`;
+  return `${sql.slice(0, closingParen).replace(/\s*$/, "")},\n\tPRIMARY KEY (\`${autoColumn}\`)\n${sql.slice(closingParen)}`;
 }
 
 async function main() {
