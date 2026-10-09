@@ -60,7 +60,7 @@ function repairMissingAutoPrimaryKey(sql) {
     return sql;
   }
 
-  const autoColumn = sql.match(/`([^`]+)`[^,\n]*AUTO_INCREMENT/i)?.[1];
+  const autoColumn = sql.match(/^\s*`([^`]+)`[^\n]*AUTO_INCREMENT/im)?.[1];
   const closingParen = sql.lastIndexOf(")");
   if (!autoColumn || closingParen < 0) return sql;
 
