@@ -5,6 +5,14 @@ const config: CapacitorConfig = {
   appName: 'Evgreen',
   webDir: 'dist/public',
   server: {
+    // OJO: nunca usar aquí el mismo dominio del backend real (app.evgreen.lat).
+    // Capacitor trata este hostname como el origen local del WebView — si
+    // coincide con el dominio de la API, intercepta las llamadas reales
+    // (/api/trpc/...) como si fueran archivos locales y las rompe todas
+    // ("Unable to open asset URL"). Se usa un subdominio aparte, que no
+    // necesita existir de verdad, solo para que los diálogos del sistema
+    // (geolocalización, etc.) no digan "localhost".
+    hostname: 'mobile.evgreen.lat',
     androidScheme: 'https',
     iosScheme: 'evgreen',
   },
