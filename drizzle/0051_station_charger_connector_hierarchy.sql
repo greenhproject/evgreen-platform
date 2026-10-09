@@ -21,7 +21,7 @@ ALTER TABLE `evses`
   ADD COLUMN IF NOT EXISTS `qr_token` varchar(80) NULL;
 
 CREATE INDEX IF NOT EXISTS `idx_chargers_station_code`
-  ON `chargers` (`station_id`, `charger_code`);
+  ON `chargers` (`stationId`, `charger_code`);
 
 CREATE UNIQUE INDEX IF NOT EXISTS `ux_evses_qr_token`
   ON `evses` (`qr_token`);
