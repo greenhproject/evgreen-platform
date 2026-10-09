@@ -87,5 +87,9 @@ fs.writeFileSync(pbxprojPath, pbxproj);
 console.log(`ios project.pbxproj: CURRENT_PROJECT_VERSION ${oldBuildNumber} → ${newBuildNumber}, MARKETING_VERSION → ${newVersion}`);
 
 console.log("");
-console.log(`Listo. Revisa el diff, haz commit, y cuando publiques el build en la store:`);
-console.log(`  git tag v${newVersion} && git push --tags`);
+console.log(`Listo. Revisa el diff, haz commit, y cuando publiques el build en cada tienda,`);
+console.log(`etiqueta solo la(s) tienda(s) que realmente estés enviando (GOBERNANZA.md §6):`);
+console.log(`  git tag android-v${newVersion}    # si envías a Android/Play`);
+console.log(`  git tag ios-v${newVersion}        # si envías a iOS/App Store`);
+console.log(`  git tag appgallery-v${newVersion} # si envías a Huawei AppGallery`);
+console.log(`  git push origin <el/los tag(s) que hayas creado>`);

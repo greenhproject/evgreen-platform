@@ -51,16 +51,22 @@ obligatoria, no opcional.
 ## Tags de versión
 
 Cada vez que se sube una versión a una tienda (App Store, Play Store,
-AppGallery), se etiqueta el commit exacto:
+AppGallery), se etiqueta el commit exacto — **con un tag específico de esa
+tienda, nunca uno genérico** (ver `GOBERNANZA.md` §6, es la política
+autoritativa sobre esto):
 
 ```bash
-git tag v1.3.1
-git push origin v1.3.1
+git tag android-v1.4.0      # si se envía a Android/Play
+git tag ios-v1.4.0          # si se envía a iOS/App Store
+git tag appgallery-v1.4.0   # si se envía a Huawei AppGallery
+git push origin <el/los tag(s) que apliquen>
 ```
 
-Esto es lo único que responde con certeza "¿qué commit es el que está
-publicado ahora mismo" — antes de esto no existía ni un solo tag en el repo,
-lo que hacía imposible hacer rollback con confianza.
+Solo se etiqueta la(s) tienda(s) que realmente se está enviando en ese
+momento — no las tres reflexivamente. Esto es lo único que responde con
+certeza "¿qué commit es el que está publicado ahora mismo, en cada tienda
+por separado" — antes de esto no existía ni un solo tag en el repo, lo que
+hacía imposible hacer rollback con confianza.
 
 ## Versionado
 
