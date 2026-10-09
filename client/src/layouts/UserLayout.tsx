@@ -132,7 +132,7 @@ export default function UserLayout({
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="h-[100dvh] min-h-[100dvh] overflow-hidden bg-background flex flex-col">
       {/* ── SPLASH BANNER (pantalla completa al abrir la app) ── */}
       <AnimatePresence>
         {showSplash && activeSplashBanner && (
@@ -318,7 +318,7 @@ export default function UserLayout({
       )}
 
       {/* Main Content */}
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 min-h-0 overflow-auto overscroll-contain">
         <AnimatePresence mode="wait">
           <motion.div
             key={location}
@@ -326,7 +326,7 @@ export default function UserLayout({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.2 }}
-            className="h-full"
+            className="h-full min-h-0"
           >
             {children}
           </motion.div>
@@ -335,7 +335,7 @@ export default function UserLayout({
 
       {/* Bottom Navigation */}
       {showBottomNav && (
-        <nav className="sticky bottom-0 z-50 bg-background/95 backdrop-blur-xl border-t border-border/50 safe-area-inset-bottom">
+        <nav className="sticky bottom-0 z-50 shrink-0 bg-background/95 backdrop-blur-xl border-t border-border/50 safe-area-inset-bottom">
           <div className="flex items-center justify-around h-16 px-2">
             {navItems.map((item) => {
               const isActive = location === item.path;

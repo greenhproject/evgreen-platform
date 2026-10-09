@@ -45,3 +45,10 @@
 - [x] Evitar recurrencia: toda consulta de sesiones activas excluye registros con `endTime`; la limpieza y la cancelación sincronizan de forma obligatoria `status` y `transaction_status`.
 - [x] Retirar **Livoltek prueba / MF120** de la red pública mediante `isPublic=0`; el simulador puede seguir conectado por OCPP, pero no puede aparecer en el mapa de usuarios.
 - [x] Verificar API pública: EVG Diamante proyecta su EVSE 150001 como `AVAILABLE`, sin transacción activa.
+
+## Soporte móvil — composición de carga activa (2026-10-08)
+
+- [x] Ocultar el banner global de “Carga en progreso” dentro de Soporte, donde interfería con el encabezado y con el chat.
+- [x] Convertir el layout de usuario a viewport dinámico (`100dvh`), con scroll interno y navegación inferior que respeta `safe-area` en Android/iOS.
+- [x] Hacer que conversación, lista de mensajes y compositor de escritura ocupen exclusivamente el alto disponible; el campo de texto queda fijo y accesible encima de la navegación del sistema.
+- [x] Validación: TypeScript, pruebas de regresión responsive, suite completa 238 archivos / 2.334 pruebas y build productivo aprobados.
