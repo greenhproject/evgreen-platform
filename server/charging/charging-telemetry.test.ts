@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildPowerHistoryFromMeterValues,
   estimatePowerFromEnergySamples,
   formatTelemetryAge,
   resolveChargingTelemetryFreshness,
@@ -30,6 +31,19 @@ describe("telemetría autoritativa de carga", () => {
       previousSampleAt: 2_000,
       currentSampleAt: 1_000,
     })).toBeNull();
+  });
+
+  it("reconstruye la potencia para cargadores que solo reportan energía acumulada", () => {
+    const history = buildPowerHistoryFromMeterValues([
+      { timestamp: "2026-10-09T02:29:07Z", energyKwh: "3536.2640", powerKw: null },
+      { timestamp: "2026-10-09T02:34:08Z", energyKwh: "3536.6380", powerKw: null },
+      { timestamp: "2026-10-09T02:39:08Z", energyKwh: "3537.0120", powerKw: null },
+    ], 3_535_902);
+
+    expect(history).toHaveLength(3);
+    expect(history[0].energy).toBeCloseTo(0.362, 6);
+    expect(history[1].power).toBeCloseTo(4.47, 2);
+    expect(history[2].power).toBeCloseTo(4.49, 2);
   });
 
   it("distingue telemetría vigente, retrasada, obsoleta y ausente", () => {

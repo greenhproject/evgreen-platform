@@ -950,7 +950,7 @@ export default function ChargingMonitor() {
         )}
         
         {/* Gráfico de potencia en tiempo real */}
-        {(session as any).powerHistory && (session as any).powerHistory.length >= 2 && (
+        {Array.isArray((session as any).powerHistory) && (session as any).powerHistory.length >= 1 && (
           <Card className="mt-4 border-amber-500/20">
             <CardContent className="p-4">
               <div className="flex items-center gap-2 mb-3">

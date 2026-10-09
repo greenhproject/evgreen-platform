@@ -19,7 +19,11 @@ import * as simulator from "./charging-simulator";
 import { sendUserPush } from "../push/unified-push";
 import { dispatchOrganizationWebhookEvent } from "../api/webhook-dispatcher";
 import { calculateSocEstimation, getManualSocAvailability, resolveOperationalSoc } from "./soc-estimation";
-import { resolveChargingTelemetryFreshness, shouldAdvanceTelemetrySample } from "../../shared/charging-telemetry";
+import {
+  buildPowerHistoryFromMeterValues,
+  resolveChargingTelemetryFreshness,
+  shouldAdvanceTelemetrySample,
+} from "../../shared/charging-telemetry";
 import { learnEffectiveSocCapacity } from "../../shared/soc-calibration-learning";
 import {
   getChargeStopMessage,
@@ -1359,14 +1363,7 @@ export const chargingRouter = router({
           const storedMeterValues = await db.getRecentMeterValuesByTransactionId(activeTransaction.id, 120);
           if (storedMeterValues.length >= 2) {
             const meterStart = activeTransaction.meterStart ? parseFloat(activeTransaction.meterStart) : 0;
-            resolvedPowerHistory = storedMeterValues
-              .filter(mv => mv.powerKw !== null && mv.powerKw !== undefined)
-              .map(mv => ({
-                timestamp: new Date(mv.timestamp).getTime(),
-                power: mv.powerKw ? parseFloat(mv.powerKw) : 0,
-                energy: mv.energyKwh ? Math.max(0, parseFloat(mv.energyKwh) - meterStart / 1000) : 0,
-                soc: mv.soc ?? null,
-              }));
+            resolvedPowerHistory = buildPowerHistoryFromMeterValues(storedMeterValues, meterStart);
             if (activeSessionInfo) activeSessionInfo.powerHistory = resolvedPowerHistory;
           }
         } catch (_e) { /* no-op: no bloquear si falla */ }

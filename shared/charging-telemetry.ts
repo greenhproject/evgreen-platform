@@ -61,6 +61,79 @@ export function estimatePowerFromEnergySamples(input: {
   return Math.min(powerKw, maxPowerKw);
 }
 
+export type MeterValueHistoryInput = {
+  timestamp: Date | string | number;
+  energyKwh?: number | string | null;
+  powerKw?: number | string | null;
+  soc?: number | null;
+};
+
+/**
+ * Normaliza las lecturas del cargador para la gráfica del monitor.
+ * Algunos cargadores AC no envían Power.Active.Import; en ese caso la potencia
+ * se estima con el delta de energía y el timestamp real de cada MeterValue.
+ */
+export function buildPowerHistoryFromMeterValues(
+  meterValues: MeterValueHistoryInput[],
+  meterStartWh = 0,
+): Array<{ timestamp: number; power: number; energy: number; soc: number | null }> {
+  type NormalizedValue = {
+    timestamp: number;
+    energy: number | null;
+    power: number | null;
+    soc: number | null;
+  };
+
+  const meterStartKwh = Number.isFinite(Number(meterStartWh)) ? Number(meterStartWh) / 1000 : 0;
+  const normalized = meterValues
+    .map((value): Omit<NormalizedValue, "timestamp"> & { timestamp: number | null } => {
+      const timestamp = toTimestamp(value.timestamp);
+      const rawEnergy = value.energyKwh === null || value.energyKwh === undefined
+        ? null
+        : Number(value.energyKwh);
+      const rawPower = value.powerKw === null || value.powerKw === undefined
+        ? null
+        : Number(value.powerKw);
+      const rawSoc = value.soc === null || value.soc === undefined ? null : Number(value.soc);
+
+      return {
+        timestamp,
+        energy: rawEnergy !== null && Number.isFinite(rawEnergy)
+          ? Math.max(0, rawEnergy - meterStartKwh)
+          : null,
+        power: rawPower !== null && Number.isFinite(rawPower) ? Math.max(0, rawPower) : null,
+        soc: rawSoc !== null && Number.isFinite(rawSoc) ? rawSoc : null,
+      };
+    })
+    .filter((value): value is NormalizedValue => value.timestamp !== null)
+    .sort((a, b) => a.timestamp - b.timestamp);
+
+  let previousEnergy: number | null = null;
+  let previousTimestamp: number | null = null;
+
+  return normalized.map((value) => {
+    const energy = value.energy ?? previousEnergy ?? 0;
+    const estimatedPower = value.power === null && previousEnergy !== null && previousTimestamp !== null
+      ? estimatePowerFromEnergySamples({
+          previousEnergyKwh: previousEnergy,
+          currentEnergyKwh: energy,
+          previousSampleAt: previousTimestamp,
+          currentSampleAt: value.timestamp,
+        })
+      : null;
+
+    previousEnergy = energy;
+    previousTimestamp = value.timestamp;
+
+    return {
+      timestamp: value.timestamp,
+      power: value.power ?? estimatedPower ?? 0,
+      energy,
+      soc: value.soc,
+    };
+  });
+}
+
 export function shouldAdvanceTelemetrySample(
   currentSampleAt: Date | string | number | null | undefined,
   incomingSampleAt: Date | string | number | null | undefined,
