@@ -152,6 +152,22 @@ export async function initNativePush(options: InitNativePushOptions): Promise<Na
   }
 }
 
+/**
+ * Limpia el badge numérico del ícono de la app (solo iOS lo muestra de forma
+ * nativa vía APNs; en Android el plugin lo simula si el launcher lo soporta).
+ * Se llama al abrir/reanudar la app y al marcar notificaciones como leídas,
+ * para que el número no quede "pegado" después de que el usuario ya las vio.
+ */
+export async function clearAppBadge(): Promise<void> {
+  if (!isCapacitorNative()) return;
+  try {
+    const { Badge } = await import("@capawesome/capacitor-badge");
+    await Badge.clear();
+  } catch (error) {
+    console.warn("[NativePush] No se pudo limpiar el badge del ícono:", error);
+  }
+}
+
 export async function unregisterNativePush(): Promise<void> {
   if (!isCapacitorNative()) return;
   try {
