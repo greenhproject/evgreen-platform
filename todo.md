@@ -38,3 +38,10 @@
 - [x] Incorporar timestamp de evidencia OCPP y aplicar el resolvedor canónico en aplicación, administración, técnico y tarifa dinámica; una transacción activa mantiene prioridad.
 - [x] Corregir monitor OCPP: timestamps UTC técnicos se interpretan como UTC y se muestran explícitamente en la zona IANA de cada estación (por defecto `America/Bogota`), incluidos logs y exportaciones.
 - [x] Validación: TypeScript limpio, pruebas focales y suite completa 236 archivos / 2.329 pruebas aprobadas, build productivo exitoso.
+
+## Saneamiento de disponibilidad pública — Diamante (2026-10-08)
+
+- [x] Corregir sesión huérfana #1140033: no tenía energía ni movimientos de billetera, pero `transaction_status` quedó `IN_PROGRESS` después de un `AUTO_CLEANUP`; ambos estados se normalizaron a `CANCELLED`, y los valores financieros no cobrados quedaron en $0.
+- [x] Evitar recurrencia: toda consulta de sesiones activas excluye registros con `endTime`; la limpieza y la cancelación sincronizan de forma obligatoria `status` y `transaction_status`.
+- [x] Retirar **Livoltek prueba / MF120** de la red pública mediante `isPublic=0`; el simulador puede seguir conectado por OCPP, pero no puede aparecer en el mapa de usuarios.
+- [x] Verificar API pública: EVG Diamante proyecta su EVSE 150001 como `AVAILABLE`, sin transacción activa.

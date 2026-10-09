@@ -17,6 +17,7 @@ import { eq, and, desc, asc, gte, lte, lt, gt, sql, or, count, sum, avg, ne, inA
 import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2";
 import { isReservationHoldingConnector } from "../shared/reservation-lifecycle-policy";
+import { terminalTransactionStatus } from "../shared/transaction-operational-state";
 import {
   InsertUser,
 	users,
@@ -1633,12 +1634,13 @@ export async function reconcileTimedOutChargeStopRequests(now = new Date()) {
 export async function getActiveTransaction(evseId: number) {
   const db = (await getDb())!;
   if (!db) return undefined;
-  // IMPORTANTE: La BD tiene dos columnas de estado: 'status' (legacy, siempre PENDING) y
-  // 'transaction_status' (activa, actualizada por el servidor OCPP).
-  // Se verifica ambas para detectar correctamente transacciones en curso.
+  // La compatibilidad de los dos estados históricos se conserva, pero una
+  // sesión que ya tenga endTime nunca puede bloquear un conector, incluso si
+  // un escritor legado dejó uno de los dos campos en IN_PROGRESS.
   const result = await db.select().from(transactions)
     .where(and(
       eq(transactions.evseId, evseId),
+      isNull(transactions.endTime),
       or(
         eq(transactions.status, "IN_PROGRESS"),
         eq(transactions.transactionStatus, "IN_PROGRESS")
@@ -1661,6 +1663,7 @@ export async function getActiveTransactionsForStations(stationIds: number[]) {
   return db.select().from(transactions)
     .where(and(
       inArray(transactions.stationId, stationIds),
+      isNull(transactions.endTime),
       or(
         eq(transactions.status, "IN_PROGRESS"),
         eq(transactions.transactionStatus, "IN_PROGRESS"),
@@ -4913,12 +4916,18 @@ export async function cleanupOrphanedTransactions(maxAgeMinutes: number = 60): P
   
   const cutoffTime = new Date(Date.now() - maxAgeMinutes * 60 * 1000);
   
-  // Encontrar transacciones IN_PROGRESS cuya última actualización sea anterior al cutoff
+  // Buscar en ambas columnas por compatibilidad histórica. Cada ruta de cierre
+  // debe escribir ambas: de otro modo una sesión CANCELLED puede seguir siendo
+  // considerada activa por el mapa, precio dinámico u overstay.
   const orphaned = await db.select()
     .from(transactions)
     .where(
       and(
-        eq(transactions.status, "IN_PROGRESS"),
+        isNull(transactions.endTime),
+        or(
+          eq(transactions.status, "IN_PROGRESS"),
+          eq(transactions.transactionStatus, "IN_PROGRESS"),
+        ),
         lte(transactions.updatedAt, cutoffTime.toISOString())
       )
     );
@@ -4935,7 +4944,7 @@ export async function cleanupOrphanedTransactions(maxAgeMinutes: number = 60): P
       // Transacción con energía consumida real: COMPLETAR y cobrar, no cancelar
       await db.update(transactions)
         .set({
-          status: "COMPLETED",
+          ...terminalTransactionStatus("COMPLETED"),
           endTime: new Date().toISOString(),
           stopReason: `AUTO_COMPLETE: Sesión finalizada automáticamente (sin actividad por ${maxAgeMinutes} min)`,
         })
@@ -5019,7 +5028,7 @@ export async function cleanupOrphanedTransactions(maxAgeMinutes: number = 60): P
       // Transacción sin energía consumida: cancelar normalmente
       await db.update(transactions)
         .set({
-          status: "CANCELLED",
+          ...terminalTransactionStatus("CANCELLED"),
           endTime: new Date().toISOString(),
           stopReason: `AUTO_CLEANUP: Sin actividad por más de ${maxAgeMinutes} minutos`,
         })
@@ -5061,7 +5070,7 @@ export async function cleanupCorruptedTransactions(): Promise<number> {
   
   await db.update(transactions)
     .set({
-      status: "CANCELLED",
+      ...terminalTransactionStatus("CANCELLED"),
       endTime: new Date().toISOString(),
       kwhConsumed: "0",
       totalCost: "0",
@@ -6928,6 +6937,7 @@ export async function getActiveTransactionsByStationId(stationId: number) {
     .where(
       and(
         eq(transactions.stationId, stationId),
+        isNull(transactions.endTime),
         or(
           eq(transactions.status, "IN_PROGRESS"),
           eq(transactions.transactionStatus, "IN_PROGRESS")

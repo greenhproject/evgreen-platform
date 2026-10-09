@@ -30,6 +30,7 @@ import { evaluateReservationChargeProtection } from "../../shared/reservation-ch
 import { canStartOnConnectorWithinCharger } from "../../shared/station-charger-hierarchy";
 import { isValidConnectorQrToken, resolveConnectorQrTarget } from "../../shared/connector-qr-policy";
 import { resolveOcppCommandTarget } from "../../shared/charger-command-target";
+import { isTransactionOperationallyActive } from "../../shared/transaction-operational-state";
 
 // Helper: buscar conexión por stationId en dualCSMS primero, luego fallback a legacy
 // Si ocppIdentity se provee, también busca en dualCSMS por identidad cuando stationId=null
@@ -153,7 +154,7 @@ export async function recalibrateManualSocTransaction(input: {
   actorUserId: number;
 }) {
   const { transaction } = input;
-  const isActive = transaction.status === "IN_PROGRESS" || transaction.transactionStatus === "IN_PROGRESS";
+  const isActive = isTransactionOperationallyActive(transaction);
   if (!isActive) {
     throw new TRPCError({ code: "BAD_REQUEST", message: "La sesión ya no está activa" });
   }
@@ -1749,7 +1750,7 @@ export const chargingRouter = router({
         });
       }
       
-      if (transaction.status !== "IN_PROGRESS" && transaction.transactionStatus !== "IN_PROGRESS") {
+      if (!isTransactionOperationallyActive(transaction)) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "Esta carga ya ha finalizado",
