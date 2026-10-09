@@ -193,11 +193,17 @@ function createPool(): mysql.Pool {
     password: decodeURIComponent(url.password),
     database: url.pathname.slice(1),
     ssl: sslConfig,
-    connectionLimit: 10,
-    maxIdle: 5,
+    // 10/50 se saturaba ("Queue limit reached") con solo 20 cargadores
+    // reconectando a la vez en la prueba de carga de staging (2026-10-09).
+    // Staging permite hasta 151 conexiones MySQL (confirmado con
+    // SHOW VARIABLES LIKE 'max_connections'); 30/200 deja margen amplio
+    // para escalar la prueba de carga hasta 100 estaciones sin acercarse
+    // a ese límite.
+    connectionLimit: 30,
+    maxIdle: 10,
     idleTimeout: 60000,
     waitForConnections: true,
-    queueLimit: 50,
+    queueLimit: 200,
     connectTimeout: 10000,
     enableKeepAlive: true,
     keepAliveInitialDelay: 30000,
@@ -2480,7 +2486,13 @@ export async function getInvestorPendingBalance(investorId: number) {
 export async function createOcppLog(log: InsertOcppLog) {
   const db = (await getDb())!;
   if (!db) return;
-  await db.insert(ocppLogs).values(log);
+  try {
+    await db.insert(ocppLogs).values(log);
+  } catch (err) {
+    // Logging best-effort: un fallo aquí (ej. pool saturado) nunca debe
+    // propagarse como unhandled rejection ni interrumpir el flujo OCPP real.
+    console.error("[OCPP Log] Error guardando log:", err);
+  }
 }
 
 export async function getOcppLogsByStation(stationId: number, limit = 100) {
@@ -4111,7 +4123,7 @@ export async function acknowledgeOcppAlert(alertId: number, userId?: number): Pr
   await db.update(ocppAlerts)
     .set({
       acknowledged: 1,
-      acknowledgedAt: new Date().toISOString(),
+      acknowledgedAt: new Date().toISOString().slice(0, 19).replace("T", " "),
       acknowledgedBy: userId,
     } as any)
     .where(eq(ocppAlerts.id, alertId));
@@ -4124,13 +4136,14 @@ export async function autoResolveDisconnectionAlerts(ocppIdentity: string): Prom
   const db = (await getDb())!;
   if (!db) return 0;
   
+  const now = new Date().toISOString().slice(0, 19).replace("T", " ");
   const result = await db.update(ocppAlerts)
     .set({
-      resolvedAt: new Date().toISOString(),
+      resolvedAt: now,
       autoResolved: 1,
       resolvedReason: "Cargador reconectado automáticamente",
       acknowledged: 1,
-      acknowledgedAt: new Date().toISOString(),
+      acknowledgedAt: now,
     } as any)
     .where(
       and(
@@ -4953,7 +4966,7 @@ export async function cleanupOrphanedTransactions(maxAgeMinutes: number = 60): P
       await db.update(transactions)
         .set({
           ...terminalTransactionStatus("COMPLETED"),
-          endTime: new Date().toISOString(),
+          endTime: new Date().toISOString().slice(0, 19).replace("T", " "),
           stopReason: `AUTO_COMPLETE: Sesión finalizada automáticamente (sin actividad por ${maxAgeMinutes} min)`,
         })
         .where(eq(transactions.id, t.id));
@@ -5037,7 +5050,7 @@ export async function cleanupOrphanedTransactions(maxAgeMinutes: number = 60): P
       await db.update(transactions)
         .set({
           ...terminalTransactionStatus("CANCELLED"),
-          endTime: new Date().toISOString(),
+          endTime: new Date().toISOString().slice(0, 19).replace("T", " "),
           stopReason: `AUTO_CLEANUP: Sin actividad por más de ${maxAgeMinutes} minutos`,
         })
         .where(eq(transactions.id, t.id));
