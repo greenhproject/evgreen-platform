@@ -1173,7 +1173,9 @@ export default function TechnicianStations() {
                         const ocppStatus = connInfo?.connectorStatuses?.[evse.evseIdLocal] || null;
                         const operationalState = resolveConnectorOperationalState({
                           liveOcppStatus: ocppStatus,
+                          liveOcppStatusAt: connInfo?.connectorStatusUpdatedAt?.[evse.evseIdLocal],
                           persistedStatus: evse.operationalStatus ?? evse.connectorStatus ?? evse.status,
+                          persistedStatusAt: evse.updatedAt,
                           activeTransactionId: evse.activeTransactionId,
                         });
                         const realStatus = operationalState.status;

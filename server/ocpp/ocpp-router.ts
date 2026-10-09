@@ -14,6 +14,7 @@ import { checkStationHealth, generateOfflineAlerts } from "./station-health-moni
 import { getAllActiveSessionsPower } from "../charging/charging-router";
 import { resolveOperationalSoc } from "../charging/soc-estimation";
 import { resolveNocScope } from "../noc/noc-access";
+import { DEFAULT_STATION_TIMEZONE } from "../../shared/station-timezone";
 
 // Procedimiento para admin y técnicos
 const ocppProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -873,6 +874,7 @@ export const ocppRouter = router({
           name: station.name,
           address: station.address,
           city: station.city,
+          timezone: station.timezone,
           manufacturer: station.manufacturer,
           model: station.model,
           serialNumber: station.serialNumber,
@@ -1155,18 +1157,21 @@ export const ocppRouter = router({
       report.map(async (entry) => {
         let stationName = entry.ocppIdentity;
         let stationAddress = '';
+        let stationTimezone = DEFAULT_STATION_TIMEZONE;
         try {
           if (entry.stationId) {
             const station = await db.getChargingStationById(entry.stationId);
             if (station) {
               stationName = station.name;
               stationAddress = station.address || '';
+              stationTimezone = station.timezone || DEFAULT_STATION_TIMEZONE;
             }
           } else {
             const station = await db.getChargingStationByOcppIdentity(entry.ocppIdentity);
             if (station) {
               stationName = station.name;
               stationAddress = station.address || '';
+              stationTimezone = station.timezone || DEFAULT_STATION_TIMEZONE;
             }
           }
         } catch (e) {
@@ -1176,6 +1181,7 @@ export const ocppRouter = router({
           ...entry,
           stationName,
           stationAddress,
+          stationTimezone,
         };
       })
     );

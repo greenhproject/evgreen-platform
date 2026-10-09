@@ -14,6 +14,24 @@ function toNumber(parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPar
 }
 
 /**
+ * OCPP intercambia instantes UTC. Algunas filas históricas de MySQL llegan al
+ * navegador como `YYYY-MM-DD HH:mm:ss`, sin el sufijo `Z`; JavaScript las
+ * interpretaría en la zona del dispositivo y desplazaría la hora del monitor.
+ */
+export function parseUtcTimestamp(value: Date | string | number): Date {
+  if (value instanceof Date) return value;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    const hasExplicitOffset = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(trimmed);
+    if (!hasExplicitOffset && /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?$/.test(trimmed)) {
+      return new Date(`${trimmed.replace(" ", "T")}Z`);
+    }
+    return new Date(trimmed);
+  }
+  return new Date(value);
+}
+
+/**
  * Las estaciones almacenan su zona IANA; nunca se debe interpretar un horario de
  * reserva con la zona del teléfono, el navegador o el proceso Node.
  */
@@ -28,7 +46,7 @@ export function normalizeStationTimezone(timezone?: string | null): string {
 }
 
 export function getStationDateTimeParts(value: Date | string | number, timezone?: string | null): StationDateTimeParts {
-  const date = value instanceof Date ? value : new Date(value);
+  const date = parseUtcTimestamp(value);
   const formatter = new Intl.DateTimeFormat("en-CA", {
     timeZone: normalizeStationTimezone(timezone),
     year: "numeric",
@@ -70,7 +88,7 @@ export function formatStationDateTime(
     timeZone: normalizeStationTimezone(timezone),
     ...options,
     hourCycle: "h23",
-  }).format(value instanceof Date ? value : new Date(value));
+  }).format(parseUtcTimestamp(value));
 }
 
 function offsetAt(date: Date, timezone: string): number {

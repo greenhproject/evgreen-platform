@@ -14,7 +14,7 @@ describe("CSMS dual external connection race", () => {
     manager.gracePeriodTimers.delete(identity);
   });
 
-  it("conserva estación y estado Charging cuando el socket nuevo reemplaza al anterior", () => {
+  it("conserva la estación, pero exige un nuevo estado físico cuando el socket reemplaza al anterior", () => {
     const oldWs = { readyState: WebSocket.OPEN, send: vi.fn() } as any;
     const newWs = { readyState: WebSocket.OPEN, send: vi.fn() } as any;
 
@@ -29,7 +29,8 @@ describe("CSMS dual external connection race", () => {
     const active = (dualCSMS as any).connections.get(identity);
     expect(active.ws).toBe(newWs);
     expect(active.stationId).toBe(150001);
-    expect(active.connectorStatuses.get(1)).toBe("Charging");
+    expect(active.connectorStatuses.get(1)).toBeUndefined();
+    expect(active.connectorStatusUpdatedAt.get(1)).toBeUndefined();
     expect(active.bootInfo).toEqual({ vendor: "Wallbox", model: "Pulsar Max" });
     expect(active.seamlessReconnections).toBe(1);
   });

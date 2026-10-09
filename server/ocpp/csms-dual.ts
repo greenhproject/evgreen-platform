@@ -73,6 +73,7 @@ interface ChargingStationConnection {
   pendingCalls: Map<string, { resolve: (value: any) => void; reject: (error: any) => void; timeout: NodeJS.Timeout }>;
   // Estado persistente (sobrevive reconexiones seamless)
   connectorStatuses: Map<number, string>;  // connectorId -> status OCPP
+  connectorStatusUpdatedAt: Map<number, Date>; // connectorId -> última evidencia física OCPP
   bootInfo: { vendor?: string; model?: string; serialNumber?: string; firmwareVersion?: string } | undefined;
   seamlessReconnections: number;
   lastSeamlessReconnect: Date | null;
@@ -258,6 +259,7 @@ export class DualCSMS {
     lastHeartbeat: Date;
     lastMessage: Date;
     connectorStatuses: Map<number, string>;
+    connectorStatusUpdatedAt: Map<number, Date>;
     bootInfo: { vendor?: string; model?: string; serialNumber?: string; firmwareVersion?: string } | undefined;
     seamlessReconnections: number;
     lastSeamlessReconnect: Date | null;
@@ -390,7 +392,11 @@ export class DualCSMS {
         lastMessage: now,
         messageIdCounter: 0,
         pendingCalls: new Map(),
-        connectorStatuses: gracePrevState?.connectorStatuses ?? new Map(),
+        // Un socket nuevo no confirma que la última lectura de una pistola siga
+        // vigente. La proyección usa la transacción/BD hasta el siguiente
+        // StatusNotification físico de esta conexión.
+        connectorStatuses: new Map(),
+        connectorStatusUpdatedAt: new Map(),
         bootInfo: gracePrevState?.bootInfo,
         seamlessReconnections: isSeamless ? (gracePrevState.seamlessReconnections || 0) + 1 : 0,
         lastSeamlessReconnect: isSeamless ? now : null,
@@ -709,6 +715,8 @@ export class DualCSMS {
 
   private async handleOCPP16StatusNotification(conn: ChargingStationConnection, req: OCPP16StatusNotificationRequest): Promise<any> {
     console.log(`[CSMS-DUAL] OCPP 1.6 StatusNotification from ${conn.ocppIdentity}: connector=${req.connectorId}, status=${req.status}, errorCode=${req.errorCode}`);
+    conn.connectorStatuses.set(req.connectorId, req.status);
+    conn.connectorStatusUpdatedAt.set(req.connectorId, new Date());
 
     // Resolver stationId si no está asignado aún
     let stationId = conn.stationId;
@@ -2153,6 +2161,8 @@ export class DualCSMS {
 
   private async handleOCPP201StatusNotification(conn: ChargingStationConnection, req: OCPP201StatusNotificationRequest): Promise<any> {
     console.log(`[CSMS-DUAL] OCPP 2.0.1 StatusNotification from ${conn.ocppIdentity}:`, req);
+    conn.connectorStatuses.set(req.evseId, req.connectorStatus);
+    conn.connectorStatusUpdatedAt.set(req.evseId, new Date());
 
     if (conn.stationId) {
       const evses = await db.getEvsesByStationId(conn.stationId);
@@ -2632,7 +2642,10 @@ export class DualCSMS {
         originalConnectedAt: conn.originalConnectedAt,
         lastHeartbeat: conn.lastHeartbeat,
         lastMessage: conn.lastMessage,
-        connectorStatuses: new Map(conn.connectorStatuses),
+        // Una conexión en gracia no es evidencia física nueva: conservar el
+        // vínculo, no el estado de las pistolas.
+        connectorStatuses: new Map(),
+        connectorStatusUpdatedAt: new Map(),
         bootInfo: conn.bootInfo,
         seamlessReconnections: conn.seamlessReconnections,
         lastSeamlessReconnect: conn.lastSeamlessReconnect,
@@ -3068,7 +3081,10 @@ export class DualCSMS {
    */
   updateConnectorStatus(ocppIdentity: string, connectorId: number, status: string): void {
     const conn = this.connections.get(ocppIdentity);
-    if (conn) conn.connectorStatuses.set(connectorId, status);
+    if (conn) {
+      conn.connectorStatuses.set(connectorId, status);
+      conn.connectorStatusUpdatedAt.set(connectorId, new Date());
+    }
   }
 
   /**
@@ -3109,6 +3125,7 @@ export class DualCSMS {
     lastHeartbeat: string;
     lastMessage: string;
     connectorStatuses: Record<string, string>;
+    connectorStatusUpdatedAt: Record<string, string>;
     bootInfo: { vendor?: string; model?: string; serialNumber?: string; firmwareVersion?: string } | undefined;
     isConnected: boolean;
     isInGracePeriod: boolean;
@@ -3126,6 +3143,7 @@ export class DualCSMS {
         lastHeartbeat: conn.lastHeartbeat.toISOString(),
         lastMessage: conn.lastMessage.toISOString(),
         connectorStatuses: Object.fromEntries(conn.connectorStatuses),
+        connectorStatusUpdatedAt: Object.fromEntries(Array.from(conn.connectorStatusUpdatedAt.entries()).map(([id, at]) => [id, at.toISOString()])),
         bootInfo: conn.bootInfo,
         isConnected: conn.ws.readyState === 1,
         isInGracePeriod: false,
@@ -3144,6 +3162,7 @@ export class DualCSMS {
           lastHeartbeat: state.lastHeartbeat.toISOString(),
           lastMessage: state.lastMessage.toISOString(),
           connectorStatuses: Object.fromEntries(state.connectorStatuses),
+          connectorStatusUpdatedAt: Object.fromEntries(Array.from(state.connectorStatusUpdatedAt.entries()).map(([id, at]) => [id, at.toISOString()])),
           bootInfo: state.bootInfo,
           isConnected: false,
           isInGracePeriod: true,
@@ -3175,6 +3194,7 @@ export class DualCSMS {
     lastHeartbeat: string;
     lastMessage: string;
     connectorStatuses: Record<string, string>;
+    connectorStatusUpdatedAt: Record<string, string>;
     bootInfo: { vendor?: string; model?: string; serialNumber?: string; firmwareVersion?: string } | undefined;
     isConnected: boolean;
     isInGracePeriod: boolean;
@@ -3191,6 +3211,7 @@ export class DualCSMS {
         lastHeartbeat: conn.lastHeartbeat.toISOString(),
         lastMessage: conn.lastMessage.toISOString(),
         connectorStatuses: Object.fromEntries(conn.connectorStatuses),
+        connectorStatusUpdatedAt: Object.fromEntries(Array.from(conn.connectorStatusUpdatedAt.entries()).map(([id, at]) => [id, at.toISOString()])),
         bootInfo: conn.bootInfo,
         isConnected: conn.ws.readyState === 1,
         isInGracePeriod: false,
@@ -3208,6 +3229,7 @@ export class DualCSMS {
         lastHeartbeat: grace.lastHeartbeat.toISOString(),
         lastMessage: grace.lastMessage.toISOString(),
         connectorStatuses: Object.fromEntries(grace.connectorStatuses),
+        connectorStatusUpdatedAt: Object.fromEntries(Array.from(grace.connectorStatusUpdatedAt.entries()).map(([id, at]) => [id, at.toISOString()])),
         bootInfo: grace.bootInfo,
         isConnected: false,
         isInGracePeriod: true,
@@ -3495,7 +3517,10 @@ export class DualCSMS {
       lastMessage: extNow,
       messageIdCounter: 0,
       pendingCalls: new Map(),
-      connectorStatuses: new Map(extPreviousState?.connectorStatuses ?? []),
+      // No transferir estados de conectores al socket reemplazante: pueden ser
+      // de una sesión anterior y provocar un falso "ocupado".
+      connectorStatuses: new Map(),
+      connectorStatusUpdatedAt: new Map(),
       bootInfo: extPreviousState?.bootInfo,
       seamlessReconnections: extIsSeamless ? (extPreviousState?.seamlessReconnections || 0) + 1 : 0,
       lastSeamlessReconnect: extIsSeamless ? extNow : null,

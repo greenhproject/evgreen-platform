@@ -31,3 +31,10 @@
 - [x] Respetar de forma estricta el opt-in `waNotifyReminder` de WhatsApp; la cadena histórica `"0"` ya no se interpreta como consentimiento.
 - [x] Ejecutar recordatorios cada 30 minutos y recalcular perfiles a las 03:00 Colombia mediante Heartbeats autenticados y durables, sin depender de timers del proceso.
 - [x] Validación: TypeScript limpio, 73 pruebas focales, suite completa 233 archivos/2.315 pruebas, build productivo y endpoints programados bloqueados para solicitudes no cron.
+
+## Disponibilidad y horario OCPP — EVG Diamante (2026-10-08)
+
+- [x] Corregir falso estado **Ocupado**: estados de conector no se heredan entre sockets OCPP ni durante grace period; una reconexión exige `StatusNotification` físico nuevo.
+- [x] Incorporar timestamp de evidencia OCPP y aplicar el resolvedor canónico en aplicación, administración, técnico y tarifa dinámica; una transacción activa mantiene prioridad.
+- [x] Corregir monitor OCPP: timestamps UTC técnicos se interpretan como UTC y se muestran explícitamente en la zona IANA de cada estación (por defecto `America/Bogota`), incluidos logs y exportaciones.
+- [x] Validación: TypeScript limpio, pruebas focales y suite completa 236 archivos / 2.329 pruebas aprobadas, build productivo exitoso.

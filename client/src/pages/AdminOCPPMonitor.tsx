@@ -70,6 +70,7 @@ import {
 } from "chart.js";
 import { Line, Bar } from "react-chartjs-2";
 import { OperationalSocPanel } from "@/components/OperationalSocPanel";
+import { formatStationDateTime, normalizeStationTimezone } from "@shared/station-timezone";
 
 ChartJS.register(
   CategoryScale,
@@ -82,6 +83,24 @@ ChartJS.register(
   Legend,
   Filler
 );
+
+const OCPP_DATE_TIME_OPTIONS: Intl.DateTimeFormatOptions = {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+};
+
+function formatOcppTimestamp(
+  value: Date | string | number | null | undefined,
+  timezone?: string | null,
+  options: Intl.DateTimeFormatOptions = OCPP_DATE_TIME_OPTIONS,
+): string {
+  if (!value) return "-";
+  return formatStationDateTime(value, normalizeStationTimezone(timezone), options);
+}
 
 // ============================================================================
 // MAIN COMPONENT
@@ -535,6 +554,7 @@ function ChargerDetailView({
   const isConnected = chargerDetail?.isConnected ?? false;
   const conn = chargerDetail?.connection;
   const station = chargerDetail?.station;
+  const stationTimezone = normalizeStationTimezone(station?.timezone);
 
   const getConnectorStatusColor = (status: string) => {
     switch (status?.toUpperCase()) {
@@ -739,11 +759,11 @@ function ChargerDetailView({
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Último Boot</span>
-                    <span className="text-xs">{station?.lastBootNotification ? new Date(station.lastBootNotification).toLocaleString('es-CO') : '-'}</span>
+                    <span className="text-xs">{formatOcppTimestamp(station?.lastBootNotification, stationTimezone)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Conectado desde</span>
-                    <span className="text-xs">{conn?.connectedAt ? new Date(conn.connectedAt).toLocaleString('es-CO') : '-'}</span>
+                    <span className="text-xs">{formatOcppTimestamp(conn?.connectedAt, stationTimezone)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Total logs</span>
@@ -788,7 +808,7 @@ function ChargerDetailView({
                         {log.direction === 'IN' ? '← IN' : '→ OUT'}
                       </Badge>
                       <span className="text-muted-foreground shrink-0 text-[10px] sm:text-xs">
-                        {new Date(log.createdAt).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                        {formatOcppTimestamp(log.createdAt, stationTimezone, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                       </span>
                       <Badge variant="outline" className="text-[10px] shrink-0">{log.messageType}</Badge>
                       <span className="truncate text-muted-foreground w-full sm:w-auto">
@@ -856,13 +876,13 @@ function ChargerDetailView({
                     onClick={() => {
                       if (!logsData?.logs?.length) { toast.error("No hay logs"); return; }
                       const lines = logsData.logs.map((log: any) => {
-                        const date = new Date(log.createdAt).toLocaleString('es-CO');
+                        const date = formatOcppTimestamp(log.createdAt, stationTimezone);
                         const dir = log.direction === 'IN' ? '← IN ' : '→ OUT';
                         let payloadStr = '';
                         try { payloadStr = typeof log.payload === 'string' ? log.payload : JSON.stringify(log.payload, null, 2); } catch { payloadStr = String(log.payload); }
                         return `[${date}] ${dir} | ${log.messageType}\n${payloadStr}`;
                       });
-                      const content = `=== EVGreen OCPP Logs - ${ocppIdentity} ===\nExportado: ${new Date().toLocaleString('es-CO')}\nTotal: ${logsData.logs.length} registros\n${'='.repeat(60)}\n\n${lines.join('\n\n' + '-'.repeat(60) + '\n\n')}`;
+                      const content = `=== EVGreen OCPP Logs - ${ocppIdentity} ===\nZona horaria: ${stationTimezone}\nExportado: ${formatOcppTimestamp(new Date(), stationTimezone)}\nTotal: ${logsData.logs.length} registros\n${'='.repeat(60)}\n\n${lines.join('\n\n' + '-'.repeat(60) + '\n\n')}`;
                       const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
                       const url = URL.createObjectURL(blob);
                       const a = document.createElement('a');
@@ -901,7 +921,7 @@ function ChargerDetailView({
                           <Badge variant="outline" className="text-[10px]">{log.messageType}</Badge>
                         </div>
                         <span className="text-[10px] font-mono text-muted-foreground">
-                          {new Date(log.createdAt).toLocaleString('es-CO', {
+                          {formatOcppTimestamp(log.createdAt, stationTimezone, {
                             month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
                           })}
                         </span>
@@ -965,7 +985,7 @@ function ChargerDetailView({
                               onClick={() => setExpandedLogId(isExpanded ? null : log.id)}
                             >
                               <TableCell className="text-xs font-mono">
-                                {new Date(log.createdAt).toLocaleString('es-CO', {
+                                {formatOcppTimestamp(log.createdAt, stationTimezone, {
                                   month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
                                 })}
                               </TableCell>
@@ -1424,7 +1444,7 @@ function ChargerDetailView({
 
         {/* ==================== TAB: ESTABILIDAD ==================== */}
         <TabsContent value="stability" className="space-y-4">
-          <ConnectionStabilityTab ocppIdentity={ocppIdentity} formatUptime={formatUptime} />
+          <ConnectionStabilityTab ocppIdentity={ocppIdentity} formatUptime={formatUptime} timezone={stationTimezone} />
         </TabsContent>
 
         {/* ==================== TAB: RFID / OFFLINE ==================== */}
@@ -1443,10 +1463,12 @@ function ChargerDetailView({
 
 function ConnectionStabilityTab({ 
   ocppIdentity, 
-  formatUptime 
+  formatUptime,
+  timezone,
 }: { 
   ocppIdentity: string; 
   formatUptime: (s: number) => string;
+  timezone: string;
 }) {
   // Reporte de estabilidad general (incluye esta estación)
   const { data: stabilityReport, isLoading: loadingReport } = trpc.ocpp.getConnectionStability.useQuery(
@@ -1628,7 +1650,7 @@ function ConnectionStabilityTab({
               </div>
               <p className="text-sm font-bold">
                 {stationData.lastDisconnection 
-                  ? new Date(stationData.lastDisconnection).toLocaleString('es-CO')
+                  ? formatOcppTimestamp(stationData.lastDisconnection, timezone)
                   : 'Nunca'}
               </p>
               {stationData.lastCloseCode && (
@@ -1680,11 +1702,11 @@ function ConnectionStabilityTab({
                         )}
                       </TableCell>
                       <TableCell className="text-xs">
-                        {new Date(session.connectedAt).toLocaleString('es-CO')}
+                        {formatOcppTimestamp(session.connectedAt, timezone)}
                       </TableCell>
                       <TableCell className="text-xs">
                         {session.disconnectedAt 
-                          ? new Date(session.disconnectedAt).toLocaleString('es-CO')
+                          ? formatOcppTimestamp(session.disconnectedAt, timezone)
                           : <Badge variant="default" className="text-xs">Activa</Badge>
                         }
                       </TableCell>
@@ -1863,7 +1885,7 @@ function ConnectionStabilityOverview({ formatUptime }: { formatUptime: (s: numbe
                     </TableCell>
                     <TableCell className="text-center text-xs text-muted-foreground">
                       {station.lastDisconnection 
-                        ? new Date(station.lastDisconnection).toLocaleString('es-CO', { 
+                        ? formatOcppTimestamp(station.lastDisconnection, station.stationTimezone, {
                             day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' 
                           })
                         : '-'}

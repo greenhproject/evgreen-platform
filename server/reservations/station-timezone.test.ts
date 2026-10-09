@@ -27,6 +27,17 @@ describe("station timezone policy", () => {
     expect(formatted).not.toMatch(/a\.?\s*m\.?|p\.?\s*m\.?/i);
   });
 
+  it("interpreta un timestamp OCPP/MySQL sin offset como UTC antes de mostrar la hora local", () => {
+    const formatted = formatStationDateTime("2026-10-09 01:34:38", "America/Bogota", {
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+    expect(formatted).toContain("20:34:38");
+  });
+
   it("falls back to Bogotá when a station has no valid IANA zone", () => {
     const instant = stationLocalDateTimeToUtc("2026-09-22", "21:25", "not/a-zone");
     expect(instant.toISOString()).toBe("2026-09-23T02:25:00.000Z");

@@ -552,7 +552,9 @@ const stationsRouter = router({
                 : evse.connectorStatus);
             const operationalState = resolveConnectorOperationalState({
               liveOcppStatus: (publicConnection as any)?.connectorStatuses?.[evse.evseIdLocal],
+              liveOcppStatusAt: (publicConnection as any)?.connectorStatusUpdatedAt?.[evse.evseIdLocal],
               persistedStatus,
+              persistedStatusAt: evse.updatedAt,
               activeTransactionId: activeTransaction?.id ?? null,
             });
             return {
@@ -633,7 +635,9 @@ const stationsRouter = router({
         const liveOcppStatus = ocppConn?.connectorStatuses?.[evse.evseIdLocal] ?? null;
         const operationalState = resolveConnectorOperationalState({
           liveOcppStatus,
+          liveOcppStatusAt: (ocppConn as any)?.connectorStatusUpdatedAt?.[evse.evseIdLocal],
           persistedStatus: evse.connectorStatus,
+          persistedStatusAt: evse.updatedAt,
           activeTransactionId: activeTransaction?.id ?? null,
         });
 
@@ -733,6 +737,7 @@ const stationsRouter = router({
             connectedAt: ocppConn.connectedAt,
             lastHeartbeat: ocppConn.lastHeartbeat,
             connectorStatuses: ocppConn.connectorStatuses || {},
+            connectorStatusUpdatedAt: (ocppConn as any).connectorStatusUpdatedAt || {},
           } : null,
           tariff: tariff ? {
             pricePerKwh: tariff.pricePerKwh?.toString() || "1200",
@@ -746,7 +751,9 @@ const stationsRouter = router({
             const activeTransaction = activeTransactionByEvse.get(e.id);
             const operationalState = resolveConnectorOperationalState({
               liveOcppStatus: (ocppConn as any)?.connectorStatuses?.[e.evseIdLocal],
+              liveOcppStatusAt: (ocppConn as any)?.connectorStatusUpdatedAt?.[e.evseIdLocal],
               persistedStatus: e.connectorStatus,
+              persistedStatusAt: e.updatedAt,
               activeTransactionId: activeTransaction?.id ?? null,
             });
             return {
@@ -980,7 +987,9 @@ const stationsRouter = router({
             : e.connectorStatus);
         const operationalState = resolveConnectorOperationalState({
           liveOcppStatus: (liveConnection as any)?.connectorStatuses?.[e.evseIdLocal],
+          liveOcppStatusAt: (liveConnection as any)?.connectorStatusUpdatedAt?.[e.evseIdLocal],
           persistedStatus,
+          persistedStatusAt: e.updatedAt,
           activeTransactionId: activeTransaction?.id ?? null,
         });
         return {
@@ -1108,6 +1117,8 @@ const chargersRouter = router({
           ...connector,
           activeTransactionId: activeTransactionByEvse.get(connector.id) ?? null,
           liveOcppStatus: liveConnection?.connectorStatuses?.[connector.evseIdLocal],
+          liveOcppStatusAt: liveConnection?.connectorStatusUpdatedAt?.[connector.evseIdLocal],
+          connectorStatusUpdatedAt: connector.updatedAt,
         };
       }));
       return buildStationChargerHierarchy(chargerRows as any, canonicalConnectors as any);

@@ -108,20 +108,24 @@ export async function getStationOccupancy(stationId: number): Promise<OccupancyD
     charger.id,
     charger.ocppIdentity ? dualCSMS.getConnectionInfo(charger.ocppIdentity) : null,
   ]));
-  const projectedConnectors = projectOperationalConnectorStates(evses.map((evse: any) => ({
-    id: evse.id,
-    chargerId: evse.chargerId,
-    connectorId: evse.connectorId,
-    connectorLabel: evse.connectorLabel,
-    connectorType: evse.connectorType,
-    powerKw: evse.powerKw,
-    isActive: evse.isActive,
-    evseIdLocal: evse.evseIdLocal,
-    connectorStatus: evse.connectorStatus,
-    activeTransactionId: activeTransactionByEvse.get(evse.id) ?? null,
-    liveOcppStatus: connectionByChargerId.get(evse.chargerId)?.connectorStatuses?.[evse.evseIdLocal]
-      ?? stationConnection?.connectorStatuses?.[evse.evseIdLocal],
-  })));
+  const projectedConnectors = projectOperationalConnectorStates(evses.map((evse: any) => {
+    const liveConnection = connectionByChargerId.get(evse.chargerId) ?? stationConnection;
+    return {
+      id: evse.id,
+      chargerId: evse.chargerId,
+      connectorId: evse.connectorId,
+      connectorLabel: evse.connectorLabel,
+      connectorType: evse.connectorType,
+      powerKw: evse.powerKw,
+      isActive: evse.isActive,
+      evseIdLocal: evse.evseIdLocal,
+      connectorStatus: evse.connectorStatus,
+      connectorStatusUpdatedAt: evse.updatedAt,
+      activeTransactionId: activeTransactionByEvse.get(evse.id) ?? null,
+      liveOcppStatus: liveConnection?.connectorStatuses?.[evse.evseIdLocal],
+      liveOcppStatusAt: liveConnection?.connectorStatusUpdatedAt?.[evse.evseIdLocal],
+    };
+  }));
   const summary = summarizeOperationalConnectorAvailability(projectedConnectors);
   const physicalOccupancy = calculatePhysicalStationOccupancy(chargers as any, projectedConnectors as any);
   const totalConnectors = summary.totalConnectors;
@@ -177,8 +181,10 @@ export async function getAreaOccupancy(
       id: evse.id,
       evseIdLocal: evse.evseIdLocal,
       connectorStatus: evse.connectorStatus,
+      connectorStatusUpdatedAt: evse.updatedAt,
       activeTransactionId: activeTransactionByEvse.get(evse.id) ?? null,
       liveOcppStatus: liveConnection?.connectorStatuses?.[evse.evseIdLocal],
+      liveOcppStatusAt: liveConnection?.connectorStatusUpdatedAt?.[evse.evseIdLocal],
     })));
     totalConnectors += summary.totalConnectors;
     availableConnectors += summary.availableConnectors;

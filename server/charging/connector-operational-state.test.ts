@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isLiveOcppStatusFresh,
   normalizeConnectorStatus,
   projectOperationalConnectorStates,
   resolveConnectorOperationalState,
@@ -44,6 +45,40 @@ describe("connector operational state projection", () => {
     expect(resolveConnectorOperationalState({
       persistedStatus: "CHARGING",
     })).toMatchObject({ status: "CHARGING", source: "database", isCharging: true });
+  });
+
+  it("no deja que una caché OCPP anterior contradiga el último estado físico persistido", () => {
+    const persistedAt = new Date("2026-10-09T00:32:00.000Z");
+    const staleLiveAt = new Date("2026-10-04T18:18:00.000Z");
+
+    expect(isLiveOcppStatusFresh({
+      liveOcppStatus: "Charging",
+      liveOcppStatusAt: staleLiveAt,
+      persistedStatus: "AVAILABLE",
+      persistedStatusAt: persistedAt,
+    })).toBe(false);
+
+    expect(resolveConnectorOperationalState({
+      liveOcppStatus: "Charging",
+      liveOcppStatusAt: staleLiveAt,
+      persistedStatus: "AVAILABLE",
+      persistedStatusAt: persistedAt,
+    })).toMatchObject({
+      status: "AVAILABLE",
+      source: "database",
+      isAvailable: true,
+    });
+  });
+
+  it("mantiene una lectura OCPP reciente cuando no existe transacción activa", () => {
+    const persistedAt = new Date("2026-10-09T00:32:00.000Z");
+    const liveAt = new Date("2026-10-09T00:32:05.000Z");
+    expect(resolveConnectorOperationalState({
+      liveOcppStatus: "Preparing",
+      liveOcppStatusAt: liveAt,
+      persistedStatus: "AVAILABLE",
+      persistedStatusAt: persistedAt,
+    })).toMatchObject({ status: "PREPARING", source: "ocpp_memory", isPreparing: true });
   });
 
   it("no cuenta como disponible un AVAILABLE persistido si hay una transacción activa", () => {

@@ -35,12 +35,51 @@ export function normalizeConnectorStatus(status: unknown): CanonicalConnectorSta
   return STATUS_ALIASES[status.trim().toUpperCase()] ?? null;
 }
 
+function asEpochMilliseconds(value: unknown): number | null {
+  if (value instanceof Date) {
+    const time = value.getTime();
+    return Number.isFinite(time) ? time : null;
+  }
+  if (typeof value === "string" || typeof value === "number") {
+    const time = new Date(value).getTime();
+    return Number.isFinite(time) ? time : null;
+  }
+  return null;
+}
+
+/**
+ * La caché OCPP vive sólo dentro del proceso y puede sobrevivir una reconexión
+ * transparente. Por eso nunca puede contradecir un estado físico más reciente
+ * persistido en la base. Mantiene compatibilidad con integraciones antiguas que
+ * todavía no reportan timestamps, pero las nuevas superficies deben enviarlos.
+ */
+export function isLiveOcppStatusFresh(input: {
+  liveOcppStatus?: unknown;
+  liveOcppStatusAt?: unknown;
+  persistedStatus?: unknown;
+  persistedStatusAt?: unknown;
+}): boolean {
+  if (!normalizeConnectorStatus(input.liveOcppStatus)) return false;
+  if (!normalizeConnectorStatus(input.persistedStatus)) return true;
+
+  const liveAt = asEpochMilliseconds(input.liveOcppStatusAt);
+  const persistedAt = asEpochMilliseconds(input.persistedStatusAt);
+  // Los consumidores previos conservan su contrato hasta que estén enriquecidos
+  // con las marcas de tiempo de la conexión OCPP.
+  if (liveAt === null || persistedAt === null) return true;
+  return liveAt >= persistedAt;
+}
+
 export function resolveConnectorOperationalState(input: {
   liveOcppStatus?: unknown;
+  liveOcppStatusAt?: unknown;
   persistedStatus?: unknown;
+  persistedStatusAt?: unknown;
   activeTransactionId?: number | string | null;
 }) {
-  const liveStatus = normalizeConnectorStatus(input.liveOcppStatus);
+  const liveStatus = isLiveOcppStatusFresh(input)
+    ? normalizeConnectorStatus(input.liveOcppStatus)
+    : null;
   const persistedStatus = normalizeConnectorStatus(input.persistedStatus);
   const hasActiveTransaction = input.activeTransactionId !== null
     && input.activeTransactionId !== undefined
@@ -74,8 +113,10 @@ export type ConnectorOperationalInput = {
   id: number | string;
   evseIdLocal?: number | string | null;
   connectorStatus?: unknown;
+  connectorStatusUpdatedAt?: unknown;
   activeTransactionId?: number | string | null;
   liveOcppStatus?: unknown;
+  liveOcppStatusAt?: unknown;
 };
 
 /**
@@ -88,7 +129,9 @@ export function projectOperationalConnectorStates<T extends ConnectorOperational
   return connectors.map((connector) => {
     const operationalState = resolveConnectorOperationalState({
       liveOcppStatus: connector.liveOcppStatus,
+      liveOcppStatusAt: connector.liveOcppStatusAt,
       persistedStatus: connector.connectorStatus,
+      persistedStatusAt: connector.connectorStatusUpdatedAt,
       activeTransactionId: connector.activeTransactionId,
     });
     return {
