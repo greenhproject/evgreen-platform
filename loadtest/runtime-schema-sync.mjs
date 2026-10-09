@@ -56,7 +56,10 @@ function isAlreadyAppliedError(error) {
 }
 
 function repairLegacyMysqlSql(sql) {
-  let repairedSql = sql.replace(/DEFAULT\s+'CURRENT_TIMESTAMP'/gi, "DEFAULT CURRENT_TIMESTAMP");
+  let repairedSql = sql
+    .replace(/DEFAULT\s+'CURRENT_TIMESTAMP'/gi, "DEFAULT CURRENT_TIMESTAMP")
+    .replace(/ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS/gi, "ADD COLUMN")
+    .replace(/INDEX\s+IF\s+NOT\s+EXISTS/gi, "INDEX");
 
   if (!/CREATE\s+TABLE/i.test(repairedSql) || !/AUTO_INCREMENT/i.test(repairedSql) || /PRIMARY\s+KEY/i.test(repairedSql)) {
     return repairedSql;
@@ -102,6 +105,13 @@ async function main() {
         try {
           await connection.query(repairedChunk);
         } catch (error) {
+          if (
+            Number(error?.errno) === 1075 &&
+            /^ALTER\s+TABLE\s+`[^`]+`\s+DROP\s+PRIMARY\s+KEY\s*;?$/i.test(repairedChunk)
+          ) {
+            console.warn(`[RuntimeSchema] Conservando PRIMARY KEY por AUTO_INCREMENT en ${file}`);
+            continue;
+          }
           if (!isAlreadyAppliedError(error)) {
             throw new Error(`Falló ${file}: ${error.message}`, { cause: error });
           }
