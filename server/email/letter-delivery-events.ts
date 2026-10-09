@@ -26,6 +26,15 @@ export function getLetterDeliveryStatus(eventType: string): LetterDeliveryStatus
   return LETTER_DELIVERY_EVENT_TYPES[eventType as keyof typeof LETTER_DELIVERY_EVENT_TYPES] ?? null;
 }
 
+// Las columnas timestamp se persisten como "YYYY-MM-DD HH:MM:SS" (siempre UTC,
+// ver el `slice(0, 19).replace("T", " ")` al escribir), pero ese formato sin
+// sufijo de zona se interpreta como hora LOCAL del proceso que lo lee. En un
+// servidor/entorno de pruebas en America/Bogota (UTC-5) eso desplaza la fecha
+// 5 horas hacia el futuro y bloquea actualizaciones de estado legítimas.
+function parseDbTimestampAsUtc(value: string): number {
+  return new Date(`${value.replace(" ", "T")}Z`).getTime();
+}
+
 function isDuplicateEvent(error: unknown) {
   let current: any = error;
   for (let depth = 0; current && depth < 3; depth++, current = current.cause) {
@@ -66,7 +75,7 @@ export async function recordLetterDeliveryEvent(providerEventId: string, event: 
     throw error;
   }
 
-  const currentUpdatedAt = submission.letterDeliveryUpdatedAt ? new Date(submission.letterDeliveryUpdatedAt).getTime() : 0;
+  const currentUpdatedAt = submission.letterDeliveryUpdatedAt ? parseDbTimestampAsUtc(submission.letterDeliveryUpdatedAt) : 0;
   if (occurredAt.getTime() >= currentUpdatedAt) {
     await db.update(spaceSubmissions).set({
       letterDeliveryStatus: status,

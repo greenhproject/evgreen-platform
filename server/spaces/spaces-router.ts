@@ -771,8 +771,12 @@ export const spacesRouter = router({
         }
 
         if (input?.dateTo) {
+          // createdAt se persiste siempre en UTC (ver toISOString en el resto
+          // del router); setUTCHours evita que el fin del día se calcule
+          // sobre la zona horaria local del proceso y excluya registros del
+          // mismo día UTC creados después de la medianoche local.
           const endDate = new Date(input.dateTo);
-          endDate.setHours(23, 59, 59, 999);
+          endDate.setUTCHours(23, 59, 59, 999);
           conditions.push(lte(spaceSubmissions.createdAt, endDate.toISOString().slice(0, 19).replace('T', ' ')));
         }
 
