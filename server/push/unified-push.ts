@@ -43,13 +43,14 @@ export interface UnifiedPushResult {
   attempts: PushChannelAttempt[];
 }
 
-function buildFcmPayload(payload: UnifiedPushPayload, deliveryId: string): PushNotificationData {
+function buildFcmPayload(payload: UnifiedPushPayload, deliveryId: string, badgeCount: number): PushNotificationData {
   return {
     type: payload.type,
     title: payload.title,
     body: payload.body,
     imageUrl: payload.imageUrl,
     clickAction: payload.clickAction,
+    badgeCount,
     data: {
       deliveryId,
       type: payload.type,
@@ -118,6 +119,11 @@ export async function sendUserPushDetailed(
       }
     }
 
+    // Conteo real de notificaciones sin leer, para el badge del ícono en iOS
+    // (antes hardcodeado a 1 en cada envío, sin relación con lo que el usuario
+    // realmente tenía pendiente de leer).
+    const badgeCount = await db.getUnreadNotificationCount(userId);
+
     const registeredDevices = await getActivePushDevicesForUser(userId);
     const tokens = new Map<string, { id?: number; token: string }>();
     for (const device of registeredDevices) tokens.set(device.token, { id: device.id, token: device.token });
@@ -135,7 +141,7 @@ export async function sendUserPushDetailed(
           channel: "FCM",
           notificationType: payload.type,
         });
-        const fcmResult = await sendPushNotificationDetailed(device.token, buildFcmPayload(payload, deliveryId));
+        const fcmResult = await sendPushNotificationDetailed(device.token, buildFcmPayload(payload, deliveryId, badgeCount));
         if (fcmResult.accepted) {
           await markPushDeliveryAccepted({ deliveryId, userId, providerMessageId: fcmResult.providerMessageId });
           if (device.id) await markPushDeviceAccepted(device.id);

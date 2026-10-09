@@ -2260,6 +2260,14 @@ export async function getNotificationsByUserId(userId: number, unreadOnly = fals
   return db.select().from(notifications).where(and(...conditions)).orderBy(desc(notifications.createdAt));
 }
 
+export async function getUnreadNotificationCount(userId: number): Promise<number> {
+  const db = (await getDb())!;
+  if (!db) return 0;
+  const [row] = await db.select({ c: count() }).from(notifications)
+    .where(and(eq(notifications.userId, userId), eq(notifications.isRead, 0)));
+  return row?.c ?? 0;
+}
+
 export async function markNotificationAsRead(id: number) {
   const db = (await getDb())!;
   if (!db) return;
