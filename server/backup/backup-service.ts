@@ -122,7 +122,7 @@ export async function executeBackup(options: {
     notes: options.notes || null,
     // Retención: 90 días para automáticos, 365 días para manuales
     // @ts-ignore
-    expiresAt: new Date(Date.now() + (options.isAutomatic ? 90 : 365) * 24 * 60 * 60 * 1000).toISOString(),
+    expiresAt: new Date(Date.now() + (options.isAutomatic ? 90 : 365) * 24 * 60 * 60 * 1000).toISOString().slice(0, 19).replace("T", " "),
   } as any);
   
   const backupId = insertResult.insertId;
@@ -217,7 +217,7 @@ export async function executeBackup(options: {
     .set({
       // @ts-ignore
       status,
-      completedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString().slice(0, 19).replace("T", " "),
       tablesIncluded: tablesBackedUp,
       totalRows,
       totalSizeBytes,
