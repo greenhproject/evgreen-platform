@@ -25,6 +25,7 @@ import { scoreSpaceInvestment } from "./space-ai-scoring";
 import { buildEmailParams } from "../utils/email-helper";
 import { optionalFormInteger, optionalFormNumber } from "./space-input-normalization";
 import { canManageCommercialPipeline, canManageSpaceAdministration } from "./pipeline-access";
+import { startOfDayInTz, endOfDayInTz } from "../utils/timezone";
 import { assertCommercialTransition, type SpacePipelineStatus } from "./pipeline-transitions";
 import {
   buildCrowdfundingProjectionSnapshot,
@@ -766,18 +767,19 @@ export const spacesRouter = router({
           conditions.push(eq(spaceSubmissions.spaceType, input.spaceType as any));
         }
 
+        // El <input type="date"> del admin entrega "YYYY-MM-DD" como día
+        // calendario de Bogotá (sin marca de zona), pero createdAt se
+        // persiste en UTC. startOfDayInTz/endOfDayInTz convierten ese día
+        // local al instante UTC real de su inicio/fin; usar setHours o
+        // setUTCHours directamente sobre el string desplaza el límite por
+        // el offset de Bogotá (ver advertencia ya documentada en
+        // formatIsoDateInTz, en server/utils/timezone.ts).
         if (input?.dateFrom) {
-          conditions.push(gte(spaceSubmissions.createdAt, input.dateFrom));
+          conditions.push(gte(spaceSubmissions.createdAt, startOfDayInTz(input.dateFrom).toISOString().slice(0, 19).replace('T', ' ')));
         }
 
         if (input?.dateTo) {
-          // createdAt se persiste siempre en UTC (ver toISOString en el resto
-          // del router); setUTCHours evita que el fin del día se calcule
-          // sobre la zona horaria local del proceso y excluya registros del
-          // mismo día UTC creados después de la medianoche local.
-          const endDate = new Date(input.dateTo);
-          endDate.setUTCHours(23, 59, 59, 999);
-          conditions.push(lte(spaceSubmissions.createdAt, endDate.toISOString().slice(0, 19).replace('T', ' ')));
+          conditions.push(lte(spaceSubmissions.createdAt, endOfDayInTz(input.dateTo).toISOString().slice(0, 19).replace('T', ' ')));
         }
 
         if (input?.hasScore === "scored") {
