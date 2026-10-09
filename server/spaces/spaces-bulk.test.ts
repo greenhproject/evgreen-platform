@@ -7,6 +7,7 @@ import { spaceSubmissions } from "../../drizzle/schema";
 import { like, or } from "drizzle-orm";
 import { appRouter } from "../routers";
 import type { TrpcContext } from "../_core/context";
+import { formatIsoDateInTz } from "../utils/timezone";
 
 // ============================================================================
 // HELPERS
@@ -111,7 +112,10 @@ describe("spaces.admin bulk operations", () => {
     });
 
     it("filters by date range (today)", async () => {
-      const today = new Date().toISOString().split("T")[0];
+      // "Hoy" tal como lo entrega un <input type="date"> en el navegador del
+      // admin: el día calendario de Bogotá, no el día calendario UTC (pueden
+      // diferir entre las 19:00 y 23:59 hora Bogotá).
+      const today = formatIsoDateInTz(new Date());
       const result = await adminCaller.spaces.admin.list({ dateFrom: today, dateTo: today });
       expect(result.submissions.length).toBeGreaterThan(0);
     });
