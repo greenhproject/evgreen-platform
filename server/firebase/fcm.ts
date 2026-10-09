@@ -81,6 +81,8 @@ export interface PushNotificationData {
 	imageUrl?: string;
 	data?: Record<string, string>;
 	clickAction?: string;
+	/** Conteo real de notificaciones sin leer para el badge del ícono iOS. Si no se indica, usa 1 (comportamiento histórico). */
+	badgeCount?: number;
 }
 
 /**
@@ -162,7 +164,7 @@ export async function sendPushNotificationDetailed(
         payload: {
           aps: {
             sound: "default",
-            badge: 1,
+            badge: notification.badgeCount ?? 1,
           },
         },
       },
@@ -261,6 +263,9 @@ export async function sendPushNotificationToMultiple(
         payload: {
           aps: {
             sound: "default",
+            // Envío multi-destinatario (un mismo token array para varios
+            // usuarios) — no hay un userId único aquí para calcular su
+            // conteo real de no leídas, a diferencia de sendPushNotificationDetailed.
             badge: 1,
           },
         },

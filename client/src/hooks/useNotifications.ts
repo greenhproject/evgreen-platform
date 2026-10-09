@@ -9,7 +9,7 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { isPushSupported } from "@/lib/firebase";
 import { isCapacitorNative } from "@/const";
-import { initNativePush, unregisterNativePush } from "@/lib/native-push";
+import { initNativePush, unregisterNativePush, clearAppBadge } from "@/lib/native-push";
 import {
   requestNotificationPermission,
   onForegroundMessage,
@@ -171,6 +171,21 @@ export function useNotifications() {
     if (!preferencesQuery.data?.pushEnabled) return;
     runNativeAutoInit();
   }, [preferencesQuery.data?.pushEnabled, runNativeAutoInit]);
+
+  // Limpia el badge del ícono al abrir o reanudar la app — independiente de
+  // si el push está activado, porque refleja notificaciones ya vistas en la
+  // app, no el estado del permiso de push.
+  useEffect(() => {
+    if (!isCapacitorNative()) return;
+    clearAppBadge();
+    let handle: { remove: () => Promise<void> } | null = null;
+    import("@capacitor/app").then(({ App: CapApp }) => {
+      CapApp.addListener("appStateChange", (state) => {
+        if (state.isActive) clearAppBadge();
+      }).then((h) => { handle = h; });
+    });
+    return () => { handle?.remove(); };
+  }, []);
 
   // Escuchar notificaciones en primer plano
   useEffect(() => {

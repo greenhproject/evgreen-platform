@@ -10,6 +10,7 @@ import { es } from "date-fns/locale";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useNotifications } from "@/hooks/useNotifications";
 import { onForegroundMessage } from "@/lib/firebase";
+import { clearAppBadge } from "@/lib/native-push";
 import { openExternalUrl, isExternalUrl } from "@/lib/openExternal";
 
 interface Notification {
@@ -130,6 +131,7 @@ export function NotificationPanel({ buttonClassName }: NotificationPanelProps = 
     try {
       await markAllAsReadMutation.mutateAsync();
       await utils.notifications.list.invalidate();
+      await clearAppBadge();
     } catch (error) {
       console.error("Error marking all notifications as read:", error);
     }
