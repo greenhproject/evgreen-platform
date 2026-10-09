@@ -102,6 +102,13 @@ async function main() {
         try {
           await connection.query(repairedChunk);
         } catch (error) {
+          if (
+            Number(error?.errno) === 1075 &&
+            /^ALTER\s+TABLE\s+`[^`]+`\s+DROP\s+PRIMARY\s+KEY\s*;?$/i.test(repairedChunk)
+          ) {
+            console.warn(`[RuntimeSchema] Conservando PRIMARY KEY por AUTO_INCREMENT en ${file}`);
+            continue;
+          }
           if (!isAlreadyAppliedError(error)) {
             throw new Error(`Falló ${file}: ${error.message}`, { cause: error });
           }
