@@ -55,16 +55,18 @@ function isAlreadyAppliedError(error) {
   return [1050, 1060, 1061, 1091, 1826, 1831].includes(Number(error?.errno));
 }
 
-function repairMissingAutoPrimaryKey(sql) {
-  if (!/CREATE\s+TABLE/i.test(sql) || !/AUTO_INCREMENT/i.test(sql) || /PRIMARY\s+KEY/i.test(sql)) {
-    return sql;
+function repairLegacyMysqlSql(sql) {
+  let repairedSql = sql.replace(/DEFAULT\s+'CURRENT_TIMESTAMP'/gi, "DEFAULT CURRENT_TIMESTAMP");
+
+  if (!/CREATE\s+TABLE/i.test(repairedSql) || !/AUTO_INCREMENT/i.test(repairedSql) || /PRIMARY\s+KEY/i.test(repairedSql)) {
+    return repairedSql;
   }
 
-  const autoColumn = sql.match(/^\s*`([^`]+)`[^\n]*AUTO_INCREMENT/im)?.[1];
-  const closingParen = sql.lastIndexOf(")");
-  if (!autoColumn || closingParen < 0) return sql;
+  const autoColumn = repairedSql.match(/^\s*`([^`]+)`[^\n]*AUTO_INCREMENT/im)?.[1];
+  const closingParen = repairedSql.lastIndexOf(")");
+  if (!autoColumn || closingParen < 0) return repairedSql;
 
-  return `${sql.slice(0, closingParen).replace(/\s*$/, "")},\n\tPRIMARY KEY (\`${autoColumn}\`)\n${sql.slice(closingParen)}`;
+  return `${repairedSql.slice(0, closingParen).replace(/\s*$/, "")},\n\tPRIMARY KEY (\`${autoColumn}\`)\n${repairedSql.slice(closingParen)}`;
 }
 
 async function main() {
@@ -92,17 +94,14 @@ async function main() {
       console.log(`[RuntimeSchema] Aplicando ${file} (${chunks.length} sentencias)`);
 
       for (const chunk of chunks) {
+        const repairedChunk = repairLegacyMysqlSql(chunk);
+        if (repairedChunk !== chunk) {
+          console.warn(`[RuntimeSchema] Normalizando SQL heredado en ${file}`);
+        }
+
         try {
-          await connection.query(chunk);
+          await connection.query(repairedChunk);
         } catch (error) {
-          if (Number(error?.errno) === 1075) {
-            const repairedChunk = repairMissingAutoPrimaryKey(chunk);
-            if (repairedChunk !== chunk) {
-              console.warn(`[RuntimeSchema] Reparando PRIMARY KEY faltante en ${file}`);
-              await connection.query(repairedChunk);
-              continue;
-            }
-          }
           if (!isAlreadyAppliedError(error)) {
             throw new Error(`Falló ${file}: ${error.message}`, { cause: error });
           }
