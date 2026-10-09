@@ -2555,28 +2555,35 @@ export const wompiTransactions = mysqlTable("wompi_transactions", {
 // CHARGERS — physical charger units (level between station and connector)
 // Each charger has its own OCPP identity and can have 1 or 2 connectors (evses)
 // ============================================================================
+// Columnas sin override de nombre físico: la tabla original (migración
+// 0015_overrated_rattler.sql) se creó con nombres camelCase. Solo
+// `charger_status` (de 0015) y `charger_code`/`display_name`/
+// `max_concurrent_sessions` (agregadas después en 0051) son realmente
+// snake_case — todo lo demás es camelCase en la BD real. Un override a
+// snake_case en cualquier otra columna de esta tabla rompe la consulta
+// (confirmado: así fallaba `getChargingStationByOcppIdentity` en staging).
 export const chargers = mysqlTable("chargers", {
 	id: int().autoincrement().notNull(),
-	stationId: int("station_id").notNull(),
+	stationId: int().notNull(),
 	chargerCode: varchar("charger_code", { length: 40 }),
 	displayName: varchar("display_name", { length: 120 }),
-	ocppIdentity: varchar("ocpp_identity", { length: 100 }).notNull(),
-	ocppPassword: varchar("ocpp_password", { length: 255 }),
+	ocppIdentity: varchar({ length: 100 }).notNull(),
+	ocppPassword: varchar({ length: 255 }),
 	brand: varchar({ length: 100 }),
 	model: varchar({ length: 100 }),
-	serialNumber: varchar("serial_number", { length: 100 }),
-	firmwareVersion: varchar("firmware_version", { length: 50 }),
-	powerKw: decimal("power_kw", { precision: 8, scale: 2 }),
+	serialNumber: varchar({ length: 100 }),
+	firmwareVersion: varchar({ length: 50 }),
+	powerKw: decimal({ precision: 8, scale: 2 }),
 	maxConcurrentSessions: int("max_concurrent_sessions").default(1).notNull(),
 	chargerStatus: mysqlEnum("charger_status", ['ONLINE','OFFLINE','FAULTED','UNKNOWN']).default('UNKNOWN').notNull(),
-	isOnline: tinyint("is_online").default(0).notNull(),
-	isActive: tinyint("is_active").default(1).notNull(),
-	lastHeartbeat: timestamp("last_heartbeat", { mode: 'string' }),
-	lastBootNotification: timestamp("last_boot_notification", { mode: 'string' }),
+	isOnline: tinyint().default(0).notNull(),
+	isActive: tinyint().default(1).notNull(),
+	lastHeartbeat: timestamp({ mode: 'string' }),
+	lastBootNotification: timestamp({ mode: 'string' }),
 	manufacturer: varchar({ length: 100 }),
 	notes: text(),
-	createdAt: timestamp("created_at", { mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
-	updatedAt: timestamp("updated_at", { mode: 'string' }).defaultNow().onUpdateNow().notNull(),
+	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
+	updatedAt: timestamp({ mode: 'string' }).defaultNow().onUpdateNow().notNull(),
 },
 (table) => [
 	index("idx_chargers_station").on(table.stationId),
@@ -2588,18 +2595,20 @@ export const chargers = mysqlTable("chargers", {
 // EVSE STATE LOG — audit trail of all connector status transitions
 // Single source of truth audit: every state change is recorded here
 // ============================================================================
+// Mismo caso que `chargers`: tabla creada camelCase en 0015, solo
+// `triggered_by` es realmente snake_case.
 export const evseStateLog = mysqlTable("evse_state_log", {
 	id: int().autoincrement().notNull(),
-	evseId: int("evse_id").notNull(),
-	stationId: int("station_id").notNull(),
-	chargerId: int("charger_id"),
-	previousStatus: varchar("previous_status", { length: 30 }),
-	newStatus: varchar("new_status", { length: 30 }).notNull(),
+	evseId: int().notNull(),
+	stationId: int().notNull(),
+	chargerId: int(),
+	previousStatus: varchar({ length: 30 }),
+	newStatus: varchar({ length: 30 }).notNull(),
 	triggeredBy: mysqlEnum("triggered_by", ['OCPP','SYSTEM','ADMIN','BILLING','OVERSTAY','RESERVATION','SIMULATOR']).notNull(),
 	reason: varchar({ length: 255 }),
-	transactionId: int("transaction_id"),
-	ocppMessageType: varchar("ocpp_message_type", { length: 50 }),
-	createdAt: timestamp("created_at", { mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
+	transactionId: int(),
+	ocppMessageType: varchar({ length: 50 }),
+	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
 },
 (table) => [
 	index("idx_evse_state_log_evse").on(table.evseId),

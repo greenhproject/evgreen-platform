@@ -804,7 +804,7 @@ export async function updateStationOnlineStatus(ocppIdentity: string, isOnline: 
   const station = await getChargingStationByOcppIdentity(ocppIdentity);
   if (station) {
     await db.update(chargingStations)
-      .set({ isOnline: isOnline ? 1 : 0, lastBootNotification: isOnline ? new Date().toISOString() : undefined } as any)
+      .set({ isOnline: isOnline ? 1 : 0, lastBootNotification: isOnline ? new Date().toISOString().slice(0, 19).replace("T", " ") : undefined } as any)
       .where(eq(chargingStations.id, station.id));
   }
 
