@@ -52,3 +52,10 @@
 - [x] Convertir el layout de usuario a viewport dinámico (`100dvh`), con scroll interno y navegación inferior que respeta `safe-area` en Android/iOS.
 - [x] Hacer que conversación, lista de mensajes y compositor de escritura ocupen exclusivamente el alto disponible; el campo de texto queda fijo y accesible encima de la navegación del sistema.
 - [x] Validación: TypeScript, pruebas de regresión responsive, suite completa 238 archivos / 2.334 pruebas y build productivo aprobados.
+
+## Pruebas de Espacios — aislamiento de notificaciones (2026-10-10)
+
+- [x] Identificar que los avisos “Espacio galería heredada Test” y similares provenían de fixtures de integración ejecutados al correr la suite, no de un proceso periódico ni de Meta Ads.
+- [x] Evitar que `notifyOwner` contacte el canal real cuando `Vitest` o `NODE_ENV=test` estén activos; la ruta de postulación se sigue probando de extremo a extremo, sin generar alertas al dueño.
+- [x] Verificar limpieza: 0 fixtures de Espacios y 0 filas asociadas a SPE-2026-0018 tras la regresión.
+- [x] Validación: TypeScript, 36 pruebas focales, suite completa 242 archivos / 2.359 pruebas y build productivo aprobados.
