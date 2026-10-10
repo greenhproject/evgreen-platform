@@ -9,6 +9,18 @@ export type NotificationPayload = {
 const TITLE_MAX_LENGTH = 1200;
 const CONTENT_MAX_LENGTH = 20000;
 
+/**
+ * Las pruebas de integración pueden ejercer rutas públicas completas, incluida
+ * la creación temporal de postulaciones. Nunca deben despertar al propietario
+ * real del proyecto, incluso si por compatibilidad usan una base compartida.
+ */
+export function shouldSuppressOwnerNotification(
+  environment?: { VITEST?: string; NODE_ENV?: string },
+): boolean {
+  const runtime = environment ?? (process.env as Record<string, string | undefined>);
+  return runtime.VITEST === "true" || runtime.NODE_ENV === "test";
+}
+
 const trimValue = (value: string): string => value.trim();
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
@@ -67,6 +79,10 @@ export async function notifyOwner(
   payload: NotificationPayload
 ): Promise<boolean> {
   const { title, content } = validatePayload(payload);
+
+  if (shouldSuppressOwnerNotification()) {
+    return false;
+  }
 
   if (!ENV.forgeApiUrl) {
     throw new TRPCError({
