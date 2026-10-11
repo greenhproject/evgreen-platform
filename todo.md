@@ -90,7 +90,7 @@
 - [x] Aplicar y auditar la migración aditiva 0057: las tres tablas tienen las nuevas columnas; 23 espacios históricos quedan intactos, con 1 alcance solar y 0 configuraciones de costo solar hasta recibir sus datos validados.
 - [x] QA visual con datos reales de EDS NQS 41 en escritorio y móvil: checkbox, cobertura y costo solar permanecen visibles, alineados y responsivos; no se creó ni modificó una postulación durante la revisión.
 - [x] Validación integral del modelo solar tras integrar el PDF de aliado: TypeScript, 241 archivos / 2.342 pruebas aprobadas; 5 suites y 7 pruebas de integración omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo aprobado.
-- [ ] Guardar checkpoint WebDev, ejecutar publicación segura a GitHub y verificar el despliegue solar.
+- [x] Guardar checkpoint WebDev, publicar de forma segura en GitHub (`acc9da32`) y verificar propagación Railway: `evgreen.lat` respondió 200 con el asset del build publicado.
 
 ## Espacios — proyección por demanda vehicular (2026-10-11)
 
