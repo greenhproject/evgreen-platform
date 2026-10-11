@@ -2285,7 +2285,7 @@ function SpaceDetailDialog({
                     <div>
                       <p className="text-xs font-semibold text-emerald-300">Proyección sugerida · escenario {suggestedFinancialProjection.selectedScenario}</p>
                       <p className="mt-0.5 text-[11px] leading-4 text-emerald-100/75">
-                        Basada en flujo diario, adopción EV, {suggestedFinancialProjection.snapshot.assumptions.benchmarkKwhPerSession} kWh/sesión y el waterfall comercial vigente. Se recalcula al guardar cuando cambian estos supuestos.
+                        Demanda realista: {suggestedFinancialProjection.snapshot.assumptions.estimatedDailyVehicles.toLocaleString("es-CO")} vehículos/día × {suggestedFinancialProjection.snapshot.assumptions.estimatedEvPercent}% EV = {suggestedFinancialProjection.selected.eligibleEvVehiclesPerDay.toLocaleString("es-CO")} sesiones potenciales/día. Se modelan {suggestedFinancialProjection.selected.sessionsPerDay.toLocaleString("es-CO")} según la capacidad técnica ({suggestedFinancialProjection.selected.capacitySessionsPerDay.toLocaleString("es-CO")} máx./día), a {suggestedFinancialProjection.snapshot.assumptions.benchmarkKwhPerSession} kWh/sesión.
                       </p>
                     </div>
                     <Button

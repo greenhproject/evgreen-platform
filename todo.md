@@ -85,3 +85,12 @@
 - [x] Realizar QA visual verificable del diálogo de Espacios en escritorio y móvil, confirmando que la casilla solar aparece y no rompe el layout.
 - [x] Ejecutar una prueba controlada del guardado: interceptar la mutación desde UI, validar el payload solar y no crear ni modificar Espacios operativos.
 - [ ] Guardar checkpoint WebDev, ejecutar publicación segura a GitHub y verificar el despliegue tras la mejora solar.
+
+## Espacios — proyección por demanda vehicular (2026-10-11)
+
+- [x] Reemplazar la hipótesis principal de horas equivalentes por flujo vehicular diario × porcentaje EV declarado; el escenario realista toma ese valor directamente y los escenarios pesimista/optimista aplican 50 %/150 % de forma explícita.
+- [x] Estimar energía con 40 kWh por sesión y limitar las sesiones solamente por capacidad física: cargadores × dos mangueras × benchmark de 21 sesiones por manguera/día.
+- [x] Mantener la cascada auditable: ingreso bruto − costo de energía = margen bruto; participación del aliado sobre ese margen; reparto del margen neto entre inversionista y EVGreen.
+- [x] Actualizar la tarjeta de edición y el PDF de prospecto para explicar demanda, sesiones, límite técnico y supuestos, conservando el modelo por horas únicamente como alternativa para registros históricos sin flujo o porcentaje EV.
+- [x] Validación integral: TypeScript, 239 archivos / 2.333 pruebas aprobadas; 5 suites de integración y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo aprobado.
+- [ ] Guardar checkpoint WebDev, ejecutar publicación segura y verificar el despliegue.

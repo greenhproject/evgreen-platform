@@ -6,6 +6,10 @@ export type SpaceTrafficProjectionScenario = "PESSIMISTIC" | "REALISTIC" | "OPTI
 export type SpaceTrafficProjectionInput = {
   investmentCop: number;
   estimatedDailyVehicles: number;
+  /**
+   * Porcentaje de flujo diario que se estima atendible como sesiones EV en el
+   * escenario REALISTA. Ej.: 1.000 vehículos × 10 % = 100 sesiones potenciales/día.
+   */
   estimatedEvPercent: number;
   chargerCount: number;
   spaceType?: string | null;
@@ -13,21 +17,28 @@ export type SpaceTrafficProjectionInput = {
   energyCostPerKwh: number;
   hostSharePercent?: number;
   fixedMonthlyExpenses?: number;
-  /** Valor observado: 843 sesiones en 21 días / dos mangueras activas. */
+  /** Capacidad demostrada o aprobada por manguera; por defecto, benchmark EVGreen. */
   benchmarkSessionsPerConnectorPerDay?: number;
-  /** Valor observado del benchmark suministrado por EVGreen. */
+  /** Energía facturada promedio por sesión; por defecto, benchmark EVGreen. */
   benchmarkKwhPerSession?: number;
 };
 
 export type SpaceTrafficProjectionResult = {
   key: SpaceTrafficProjectionScenario;
   label: string;
-  trafficCapturePercent: number;
+  /** Multiplicador aplicado al supuesto EV declarado para construir el escenario. */
+  evDemandMultiplierPercent: number;
+  /** Participación EV/sesiones atendibles resultante para el escenario. */
+  scenarioEvPercent: number;
+  /** Vehículos EV potenciales por día según flujo × participación EV del escenario. */
   eligibleEvVehiclesPerDay: number;
+  /** Sesiones potenciales antes de limitar por mangueras disponibles. */
   unconstrainedSessionsPerDay: number;
+  /** Sesiones modeladas: demanda potencial limitada solamente por capacidad técnica. */
   sessionsPerDay: number;
   capacitySessionsPerDay: number;
   capacityUtilizationPercent: number;
+  capacityLimited: boolean;
   energyKwhPerDay: number;
   energyKwhPerMonth: number;
   investorMonthlyCashflow: number;
@@ -38,12 +49,13 @@ export type SpaceTrafficProjectionResult = {
 };
 
 export type SpaceTrafficProjectionSnapshot = {
-  version: 1;
-  basis: "EVGREEN_SPACE_TRAFFIC_SCENARIOS";
+  version: 2;
+  basis: "EVGREEN_SPACE_DEMAND_SCENARIOS";
   selectedScenario: SpaceTrafficProjectionScenario;
   assumptions: {
     investmentCop: number;
     estimatedDailyVehicles: number;
+    /** Base del escenario REALISTA. */
     estimatedEvPercent: number;
     chargerCount: number;
     connectorsPerCharger: number;
@@ -59,15 +71,27 @@ export type SpaceTrafficProjectionSnapshot = {
   scenarios: Record<SpaceTrafficProjectionScenario, SpaceTrafficProjectionResult>;
 };
 
-const SCENARIOS: ReadonlyArray<{ key: SpaceTrafficProjectionScenario; label: string; trafficCapturePercent: number }> = [
-  { key: "PESSIMISTIC", label: "Pesimista", trafficCapturePercent: 20 },
-  { key: "REALISTIC", label: "Realista", trafficCapturePercent: 45 },
-  { key: "OPTIMISTIC", label: "Optimista", trafficCapturePercent: 70 },
+/**
+ * El administrador declara la participación EV/sesiones atendibles que considera
+ * realista. Los escenarios escalan ese supuesto de forma transparente: 50 %,
+ * 100 % y 150 %. Cada uno sigue sujeto al límite físico de cargadores y mangueras.
+ */
+export const SPACE_TRAFFIC_PROJECTION_SCENARIOS: ReadonlyArray<{
+  key: SpaceTrafficProjectionScenario;
+  label: string;
+  evDemandMultiplierPercent: number;
+}> = [
+  { key: "PESSIMISTIC", label: "Pesimista", evDemandMultiplierPercent: 50 },
+  { key: "REALISTIC", label: "Realista", evDemandMultiplierPercent: 100 },
+  { key: "OPTIMISTIC", label: "Optimista", evDemandMultiplierPercent: 150 },
 ] as const;
 
-const CONNECTORS_PER_CHARGER = 2;
-const DEFAULT_BENCHMARK_SESSIONS_PER_CONNECTOR_PER_DAY = 20.05;
-const DEFAULT_BENCHMARK_KWH_PER_SESSION = 31.4;
+export const CONNECTORS_PER_CHARGER = 2;
+/** Benchmark EVGreen comunicado: 21 sesiones por manguera/día. */
+export const DEFAULT_BENCHMARK_SESSIONS_PER_CONNECTOR_PER_DAY = 21;
+/** Promedio de energía facturada por sesión comunicado para esta proyección. */
+export const DEFAULT_BENCHMARK_KWH_PER_SESSION = 40;
+const DAYS_PER_MONTH = 30;
 
 function round(value: number, digits = 2): number {
   const factor = 10 ** digits;
@@ -83,9 +107,14 @@ function finitePositive(value: unknown, field: string, allowZero = false): numbe
 }
 
 /**
- * Calcula un escenario comercial a partir de la demanda capturable de la EDS.
- * El flujo determina el número potencial de sesiones; los cargadores solo
- * limitan esa demanda por su capacidad física (dos mangueras por gabinete).
+ * Construye una proyección de preinversión a partir de la demanda diaria del
+ * predio, no de horas teóricas de potencia.
+ *
+ * Fórmula de demanda del escenario REALISTA:
+ * flujo vehicular diario × porcentaje EV declarado = sesiones potenciales/día.
+ *
+ * La infraestructura no crea demanda: solo impone el techo técnico de
+ * cargadores × 2 mangueras × sesiones benchmark por manguera/día.
  */
 export function buildSpaceTrafficProjection(
   input: SpaceTrafficProjectionInput,
@@ -110,13 +139,14 @@ export function buildSpaceTrafficProjection(
   );
   const distribution = getRevenueDistributionForSpaceType(input.spaceType);
   const capacitySessionsPerDay = chargerCount * CONNECTORS_PER_CHARGER * benchmarkSessionsPerConnectorPerDay;
-  const eligibleEvVehiclesPerDay = estimatedDailyVehicles * (estimatedEvPercent / 100);
 
-  const scenarios = Object.fromEntries(SCENARIOS.map((scenario) => {
-    const unconstrainedSessionsPerDay = eligibleEvVehiclesPerDay * (scenario.trafficCapturePercent / 100);
+  const scenarios = Object.fromEntries(SPACE_TRAFFIC_PROJECTION_SCENARIOS.map((scenario) => {
+    const scenarioEvPercent = Math.min(100, estimatedEvPercent * (scenario.evDemandMultiplierPercent / 100));
+    const eligibleEvVehiclesPerDay = estimatedDailyVehicles * (scenarioEvPercent / 100);
+    const unconstrainedSessionsPerDay = eligibleEvVehiclesPerDay;
     const sessionsPerDay = Math.min(unconstrainedSessionsPerDay, capacitySessionsPerDay);
     const energyKwhPerDay = sessionsPerDay * benchmarkKwhPerSession;
-    const energyKwhPerMonth = energyKwhPerDay * 30;
+    const energyKwhPerMonth = energyKwhPerDay * DAYS_PER_MONTH;
     const waterfall = calculateFinancialWaterfall({
       grossRevenue: energyKwhPerMonth * salePricePerKwh,
       totalKwh: energyKwhPerMonth,
@@ -134,12 +164,14 @@ export function buildSpaceTrafficProjection(
     const result: SpaceTrafficProjectionResult = {
       key: scenario.key,
       label: scenario.label,
-      trafficCapturePercent: scenario.trafficCapturePercent,
+      evDemandMultiplierPercent: scenario.evDemandMultiplierPercent,
+      scenarioEvPercent: round(scenarioEvPercent, 2),
       eligibleEvVehiclesPerDay: round(eligibleEvVehiclesPerDay),
       unconstrainedSessionsPerDay: round(unconstrainedSessionsPerDay),
       sessionsPerDay: round(sessionsPerDay),
       capacitySessionsPerDay: round(capacitySessionsPerDay),
       capacityUtilizationPercent: round(capacitySessionsPerDay > 0 ? (sessionsPerDay / capacitySessionsPerDay) * 100 : 0),
+      capacityLimited: unconstrainedSessionsPerDay > capacitySessionsPerDay,
       energyKwhPerDay: round(energyKwhPerDay),
       energyKwhPerMonth: round(energyKwhPerMonth),
       investorMonthlyCashflow: round(investorMonthlyCashflow),
@@ -152,8 +184,8 @@ export function buildSpaceTrafficProjection(
   })) as Record<SpaceTrafficProjectionScenario, SpaceTrafficProjectionResult>;
 
   return {
-    version: 1,
-    basis: "EVGREEN_SPACE_TRAFFIC_SCENARIOS",
+    version: 2,
+    basis: "EVGREEN_SPACE_DEMAND_SCENARIOS",
     selectedScenario,
     assumptions: {
       investmentCop,
