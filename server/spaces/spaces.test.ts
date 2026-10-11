@@ -649,6 +649,7 @@ describe("spaces → crowdfunding integration", () => {
 	      estimatedChargerCount: 3,
 	      recommendedChargerType: "DC CCS2",
 	    });
+	    const updatedSpace = await adminCaller.spaces.admin.getById({ id: submissionId });
 
 	    const projects = await adminCaller.crowdfunding.getAllProjects();
 	    const linked = projects.find((project: any) => project.id === before.crowdfundingProjectId) as any;
@@ -658,14 +659,39 @@ describe("spaces → crowdfunding integration", () => {
 	      minimumInvestment: 15000000,
 	      totalPowerKw: 300,
 	      chargerCount: 3,
-	      estimatedPaybackMonths: 21,
+	      estimatedPaybackMonths: updatedSpace.estimatedPaybackMonths,
 	    });
-	    expect(Number(linked.estimatedRoiPercent)).toBe(78.5);
+	    expect(Number(linked.estimatedRoiPercent)).toBe(Number(updatedSpace.estimatedRoiPercent));
+	    expect(Number(updatedSpace.estimatedRoiPercent)).not.toBe(78.5);
+	    expect(updatedSpace.estimatedPaybackMonths).not.toBe(21);
 	    expect(linked.spaceInheritanceSnapshot).toMatchObject({
 	      targetAmount: 950000000,
 	      city: "Medellín",
-	      estimatedPaybackMonths: 21,
+	      estimatedPaybackMonths: updatedSpace.estimatedPaybackMonths,
 	    });
+	  });
+
+	  it("calcula ROI y payback al crear un espacio con inversión y tráfico declarados", async () => {
+	    const publicCaller = appRouter.createCaller(createPublicContext());
+	    const adminCaller = appRouter.createCaller(createAdminContext());
+	    const { submissionId } = await publicCaller.spaces.submit({
+	      submitterName: "Proyección automática Test",
+	      submitterEmail: "proyeccion-automatica@example.com",
+	      submitterPhone: "3007654321",
+	      spaceName: "Espacio proyección automática Test",
+	      spaceType: "gas_station",
+	      address: "Carrera 15 # 95-20",
+	      city: "Bogotá",
+	      estimatedInvestmentCop: "180.000.000" as any,
+	      estimatedPowerKw: "120" as any,
+	      estimatedChargerCount: "1" as any,
+	      estimatedDailyVehicles: "900" as any,
+	      estimatedEvPercent: "5" as any,
+	    });
+
+	    const submission = await adminCaller.spaces.admin.getById({ id: submissionId });
+	    expect(Number(submission.estimatedRoiPercent)).toBeGreaterThan(0);
+	    expect(submission.estimatedPaybackMonths).toBeGreaterThan(0);
 	  });
 
 	  it("incluye en el payload real de Crowdfunding las fotos heredadas con orden y caption", async () => {

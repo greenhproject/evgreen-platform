@@ -20,6 +20,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { toast } from "sonner";
 import { getSpacePipelineAction } from "@shared/space-pipeline-actions";
 import { getRevenueDistributionForSpaceType, resolveDcInfrastructureRequirement } from "@shared/space-investment-scoring-policy";
+import { buildSpaceTrafficProjection } from "@shared/space-traffic-financial-projection";
 import {
   MapPin, Search, Filter, Eye, Zap, Star, Send, Globe, Brain,
   CheckCircle2, XCircle, Clock, FileText, Loader2, ChevronLeft,
@@ -73,10 +74,47 @@ function formatDateShort(date: Date | string | null): string {
   return new Date(date).toLocaleDateString("es-CO", { day: "2-digit", month: "short" });
 }
 
-function toOptionalInteger(value: unknown): number | undefined {
+function toOptionalNumber(value: unknown): number | undefined {
   if (value === undefined || value === null || value === "") return undefined;
-  const numberValue = typeof value === "number" ? value : Number(String(value).trim());
-  return Number.isInteger(numberValue) ? numberValue : undefined;
+  if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+  const raw = String(value).trim().replace(/\s/g, "");
+  if (!raw || !/^[+-]?[\d.,]+$/.test(raw)) return undefined;
+  const sign = raw.startsWith("-") ? "-" : raw.startsWith("+") ? "+" : "";
+  const unsigned = sign ? raw.slice(1) : raw;
+  const commas = [...unsigned.matchAll(/,/g)].map((match) => match.index ?? 0);
+  const dots = [...unsigned.matchAll(/\./g)].map((match) => match.index ?? 0);
+  let normalized: string;
+  if (commas.length && dots.length) {
+    const decimalIndex = Math.max(commas.at(-1)!, dots.at(-1)!);
+    normalized = `${unsigned.slice(0, decimalIndex).replace(/[.,]/g, "")}.${unsigned.slice(decimalIndex + 1).replace(/[.,]/g, "")}`;
+  } else {
+    const indexes = commas.length ? commas : dots;
+    const lastIndex = indexes.at(-1);
+    if (lastIndex === undefined) normalized = unsigned;
+    else if (unsigned.length - lastIndex - 1 === 3) normalized = unsigned.replace(/[.,]/g, "");
+    else if (indexes.length === 1) normalized = `${unsigned.slice(0, lastIndex)}.${unsigned.slice(lastIndex + 1)}`;
+    else return undefined;
+  }
+  const parsed = Number(`${sign}${normalized}`);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function toOptionalInteger(value: unknown): number | undefined {
+  const numberValue = toOptionalNumber(value);
+  return numberValue !== undefined && Number.isInteger(numberValue) ? numberValue : undefined;
+}
+
+function numericInputError(label: string, value: unknown, integer = false): string | null {
+  if (value === undefined || value === null || value === "") return null;
+  const parsed = integer ? toOptionalInteger(value) : toOptionalNumber(value);
+  return parsed === undefined ? `${label}: ingresa un número válido. Puedes usar 1.500.000, 1,500,000, 112,5 o 112.5.` : null;
+}
+
+function humanizeSpaceError(message: string, action: "crear" | "actualizar") {
+  if (/failed query|insert into [`"]?space_submissions|unknown column|incorrect decimal|data truncated/i.test(message)) {
+    return `No fue posible ${action} el espacio. Revisa los valores numéricos: puedes usar punto o coma (por ejemplo, 1.500.000 o 112,5) e inténtalo de nuevo.`;
+  }
+  return message;
 }
 
 function parseAiAnalysis(value: string | null | undefined): Record<string, any> | null {
@@ -145,7 +183,8 @@ export default function AdminSpaces() {
     submitterName: "", submitterEmail: "", submitterPhone: "",
     submitterCompany: "", latitude: "", longitude: "",
     transformerCapacityKva: "", parkingSpots: "", availableAreaM2: "",
-    estimatedDailyVehicles: "", socioeconomicStratum: "",
+    estimatedDailyVehicles: "", estimatedEvPercent: "5", socioeconomicStratum: "",
+    estimatedInvestmentCop: "", estimatedPowerKw: "120", estimatedChargerCount: "1",
   });
   const [createPhotos, setCreatePhotos] = useState<Array<{ file: File; preview: string; photoType: string }>>([]);
   const [dateTo, setDateTo] = useState("");
@@ -212,13 +251,14 @@ export default function AdminSpaces() {
         submitterName: "", submitterEmail: "", submitterPhone: "",
         submitterCompany: "", latitude: "", longitude: "",
         transformerCapacityKva: "", parkingSpots: "", availableAreaM2: "",
-        estimatedDailyVehicles: "", socioeconomicStratum: "",
+        estimatedDailyVehicles: "", estimatedEvPercent: "5", socioeconomicStratum: "",
+        estimatedInvestmentCop: "", estimatedPowerKw: "120", estimatedChargerCount: "1",
       });
       createPhotos.forEach(p => URL.revokeObjectURL(p.preview));
       setCreatePhotos([]);
       refetch();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toast.error(humanizeSpaceError(err.message, "crear")),
   });
 
   const submissions = data?.submissions || [];
@@ -883,7 +923,7 @@ export default function AdminSpaces() {
                 </div>
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">Parqueos</Label>
-                  <Input type="number" value={createForm.parkingSpots} onChange={e => setCreateForm(p => ({ ...p, parkingSpots: e.target.value }))} placeholder="Ej: 4" className="bg-[#111827] border-[#374151] text-white text-sm" />
+                  <Input inputMode="numeric" value={createForm.parkingSpots} onChange={e => setCreateForm(p => ({ ...p, parkingSpots: e.target.value }))} placeholder="Ej: 4" className="bg-[#111827] border-[#374151] text-white text-sm" />
                 </div>
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">Área (m²)</Label>
@@ -891,7 +931,11 @@ export default function AdminSpaces() {
                 </div>
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">Vehículos/día</Label>
-                  <Input type="number" value={createForm.estimatedDailyVehicles} onChange={e => setCreateForm(p => ({ ...p, estimatedDailyVehicles: e.target.value }))} placeholder="Ej: 500" className="bg-[#111827] border-[#374151] text-white text-sm" />
+                  <Input inputMode="numeric" value={createForm.estimatedDailyVehicles} onChange={e => setCreateForm(p => ({ ...p, estimatedDailyVehicles: e.target.value }))} placeholder="Ej: 700, 1.100 o 1.100" className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">% de vehículos EV</Label>
+                  <Input inputMode="decimal" value={createForm.estimatedEvPercent} onChange={e => setCreateForm(p => ({ ...p, estimatedEvPercent: e.target.value }))} placeholder="Ej: 5" className="bg-[#111827] border-[#374151] text-white text-sm" />
                 </div>
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">Latitud</Label>
@@ -900,6 +944,25 @@ export default function AdminSpaces() {
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">Longitud</Label>
                   <Input value={createForm.longitude} onChange={e => setCreateForm(p => ({ ...p, longitude: e.target.value }))} placeholder="Ej: -74.0721" className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3">
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-emerald-300">Proyección preliminar (opcional)</p>
+              <p className="mb-2 text-[11px] leading-4 text-emerald-100/70">Al guardar, el ROI y el payback se calculan a partir del flujo, adopción EV y el valor de inversión. Después quedan editables en el expediente.</p>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <div>
+                  <Label className="mb-1 block text-xs text-gray-300">Inversión estimada (COP)</Label>
+                  <Input inputMode="decimal" value={createForm.estimatedInvestmentCop} onChange={e => setCreateForm(p => ({ ...p, estimatedInvestmentCop: e.target.value }))} placeholder="Ej: 90.000.000" className="border-[#374151] bg-[#111827] text-sm text-white" />
+                </div>
+                <div>
+                  <Label className="mb-1 block text-xs text-gray-300">Potencia DC (kW)</Label>
+                  <Input inputMode="numeric" value={createForm.estimatedPowerKw} onChange={e => setCreateForm(p => ({ ...p, estimatedPowerKw: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" />
+                </div>
+                <div>
+                  <Label className="mb-1 block text-xs text-gray-300">Cargadores duales</Label>
+                  <Input inputMode="numeric" value={createForm.estimatedChargerCount} onChange={e => setCreateForm(p => ({ ...p, estimatedChargerCount: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" />
                 </div>
               </div>
             </div>
@@ -1005,6 +1068,28 @@ export default function AdminSpaces() {
                   toast.error("Completa los campos obligatorios (*)");
                   return;
                 }
+                const numericError = [
+                  numericInputError("Transformador", createForm.transformerCapacityKva),
+                  numericInputError("Área", createForm.availableAreaM2),
+                  numericInputError("Parqueos", createForm.parkingSpots, true),
+                  numericInputError("Vehículos/día", createForm.estimatedDailyVehicles, true),
+                  numericInputError("% de vehículos EV", createForm.estimatedEvPercent, true),
+                  numericInputError("Estrato", createForm.socioeconomicStratum, true),
+                  numericInputError("Latitud", createForm.latitude),
+                  numericInputError("Longitud", createForm.longitude),
+                  numericInputError("Inversión estimada", createForm.estimatedInvestmentCop),
+                  numericInputError("Potencia DC", createForm.estimatedPowerKw, true),
+                  numericInputError("Cargadores", createForm.estimatedChargerCount, true),
+                ].find(Boolean);
+                if (numericError) {
+                  toast.error(numericError);
+                  return;
+                }
+                const evPercent = toOptionalInteger(createForm.estimatedEvPercent);
+                if (evPercent !== undefined && (evPercent < 0 || evPercent > 100)) {
+                  toast.error("El porcentaje de vehículos EV debe estar entre 0 y 100.");
+                  return;
+                }
                 // Convert photos to base64 before sending
                 const convertPhotos = async () => {
                   const photosData = await Promise.all(
@@ -1029,13 +1114,17 @@ export default function AdminSpaces() {
                     submitterEmail: createForm.submitterEmail,
                     submitterPhone: createForm.submitterPhone,
                     submitterCompany: createForm.submitterCompany || undefined,
-                    latitude: createForm.latitude || undefined,
-                    longitude: createForm.longitude || undefined,
-                    transformerCapacityKva: createForm.transformerCapacityKva || undefined,
-                    availableAreaM2: createForm.availableAreaM2 || undefined,
-                    parkingSpots: createForm.parkingSpots ? parseInt(createForm.parkingSpots) : undefined,
-                    estimatedDailyVehicles: createForm.estimatedDailyVehicles ? parseInt(createForm.estimatedDailyVehicles) : undefined,
-                    socioeconomicStratum: createForm.socioeconomicStratum ? parseInt(createForm.socioeconomicStratum) : undefined,
+                    latitude: toOptionalNumber(createForm.latitude)?.toString(),
+                    longitude: toOptionalNumber(createForm.longitude)?.toString(),
+                    transformerCapacityKva: toOptionalNumber(createForm.transformerCapacityKva)?.toString(),
+                    availableAreaM2: toOptionalNumber(createForm.availableAreaM2)?.toString(),
+                    parkingSpots: toOptionalInteger(createForm.parkingSpots),
+                    estimatedDailyVehicles: toOptionalInteger(createForm.estimatedDailyVehicles),
+                    estimatedEvPercent: evPercent,
+                    socioeconomicStratum: toOptionalInteger(createForm.socioeconomicStratum),
+                    estimatedInvestmentCop: toOptionalNumber(createForm.estimatedInvestmentCop),
+                    estimatedPowerKw: toOptionalInteger(createForm.estimatedPowerKw),
+                    estimatedChargerCount: toOptionalInteger(createForm.estimatedChargerCount),
                     photos: photosData.length > 0 ? photosData : undefined,
                   });
                 };
@@ -1136,6 +1225,33 @@ function SpaceDetailDialog({
   const commercialNextStep = COMMERCIAL_NEXT_STEPS[space.spaceStatus as string];
   const pipelineAction = getSpacePipelineAction(space.spaceStatus as string);
   const canManageAdministrativeDetails = user?.role === "admin" || user?.role === "staff";
+  const suggestedFinancialProjection = (() => {
+    const investmentCop = toOptionalNumber(editForm.estimatedInvestmentCop);
+    const totalPowerKw = toOptionalInteger(editForm.estimatedPowerKw);
+    const dailyVehicles = toOptionalInteger(editForm.estimatedDailyVehicles);
+    const evPercent = toOptionalInteger(editForm.estimatedEvPercent);
+    const chargerCount = toOptionalInteger(editForm.estimatedChargerCount);
+    if (!investmentCop || !totalPowerKw || totalPowerKw < 120 || !dailyVehicles || evPercent === undefined) return null;
+    try {
+      const snapshot = buildSpaceTrafficProjection({
+        investmentCop,
+        estimatedDailyVehicles: dailyVehicles,
+        estimatedEvPercent: evPercent,
+        chargerCount: chargerCount || 1,
+        spaceType: space.spaceType,
+        salePricePerKwh: Number(calculatorParams?.precioVentaDefault ?? 1800),
+        energyCostPerKwh: Number(calculatorParams?.costoEnergiaRed ?? 700),
+        hostSharePercent: Number(calculatorParams?.hostPercentage ?? 10),
+      });
+      return {
+        snapshot,
+        selected: snapshot.scenarios.REALISTIC,
+        selectedScenario: "REALISTIC" as const,
+      };
+    } catch {
+      return null;
+    }
+  })();
 
   const requestedProspectoPowerKw = prospectoConfig.installedPowerKw || Number(space.estimatedPowerKw || 0);
   const transformerCapacityKva = Number(space.transformerCapacityKva || 0);
@@ -1926,31 +2042,31 @@ function SpaceDetailDialog({
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">Transformador (kVA)</Label>
-                  <Input type="number" placeholder="Ej: 112.5" value={editForm.transformerCapacityKva || ""} onChange={e => setEditForm(p => ({ ...p, transformerCapacityKva: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                  <Input inputMode="decimal" placeholder="Ej: 112,5 o 112.5" value={editForm.transformerCapacityKva || ""} onChange={e => setEditForm(p => ({ ...p, transformerCapacityKva: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
                 </div>
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">Distancia tablero (m)</Label>
-                  <Input type="number" value={editForm.electricalDistance ?? ""} onChange={e => setEditForm(p => ({ ...p, electricalDistance: toOptionalInteger(e.target.value) }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                  <Input inputMode="numeric" value={editForm.electricalDistance ?? ""} onChange={e => setEditForm(p => ({ ...p, electricalDistance: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
                 </div>
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">Área disponible (m²)</Label>
-                  <Input type="number" value={editForm.availableAreaM2 || ""} onChange={e => setEditForm(p => ({ ...p, availableAreaM2: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                  <Input inputMode="decimal" placeholder="Ej: 85,5 o 85.5" value={editForm.availableAreaM2 || ""} onChange={e => setEditForm(p => ({ ...p, availableAreaM2: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
                 </div>
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">Puestos de parqueo</Label>
-                  <Input type="number" value={editForm.parkingSpots ?? ""} onChange={e => setEditForm(p => ({ ...p, parkingSpots: toOptionalInteger(e.target.value) }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                  <Input inputMode="numeric" value={editForm.parkingSpots ?? ""} onChange={e => setEditForm(p => ({ ...p, parkingSpots: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
                 </div>
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">Vehículos/día</Label>
-                  <Input type="number" value={editForm.estimatedDailyVehicles ?? ""} onChange={e => setEditForm(p => ({ ...p, estimatedDailyVehicles: toOptionalInteger(e.target.value) }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                  <Input inputMode="numeric" placeholder="Ej: 700 o 1.100" value={editForm.estimatedDailyVehicles ?? ""} onChange={e => setEditForm(p => ({ ...p, estimatedDailyVehicles: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
                 </div>
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">% EV estimado</Label>
-                  <Input type="number" min={0} max={100} value={editForm.estimatedEvPercent ?? ""} onChange={e => setEditForm(p => ({ ...p, estimatedEvPercent: toOptionalInteger(e.target.value) }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                  <Input inputMode="numeric" value={editForm.estimatedEvPercent ?? ""} onChange={e => setEditForm(p => ({ ...p, estimatedEvPercent: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
                 </div>
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">Estrato</Label>
-                  <Input type="number" min={1} max={6} value={editForm.socioeconomicStratum ?? ""} onChange={e => setEditForm(p => ({ ...p, socioeconomicStratum: toOptionalInteger(e.target.value) }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                  <Input inputMode="numeric" value={editForm.socioeconomicStratum ?? ""} onChange={e => setEditForm(p => ({ ...p, socioeconomicStratum: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
                 </div>
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">Horario inicio</Label>
@@ -1988,7 +2104,7 @@ function SpaceDetailDialog({
                 {editForm.requiresNewTransformer && (
                   <div className="ml-6">
                     <Label className="text-gray-300 text-xs mb-1 block">Capacidad propuesta del nuevo transformador (kVA)</Label>
-                    <Input type="number" placeholder="Ej: 250" value={editForm.proposedTransformerKva || ""} onChange={e => setEditForm(p => ({ ...p, proposedTransformerKva: parseFloat(e.target.value) || undefined }))} className="bg-[#111827] border-[#374151] text-white text-sm w-40" />
+                    <Input inputMode="decimal" placeholder="Ej: 250" value={editForm.proposedTransformerKva || ""} onChange={e => setEditForm(p => ({ ...p, proposedTransformerKva: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm w-40" />
                   </div>
                 )}
                 <div>
@@ -2053,29 +2169,62 @@ function SpaceDetailDialog({
 	              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
 	                <div>
 	                  <Label className="text-gray-300 text-xs mb-1 block">Inversión estimada (COP)</Label>
-	                  <Input type="number" value={editForm.estimatedInvestmentCop || ""} onChange={e => setEditForm(p => ({ ...p, estimatedInvestmentCop: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                  <Input inputMode="decimal" placeholder="Ej: 90.000.000" value={editForm.estimatedInvestmentCop || ""} onChange={e => setEditForm(p => ({ ...p, estimatedInvestmentCop: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
 	                </div>
 				<div>
 				  <Label className="text-gray-300 text-xs mb-1 block">Inversión mínima (COP)</Label>
-				  <Input type="number" value={editForm.minimumInvestmentCop || ""} onChange={e => setEditForm(p => ({ ...p, minimumInvestmentCop: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                  <Input inputMode="decimal" placeholder="Ej: 1.000.000" value={editForm.minimumInvestmentCop || ""} onChange={e => setEditForm(p => ({ ...p, minimumInvestmentCop: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
 				</div>
 				<div>
 				  <Label className="text-gray-300 text-xs mb-1 block">ROI estimado (%)</Label>
-				  <Input type="number" step="0.01" value={editForm.estimatedRoiPercent || ""} onChange={e => setEditForm(p => ({ ...p, estimatedRoiPercent: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                  <Input inputMode="decimal" value={editForm.estimatedRoiPercent || ""} onChange={e => setEditForm(p => ({ ...p, estimatedRoiPercent: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
 				</div>
 				<div>
 				  <Label className="text-gray-300 text-xs mb-1 block">Payback estimado (meses)</Label>
-				  <Input type="number" value={editForm.estimatedPaybackMonths || ""} onChange={e => setEditForm(p => ({ ...p, estimatedPaybackMonths: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                  <Input inputMode="numeric" value={editForm.estimatedPaybackMonths || ""} onChange={e => setEditForm(p => ({ ...p, estimatedPaybackMonths: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
 				</div>
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">Potencia (kW)</Label>
-                  <Input type="number" value={editForm.estimatedPowerKw || ""} onChange={e => setEditForm(p => ({ ...p, estimatedPowerKw: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                  <Input inputMode="numeric" value={editForm.estimatedPowerKw || ""} onChange={e => setEditForm(p => ({ ...p, estimatedPowerKw: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
                 </div>
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">Cargadores</Label>
-                  <Input type="number" value={editForm.estimatedChargerCount || ""} onChange={e => setEditForm(p => ({ ...p, estimatedChargerCount: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                  <Input inputMode="numeric" value={editForm.estimatedChargerCount || ""} onChange={e => setEditForm(p => ({ ...p, estimatedChargerCount: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
                 </div>
               </div>
+              {suggestedFinancialProjection ? (
+                <div className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-xs font-semibold text-emerald-300">Proyección sugerida · escenario {suggestedFinancialProjection.selectedScenario}</p>
+                      <p className="mt-0.5 text-[11px] leading-4 text-emerald-100/75">
+                        Basada en flujo diario, adopción EV, {suggestedFinancialProjection.snapshot.assumptions.benchmarkKwhPerSession} kWh/sesión y el waterfall comercial vigente. Se recalcula al guardar cuando cambian estos supuestos.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setEditForm((current) => ({
+                        ...current,
+                        estimatedRoiPercent: String(suggestedFinancialProjection.selected.roiAnnualPercent.toFixed(1)),
+                        estimatedPaybackMonths: String(Math.max(1, Math.round(suggestedFinancialProjection.selected.paybackMonths))),
+                      }))}
+                      className="shrink-0 border-emerald-400/50 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20"
+                    >
+                      <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Aplicar
+                    </Button>
+                  </div>
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                    <div><span className="block text-emerald-100/60">ROI anual</span><strong className="text-emerald-200">{suggestedFinancialProjection.selected.roiAnnualPercent.toFixed(1)}%</strong></div>
+                    <div><span className="block text-emerald-100/60">Payback</span><strong className="text-emerald-200">{Math.max(1, Math.round(suggestedFinancialProjection.selected.paybackMonths))} meses</strong></div>
+                    <div><span className="block text-emerald-100/60">Sesiones/mes</span><strong className="text-emerald-200">{Math.round(suggestedFinancialProjection.selected.sessionsPerDay * 30).toLocaleString("es-CO")}</strong></div>
+                    <div><span className="block text-emerald-100/60">Flujo inversionista/mes</span><strong className="text-emerald-200">{formatCOP(Math.round(suggestedFinancialProjection.selected.investorMonthlyCashflow))}</strong></div>
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-2 text-[11px] text-gray-500">Ingresa inversión y potencia DC (mínimo 120 kW) para recibir un ROI y payback sugeridos. Puedes usar punto o coma en todos los importes.</p>
+              )}
               <div className="mt-2">
                 <Label className="text-gray-300 text-xs mb-1 block">Tipo de inversión</Label>
                 <Select value={editForm.investmentType || "individual"} onValueChange={v => setEditForm(p => ({ ...p, investmentType: v }))}>
@@ -2209,6 +2358,33 @@ function SpaceDetailDialog({
             </Button>
             <Button onClick={async () => {
               try {
+                const numericError = [
+                  numericInputError("Latitud", editForm.latitude),
+                  numericInputError("Longitud", editForm.longitude),
+                  numericInputError("Transformador", editForm.transformerCapacityKva),
+                  numericInputError("Distancia al tablero", editForm.electricalDistance, true),
+                  numericInputError("Área disponible", editForm.availableAreaM2),
+                  numericInputError("Puestos de parqueo", editForm.parkingSpots, true),
+                  numericInputError("Vehículos por día", editForm.estimatedDailyVehicles, true),
+                  numericInputError("Porcentaje EV", editForm.estimatedEvPercent, true),
+                  numericInputError("Estrato", editForm.socioeconomicStratum, true),
+                  numericInputError("Transformador propuesto", editForm.proposedTransformerKva),
+                  numericInputError("Inversión estimada", editForm.estimatedInvestmentCop),
+                  numericInputError("Inversión mínima", editForm.minimumInvestmentCop),
+                  numericInputError("ROI", editForm.estimatedRoiPercent),
+                  numericInputError("Payback", editForm.estimatedPaybackMonths, true),
+                  numericInputError("Potencia", editForm.estimatedPowerKw, true),
+                  numericInputError("Cargadores", editForm.estimatedChargerCount, true),
+                ].find(Boolean);
+                if (numericError) throw new Error(numericError);
+                const evPercent = toOptionalInteger(editForm.estimatedEvPercent);
+                if (evPercent !== undefined && (evPercent < 0 || evPercent > 100)) {
+                  throw new Error("El porcentaje de vehículos EV debe estar entre 0 y 100.");
+                }
+                const stratum = toOptionalInteger(editForm.socioeconomicStratum);
+                if (stratum !== undefined && (stratum < 1 || stratum > 6)) {
+                  throw new Error("El estrato debe estar entre 1 y 6.");
+                }
                 const payload: Record<string, any> = { id };
                 // Campos básicos
                 if (editForm.spaceName !== undefined) payload.spaceName = editForm.spaceName;
@@ -2223,21 +2399,23 @@ function SpaceDetailDialog({
                 if (editForm.nearbyAttractions !== undefined) payload.nearbyAttractions = editForm.nearbyAttractions;
                 if (editForm.investmentType) payload.investmentType = editForm.investmentType;
                 // Coordenadas
-                if (editForm.latitude) payload.latitude = editForm.latitude;
-                if (editForm.longitude) payload.longitude = editForm.longitude;
+                const latitude = toOptionalNumber(editForm.latitude);
+                const longitude = toOptionalNumber(editForm.longitude);
+                if (latitude !== undefined) payload.latitude = String(latitude);
+                if (longitude !== undefined) payload.longitude = String(longitude);
                 // Técnicos
-                if (editForm.transformerCapacityKva) payload.transformerCapacityKva = editForm.transformerCapacityKva;
+                const transformerCapacityKva = toOptionalNumber(editForm.transformerCapacityKva);
+                if (transformerCapacityKva !== undefined) payload.transformerCapacityKva = String(transformerCapacityKva);
                 const electricalDistance = toOptionalInteger(editForm.electricalDistance);
                 if (electricalDistance !== undefined) payload.electricalDistance = electricalDistance;
-                if (editForm.availableAreaM2) payload.availableAreaM2 = editForm.availableAreaM2;
+                const availableAreaM2 = toOptionalNumber(editForm.availableAreaM2);
+                if (availableAreaM2 !== undefined) payload.availableAreaM2 = String(availableAreaM2);
                 const parkingSpots = toOptionalInteger(editForm.parkingSpots);
                 if (parkingSpots !== undefined) payload.parkingSpots = parkingSpots;
                 const estimatedDailyVehicles = toOptionalInteger(editForm.estimatedDailyVehicles);
                 if (estimatedDailyVehicles !== undefined) payload.estimatedDailyVehicles = estimatedDailyVehicles;
-                const estimatedEvPercent = toOptionalInteger(editForm.estimatedEvPercent);
-                if (estimatedEvPercent !== undefined) payload.estimatedEvPercent = estimatedEvPercent;
-                const socioeconomicStratum = toOptionalInteger(editForm.socioeconomicStratum);
-                if (socioeconomicStratum !== undefined) payload.socioeconomicStratum = socioeconomicStratum;
+                if (evPercent !== undefined) payload.estimatedEvPercent = evPercent;
+                if (stratum !== undefined) payload.socioeconomicStratum = stratum;
                 if (editForm.operatingHoursStart) payload.operatingHoursStart = editForm.operatingHoursStart;
                 if (editForm.operatingHoursEnd) payload.operatingHoursEnd = editForm.operatingHoursEnd;
                 if (editForm.hasElectricalPanel !== undefined) payload.hasElectricalPanel = editForm.hasElectricalPanel;
@@ -2246,14 +2424,21 @@ function SpaceDetailDialog({
                 if (editForm.electricalViability) payload.electricalViability = editForm.electricalViability;
                 // Transformador nuevo
                 if (editForm.requiresNewTransformer !== undefined) payload.requiresNewTransformer = editForm.requiresNewTransformer;
-                if (editForm.proposedTransformerKva !== undefined) payload.proposedTransformerKva = editForm.proposedTransformerKva;
+                const proposedTransformerKva = toOptionalNumber(editForm.proposedTransformerKva);
+                if (proposedTransformerKva !== undefined) payload.proposedTransformerKva = proposedTransformerKva;
                 // Comerciales
-				if (editForm.estimatedInvestmentCop) payload.estimatedInvestmentCop = parseInt(editForm.estimatedInvestmentCop);
-				if (editForm.minimumInvestmentCop) payload.minimumInvestmentCop = parseInt(editForm.minimumInvestmentCop);
-				if (editForm.estimatedRoiPercent) payload.estimatedRoiPercent = parseFloat(editForm.estimatedRoiPercent);
-				if (editForm.estimatedPaybackMonths) payload.estimatedPaybackMonths = parseInt(editForm.estimatedPaybackMonths);
-				if (editForm.estimatedPowerKw) payload.estimatedPowerKw = parseInt(editForm.estimatedPowerKw);
-                if (editForm.estimatedChargerCount) payload.estimatedChargerCount = parseInt(editForm.estimatedChargerCount);
+                const estimatedInvestmentCop = toOptionalNumber(editForm.estimatedInvestmentCop);
+                const minimumInvestmentCop = toOptionalNumber(editForm.minimumInvestmentCop);
+                const estimatedRoiPercent = toOptionalNumber(editForm.estimatedRoiPercent);
+                const estimatedPaybackMonths = toOptionalInteger(editForm.estimatedPaybackMonths);
+                const estimatedPowerKw = toOptionalInteger(editForm.estimatedPowerKw);
+                const estimatedChargerCount = toOptionalInteger(editForm.estimatedChargerCount);
+                if (estimatedInvestmentCop !== undefined) payload.estimatedInvestmentCop = estimatedInvestmentCop;
+                if (minimumInvestmentCop !== undefined) payload.minimumInvestmentCop = minimumInvestmentCop;
+                if (estimatedRoiPercent !== undefined) payload.estimatedRoiPercent = estimatedRoiPercent;
+                if (estimatedPaybackMonths !== undefined) payload.estimatedPaybackMonths = estimatedPaybackMonths;
+                if (estimatedPowerKw !== undefined) payload.estimatedPowerKw = estimatedPowerKw;
+                if (estimatedChargerCount !== undefined) payload.estimatedChargerCount = estimatedChargerCount;
                 // IA manual
                 if (editForm.aiScore !== undefined) payload.aiScore = editForm.aiScore;
                 // Construir aiAnalysis actualizado si se editaron campos de IA
@@ -2301,7 +2486,7 @@ function SpaceDetailDialog({
                 refetch();
                 onRefresh();
               } catch (err: any) {
-                toast.error(err.message || "Error al actualizar");
+                toast.error(humanizeSpaceError(err.message || "Error al actualizar", "actualizar"));
               }
             }} disabled={updateSpaceMutation.isPending} className="bg-blue-600 hover:bg-blue-700 text-white w-full sm:w-auto">
               {updateSpaceMutation.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Pencil className="w-4 h-4 mr-1.5" />}

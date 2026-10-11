@@ -59,3 +59,10 @@
 - [x] Evitar que `notifyOwner` contacte el canal real cuando `Vitest` o `NODE_ENV=test` estén activos; la ruta de postulación se sigue probando de extremo a extremo, sin generar alertas al dueño.
 - [x] Verificar limpieza: 0 fixtures de Espacios y 0 filas asociadas a SPE-2026-0018 tras la regresión.
 - [x] Validación: TypeScript, 36 pruebas focales, suite completa 242 archivos / 2.359 pruebas y build productivo aprobados.
+
+## Espacios — cifras locales y proyección automática (2026-10-11)
+
+- [x] Normalizar importes y decimales escritos con punto o coma en creación y edición: por ejemplo, `1.100` se interpreta como 1.100, `1.500.000` como 1.500.000 y `112,5` como 112,5; los formatos ambiguos se rechazan antes de SQL con un mensaje comprensible.
+- [x] Añadir proyección comercial preliminar al crear un espacio y tarjeta de recomendación al editarlo. Con inversión, flujo vehicular, adopción EV, potencia y número de cargadores, se calculan ROI y payback usando la cascada financiera vigente y permanecen editables.
+- [x] Recalcular ROI/payback y sincronizar Crowdfunding cuando cambian las variables de demanda o CAPEX, evitando conservar retornos manuales inconsistentes.
+- [x] Validación: TypeScript, 38 pruebas focales, suite completa 243 archivos / 2.365 pruebas y build productivo aprobados.

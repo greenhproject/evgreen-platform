@@ -23,15 +23,18 @@ import { randomBytes } from "crypto";
 import { storagePut } from "../storage";
 import { scoreSpaceInvestment } from "./space-ai-scoring";
 import { buildEmailParams } from "../utils/email-helper";
-import { optionalFormInteger, optionalFormNumber } from "./space-input-normalization";
+import { optionalFormInteger, optionalFormNumber, optionalLocalizedDecimalString } from "./space-input-normalization";
 import { canManageCommercialPipeline, canManageSpaceAdministration } from "./pipeline-access";
 import { startOfDayInTz, endOfDayInTz } from "../utils/timezone";
 import { assertCommercialTransition, type SpacePipelineStatus } from "./pipeline-transitions";
 import {
   buildCrowdfundingProjectionSnapshot,
-  getSelectedCrowdfundingProjection,
   type CrowdfundingProjectionSnapshot,
 } from "../../shared/crowdfunding-financial-projection";
+import {
+  buildSpaceTrafficProjection,
+  type SpaceTrafficProjectionSnapshot,
+} from "../../shared/space-traffic-financial-projection";
 import {
   assertProspectoFinancialScenarioIsDocumented,
   resolveProspectoTechnicalCondition,
@@ -80,22 +83,27 @@ function firstPositiveNumber(...values: unknown[]): number | null {
   return null;
 }
 
-function parseProjectionSnapshot(value: unknown): CrowdfundingProjectionSnapshot | null {
+type FinancialProjectionSnapshot = CrowdfundingProjectionSnapshot | SpaceTrafficProjectionSnapshot;
+
+function parseProjectionSnapshot(value: unknown): FinancialProjectionSnapshot | null {
   if (!value) return null;
   if (typeof value === "string") {
     try {
-      return JSON.parse(value) as CrowdfundingProjectionSnapshot;
+      return JSON.parse(value) as FinancialProjectionSnapshot;
     } catch {
       return null;
     }
   }
-  return typeof value === "object" ? value as CrowdfundingProjectionSnapshot : null;
+  return typeof value === "object" ? value as FinancialProjectionSnapshot : null;
 }
 
 async function buildSpaceCrowdfundingProjection(input: {
   investmentCop: number;
   totalPowerKw: number;
   spaceType?: string | null;
+  estimatedDailyVehicles?: number | null;
+  estimatedEvPercent?: number | null;
+  chargerCount?: number | null;
   currentProject?: any;
 }) {
   if (input.investmentCop <= 0 || input.totalPowerKw <= 0) return null;
@@ -110,27 +118,64 @@ async function buildSpaceCrowdfundingProjection(input: {
     distribution.evgreenSharePercent,
   );
   const selectedScenario = stored?.selectedScenario ?? "REALISTIC";
+  const salePricePerKwh = Number(stored?.assumptions.salePricePerKwh ?? settings?.precioVentaDefault ?? 1800);
+  const energyCostPerKwh = Number(
+    input.currentProject?.energyPurchaseCostPerKwh
+      ?? stored?.assumptions.energyCostPerKwh
+      ?? settings?.costoEnergiaRed
+      ?? 850,
+  );
+  const hostSharePercent = Number(
+    input.currentProject?.hostSharePercent
+      ?? stored?.assumptions.hostSharePercent
+      ?? 10,
+  );
+  const fixedMonthlyExpenses = Number(stored?.assumptions.fixedMonthlyExpenses ?? 0);
+  const efficiencyPercent = Number(
+    stored?.basis === "EVGREEN_CROWDFUNDING_SCENARIOS"
+      ? stored.assumptions.efficiencyPercent
+      : settings?.eficienciaCargaDc ?? 92,
+  );
+  const estimatedDailyVehicles = firstPositiveNumber(input.estimatedDailyVehicles);
+  const estimatedEvPercent = firstPositiveNumber(input.estimatedEvPercent);
+  const chargerCount = firstPositiveNumber(input.chargerCount, input.currentProject?.chargerCount, 1)!;
+
+  // Con tráfico y adopción EV declarados, el espacio usa el modelo canónico
+  // de demanda capturable. La infraestructura limita por capacidad física,
+  // pero nunca inventa sesiones que el flujo no justifique.
+  if (estimatedDailyVehicles && estimatedEvPercent) {
+    const snapshot = buildSpaceTrafficProjection({
+      investmentCop: input.investmentCop,
+      estimatedDailyVehicles,
+      estimatedEvPercent,
+      chargerCount,
+      spaceType: input.spaceType,
+      salePricePerKwh,
+      energyCostPerKwh,
+      hostSharePercent,
+      fixedMonthlyExpenses,
+    }, selectedScenario);
+    return {
+      snapshot,
+      selected: snapshot.scenarios[snapshot.selectedScenario],
+      selectedScenario,
+      investorSharePercent: snapshot.assumptions.investorSharePercent,
+      evgreenSharePercent: snapshot.assumptions.evgreenSharePercent,
+    };
+  }
+
   const snapshot = buildCrowdfundingProjectionSnapshot({
     investmentCop: input.investmentCop,
     totalPowerKw: input.totalPowerKw,
-    salePricePerKwh: Number(stored?.assumptions.salePricePerKwh ?? settings?.precioVentaDefault ?? 1800),
-    energyCostPerKwh: Number(
-      input.currentProject?.energyPurchaseCostPerKwh
-        ?? stored?.assumptions.energyCostPerKwh
-        ?? settings?.costoEnergiaRed
-        ?? 850,
-    ),
-    hostSharePercent: Number(
-      input.currentProject?.hostSharePercent
-        ?? stored?.assumptions.hostSharePercent
-        ?? 10,
-    ),
+    salePricePerKwh,
+    energyCostPerKwh,
+    hostSharePercent,
     investorSharePercent,
     evgreenSharePercent,
-    efficiencyPercent: Number(stored?.assumptions.efficiencyPercent ?? settings?.eficienciaCargaDc ?? 92),
-    fixedMonthlyExpenses: Number(stored?.assumptions.fixedMonthlyExpenses ?? 0),
+    efficiencyPercent,
+    fixedMonthlyExpenses,
   }, selectedScenario);
-  const selected = getSelectedCrowdfundingProjection(snapshot);
+  const selected = snapshot.scenarios[snapshot.selectedScenario];
 
   return {
     snapshot,
@@ -341,25 +386,30 @@ export const spacesRouter = router({
       address: z.string().min(5, "La dirección es requerida"),
       city: z.string().min(2, "La ciudad es requerida"),
       department: z.string().optional(),
-      latitude: z.string().optional(),
-      longitude: z.string().optional(),
+      latitude: optionalLocalizedDecimalString(),
+      longitude: optionalLocalizedDecimalString(),
 
       // Características técnicas
-      availableAreaM2: z.string().optional(),
-      parkingSpots: z.number().int().optional(),
-      transformerCapacityKva: z.string().optional(),
+      availableAreaM2: optionalLocalizedDecimalString(),
+      parkingSpots: optionalFormInteger(),
+      transformerCapacityKva: optionalLocalizedDecimalString(),
       hasElectricalPanel: z.boolean().optional(),
-      electricalDistance: z.number().int().optional(),
+      electricalDistance: optionalFormInteger(),
       hasInternet: z.boolean().optional(),
       operatingHoursStart: z.string().optional(),
       operatingHoursEnd: z.string().optional(),
       is24Hours: z.boolean().optional(),
 
       // Tráfico y contexto
-      estimatedDailyVehicles: z.number().int().optional(),
-      estimatedEvPercent: z.number().int().min(0).max(100).optional(),
+      estimatedDailyVehicles: optionalFormInteger(),
+      estimatedEvPercent: optionalFormInteger().refine((value) => value === undefined || (value >= 0 && value <= 100)),
       nearbyAttractions: z.string().optional(),
-      socioeconomicStratum: z.number().int().min(1).max(6).optional(),
+      socioeconomicStratum: optionalFormInteger().refine((value) => value === undefined || (value >= 1 && value <= 6)),
+
+      // Proyección comercial preliminar (opcional, calculada automáticamente)
+      estimatedInvestmentCop: optionalFormNumber().refine((value) => value === undefined || value > 0, "La inversión debe ser mayor que cero"),
+      estimatedPowerKw: optionalFormInteger().refine((value) => value === undefined || value >= 120, "EVGreen solo instala cargadores rápidos DC desde 120 kW."),
+      estimatedChargerCount: optionalFormInteger().refine((value) => value === undefined || value >= 1, "Debe configurarse al menos un cargador"),
 
       // Notas
       additionalNotes: z.string().optional(),
@@ -401,6 +451,9 @@ export const spacesRouter = router({
             is24Hours: input.is24Hours ? 1 : 0,
             estimatedDailyVehicles: input.estimatedDailyVehicles || null,
             estimatedEvPercent: input.estimatedEvPercent || null,
+            estimatedInvestmentCop: input.estimatedInvestmentCop || null,
+            estimatedPowerKw: input.estimatedPowerKw || null,
+            estimatedChargerCount: input.estimatedChargerCount || null,
             nearbyAttractions: input.nearbyAttractions || null,
             socioeconomicStratum: input.socioeconomicStratum || null,
             additionalNotes: input.additionalNotes || null,
@@ -408,6 +461,24 @@ export const spacesRouter = router({
           }));
 
       const submissionId = result.insertId;
+
+      const projection = await buildSpaceCrowdfundingProjection({
+        investmentCop: Number(input.estimatedInvestmentCop ?? 0),
+        totalPowerKw: Number(input.estimatedPowerKw ?? 0),
+        spaceType: input.spaceType,
+        estimatedDailyVehicles: input.estimatedDailyVehicles,
+        estimatedEvPercent: input.estimatedEvPercent,
+        chargerCount: input.estimatedChargerCount,
+      });
+      if (projection) {
+        await db.update(spaceSubmissions)
+          .set({
+            estimatedRoiPercent: String(projection.selected.roiAnnualPercent),
+            estimatedPaybackMonths: Math.max(1, Math.round(projection.selected.paybackMonths)),
+            financialProjectionUpdatedAt: toSqlTimestamp(),
+          })
+          .where(eq(spaceSubmissions.id, submissionId));
+      }
 
       // Subir fotos a S3
       if (input.photos && input.photos.length > 0) {
@@ -1440,11 +1511,11 @@ export const spacesRouter = router({
         address: z.string().optional(),
         city: z.string().optional(),
         department: z.string().optional(),
-        latitude: z.string().optional(),
-        longitude: z.string().optional(),
-        availableAreaM2: z.string().optional(),
+        latitude: optionalLocalizedDecimalString(),
+        longitude: optionalLocalizedDecimalString(),
+        availableAreaM2: optionalLocalizedDecimalString(),
         parkingSpots: optionalFormInteger(),
-        transformerCapacityKva: z.string().optional(),
+        transformerCapacityKva: optionalLocalizedDecimalString(),
         hasElectricalPanel: z.boolean().optional(),
         electricalDistance: optionalFormInteger(),
         electricalDistanceM: optionalFormInteger(),
@@ -1486,6 +1557,22 @@ export const spacesRouter = router({
         const db = await getDatabase();
         const { id, requiresNewTransformer, proposedTransformerKva, electricalDistanceM, ...updateFields } = input;
 
+        const [previousSubmission] = await db
+          .select({
+            id: spaceSubmissions.id,
+            estimatedInvestmentCop: spaceSubmissions.estimatedInvestmentCop,
+            estimatedPowerKw: spaceSubmissions.estimatedPowerKw,
+            estimatedChargerCount: spaceSubmissions.estimatedChargerCount,
+            estimatedDailyVehicles: spaceSubmissions.estimatedDailyVehicles,
+            estimatedEvPercent: spaceSubmissions.estimatedEvPercent,
+          })
+          .from(spaceSubmissions)
+          .where(eq(spaceSubmissions.id, id))
+          .limit(1);
+        if (!previousSubmission) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Postulación no encontrada" });
+        }
+
         const cleanFields: Record<string, any> = {};
         for (const [key, value] of Object.entries(updateFields)) {
           if (value !== undefined) {
@@ -1498,6 +1585,13 @@ export const spacesRouter = router({
         if (cleanFields.estimatedPowerKw !== undefined && cleanFields.estimatedPowerKw < 120) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "EVGreen solo instala cargadores rápidos DC desde 120 kW." });
         }
+        const projectionInputChanged = [
+          "estimatedInvestmentCop",
+          "estimatedPowerKw",
+          "estimatedChargerCount",
+          "estimatedDailyVehicles",
+          "estimatedEvPercent",
+        ].some((field) => cleanFields[field] !== undefined && Number(cleanFields[field]) !== Number(previousSubmission[field as keyof typeof previousSubmission]));
         if (
           cleanFields.estimatedInvestmentCop !== undefined ||
           cleanFields.minimumInvestmentCop !== undefined ||
@@ -1530,20 +1624,70 @@ export const spacesRouter = router({
           .set(cleanFields)
           .where(eq(spaceSubmissions.id, id));
 
+        let updatedSubmission: any;
+        if (projectionInputChanged) {
+          const [submissionForProjection] = await db
+            .select()
+            .from(spaceSubmissions)
+            .where(eq(spaceSubmissions.id, id))
+            .limit(1);
+          const [currentProject] = submissionForProjection?.crowdfundingProjectId
+            ? await db
+              .select()
+              .from(crowdfundingProjects)
+              .where(eq(crowdfundingProjects.id, submissionForProjection.crowdfundingProjectId))
+              .limit(1)
+            : [];
+          const projection = submissionForProjection
+            ? await buildSpaceCrowdfundingProjection({
+              investmentCop: Number(submissionForProjection.estimatedInvestmentCop ?? 0),
+              totalPowerKw: Number(submissionForProjection.estimatedPowerKw ?? 0),
+              spaceType: submissionForProjection.spaceType,
+              estimatedDailyVehicles: submissionForProjection.estimatedDailyVehicles,
+              estimatedEvPercent: submissionForProjection.estimatedEvPercent,
+              chargerCount: submissionForProjection.estimatedChargerCount,
+              currentProject,
+            })
+            : null;
+
+          if (projection) {
+            await db.update(spaceSubmissions)
+              .set({
+                estimatedRoiPercent: String(projection.selected.roiAnnualPercent),
+                estimatedPaybackMonths: Math.max(1, Math.round(projection.selected.paybackMonths)),
+                financialProjectionUpdatedAt: toSqlTimestamp(),
+                financialProjectionUpdatedBy: ctx.user.id,
+              })
+              .where(eq(spaceSubmissions.id, id));
+            if (submissionForProjection?.crowdfundingProjectId) {
+              await db.update(crowdfundingProjects)
+                .set({
+                  financialProjectionSnapshot: JSON.stringify(projection.snapshot),
+                  selectedFinancialScenario: projection.selectedScenario,
+                  hostSharePercent: String(projection.snapshot.assumptions.hostSharePercent),
+                  investorSharePercent: String(projection.investorSharePercent),
+                  evgreenSharePercent: String(projection.evgreenSharePercent),
+                } as any)
+                .where(eq(crowdfundingProjects.id, submissionForProjection.crowdfundingProjectId));
+            }
+          }
+        }
+
         const inheritedFields = [
           "spaceName", "address", "city", "department", "latitude", "longitude",
           "estimatedInvestmentCop", "minimumInvestmentCop", "estimatedRoiPercent",
           "estimatedPaybackMonths", "estimatedPowerKw", "estimatedChargerCount",
-          "recommendedChargerType", "technicalScore", "technicalNotes", "aiScore", "aiAnalysis",
+          "estimatedDailyVehicles", "estimatedEvPercent", "recommendedChargerType",
+          "technicalScore", "technicalNotes", "aiScore", "aiAnalysis",
         ];
         if (inheritedFields.some((field) => cleanFields[field] !== undefined)) {
-          const [updatedSubmission] = await db
+          [updatedSubmission] = await db
             .select()
             .from(spaceSubmissions)
             .where(eq(spaceSubmissions.id, id))
             .limit(1);
 
-	          if (updatedSubmission?.crowdfundingProjectId) {
+          if (updatedSubmission?.crowdfundingProjectId) {
 					const inheritedPhotos = await db.select({
 						submissionId: spacePhotos.submissionId, url: spacePhotos.photoUrl, type: spacePhotos.photoType,
 						caption: spacePhotos.caption, sortOrder: spacePhotos.sortOrder,
