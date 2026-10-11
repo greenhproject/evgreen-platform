@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSpaceTrafficProjection } from "../../shared/space-traffic-financial-projection";
+import { buildSpaceTrafficProjection, calculateSolarBlendedEnergyCost } from "../../shared/space-traffic-financial-projection";
 
 const base = {
   investmentCop: 180_000_000,
@@ -43,6 +43,49 @@ describe("proyección financiera por demanda vehicular de espacios", () => {
     expect(realistic.waterfall.netDistributableMargin).toBe(118_800_000);
     expect(realistic.waterfall.investorPool).toBe(71_280_000);
     expect(realistic.waterfall.evgreenPool).toBe(47_520_000);
+  });
+
+  it("no inventa ahorro con solo marcar solar y solo pondera el costo con cobertura y costo validados", () => {
+    const scopeOnly = calculateSolarBlendedEnergyCost({
+      gridEnergyCostPerKwh: 700,
+      hasSolarPanels: true,
+    });
+    const validatedSolar = calculateSolarBlendedEnergyCost({
+      gridEnergyCostPerKwh: 700,
+      hasSolarPanels: true,
+      solarCoveragePercent: 30,
+      solarEnergyCostPerKwh: 200,
+    });
+
+    expect(scopeOnly).toMatchObject({
+      solarCostApplied: false,
+      solarCoveragePercent: 0,
+      effectiveEnergyCostPerKwh: 700,
+    });
+    expect(validatedSolar).toMatchObject({
+      solarCostApplied: true,
+      solarCoveragePercent: 30,
+      solarEnergyCostPerKwh: 200,
+      effectiveEnergyCostPerKwh: 550,
+    });
+  });
+
+  it("reduce el costo de energía y mejora el flujo solo para solar validado", () => {
+    const gridOnly = buildSpaceTrafficProjection({ ...base, hasSolarPanels: true });
+    const solarValidated = buildSpaceTrafficProjection({
+      ...base,
+      hasSolarPanels: true,
+      solarCoveragePercent: 30,
+      solarEnergyCostPerKwh: 200,
+    });
+    const gridScenario = gridOnly.scenarios.REALISTIC;
+    const solarScenario = solarValidated.scenarios.REALISTIC;
+
+    expect(gridOnly.assumptions.solarCostApplied).toBe(false);
+    expect(gridScenario.waterfall.energyCost).toBe(84_000_000);
+    expect(solarValidated.assumptions.effectiveEnergyCostPerKwh).toBe(550);
+    expect(solarScenario.waterfall.energyCost).toBe(66_000_000);
+    expect(solarScenario.investorMonthlyCashflow).toBeGreaterThan(gridScenario.investorMonthlyCashflow);
   });
 
   it("limita sesiones por el menor techo entre mangueras y potencia instalada", () => {

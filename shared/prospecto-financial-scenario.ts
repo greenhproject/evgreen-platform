@@ -3,6 +3,7 @@ import {
   type CrowdfundingProjectionInput,
   type CrowdfundingProjectionSnapshot,
 } from "./crowdfunding-financial-projection";
+import { calculateSolarBlendedEnergyCost } from "./space-traffic-financial-projection";
 import { resolveDcInfrastructureRequirement } from "./space-investment-scoring-policy";
 
 export type ProspectoTechnicalCondition = {
@@ -18,6 +19,9 @@ export type ProspectoTechnicalCondition = {
 export type ProspectoFinancialScenarioInput = CrowdfundingProjectionInput & {
   transformerCapacityKva?: number | null;
   electricalViability?: "viable" | "requires_upgrade" | "not_viable" | null;
+  hasSolarPanels?: boolean | number | null;
+  solarCoveragePercent?: number | null;
+  solarEnergyCostPerKwh?: number | null;
 };
 
 /**
@@ -84,11 +88,17 @@ export function buildProspectoFinancialScenario(input: ProspectoFinancialScenari
   projection: CrowdfundingProjectionSnapshot;
 } {
   const technicalCondition = resolveProspectoTechnicalCondition(input);
+  const solarEnergy = calculateSolarBlendedEnergyCost({
+    gridEnergyCostPerKwh: input.energyCostPerKwh,
+    hasSolarPanels: input.hasSolarPanels,
+    solarCoveragePercent: input.solarCoveragePercent,
+    solarEnergyCostPerKwh: input.solarEnergyCostPerKwh,
+  });
   const projection = buildCrowdfundingProjectionSnapshot({
     investmentCop: input.investmentCop,
     totalPowerKw: input.totalPowerKw,
     salePricePerKwh: input.salePricePerKwh,
-    energyCostPerKwh: input.energyCostPerKwh,
+    energyCostPerKwh: solarEnergy.effectiveEnergyCostPerKwh,
     hostSharePercent: input.hostSharePercent,
     investorSharePercent: input.investorSharePercent,
     evgreenSharePercent: input.evgreenSharePercent,

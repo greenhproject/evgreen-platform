@@ -18,7 +18,7 @@ import {
   type ProspectoTechnicalCondition,
 } from "../../shared/prospecto-financial-scenario";
 import { getPhotoMarkerLabel, getPhotoTypeLabel } from "../../shared/photo-type-labels";
-import { buildSpaceTrafficProjection } from "../../shared/space-traffic-financial-projection";
+import { buildSpaceTrafficProjection, calculateSolarBlendedEnergyCost } from "../../shared/space-traffic-financial-projection";
 
 // ============================================================
 // ASSETS ESTÁTICOS (CDN público — disponible en el servidor)
@@ -61,6 +61,9 @@ export interface ProspectoPdfData {
   estimatedInvestmentCop?: number | null;
   estimatedPowerKw?: number | null;
   estimatedChargerCount?: number | null;
+  hasSolarPanels?: boolean | null;
+  solarCoveragePercent?: number | null;
+  solarEnergyCostPerKwh?: number | null;
   // Configuración dinámica del prospecto
   allySharePercent: number;
   investorSharePercent: number;
@@ -710,6 +713,12 @@ function addProyeccionFinanciera(
   const energyCostPerKwh = data.energyCostPerKwhCop ?? 850;
   const efficiencyPercent = data.efficiencyPercent ?? 92;
   const fixedMonthlyExpenses = data.fixedMonthlyExpensesCop ?? 0;
+  const solarEnergy = calculateSolarBlendedEnergyCost({
+    gridEnergyCostPerKwh: energyCostPerKwh,
+    hasSolarPanels: data.hasSolarPanels,
+    solarCoveragePercent: data.solarCoveragePercent,
+    solarEnergyCostPerKwh: data.solarEnergyCostPerKwh,
+  });
 
   // Modelo de reparto: el aliado recibe una participación del margen bruto
   // y EVGreen + Inversionista se reparten exclusivamente el margen neto.
@@ -718,8 +727,17 @@ function addProyeccionFinanciera(
   const platformNetPct = data.platformSharePercent;
 
   // Barra de reparto visual: solo representa la distribución del neto.
+  const energyCostLabel = solarEnergy.solarCostApplied
+    ? `energía efectiva (${formatCOP(solarEnergy.effectiveEnergyCostPerKwh)}/kWh; solar ${solarEnergy.solarCoveragePercent}% a ${formatCOP(solarEnergy.solarEnergyCostPerKwh ?? 0)}/kWh, red ${formatCOP(energyCostPerKwh)}/kWh)`
+    : `energía (${formatCOP(energyCostPerKwh)}/kWh)`;
+  const operatingCostCopy = fixedMonthlyExpenses > 0
+    ? `Ingreso bruto − ${energyCostLabel} − gastos fijos (${formatCompactCOP(fixedMonthlyExpenses)}/mes) = margen base de reparto`
+    : `Ingreso bruto − ${energyCostLabel} = margen base de reparto`;
+  doc.setFontSize(7.2); doc.setFont("helvetica", "normal");
+  const operatingCostLines = doc.splitTextToSize(operatingCostCopy, CW - 8);
+  const waterfallH = Math.max(32, 29 + operatingCostLines.length * 3.4);
   setColor(doc, C.greenLight, "fill");
-  doc.roundedRect(M, y, CW, 32, 3, 3, "F");
+  doc.roundedRect(M, y, CW, waterfallH, 3, 3, "F");
   setColor(doc, C.greenDark, "text");
   doc.setFontSize(9); doc.setFont("helvetica", "bold");
   doc.text("WATERFALL Y DISTRIBUCIÓN DEL MARGEN NETO", M + 4, y + 6);
@@ -741,13 +759,11 @@ function addProyeccionFinanciera(
   if (platformW > 20) doc.text(`EVGreen ${platformNetPct.toFixed(0)}%`, M + 4 + investorW + platformW / 2, barY + 5, { align: "center" });
 
   setColor(doc, C.gray700, "text");
-  doc.setFontSize(7.2); doc.setFont("helvetica", "normal");
-  const operatingCostLine = fixedMonthlyExpenses > 0
-    ? `Ingreso bruto − energía (${formatCOP(energyCostPerKwh)}/kWh) − gastos fijos (${formatCompactCOP(fixedMonthlyExpenses)}/mes) = margen base de reparto`
-    : `Ingreso bruto − energía (${formatCOP(energyCostPerKwh)}/kWh) = margen base de reparto`;
-  doc.text(`${operatingCostLine}  ·  Aliado: ${allyPct}% del margen bruto`, M + 4, barY + 14);
-  doc.text(`Margen neto distribuible: Inversor ${investorNetPct}%  ·  EVGreen ${platformNetPct}%`, M + 4, barY + 20);
-  y += 38;
+  doc.text(operatingCostLines, M + 4, barY + 14);
+  const operatingCostEndY = barY + 14 + (operatingCostLines.length - 1) * 3.4;
+  doc.text(`Aliado: ${allyPct}% del margen bruto`, M + 4, operatingCostEndY + 4);
+  doc.text(`Margen neto distribuible: Inversor ${investorNetPct}%  ·  EVGreen ${platformNetPct}%`, M + 4, operatingCostEndY + 8);
+  y += waterfallH + 6;
 
   if (data.technicalCondition.requiresGridUpgrade) {
     setColor(doc, C.amber, "fill");
@@ -771,9 +787,12 @@ function addProyeccionFinanciera(
       const powerStatus = data.technicalCondition.requiresGridUpgrade ? "PROYECTADOS" : "INSTALADOS";
       const dailyVehicles = Number(data.estimatedDailyVehicles ?? 0);
       const evPercent = Number(data.estimatedEvPercent ?? 0);
-      const chargerCount = Math.max(1, Number(data.estimatedChargerCount ?? 1));
-      const operatingHoursPerDay = getOperatingHoursPerDay(data);
-      const hasTrafficDemandInputs = dailyVehicles > 0 && evPercent > 0;
+	      const chargerCount = Math.max(1, Number(data.estimatedChargerCount ?? 1));
+	      const operatingHoursPerDay = getOperatingHoursPerDay(data);
+	      const hasSolarPanels = Boolean(data.hasSolarPanels);
+	      const solarCoveragePercent = Number(data.solarCoveragePercent ?? 0);
+	      const solarEnergyCostPerKwh = data.solarEnergyCostPerKwh ?? null;
+	      const hasTrafficDemandInputs = dailyVehicles > 0 && evPercent > 0;
 
 	    y = drawSectionTitle(
         doc,
@@ -802,6 +821,9 @@ function addProyeccionFinanciera(
         fixedMonthlyExpenses,
         transformerCapacityKva: data.transformerCapacityKva,
         electricalViability: data.technicalCondition.requiresGridUpgrade ? "requires_upgrade" : "viable",
+	      hasSolarPanels,
+	      solarCoveragePercent,
+	      solarEnergyCostPerKwh,
       }).projection;
       const trafficProjection = hasTrafficDemandInputs ? buildSpaceTrafficProjection({
         investmentCop: inv,
@@ -811,6 +833,9 @@ function addProyeccionFinanciera(
         totalPowerKw: powerKw,
         operatingHoursPerDay,
         efficiencyPercent,
+	      hasSolarPanels,
+	      solarCoveragePercent,
+	      solarEnergyCostPerKwh,
         spaceType: data.spaceType,
         salePricePerKwh: tarifaKwh,
         energyCostPerKwh,

@@ -203,6 +203,9 @@ async function buildSpaceCrowdfundingProjection(input: {
   operatingHoursStart?: string | null;
   operatingHoursEnd?: string | null;
   is24Hours?: boolean | number | null;
+  hasSolarPanels?: boolean | number | null;
+  solarCoveragePercent?: number | null;
+  solarEnergyCostPerKwh?: number | null;
   currentProject?: any;
 }) {
   if (input.investmentCop <= 0 || input.totalPowerKw <= 0) return null;
@@ -251,6 +254,9 @@ async function buildSpaceCrowdfundingProjection(input: {
       totalPowerKw: input.totalPowerKw,
       operatingHoursPerDay: resolveSpaceOperatingHours(input),
       efficiencyPercent,
+      hasSolarPanels: input.hasSolarPanels,
+      solarCoveragePercent: input.solarCoveragePercent,
+      solarEnergyCostPerKwh: input.solarEnergyCostPerKwh,
       spaceType: input.spaceType,
       salePricePerKwh,
       energyCostPerKwh,
@@ -497,6 +503,8 @@ export const spacesRouter = router({
       transformerCapacityKva: optionalLocalizedDecimalString(),
       hasElectricalPanel: z.boolean().optional(),
       hasSolarPanels: z.boolean().optional(),
+      solarCoveragePercent: optionalFormNumber().refine((value) => value === undefined || (value >= 0 && value <= 100), "La cobertura solar debe estar entre 0 % y 100 %"),
+      solarEnergyCostPerKwh: optionalFormInteger().refine((value) => value === undefined || value >= 0, "El costo solar por kWh no puede ser negativo"),
       electricalDistance: optionalFormInteger(),
       hasInternet: z.boolean().optional(),
       operatingHoursStart: z.string().optional(),
@@ -551,6 +559,8 @@ export const spacesRouter = router({
             transformerCapacityKva: input.transformerCapacityKva || null,
             hasElectricalPanel: input.hasElectricalPanel ? 1 : 0,
             hasSolarPanels: input.hasSolarPanels ? 1 : 0,
+            solarCoveragePercent: input.solarCoveragePercent ?? 0,
+            solarEnergyCostPerKwh: input.solarEnergyCostPerKwh ?? null,
             electricalDistance: input.electricalDistance || null,
             hasInternet: input.hasInternet ? 1 : 0,
             operatingHoursStart: input.operatingHoursStart || "06:00",
@@ -571,6 +581,10 @@ export const spacesRouter = router({
           submissionId: created.result.insertId,
           previousHasSolarPanels: null,
           nextHasSolarPanels: input.hasSolarPanels ? 1 : 0,
+          previousSolarCoveragePercent: null,
+          nextSolarCoveragePercent: input.solarCoveragePercent ?? 0,
+          previousSolarEnergyCostPerKwh: null,
+          nextSolarEnergyCostPerKwh: input.solarEnergyCostPerKwh ?? null,
           changedById: ctx.user?.id ?? null,
           changedByRole: ctx.user?.role ?? "external_submitter",
           changeSource: "SUBMISSION",
@@ -590,6 +604,9 @@ export const spacesRouter = router({
         operatingHoursStart: input.operatingHoursStart,
         operatingHoursEnd: input.operatingHoursEnd,
         is24Hours: input.is24Hours,
+        hasSolarPanels: input.hasSolarPanels,
+        solarCoveragePercent: input.solarCoveragePercent,
+        solarEnergyCostPerKwh: input.solarEnergyCostPerKwh,
       });
       if (projection) {
         await db.update(spaceSubmissions)
@@ -1091,6 +1108,10 @@ export const spacesRouter = router({
         return db.select({
           previousHasSolarPanels: spaceSolarScopeHistory.previousHasSolarPanels,
           nextHasSolarPanels: spaceSolarScopeHistory.nextHasSolarPanels,
+          previousSolarCoveragePercent: spaceSolarScopeHistory.previousSolarCoveragePercent,
+          nextSolarCoveragePercent: spaceSolarScopeHistory.nextSolarCoveragePercent,
+          previousSolarEnergyCostPerKwh: spaceSolarScopeHistory.previousSolarEnergyCostPerKwh,
+          nextSolarEnergyCostPerKwh: spaceSolarScopeHistory.nextSolarEnergyCostPerKwh,
           changedByRole: spaceSolarScopeHistory.changedByRole,
           changeSource: spaceSolarScopeHistory.changeSource,
           createdAt: spaceSolarScopeHistory.createdAt,
@@ -1198,7 +1219,20 @@ export const spacesRouter = router({
 				const inherited = getCrowdfundingInheritanceSnapshot(submission, inheritedPhotos);
 				const targetAmount = inherited.targetAmount ?? 0;
 				const totalPowerKw = inherited.totalPowerKw ?? 0;
-          const projection = await buildSpaceCrowdfundingProjection({ investmentCop: targetAmount, totalPowerKw, spaceType: submission.spaceType });
+				const projection = await buildSpaceCrowdfundingProjection({
+					investmentCop: targetAmount,
+					totalPowerKw,
+					spaceType: submission.spaceType,
+					estimatedDailyVehicles: Number(submission.estimatedDailyVehicles ?? 0),
+					estimatedEvPercent: Number(submission.estimatedEvPercent ?? 0),
+					chargerCount: Number(submission.estimatedChargerCount ?? 0),
+					operatingHoursStart: submission.operatingHoursStart,
+					operatingHoursEnd: submission.operatingHoursEnd,
+					is24Hours: submission.is24Hours,
+					hasSolarPanels: submission.hasSolarPanels,
+					solarCoveragePercent: Number(submission.solarCoveragePercent ?? 0),
+					solarEnergyCostPerKwh: submission.solarEnergyCostPerKwh === null ? null : Number(submission.solarEnergyCostPerKwh),
+				});
 	            const [cfResult] = await db.insert(crowdfundingProjects).values({
 				name: inherited.name,
 				description: inherited.description,
@@ -1211,6 +1245,8 @@ export const spacesRouter = router({
 					chargerCount: inherited.chargerCount ?? 0,
 					chargerPowerKw: inherited.chargerPowerKw ?? 0,
 	                            hasSolarPanels: inherited.hasSolarPanels ? 1 : 0,
+	                            solarCoveragePercent: String(inherited.solarCoveragePercent),
+	                            solarEnergyCostPerKwh: inherited.solarEnergyCostPerKwh,
               raisedAmount: 0,
 					estimatedRoiPercent: projection ? projection.selected.roiAnnualPercent.toFixed(2) : "0.00",
 					estimatedPaybackMonths: projection ? Math.ceil(projection.selected.paybackMonths) : 0,
@@ -1497,6 +1533,15 @@ export const spacesRouter = router({
 				investmentCop: targetAmount,
 				totalPowerKw,
 				spaceType: submission.spaceType,
+				estimatedDailyVehicles: Number(submission.estimatedDailyVehicles ?? 0),
+				estimatedEvPercent: Number(submission.estimatedEvPercent ?? 0),
+				chargerCount: Number(submission.estimatedChargerCount ?? 0),
+				operatingHoursStart: submission.operatingHoursStart,
+				operatingHoursEnd: submission.operatingHoursEnd,
+				is24Hours: submission.is24Hours,
+				hasSolarPanels: submission.hasSolarPanels,
+				solarCoveragePercent: Number(submission.solarCoveragePercent ?? 0),
+				solarEnergyCostPerKwh: submission.solarEnergyCostPerKwh === null ? null : Number(submission.solarEnergyCostPerKwh),
 				currentProject,
 			});
 			if (!projection) {
@@ -1522,6 +1567,8 @@ export const spacesRouter = router({
 					minimumInvestment: firstPositiveNumber(currentProject?.minimumInvestment, inherited.minimumInvestment, input.minimumInvestment, 50000000)!,
 					totalPowerKw,
 					hasSolarPanels: inherited.hasSolarPanels ? 1 : 0,
+					solarCoveragePercent: String(inherited.solarCoveragePercent),
+					solarEnergyCostPerKwh: inherited.solarEnergyCostPerKwh,
 					...projectionValues,
 	              status: "OPEN",
               launchDate: new Date().toISOString().slice(0, 19).replace("T", " "),
@@ -1542,6 +1589,8 @@ export const spacesRouter = router({
 			chargerCount: inherited.chargerCount ?? 2,
 			chargerPowerKw: inherited.chargerPowerKw ?? 60,
 	            hasSolarPanels: inherited.hasSolarPanels ? 1 : 0,
+	            solarCoveragePercent: String(inherited.solarCoveragePercent),
+	            solarEnergyCostPerKwh: inherited.solarEnergyCostPerKwh,
             raisedAmount: 0,
 				...projectionValues,
             status: "OPEN",
@@ -1670,6 +1719,8 @@ export const spacesRouter = router({
         transformerCapacityKva: optionalLocalizedDecimalString(),
         hasElectricalPanel: z.boolean().optional(),
         hasSolarPanels: z.boolean().optional(),
+        solarCoveragePercent: optionalFormNumber().refine((value) => value === undefined || (value >= 0 && value <= 100), "La cobertura solar debe estar entre 0 % y 100 %"),
+        solarEnergyCostPerKwh: optionalFormInteger().refine((value) => value === undefined || value >= 0, "El costo solar por kWh no puede ser negativo"),
         electricalDistance: optionalFormInteger(),
         electricalDistanceM: optionalFormInteger(),
         hasInternet: z.boolean().optional(),
@@ -1722,6 +1773,8 @@ export const spacesRouter = router({
             operatingHoursEnd: spaceSubmissions.operatingHoursEnd,
             is24Hours: spaceSubmissions.is24Hours,
             hasSolarPanels: spaceSubmissions.hasSolarPanels,
+            solarCoveragePercent: spaceSubmissions.solarCoveragePercent,
+            solarEnergyCostPerKwh: spaceSubmissions.solarEnergyCostPerKwh,
           })
           .from(spaceSubmissions)
           .where(eq(spaceSubmissions.id, id))
@@ -1751,6 +1804,9 @@ export const spacesRouter = router({
           "estimatedChargerCount",
           "estimatedDailyVehicles",
           "estimatedEvPercent",
+          "hasSolarPanels",
+          "solarCoveragePercent",
+          "solarEnergyCostPerKwh",
         ].some((field) => cleanFields[field] !== undefined && Number(cleanFields[field]) !== Number(previousSubmission[field as keyof typeof previousSubmission]));
         const operatingProjectionInputChanged = ["operatingHoursStart", "operatingHoursEnd", "is24Hours"]
           .some((field) => cleanFields[field] !== undefined && String(cleanFields[field]) !== String(previousSubmission[field as keyof typeof previousSubmission]));
@@ -1784,17 +1840,26 @@ export const spacesRouter = router({
         }
 
         const previousHasSolarPanels = Number(previousSubmission.hasSolarPanels) === 1;
-        const nextHasSolarPanels = Number(cleanFields.hasSolarPanels) === 1;
+        const nextHasSolarPanels = cleanFields.hasSolarPanels === undefined
+          ? previousHasSolarPanels
+          : Number(cleanFields.hasSolarPanels) === 1;
+        const solarConfigurationChanged = (cleanFields.hasSolarPanels !== undefined && previousHasSolarPanels !== nextHasSolarPanels)
+          || (cleanFields.solarCoveragePercent !== undefined && Number(cleanFields.solarCoveragePercent) !== Number(previousSubmission.solarCoveragePercent ?? 0))
+          || (cleanFields.solarEnergyCostPerKwh !== undefined && (previousSubmission.solarEnergyCostPerKwh === null || Number(cleanFields.solarEnergyCostPerKwh) !== Number(previousSubmission.solarEnergyCostPerKwh)));
         await db.transaction(async (tx: any) => {
           await tx.update(spaceSubmissions)
             .set(cleanFields)
             .where(eq(spaceSubmissions.id, id));
 
-          if (cleanFields.hasSolarPanels !== undefined && previousHasSolarPanels !== nextHasSolarPanels) {
+          if (solarConfigurationChanged) {
             await tx.insert(spaceSolarScopeHistory).values({
               submissionId: id,
               previousHasSolarPanels: previousHasSolarPanels ? 1 : 0,
               nextHasSolarPanels: nextHasSolarPanels ? 1 : 0,
+              previousSolarCoveragePercent: previousSubmission.solarCoveragePercent ?? 0,
+              nextSolarCoveragePercent: cleanFields.solarCoveragePercent ?? previousSubmission.solarCoveragePercent ?? 0,
+              previousSolarEnergyCostPerKwh: previousSubmission.solarEnergyCostPerKwh ?? null,
+              nextSolarEnergyCostPerKwh: cleanFields.solarEnergyCostPerKwh ?? previousSubmission.solarEnergyCostPerKwh ?? null,
               changedById: ctx.user.id,
               changedByRole: ctx.user.role,
               changeSource: "ADMIN_EDIT",
@@ -1821,12 +1886,15 @@ export const spacesRouter = router({
               investmentCop: Number(submissionForProjection.estimatedInvestmentCop ?? 0),
               totalPowerKw: Number(submissionForProjection.estimatedPowerKw ?? 0),
               spaceType: submissionForProjection.spaceType,
-              estimatedDailyVehicles: submissionForProjection.estimatedDailyVehicles,
-              estimatedEvPercent: submissionForProjection.estimatedEvPercent,
-              chargerCount: submissionForProjection.estimatedChargerCount,
+              estimatedDailyVehicles: Number(submissionForProjection.estimatedDailyVehicles ?? 0),
+              estimatedEvPercent: Number(submissionForProjection.estimatedEvPercent ?? 0),
+              chargerCount: Number(submissionForProjection.estimatedChargerCount ?? 0),
               operatingHoursStart: submissionForProjection.operatingHoursStart,
               operatingHoursEnd: submissionForProjection.operatingHoursEnd,
               is24Hours: submissionForProjection.is24Hours,
+              hasSolarPanels: submissionForProjection.hasSolarPanels,
+              solarCoveragePercent: Number(submissionForProjection.solarCoveragePercent ?? 0),
+              solarEnergyCostPerKwh: submissionForProjection.solarEnergyCostPerKwh === null ? null : Number(submissionForProjection.solarEnergyCostPerKwh),
               currentProject,
             })
             : null;
@@ -1860,6 +1928,7 @@ export const spacesRouter = router({
           "estimatedPaybackMonths", "estimatedPowerKw", "estimatedChargerCount",
           "estimatedDailyVehicles", "estimatedEvPercent", "recommendedChargerType",
           "technicalScore", "technicalNotes", "aiScore", "aiAnalysis", "hasSolarPanels",
+          "solarCoveragePercent", "solarEnergyCostPerKwh",
         ];
         if (inheritedFields.some((field) => cleanFields[field] !== undefined)) {
           [updatedSubmission] = await db
@@ -2350,6 +2419,9 @@ export const spacesRouter = router({
         estimatedInvestmentCop: submission.estimatedInvestmentCop ? parseFloat(String(submission.estimatedInvestmentCop)) : null,
         estimatedPowerKw: submission.estimatedPowerKw ? parseFloat(String(submission.estimatedPowerKw)) : null,
         estimatedChargerCount: submission.estimatedChargerCount,
+        hasSolarPanels: Number(submission.hasSolarPanels) === 1,
+        solarCoveragePercent: Number(submission.solarCoveragePercent ?? 0),
+        solarEnergyCostPerKwh: submission.solarEnergyCostPerKwh === null ? null : Number(submission.solarEnergyCostPerKwh),
         allySharePercent: input.allySharePercent,
 	        investorSharePercent: revenueDistribution.investorSharePercent,
 	        platformSharePercent: revenueDistribution.evgreenSharePercent,

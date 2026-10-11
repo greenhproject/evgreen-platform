@@ -406,6 +406,8 @@ export const crowdfundingProjects = mysqlTable("crowdfunding_projects", {
 	chargerCount: int().default(4).notNull(),
 	chargerPowerKw: int().default(120).notNull(),
 	hasSolarPanels: tinyint().default(1).notNull(),
+	solarCoveragePercent: decimal("solar_coverage_percent", { precision: 5, scale: 2 }).default('0.00').notNull(),
+	solarEnergyCostPerKwh: int("solar_energy_cost_per_kwh"),
 	estimatedRoiPercent: decimal({ precision: 5, scale: 2 }).default('85.00'),
 	estimatedPaybackMonths: int().default(14),
 	status: mysqlEnum(['DRAFT','OPEN','IN_PROGRESS','FUNDED','COMPLETED','CANCELLED']).default('DRAFT').notNull(),
@@ -1658,6 +1660,8 @@ export const spaceSubmissions = mysqlTable("space_submissions", {
 	transformerCapacityKva: decimal({ precision: 10, scale: 2 }),
 	hasElectricalPanel: tinyint().default(0),
 	hasSolarPanels: tinyint("has_solar_panels").default(0).notNull(),
+	solarCoveragePercent: decimal("solar_coverage_percent", { precision: 5, scale: 2 }).default('0.00').notNull(),
+	solarEnergyCostPerKwh: int("solar_energy_cost_per_kwh"),
 	electricalDistance: int(),
 	hasInternet: tinyint().default(0),
 	operatingHoursStart: varchar({ length: 5 }).default('06:00'),
@@ -1739,14 +1743,18 @@ export const spaceStatusHistory = mysqlTable("space_status_history", {
 
 /**
  * Bitácora inmutable de la decisión de incluir solar dentro del alcance de un
- * espacio. No valida generación, CAPEX ni ahorro: conserva únicamente la
- * decisión operativa y el actor que la registró o modificó.
+ * espacio y de sus supuestos energéticos. No valida generación, CAPEX ni
+ * ahorro: conserva la decisión y los inputs declarados con su actor.
  */
 export const spaceSolarScopeHistory = mysqlTable("space_solar_scope_history", {
 	id: int().autoincrement().notNull(),
 	submissionId: int("submission_id").notNull(),
 	previousHasSolarPanels: tinyint("previous_has_solar_panels"),
 	nextHasSolarPanels: tinyint("next_has_solar_panels").notNull(),
+	previousSolarCoveragePercent: decimal("previous_solar_coverage_percent", { precision: 5, scale: 2 }),
+	nextSolarCoveragePercent: decimal("next_solar_coverage_percent", { precision: 5, scale: 2 }),
+	previousSolarEnergyCostPerKwh: int("previous_solar_energy_cost_per_kwh"),
+	nextSolarEnergyCostPerKwh: int("next_solar_energy_cost_per_kwh"),
 	changedById: int("changed_by_id"),
 	changedByRole: varchar("changed_by_role", { length: 32 }),
 	changeSource: mysqlEnum("change_source", ['SUBMISSION','ADMIN_EDIT']).notNull(),

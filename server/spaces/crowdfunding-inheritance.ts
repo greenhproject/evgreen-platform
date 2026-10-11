@@ -10,6 +10,10 @@ export function getCrowdfundingInheritanceSnapshot(space: any, photos: Inherited
     ? Math.round(Number(totalPowerKw) / Number(chargerCount))
     : null;
   const hasSolarPanels = space.hasSolarPanels === true || Number(space.hasSolarPanels) === 1;
+  const solarCoveragePercent = Number(space.solarCoveragePercent ?? 0);
+  const solarEnergyCostPerKwh = space.solarEnergyCostPerKwh === null || space.solarEnergyCostPerKwh === undefined
+    ? null
+    : Number(space.solarEnergyCostPerKwh);
 
   const missingFinancialFields = [
     !space.estimatedInvestmentCop ? "meta de inversión" : null,
@@ -40,6 +44,8 @@ export function getCrowdfundingInheritanceSnapshot(space: any, photos: Inherited
     chargerCount,
     chargerPowerKw,
     hasSolarPanels,
+    solarCoveragePercent: Number.isFinite(solarCoveragePercent) ? solarCoveragePercent : 0,
+    solarEnergyCostPerKwh: solarEnergyCostPerKwh !== null && Number.isFinite(solarEnergyCostPerKwh) ? solarEnergyCostPerKwh : null,
     estimatedRoiPercent: space.estimatedRoiPercent ? String(space.estimatedRoiPercent) : null,
     estimatedPaybackMonths: space.estimatedPaybackMonths ?? null,
     recommendedChargerType: space.recommendedChargerType ?? null,
@@ -92,8 +98,11 @@ export function buildCrowdfundingProjectInheritanceUpdate(space: any, photos: In
   if (inherited.chargerCount !== null) update.chargerCount = inherited.chargerCount;
   if (inherited.chargerPowerKw !== null) update.chargerPowerKw = inherited.chargerPowerKw;
   // Alcance técnico heredado; no forma parte de los campos financieros ni
-  // autoriza cambios automáticos de CAPEX, ahorro, ROI o payback.
+  // autoriza cambios automáticos de CAPEX, ahorro, ROI o payback sin inputs
+  // solares configurados específicamente para el sitio.
   update.hasSolarPanels = inherited.hasSolarPanels ? 1 : 0;
+  update.solarCoveragePercent = inherited.solarCoveragePercent;
+  update.solarEnergyCostPerKwh = inherited.solarEnergyCostPerKwh;
   if (inherited.estimatedRoiPercent !== null) update.estimatedRoiPercent = inherited.estimatedRoiPercent;
   if (inherited.estimatedPaybackMonths !== null) update.estimatedPaybackMonths = inherited.estimatedPaybackMonths;
 

@@ -204,6 +204,7 @@ export default function AdminSpaces() {
     estimatedDailyVehicles: "", estimatedEvPercent: "5", socioeconomicStratum: "",
     estimatedInvestmentCop: "", estimatedPowerKw: "120", estimatedChargerCount: "1",
     hasSolarPanels: false,
+    solarCoveragePercent: "", solarEnergyCostPerKwh: "",
   });
   const [createPhotos, setCreatePhotos] = useState<Array<{ file: File; preview: string; photoType: string; isCover?: boolean; isConceptual?: boolean }>>([]);
   const [dateTo, setDateTo] = useState("");
@@ -273,6 +274,7 @@ export default function AdminSpaces() {
         estimatedDailyVehicles: "", estimatedEvPercent: "5", socioeconomicStratum: "",
         estimatedInvestmentCop: "", estimatedPowerKw: "120", estimatedChargerCount: "1",
         hasSolarPanels: false,
+        solarCoveragePercent: "", solarEnergyCostPerKwh: "",
       });
       createPhotos.forEach(p => URL.revokeObjectURL(p.preview));
       setCreatePhotos([]);
@@ -970,6 +972,19 @@ export default function AdminSpaces() {
                 <input type="checkbox" checked={createForm.hasSolarPanels} onChange={e => setCreateForm(p => ({ ...p, hasSolarPanels: e.target.checked }))} className="mt-0.5 h-4 w-4 accent-amber-400" />
                 <span><strong className="block text-amber-200">Incluir sistema solar en el alcance</strong><span className="mt-0.5 block leading-4 text-amber-100/75">Se registrará como alcance técnico. El ahorro, CAPEX y retorno se definen después de factura, consumo y diseño específico.</span></span>
               </label>
+              {createForm.hasSolarPanels && (
+                <div className="mt-2 grid grid-cols-1 gap-2 rounded-lg border border-amber-400/20 bg-amber-400/5 p-2.5 sm:grid-cols-2">
+                  <div>
+                    <Label className="mb-1 block text-xs text-amber-100">Cobertura solar autoconsumida (%)</Label>
+                    <Input inputMode="decimal" min="0" max="100" placeholder="Ej.: 25" value={createForm.solarCoveragePercent} onChange={e => setCreateForm(p => ({ ...p, solarCoveragePercent: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" />
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-xs text-amber-100">Costo solar validado (COP/kWh)</Label>
+                    <Input inputMode="numeric" min="0" placeholder="Ej.: 180" value={createForm.solarEnergyCostPerKwh} onChange={e => setCreateForm(p => ({ ...p, solarEnergyCostPerKwh: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" />
+                  </div>
+                  <p className="sm:col-span-2 text-[11px] leading-4 text-amber-100/75">Solo con ambos datos el modelo pondera el costo efectivo: cobertura solar × costo solar + saldo × costo de red. Sin factura, diseño y generación validados, déjalos vacíos: no se reduce la energía de red.</p>
+                </div>
+              )}
             </div>
 
             <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3">
@@ -1176,6 +1191,8 @@ export default function AdminSpaces() {
                     estimatedPowerKw: toOptionalInteger(createForm.estimatedPowerKw),
                     estimatedChargerCount: toOptionalInteger(createForm.estimatedChargerCount),
                     hasSolarPanels: createForm.hasSolarPanels,
+                    solarCoveragePercent: toOptionalNumber(createForm.solarCoveragePercent),
+                    solarEnergyCostPerKwh: toOptionalInteger(createForm.solarEnergyCostPerKwh),
                     photos: photosData.length > 0 ? photosData : undefined,
                   });
                 };
@@ -1306,6 +1323,9 @@ function SpaceDetailDialog({
         totalPowerKw,
         operatingHoursPerDay: getOperatingHoursPerDay(editForm.operatingHoursStart, editForm.operatingHoursEnd, editForm.is24Hours),
         efficiencyPercent: Number(calculatorParams?.eficienciaCargaDc ?? 92),
+        hasSolarPanels: Boolean(editForm.hasSolarPanels),
+        solarCoveragePercent: toOptionalNumber(editForm.solarCoveragePercent),
+        solarEnergyCostPerKwh: toOptionalInteger(editForm.solarEnergyCostPerKwh),
         spaceType: space.spaceType,
         salePricePerKwh: Number(calculatorParams?.precioVentaDefault ?? 1800),
         energyCostPerKwh: Number(calculatorParams?.costoEnergiaRed ?? 700),
@@ -1662,9 +1682,11 @@ function SpaceDetailDialog({
                       estimatedEvPercent: (space as any).estimatedEvPercent ?? "",
                       socioeconomicStratum: (space as any).socioeconomicStratum ?? "",
                       operatingHoursStart: (space as any).operatingHoursStart || "06:00",
-                      operatingHoursEnd: (space as any).operatingHoursEnd || "22:00",
+	                      operatingHoursEnd: (space as any).operatingHoursEnd || "22:00",
 	                      hasElectricalPanel: !!space.hasElectricalPanel,
 	                      hasSolarPanels: !!(space as any).hasSolarPanels,
+	                      solarCoveragePercent: (space as any).solarCoveragePercent ?? "",
+	                      solarEnergyCostPerKwh: (space as any).solarEnergyCostPerKwh ?? "",
 	                      hasInternet: !!space.hasInternet,
                       is24Hours: !!(space as any).is24Hours,
                       electricalViability: (space as any).electricalViability || "",
@@ -1738,6 +1760,7 @@ function SpaceDetailDialog({
                   {space.transformerCapacityKva && <DetailRow label="Trafo" value={`${space.transformerCapacityKva} kVA`} />}
                   <DetailRow label="Tablero" value={space.hasElectricalPanel ? "Sí" : "No"} />
                   <DetailRow label="Sistema solar" value={(space as any).hasSolarPanels ? "Incluido en el alcance" : "No incluido"} />
+                  {(space as any).hasSolarPanels && <DetailRow label="Costo solar" value={Number((space as any).solarCoveragePercent ?? 0) > 0 && (space as any).solarEnergyCostPerKwh !== null && (space as any).solarEnergyCostPerKwh !== undefined ? `${Number((space as any).solarCoveragePercent).toLocaleString("es-CO")}% a ${formatCOP(Number((space as any).solarEnergyCostPerKwh))}/kWh` : "Pendiente de cobertura y costo validados"} />}
                   {space.electricalDistance && <DetailRow label="Dist. tablero" value={`${space.electricalDistance} m`} />}
                   <DetailRow label="Internet" value={space.hasInternet ? "Sí" : "No"} />
                   <DetailRow label="Horario" value={space.is24Hours ? "24h" : `${space.operatingHoursStart || "—"} - ${space.operatingHoursEnd || "—"}`} />
@@ -1748,7 +1771,7 @@ function SpaceDetailDialog({
                     <div className="mt-2 space-y-1.5">
                       {solarScopeHistory.slice(0, 2).map((event, index) => (
                         <div key={`${event.createdAt}-${index}`} className="flex flex-col gap-0.5 text-[11px] text-amber-100/80 sm:flex-row sm:items-center sm:justify-between">
-                          <span>{event.changeSource === "SUBMISSION" ? "Registro inicial" : "Edición administrativa"}: <strong className="text-amber-100">{Number(event.nextHasSolarPanels) === 1 ? "Solar incluido" : "Solar no incluido"}</strong></span>
+                          <span>{event.changeSource === "SUBMISSION" ? "Registro inicial" : "Edición administrativa"}: <strong className="text-amber-100">{Number(event.nextHasSolarPanels) === 1 ? "Solar incluido" : "Solar no incluido"}</strong>{Number(event.nextHasSolarPanels) === 1 && Number(event.nextSolarCoveragePercent ?? 0) > 0 && event.nextSolarEnergyCostPerKwh !== null ? ` · ${Number(event.nextSolarCoveragePercent).toLocaleString("es-CO")}% a ${formatCOP(Number(event.nextSolarEnergyCostPerKwh))}/kWh` : ""}</span>
                           <span className="shrink-0 text-amber-100/55">{new Date(event.createdAt).toLocaleString("es-CO")}</span>
                         </div>
                       ))}
@@ -2195,6 +2218,19 @@ function SpaceDetailDialog({
                 <input type="checkbox" checked={!!editForm.hasSolarPanels} onChange={e => setEditForm(p => ({ ...p, hasSolarPanels: e.target.checked }))} className="mt-0.5 h-4 w-4 accent-amber-400" />
                 <span><span className="flex items-center gap-1 font-medium text-amber-200"><Sun className="h-3.5 w-3.5" /> Incluir sistema solar en el alcance</span><span className="mt-1 block text-[11px] leading-4 text-amber-100/75">Suma hasta 3 puntos técnicos al re-evaluar con IA. No modifica ahorro, CAPEX, ROI ni payback sin factura, consumo y diseño solar específico.</span></span>
               </label>
+              {editForm.hasSolarPanels && (
+                <div className="mb-3 grid grid-cols-1 gap-2 rounded-lg border border-amber-400/20 bg-amber-400/5 p-2.5 sm:grid-cols-2">
+                  <div>
+                    <Label className="mb-1 block text-xs text-amber-100">Cobertura solar autoconsumida (%)</Label>
+                    <Input inputMode="decimal" min="0" max="100" placeholder="Ej.: 25" value={editForm.solarCoveragePercent ?? ""} onChange={e => setEditForm(p => ({ ...p, solarCoveragePercent: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" />
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-xs text-amber-100">Costo solar validado (COP/kWh)</Label>
+                    <Input inputMode="numeric" min="0" placeholder="Ej.: 180" value={editForm.solarEnergyCostPerKwh ?? ""} onChange={e => setEditForm(p => ({ ...p, solarEnergyCostPerKwh: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" />
+                  </div>
+                  <p className="sm:col-span-2 text-[11px] leading-4 text-amber-100/75">El descuento se aplica únicamente cuando la cobertura y el costo solar fueron validados con factura, consumo y diseño del sitio. De lo contrario el modelo conserva el costo de red.</p>
+                </div>
+              )}
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">Transformador (kVA)</Label>
@@ -2355,6 +2391,13 @@ function SpaceDetailDialog({
                       <p className="text-xs font-semibold text-emerald-300">Proyección sugerida · escenario {suggestedFinancialProjection.selectedScenario}</p>
                       <p className="mt-0.5 text-[11px] leading-4 text-emerald-100/75">
                         Demanda realista: {suggestedFinancialProjection.snapshot.assumptions.estimatedDailyVehicles.toLocaleString("es-CO")} vehículos/día × {suggestedFinancialProjection.snapshot.assumptions.estimatedEvPercent}% EV = {suggestedFinancialProjection.selected.eligibleEvVehiclesPerDay.toLocaleString("es-CO")} sesiones potenciales/día. Se modelan {suggestedFinancialProjection.selected.sessionsPerDay.toLocaleString("es-CO")} según el menor límite: {suggestedFinancialProjection.selected.connectorCapacitySessionsPerDay.toLocaleString("es-CO")} por mangueras y {suggestedFinancialProjection.selected.powerCapacitySessionsPerDay?.toLocaleString("es-CO") ?? "—"} por potencia ({suggestedFinancialProjection.snapshot.assumptions.totalPowerKw?.toLocaleString("es-CO") ?? "—"} kW), a {suggestedFinancialProjection.snapshot.assumptions.benchmarkKwhPerSession} kWh/sesión.
+                      </p>
+                      <p className="mt-1 text-[11px] leading-4 text-amber-100/80">
+                        {suggestedFinancialProjection.snapshot.assumptions.solarCostApplied
+                          ? `Solar validado: ${suggestedFinancialProjection.snapshot.assumptions.solarCoveragePercent}% de cobertura a ${formatCOP(suggestedFinancialProjection.snapshot.assumptions.solarEnergyCostPerKwh ?? 0)}/kWh; costo energético efectivo ${formatCOP(suggestedFinancialProjection.snapshot.assumptions.effectiveEnergyCostPerKwh)}/kWh (red: ${formatCOP(suggestedFinancialProjection.snapshot.assumptions.energyCostPerKwh)}/kWh).`
+                          : editForm.hasSolarPanels
+                            ? `Solar incluido en alcance, sin ahorro aplicado: configura cobertura autoconsumida y costo solar validados; mientras tanto se conserva el costo de red de ${formatCOP(suggestedFinancialProjection.snapshot.assumptions.energyCostPerKwh)}/kWh.`
+                            : `Costo energético modelado: ${formatCOP(suggestedFinancialProjection.snapshot.assumptions.energyCostPerKwh)}/kWh de red.`}
                       </p>
                     </div>
                     <Button
@@ -2627,6 +2670,10 @@ function SpaceDetailDialog({
                 if (editForm.operatingHoursEnd) payload.operatingHoursEnd = editForm.operatingHoursEnd;
                 if (editForm.hasElectricalPanel !== undefined) payload.hasElectricalPanel = editForm.hasElectricalPanel;
                 if (editForm.hasSolarPanels !== undefined) payload.hasSolarPanels = editForm.hasSolarPanels;
+                const solarCoveragePercent = toOptionalNumber(editForm.solarCoveragePercent);
+                const solarEnergyCostPerKwh = toOptionalInteger(editForm.solarEnergyCostPerKwh);
+                if (solarCoveragePercent !== undefined) payload.solarCoveragePercent = solarCoveragePercent;
+                if (solarEnergyCostPerKwh !== undefined) payload.solarEnergyCostPerKwh = solarEnergyCostPerKwh;
                 if (editForm.hasInternet !== undefined) payload.hasInternet = editForm.hasInternet;
                 if (editForm.is24Hours !== undefined) payload.is24Hours = editForm.is24Hours;
                 if (editForm.electricalViability) payload.electricalViability = editForm.electricalViability;

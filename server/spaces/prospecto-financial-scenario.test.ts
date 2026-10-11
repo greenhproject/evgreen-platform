@@ -68,6 +68,27 @@ describe("escenario financiero de prospecto", () => {
     expect(pessimistic.roiAnnualPercent).toBeCloseTo(107.49, 2);
   });
 
+  it("reduce el costo solo con cobertura y costo solar validados", () => {
+    const gridOnly = buildProspectoFinancialScenario({
+      ...baseInput,
+      transformerCapacityKva: 500,
+      electricalViability: "viable",
+      hasSolarPanels: true,
+    }).projection.scenarios.REALISTIC;
+    const solarValidated = buildProspectoFinancialScenario({
+      ...baseInput,
+      transformerCapacityKva: 500,
+      electricalViability: "viable",
+      hasSolarPanels: true,
+      solarCoveragePercent: 30,
+      solarEnergyCostPerKwh: 200,
+    }).projection.scenarios.REALISTIC;
+
+    expect(gridOnly.waterfall.energyCostPerKwh).toBe(850);
+    expect(solarValidated.waterfall.energyCostPerKwh).toBe(655);
+    expect(solarValidated.investorMonthlyCashflow).toBeGreaterThan(gridOnly.investorMonthlyCashflow);
+  });
+
   it("reconcilia las cifras publicadas de SPE-2026-0067 con el costo vigente y las métricas simples", () => {
     const { projection } = buildProspectoFinancialScenario({
       ...baseInput,

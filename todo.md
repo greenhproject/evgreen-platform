@@ -84,16 +84,22 @@
 - [x] Corregir y verificar la hidratación real de edición: la respuesta tRPC entrega `hasSolarPanels=1` y la casilla inicia marcada para EDS NQS 41; el desfase observado era un proceso de vista previa local sin reiniciar.
 - [x] Realizar QA visual verificable del diálogo de Espacios en escritorio y móvil, confirmando que la casilla solar aparece y no rompe el layout.
 - [x] Ejecutar una prueba controlada del guardado: interceptar la mutación desde UI, validar el payload solar y no crear ni modificar Espacios operativos.
-- [ ] Guardar checkpoint WebDev, ejecutar publicación segura a GitHub y verificar el despliegue tras la mejora solar.
+- [x] Añadir cobertura solar autoconsumida y costo solar validado por kWh al Espacio, su bitácora y la herencia a Crowdfunding; históricos quedan en 0 % sin alterar sus proyecciones.
+- [x] Aplicar el costo energético ponderado solamente cuando el sitio tiene solar, cobertura y costo configurados: `costo efectivo = cobertura × costo solar + saldo × costo de red`; la casilla sola mantiene el costo de red.
+- [x] Validación focal de solar: TypeScript y 19 pruebas aprobadas, cubriendo no-ahorro sin configuración, ponderación, proyección y herencia.
+- [x] Aplicar y auditar la migración aditiva 0057: las tres tablas tienen las nuevas columnas; 23 espacios históricos quedan intactos, con 1 alcance solar y 0 configuraciones de costo solar hasta recibir sus datos validados.
+- [x] QA visual con datos reales de EDS NQS 41 en escritorio y móvil: checkbox, cobertura y costo solar permanecen visibles, alineados y responsivos; no se creó ni modificó una postulación durante la revisión.
+- [x] Validación integral del modelo solar tras integrar el PDF de aliado: TypeScript, 241 archivos / 2.342 pruebas aprobadas; 5 suites y 7 pruebas de integración omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo aprobado.
+- [ ] Guardar checkpoint WebDev, ejecutar publicación segura a GitHub y verificar el despliegue solar.
 
 ## Espacios — proyección por demanda vehicular (2026-10-11)
 
 - [x] Reemplazar la hipótesis principal de horas equivalentes por flujo vehicular diario × porcentaje EV declarado; el escenario realista toma ese valor directamente y los escenarios pesimista/optimista aplican 50 %/150 % de forma explícita.
-- [x] Estimar energía con 40 kWh por sesión y limitar las sesiones solamente por capacidad física: cargadores × dos mangueras × benchmark de 21 sesiones por manguera/día.
+- [x] Estimar energía con 40 kWh por sesión y limitar las sesiones por el menor techo entre potencia y mangueras: cargadores × dos mangueras × benchmark de 20,1 sesiones por manguera/día.
 - [x] Mantener la cascada auditable: ingreso bruto − costo de energía = margen bruto; participación del aliado sobre ese margen; reparto del margen neto entre inversionista y EVGreen.
 - [x] Actualizar la tarjeta de edición y el PDF de prospecto para explicar demanda, sesiones, límite técnico y supuestos, conservando el modelo por horas únicamente como alternativa para registros históricos sin flujo o porcentaje EV.
 - [x] Validación integral: TypeScript, 239 archivos / 2.333 pruebas aprobadas; 5 suites de integración y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo aprobado.
 - [x] Incorporar capacidad de potencia y horario: el techo final es el menor entre mangueras disponibles y `kW instalados × horas de operación × eficiencia ÷ kWh/sesión`; cambiar potencia, cargadores u horario recalcula Espacios y Crowdfunding vinculados.
 - [x] Usar el benchmark aportado en el modelo EDS: 20,1 sesiones por manguera/día y 40 kWh por sesión; las cifras se muestran como supuestos de preinversión y no como demanda garantizada.
 - [x] Validación: TypeScript, 240 archivos / 2.337 pruebas aprobadas; 5 suites de integración y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo aprobado.
-- [ ] Guardar checkpoint WebDev, ejecutar publicación segura y verificar el despliegue.
+- [x] Revalidar junto con el modelo solar ponderado: TypeScript, 241 archivos / 2.342 pruebas aprobadas; build productivo aprobado.

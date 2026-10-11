@@ -59,6 +59,8 @@ describe("getCrowdfundingInheritanceSnapshot", () => {
       estimatedPowerKw: 240,
       estimatedChargerCount: 2,
       hasSolarPanels: true,
+      solarCoveragePercent: "30.00",
+      solarEnergyCostPerKwh: 200,
     });
 
     expect(update).toMatchObject({
@@ -71,6 +73,8 @@ describe("getCrowdfundingInheritanceSnapshot", () => {
       chargerCount: 2,
       chargerPowerKw: 120,
       hasSolarPanels: 1,
+      solarCoveragePercent: 30,
+      solarEnergyCostPerKwh: 200,
     });
   });
 
@@ -89,7 +93,11 @@ describe("getCrowdfundingInheritanceSnapshot", () => {
     });
 
     expect(snapshot.hasSolarPanels).toBe(false);
+    expect(snapshot.solarCoveragePercent).toBe(0);
+    expect(snapshot.solarEnergyCostPerKwh).toBeNull();
     expect(update.hasSolarPanels).toBe(0);
+    expect(update.solarCoveragePercent).toBe(0);
+    expect(update.solarEnergyCostPerKwh).toBeNull();
   });
 
   it("mantiene las fotos del espacio en orden y con captions para la galería de crowdfunding", () => {

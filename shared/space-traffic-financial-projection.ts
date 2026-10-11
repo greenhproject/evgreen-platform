@@ -18,6 +18,12 @@ export type SpaceTrafficProjectionInput = {
   operatingHoursPerDay?: number | null;
   /** Eficiencia de entrega DC usada para convertir potencia a kWh útiles. */
   efficiencyPercent?: number | null;
+  /** Alcance técnico; por sí solo no reduce el costo de la energía. */
+  hasSolarPanels?: boolean | number | null;
+  /** Parte del kWh vendido respaldada por generación solar autoconsumida. */
+  solarCoveragePercent?: number | null;
+  /** Costo variable solar por kWh autoconsumido, validado para este sitio. */
+  solarEnergyCostPerKwh?: number | null;
   spaceType?: string | null;
   salePricePerKwh: number;
   energyCostPerKwh: number;
@@ -74,6 +80,11 @@ export type SpaceTrafficProjectionSnapshot = {
     totalPowerKw: number | null;
     operatingHoursPerDay: number | null;
     efficiencyPercent: number | null;
+    hasSolarPanels: boolean;
+    solarCoveragePercent: number;
+    solarEnergyCostPerKwh: number | null;
+    effectiveEnergyCostPerKwh: number;
+    solarCostApplied: boolean;
     salePricePerKwh: number;
     energyCostPerKwh: number;
     hostSharePercent: number;
@@ -119,6 +130,49 @@ function finitePositive(value: unknown, field: string, allowZero = false): numbe
   return numeric;
 }
 
+export type SolarBlendedEnergyCost = {
+  gridEnergyCostPerKwh: number;
+  solarCoveragePercent: number;
+  solarEnergyCostPerKwh: number | null;
+  effectiveEnergyCostPerKwh: number;
+  solarCostApplied: boolean;
+};
+
+/**
+ * Calcula el costo efectivo sin crear un ahorro solar ficticio. El checkbox de
+ * solar no cambia cifras hasta que cobertura y costo solar hayan sido validados
+ * para ese sitio; el saldo conserva el costo de la red.
+ */
+export function calculateSolarBlendedEnergyCost(input: {
+  gridEnergyCostPerKwh: number;
+  hasSolarPanels?: boolean | number | null;
+  solarCoveragePercent?: number | null;
+  solarEnergyCostPerKwh?: number | null;
+}): SolarBlendedEnergyCost {
+  const gridEnergyCostPerKwh = finitePositive(input.gridEnergyCostPerKwh, "El costo de energía de red", true);
+  const hasSolarPanels = input.hasSolarPanels === true || Number(input.hasSolarPanels) === 1;
+  const requestedCoverage = Number(input.solarCoveragePercent ?? 0);
+  const solarCoveragePercent = Number.isFinite(requestedCoverage) && requestedCoverage > 0
+    ? Math.min(100, requestedCoverage)
+    : 0;
+  const requestedSolarCost = input.solarEnergyCostPerKwh;
+  const solarEnergyCostPerKwh = requestedSolarCost !== null && requestedSolarCost !== undefined && Number.isFinite(Number(requestedSolarCost)) && Number(requestedSolarCost) >= 0
+    ? Number(requestedSolarCost)
+    : null;
+  const solarCostApplied = hasSolarPanels && solarCoveragePercent > 0 && solarEnergyCostPerKwh !== null;
+  const effectiveEnergyCostPerKwh = solarCostApplied
+    ? gridEnergyCostPerKwh * (1 - solarCoveragePercent / 100) + solarEnergyCostPerKwh * (solarCoveragePercent / 100)
+    : gridEnergyCostPerKwh;
+
+  return {
+    gridEnergyCostPerKwh: round(gridEnergyCostPerKwh),
+    solarCoveragePercent: round(solarCostApplied ? solarCoveragePercent : 0),
+    solarEnergyCostPerKwh: solarCostApplied ? round(solarEnergyCostPerKwh!) : null,
+    effectiveEnergyCostPerKwh: round(effectiveEnergyCostPerKwh),
+    solarCostApplied,
+  };
+}
+
 /**
  * Construye una proyección de preinversión a partir de la demanda diaria del
  * predio, no de horas teóricas de potencia.
@@ -151,6 +205,12 @@ export function buildSpaceTrafficProjection(
     input.benchmarkKwhPerSession ?? DEFAULT_BENCHMARK_KWH_PER_SESSION,
     "El benchmark de energía por sesión",
   );
+  const solarEnergy = calculateSolarBlendedEnergyCost({
+    gridEnergyCostPerKwh: energyCostPerKwh,
+    hasSolarPanels: input.hasSolarPanels,
+    solarCoveragePercent: input.solarCoveragePercent,
+    solarEnergyCostPerKwh: input.solarEnergyCostPerKwh,
+  });
   const hasDeclaredPower = input.totalPowerKw !== undefined && input.totalPowerKw !== null && Number(input.totalPowerKw) > 0;
   const totalPowerKw = hasDeclaredPower ? finitePositive(input.totalPowerKw, "La potencia total instalada") : null;
   const operatingHoursPerDay = hasDeclaredPower
@@ -190,7 +250,7 @@ export function buildSpaceTrafficProjection(
     const waterfall = calculateFinancialWaterfall({
       grossRevenue: energyKwhPerMonth * salePricePerKwh,
       totalKwh: energyKwhPerMonth,
-      energyCostPerKwh,
+      energyCostPerKwh: solarEnergy.effectiveEnergyCostPerKwh,
       hostSharePercent,
       investorSharePercent: distribution.investorSharePercent,
       evgreenSharePercent: distribution.evgreenSharePercent,
@@ -242,8 +302,13 @@ export function buildSpaceTrafficProjection(
       totalPowerKw,
       operatingHoursPerDay,
       efficiencyPercent,
+      hasSolarPanels: input.hasSolarPanels === true || Number(input.hasSolarPanels) === 1,
+      solarCoveragePercent: solarEnergy.solarCoveragePercent,
+      solarEnergyCostPerKwh: solarEnergy.solarEnergyCostPerKwh,
+      effectiveEnergyCostPerKwh: solarEnergy.effectiveEnergyCostPerKwh,
+      solarCostApplied: solarEnergy.solarCostApplied,
       salePricePerKwh,
-      energyCostPerKwh,
+      energyCostPerKwh: solarEnergy.gridEnergyCostPerKwh,
       hostSharePercent,
       investorSharePercent: distribution.investorSharePercent,
       evgreenSharePercent: distribution.evgreenSharePercent,
