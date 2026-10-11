@@ -2069,6 +2069,10 @@ function SpaceDetailDialog({
             {/* SECCIÓN: Datos técnicos */}
             <div className="bg-[#0a0f1a] border border-[#374151] rounded-lg p-3">
               <p className="text-yellow-400 text-xs font-semibold mb-2 uppercase tracking-wide">⚡ Datos Técnicos</p>
+              <label className="mb-3 flex cursor-pointer items-start gap-2 rounded-lg border border-amber-400/30 bg-amber-400/5 p-2.5 text-sm text-amber-50">
+                <input type="checkbox" checked={!!editForm.hasSolarPanels} onChange={e => setEditForm(p => ({ ...p, hasSolarPanels: e.target.checked }))} className="mt-0.5 h-4 w-4 accent-amber-400" />
+                <span><span className="flex items-center gap-1 font-medium text-amber-200"><Sun className="h-3.5 w-3.5" /> Incluir sistema solar en el alcance</span><span className="mt-1 block text-[11px] leading-4 text-amber-100/75">Suma hasta 3 puntos técnicos al re-evaluar con IA. No modifica ahorro, CAPEX, ROI ni payback sin factura, consumo y diseño solar específico.</span></span>
+              </label>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">Transformador (kVA)</Label>
@@ -2137,10 +2141,6 @@ function SpaceDetailDialog({
                     <Input inputMode="decimal" placeholder="Ej: 250" value={editForm.proposedTransformerKva || ""} onChange={e => setEditForm(p => ({ ...p, proposedTransformerKva: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm w-40" />
                   </div>
                 )}
-                <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-amber-400/30 bg-amber-400/5 p-2.5 text-sm text-amber-50">
-                  <input type="checkbox" checked={!!editForm.hasSolarPanels} onChange={e => setEditForm(p => ({ ...p, hasSolarPanels: e.target.checked }))} className="mt-0.5 h-4 w-4 accent-amber-400" />
-                  <span><span className="flex items-center gap-1 font-medium text-amber-200"><Sun className="h-3.5 w-3.5" /> Incluir sistema solar en el alcance</span><span className="mt-1 block text-[11px] leading-4 text-amber-100/75">Suma hasta 3 puntos técnicos al re-evaluar con IA. No modifica ahorro, CAPEX, ROI ni payback sin factura, consumo y diseño solar específico.</span></span>
-                </label>
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">Viabilidad eléctrica</Label>
                   <Select value={editForm.electricalViability || ""} onValueChange={v => setEditForm(p => ({ ...p, electricalViability: v }))}>

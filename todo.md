@@ -80,5 +80,8 @@
 - [x] Exponer la casilla en creación y edición, mostrar el estado técnico y heredar la decisión a Crowdfunding al aprobar, publicar o sincronizar un espacio vinculado.
 - [x] Aplicar un bono técnico determinista de hasta 3 puntos durante la re-evaluación IA, sin alterar ahorro, CAPEX, ROI ni payback hasta contar con factura, perfil de consumo y diseño validado.
 - [x] Validar migración, persistencia, herencia y pruebas sin crear datos operativos.
-- [ ] Realizar QA visual verificable del diálogo de Espacios en escritorio y móvil, confirmando que la casilla solar aparece, se guarda y no rompe el layout.
+- [x] Aislar el cambio solar auditado de EDS NQS 41 (No→Sí, 70→73): abrir/editar sin confirmar no emite mutación ni altera sus datos; el cambio registrado corresponde a una edición administrativa separada y se conserva en la bitácora.
+- [x] Corregir y verificar la hidratación real de edición: la respuesta tRPC entrega `hasSolarPanels=1` y la casilla inicia marcada para EDS NQS 41; el desfase observado era un proceso de vista previa local sin reiniciar.
+- [x] Realizar QA visual verificable del diálogo de Espacios en escritorio y móvil, confirmando que la casilla solar aparece y no rompe el layout.
+- [x] Ejecutar una prueba controlada del guardado: interceptar la mutación desde UI, validar el payload solar y no crear ni modificar Espacios operativos.
 - [ ] Guardar checkpoint WebDev, ejecutar publicación segura a GitHub y verificar el despliegue tras la mejora solar.
