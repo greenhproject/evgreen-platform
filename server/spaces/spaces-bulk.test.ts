@@ -1,13 +1,16 @@
 /**
  * Tests for bulk operations and advanced filters on spaces admin
  */
-import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
+import { it, expect, vi, beforeAll, afterAll } from "vitest";
 import { getDb } from "../db";
 import { spaceSubmissions } from "../../drizzle/schema";
 import { like, or } from "drizzle-orm";
 import { appRouter } from "../routers";
 import type { TrpcContext } from "../_core/context";
 import { formatIsoDateInTz } from "../utils/timezone";
+import { describeDatabaseIntegration } from "../testing/database-mutation-guard";
+
+const describe = describeDatabaseIntegration;
 
 // ============================================================================
 // HELPERS
@@ -165,21 +168,19 @@ describe("spaces.admin bulk operations", () => {
       expect(remaining.length).toBe(0);
     });
   });
-});
 
-// ============================================================================
-// CLEANUP: eliminar registros de test que pudieran haber quedado (por fallo en test de delete)
-// ============================================================================
-afterAll(async () => {
-  try {
-    const db = await getDb();
-    await db.delete(spaceSubmissions).where(
-      or(
-        like(spaceSubmissions.spaceName, "%BulkOps%"),
-        like(spaceSubmissions.submitterEmail, "%bulkops%")
-      )
-    );
-  } catch (e) {
-    console.warn("[spaces-bulk.test cleanup] Error limpiando registros de test:", e);
-  }
+  // Limpieza defensiva si falla el caso que prueba borrado masivo.
+  afterAll(async () => {
+    try {
+      const db = await getDb();
+      await db.delete(spaceSubmissions).where(
+        or(
+          like(spaceSubmissions.spaceName, "%BulkOps%"),
+          like(spaceSubmissions.submitterEmail, "%bulkops%")
+        )
+      );
+    } catch (e) {
+      console.warn("[spaces-bulk.test cleanup] Error limpiando registros de test:", e);
+    }
+  });
 });

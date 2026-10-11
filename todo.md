@@ -66,3 +66,10 @@
 - [x] Añadir proyección comercial preliminar al crear un espacio y tarjeta de recomendación al editarlo. Con inversión, flujo vehicular, adopción EV, potencia y número de cargadores, se calculan ROI y payback usando la cascada financiera vigente y permanecen editables.
 - [x] Recalcular ROI/payback y sincronizar Crowdfunding cuando cambian las variables de demanda o CAPEX, evitando conservar retornos manuales inconsistentes.
 - [x] Validación: TypeScript, 38 pruebas focales, suite completa 243 archivos / 2.365 pruebas y build productivo aprobados.
+
+## Espacios de prueba — aislamiento de datos (2026-10-11)
+
+- [x] Identificar la causa: la prueba de proyección automática insertaba con `proyeccion-automatica@example.com` en la BD compartida y el listado de limpieza omitía ese fixture.
+- [x] Bloquear todas las pruebas que crean postulaciones, cartas o seguimiento de espacios si no existe `TEST_DATABASE_URL` explícita y distinta de `DATABASE_URL`.
+- [x] Validar que la suite completa no creó nuevos registros: se mantienen únicamente los cinco fixtures históricos identificados, sin fotos, eventos de carta, contratos ni crowdfunding asociados.
+- [ ] Eliminar los cinco fixtures históricos SPE-2026-0021 a SPE-2026-0025, sólo tras confirmación expresa de la operación destructiva.

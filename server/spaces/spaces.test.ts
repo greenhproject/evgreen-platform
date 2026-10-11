@@ -2,13 +2,16 @@
  * Tests para el módulo de Espacios Postulados
  * Verifica: submit público, consulta de estado, listado admin, scoring IA, etc.
  */
-import { describe, expect, it, vi, beforeAll, afterAll } from "vitest";
+import { expect, it, vi, beforeAll, afterAll } from "vitest";
 import { appRouter } from "../routers";
 import type { TrpcContext } from "../_core/context";
 import { getDb } from "../db";
 import { crowdfundingProjects, spacePhotos, spaceSubmissions } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
 import { cleanupSpaceQaFixtures } from "./test-space-fixture-cleanup";
+import { describeDatabaseIntegration } from "../testing/database-mutation-guard";
+
+const describe = describeDatabaseIntegration;
 
 const SPACE_TEST_FIXTURE_EMAILS = [
   "cf-integration@example.com",
@@ -21,6 +24,7 @@ const SPACE_TEST_FIXTURE_EMAILS = [
   "maria.test@example.com",
   "nodup@example.com",
   "permiso-manual@example.com",
+  "proyeccion-automatica@example.com",
   "rotacion-enlace@example.com",
   "status.test@example.com",
   "update@example.com",
@@ -99,8 +103,9 @@ function createUserContext(): TrpcContext {
 }
 
 // ============================================================================
-// TESTS
+// TESTS — requieren TEST_DATABASE_URL aislada
 // ============================================================================
+describe("spaces integration fixtures", () => {
 beforeAll(async () => {
   await cleanupSpaceQaFixtures({ fixtureEmails: SPACE_TEST_FIXTURE_EMAILS });
 });
@@ -752,4 +757,5 @@ afterAll(async () => {
   } catch (e) {
     console.warn("[spaces.test cleanup] Error limpiando registros de test:", e);
   }
+});
 });

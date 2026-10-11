@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 
 const { sendEmail } = vi.hoisted(() => ({ sendEmail: vi.fn() }));
 vi.mock("../email/resend-client", () => ({
@@ -11,6 +11,9 @@ import { getDb } from "../db";
 import { spaceSubmissions } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
 import { cleanupSpaceQaFixtures } from "./test-space-fixture-cleanup";
+import { describeDatabaseIntegration } from "../testing/database-mutation-guard";
+
+const describe = describeDatabaseIntegration;
 
 const fixtureEmails = ["seguimiento-admin@example.com"] as const;
 const createdSubmissionIds = new Set<number>();

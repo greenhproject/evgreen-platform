@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, expect, it } from "vitest";
 import { appRouter } from "../routers";
 import type { TrpcContext } from "../_core/context";
 import { getDb } from "../db";
@@ -6,6 +6,9 @@ import { letterEmailEvents, spaceSubmissions } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
 import { recordLetterDeliveryEvent } from "./letter-delivery-events";
 import { cleanupSpaceQaFixtures } from "../spaces/test-space-fixture-cleanup";
+import { describeDatabaseIntegration } from "../testing/database-mutation-guard";
+
+const describe = describeDatabaseIntegration;
 
 const fixtureEmails = ["entrega-correo@example.com"] as const;
 const createdSubmissionIds = new Set<number>();
