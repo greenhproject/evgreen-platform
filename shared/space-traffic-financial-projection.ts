@@ -12,6 +12,12 @@ export type SpaceTrafficProjectionInput = {
    */
   estimatedEvPercent: number;
   chargerCount: number;
+  /** Potencia DC total disponible para los cargadores del espacio. */
+  totalPowerKw?: number | null;
+  /** Ventana comercial efectiva en la que el sitio puede despachar energía. */
+  operatingHoursPerDay?: number | null;
+  /** Eficiencia de entrega DC usada para convertir potencia a kWh útiles. */
+  efficiencyPercent?: number | null;
   spaceType?: string | null;
   salePricePerKwh: number;
   energyCostPerKwh: number;
@@ -36,9 +42,13 @@ export type SpaceTrafficProjectionResult = {
   unconstrainedSessionsPerDay: number;
   /** Sesiones modeladas: demanda potencial limitada solamente por capacidad técnica. */
   sessionsPerDay: number;
+  connectorCapacitySessionsPerDay: number;
+  powerCapacityKwhPerDay: number | null;
+  powerCapacitySessionsPerDay: number | null;
   capacitySessionsPerDay: number;
   capacityUtilizationPercent: number;
   capacityLimited: boolean;
+  capacityConstraint: "CONNECTORS" | "POWER" | "BOTH" | "UNSPECIFIED";
   energyKwhPerDay: number;
   energyKwhPerMonth: number;
   investorMonthlyCashflow: number;
@@ -49,8 +59,8 @@ export type SpaceTrafficProjectionResult = {
 };
 
 export type SpaceTrafficProjectionSnapshot = {
-  version: 2;
-  basis: "EVGREEN_SPACE_DEMAND_SCENARIOS";
+  version: 3;
+  basis: "EVGREEN_SPACE_DEMAND_CAPACITY_SCENARIOS";
   selectedScenario: SpaceTrafficProjectionScenario;
   assumptions: {
     investmentCop: number;
@@ -61,6 +71,9 @@ export type SpaceTrafficProjectionSnapshot = {
     connectorsPerCharger: number;
     benchmarkSessionsPerConnectorPerDay: number;
     benchmarkKwhPerSession: number;
+    totalPowerKw: number | null;
+    operatingHoursPerDay: number | null;
+    efficiencyPercent: number | null;
     salePricePerKwh: number;
     energyCostPerKwh: number;
     hostSharePercent: number;
@@ -87,8 +100,8 @@ export const SPACE_TRAFFIC_PROJECTION_SCENARIOS: ReadonlyArray<{
 ] as const;
 
 export const CONNECTORS_PER_CHARGER = 2;
-/** Benchmark EVGreen comunicado: 21 sesiones por manguera/día. */
-export const DEFAULT_BENCHMARK_SESSIONS_PER_CONNECTOR_PER_DAY = 21;
+/** Benchmark EDS observado: 20,1 sesiones por manguera/día. */
+export const DEFAULT_BENCHMARK_SESSIONS_PER_CONNECTOR_PER_DAY = 20.1;
 /** Promedio de energía facturada por sesión comunicado para esta proyección. */
 export const DEFAULT_BENCHMARK_KWH_PER_SESSION = 40;
 const DAYS_PER_MONTH = 30;
@@ -113,8 +126,9 @@ function finitePositive(value: unknown, field: string, allowZero = false): numbe
  * Fórmula de demanda del escenario REALISTA:
  * flujo vehicular diario × porcentaje EV declarado = sesiones potenciales/día.
  *
- * La infraestructura no crea demanda: solo impone el techo técnico de
- * cargadores × 2 mangueras × sesiones benchmark por manguera/día.
+ * La infraestructura no crea demanda: impone el menor techo entre mangueras
+ * disponibles y la energía que la potencia instalada puede entregar en la
+ * ventana comercial declarada.
  */
 export function buildSpaceTrafficProjection(
   input: SpaceTrafficProjectionInput,
@@ -137,8 +151,34 @@ export function buildSpaceTrafficProjection(
     input.benchmarkKwhPerSession ?? DEFAULT_BENCHMARK_KWH_PER_SESSION,
     "El benchmark de energía por sesión",
   );
+  const hasDeclaredPower = input.totalPowerKw !== undefined && input.totalPowerKw !== null && Number(input.totalPowerKw) > 0;
+  const totalPowerKw = hasDeclaredPower ? finitePositive(input.totalPowerKw, "La potencia total instalada") : null;
+  const operatingHoursPerDay = hasDeclaredPower
+    ? finitePositive(input.operatingHoursPerDay ?? 16, "Las horas de operación diarias")
+    : null;
+  const efficiencyPercent = hasDeclaredPower
+    ? finitePositive(input.efficiencyPercent ?? 92, "La eficiencia de entrega", true)
+    : null;
+  if (operatingHoursPerDay !== null && operatingHoursPerDay > 24) throw new Error("Las horas de operación diarias no pueden superar 24");
+  if (efficiencyPercent !== null && (efficiencyPercent <= 0 || efficiencyPercent > 100)) throw new Error("La eficiencia de entrega debe estar entre 0 % y 100 %");
   const distribution = getRevenueDistributionForSpaceType(input.spaceType);
-  const capacitySessionsPerDay = chargerCount * CONNECTORS_PER_CHARGER * benchmarkSessionsPerConnectorPerDay;
+  const connectorCapacitySessionsPerDay = chargerCount * CONNECTORS_PER_CHARGER * benchmarkSessionsPerConnectorPerDay;
+  const powerCapacityKwhPerDay = totalPowerKw !== null && operatingHoursPerDay !== null && efficiencyPercent !== null
+    ? totalPowerKw * operatingHoursPerDay * (efficiencyPercent / 100)
+    : null;
+  const powerCapacitySessionsPerDay = powerCapacityKwhPerDay !== null
+    ? powerCapacityKwhPerDay / benchmarkKwhPerSession
+    : null;
+  const capacitySessionsPerDay = powerCapacitySessionsPerDay === null
+    ? connectorCapacitySessionsPerDay
+    : Math.min(connectorCapacitySessionsPerDay, powerCapacitySessionsPerDay);
+  const capacityConstraint = powerCapacitySessionsPerDay === null
+    ? "UNSPECIFIED" as const
+    : Math.abs(connectorCapacitySessionsPerDay - powerCapacitySessionsPerDay) < 0.01
+      ? "BOTH" as const
+      : connectorCapacitySessionsPerDay < powerCapacitySessionsPerDay
+        ? "CONNECTORS" as const
+        : "POWER" as const;
 
   const scenarios = Object.fromEntries(SPACE_TRAFFIC_PROJECTION_SCENARIOS.map((scenario) => {
     const scenarioEvPercent = Math.min(100, estimatedEvPercent * (scenario.evDemandMultiplierPercent / 100));
@@ -169,9 +209,13 @@ export function buildSpaceTrafficProjection(
       eligibleEvVehiclesPerDay: round(eligibleEvVehiclesPerDay),
       unconstrainedSessionsPerDay: round(unconstrainedSessionsPerDay),
       sessionsPerDay: round(sessionsPerDay),
+      connectorCapacitySessionsPerDay: round(connectorCapacitySessionsPerDay),
+      powerCapacityKwhPerDay: powerCapacityKwhPerDay === null ? null : round(powerCapacityKwhPerDay),
+      powerCapacitySessionsPerDay: powerCapacitySessionsPerDay === null ? null : round(powerCapacitySessionsPerDay),
       capacitySessionsPerDay: round(capacitySessionsPerDay),
       capacityUtilizationPercent: round(capacitySessionsPerDay > 0 ? (sessionsPerDay / capacitySessionsPerDay) * 100 : 0),
       capacityLimited: unconstrainedSessionsPerDay > capacitySessionsPerDay,
+      capacityConstraint,
       energyKwhPerDay: round(energyKwhPerDay),
       energyKwhPerMonth: round(energyKwhPerMonth),
       investorMonthlyCashflow: round(investorMonthlyCashflow),
@@ -184,8 +228,8 @@ export function buildSpaceTrafficProjection(
   })) as Record<SpaceTrafficProjectionScenario, SpaceTrafficProjectionResult>;
 
   return {
-    version: 2,
-    basis: "EVGREEN_SPACE_DEMAND_SCENARIOS",
+    version: 3,
+    basis: "EVGREEN_SPACE_DEMAND_CAPACITY_SCENARIOS",
     selectedScenario,
     assumptions: {
       investmentCop,
@@ -195,6 +239,9 @@ export function buildSpaceTrafficProjection(
       connectorsPerCharger: CONNECTORS_PER_CHARGER,
       benchmarkSessionsPerConnectorPerDay,
       benchmarkKwhPerSession,
+      totalPowerKw,
+      operatingHoursPerDay,
+      efficiencyPercent,
       salePricePerKwh,
       energyCostPerKwh,
       hostSharePercent,

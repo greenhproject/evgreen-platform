@@ -123,6 +123,19 @@ function formatCompactCOP(value: number): string {
   return formatCOP(value);
 }
 
+function getOperatingHoursPerDay(data: Pick<ProspectoPdfData, "operatingHoursStart" | "operatingHoursEnd" | "is24Hours">): number {
+  if (data.is24Hours) return 24;
+  const toMinutes = (value: string | null | undefined) => {
+    const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(value ?? "");
+    return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+  };
+  const start = toMinutes(data.operatingHoursStart);
+  const end = toMinutes(data.operatingHoursEnd);
+  if (start === null || end === null) return 16;
+  const duration = end > start ? end - start : (24 * 60 - start) + end;
+  return duration > 0 ? duration / 60 : 16;
+}
+
 function formatScore(score: number): string {
   if (score >= 80) return "ALTO";
   if (score >= 60) return "MEDIO-ALTO";
@@ -759,6 +772,7 @@ function addProyeccionFinanciera(
       const dailyVehicles = Number(data.estimatedDailyVehicles ?? 0);
       const evPercent = Number(data.estimatedEvPercent ?? 0);
       const chargerCount = Math.max(1, Number(data.estimatedChargerCount ?? 1));
+      const operatingHoursPerDay = getOperatingHoursPerDay(data);
       const hasTrafficDemandInputs = dailyVehicles > 0 && evPercent > 0;
 
 	    y = drawSectionTitle(
@@ -794,6 +808,9 @@ function addProyeccionFinanciera(
         estimatedDailyVehicles: dailyVehicles,
         estimatedEvPercent: evPercent,
         chargerCount,
+        totalPowerKw: powerKw,
+        operatingHoursPerDay,
+        efficiencyPercent,
         spaceType: data.spaceType,
         salePricePerKwh: tarifaKwh,
         energyCostPerKwh,
@@ -807,7 +824,7 @@ function addProyeccionFinanciera(
             name,
             color,
             operationalSummary: `${result.sessionsPerDay.toLocaleString("es-CO")} sesiones/día`,
-            operationalDetail: `${result.scenarioEvPercent.toLocaleString("es-CO")}% EV · ${result.capacitySessionsPerDay.toLocaleString("es-CO")} máx./día${result.capacityLimited ? " (limitado por equipos)" : ""}`,
+            operationalDetail: `Cap.: ${result.capacitySessionsPerDay.toLocaleString("es-CO")} /día · límite: ${result.capacityConstraint === "POWER" ? "potencia" : result.capacityConstraint === "CONNECTORS" ? "mangueras" : "ambos"}${result.capacityLimited ? "*" : ""}`,
             kwhMonth: result.energyKwhPerMonth,
             investorMonth: result.investorMonthlyCashflow,
             investorYear: result.investorAnnualCashflow,
@@ -897,7 +914,7 @@ function addProyeccionFinanciera(
     setColor(doc, C.gray500, "text");
     doc.setFontSize(7.8); doc.setFont("helvetica", "italic");
     const nota = hasTrafficDemandInputs
-      ? `Base de demanda: flujo del predio (${dailyVehicles.toLocaleString("es-CO")} vehículos/día) × participación EV/sesiones declarada (${evPercent.toLocaleString("es-CO")}% en el escenario realista) × 40 kWh/sesión × 30 días. Pesimista y optimista aplican 50% y 150% de esa participación. La demanda se limita a ${chargerCount} cargador${chargerCount === 1 ? "" : "es"} × 2 mangueras × 21 sesiones/manguera/día. Tarifa: ${formatCOP(tarifaKwh)}/kWh; energía: ${formatCOP(energyCostPerKwh)}/kWh${fixedMonthlyExpenses > 0 ? `; gastos fijos: ${formatCOP(fixedMonthlyExpenses)}/mes` : "; gastos fijos: no incluidos"}. El aliado recibe ${allyPct}% del margen bruto; el retorno corresponde al ${investorNetPct}% del margen neto distribuible. *ROI anual simple = retorno anual estimado ÷ inversión; recuperación simple = inversión ÷ retorno mensual estimado. No son TIR ni garantía de rentabilidad. La participación EV y la conversión efectiva a sesiones deben validarse con aforos, histórico de recargas y operación real. Rubros no incorporados como gastos fijos, incluidos impuestos, seguros, fiducia, financiación y depreciación, deben validarse antes de invertir. ${data.technicalCondition.requiresGridUpgrade ? "Resultado condicionado a la ampliación eléctrica y al CAPEX total declarado." : "Cifras orientativas; no constituyen garantía de rentabilidad."}`
+      ? `Base de demanda: flujo del predio (${dailyVehicles.toLocaleString("es-CO")} vehículos/día) × participación EV/sesiones declarada (${evPercent.toLocaleString("es-CO")}% en el escenario realista) × ${trafficProjection!.assumptions.benchmarkKwhPerSession.toLocaleString("es-CO")} kWh/sesión × 30 días. Pesimista y optimista aplican 50% y 150% de esa participación. Capacidad efectiva = menor entre mangueras (${chargerCount} cargador${chargerCount === 1 ? "" : "es"} × 2 × ${trafficProjection!.assumptions.benchmarkSessionsPerConnectorPerDay.toLocaleString("es-CO")} sesiones/manguera/día) y potencia (${powerKw} kW × ${operatingHoursPerDay} h/día × ${efficiencyPercent}% ÷ ${trafficProjection!.assumptions.benchmarkKwhPerSession.toLocaleString("es-CO")} kWh/sesión). * indica una demanda limitada por capacidad. Tarifa: ${formatCOP(tarifaKwh)}/kWh; energía: ${formatCOP(energyCostPerKwh)}/kWh${fixedMonthlyExpenses > 0 ? `; gastos fijos: ${formatCOP(fixedMonthlyExpenses)}/mes` : "; gastos fijos: no incluidos"}. El aliado recibe ${allyPct}% del margen bruto; el retorno corresponde al ${investorNetPct}% del margen neto distribuible. *ROI anual simple = retorno anual estimado ÷ inversión; recuperación simple = inversión ÷ retorno mensual estimado. No son TIR ni garantía de rentabilidad. La participación EV y la conversión efectiva a sesiones deben validarse con aforos, histórico de recargas y operación real. Rubros no incorporados como gastos fijos, incluidos impuestos, seguros, fiducia, financiación y depreciación, deben validarse antes de invertir. ${data.technicalCondition.requiresGridUpgrade ? "Resultado condicionado a la ampliación eléctrica y al CAPEX total declarado." : "Cifras orientativas; no constituyen garantía de rentabilidad."}`
       : `Base alternativa sin datos de tráfico: ${powerKw} kW de potencia proyectada × horas equivalentes/día × ${efficiencyPercent}% de eficiencia × 30 días. Tarifa: ${formatCOP(tarifaKwh)}/kWh; energía: ${formatCOP(energyCostPerKwh)}/kWh${fixedMonthlyExpenses > 0 ? `; gastos fijos: ${formatCOP(fixedMonthlyExpenses)}/mes` : "; gastos fijos: no incluidos"}. El retorno corresponde al ${investorNetPct}% del margen neto después de energía, gastos fijos y aliado. *ROI anual simple = retorno anual estimado ÷ inversión; recuperación simple = inversión ÷ retorno mensual estimado. No son TIR ni garantía de rentabilidad. Rubros no incorporados como gastos fijos, incluidos impuestos, seguros, fiducia, financiación y depreciación, deben validarse antes de invertir. ${data.technicalCondition.requiresGridUpgrade ? "Resultado condicionado a la ampliación eléctrica y al CAPEX total declarado." : "Cifras orientativas; no constituyen garantía de rentabilidad."}`;
     const notaLines = doc.splitTextToSize(nota, CW);
     doc.text(notaLines, M, y);

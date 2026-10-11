@@ -93,4 +93,7 @@
 - [x] Mantener la cascada auditable: ingreso bruto − costo de energía = margen bruto; participación del aliado sobre ese margen; reparto del margen neto entre inversionista y EVGreen.
 - [x] Actualizar la tarjeta de edición y el PDF de prospecto para explicar demanda, sesiones, límite técnico y supuestos, conservando el modelo por horas únicamente como alternativa para registros históricos sin flujo o porcentaje EV.
 - [x] Validación integral: TypeScript, 239 archivos / 2.333 pruebas aprobadas; 5 suites de integración y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo aprobado.
+- [x] Incorporar capacidad de potencia y horario: el techo final es el menor entre mangueras disponibles y `kW instalados × horas de operación × eficiencia ÷ kWh/sesión`; cambiar potencia, cargadores u horario recalcula Espacios y Crowdfunding vinculados.
+- [x] Usar el benchmark aportado en el modelo EDS: 20,1 sesiones por manguera/día y 40 kWh por sesión; las cifras se muestran como supuestos de preinversión y no como demanda garantizada.
+- [x] Validación: TypeScript, 240 archivos / 2.337 pruebas aprobadas; 5 suites de integración y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo aprobado.
 - [ ] Guardar checkpoint WebDev, ejecutar publicación segura y verificar el despliegue.

@@ -6,6 +6,9 @@ const base = {
   estimatedDailyVehicles: 1_000,
   estimatedEvPercent: 10,
   chargerCount: 4,
+  totalPowerKw: 480,
+  operatingHoursPerDay: 16,
+  efficiencyPercent: 92,
   spaceType: "gas_station",
   salePricePerKwh: 1_800,
   energyCostPerKwh: 700,
@@ -18,7 +21,7 @@ describe("proyección financiera por demanda vehicular de espacios", () => {
     const realistic = projection.scenarios.REALISTIC;
     const optimistic = projection.scenarios.OPTIMISTIC;
 
-    expect(projection.basis).toBe("EVGREEN_SPACE_DEMAND_SCENARIOS");
+    expect(projection.basis).toBe("EVGREEN_SPACE_DEMAND_CAPACITY_SCENARIOS");
     expect(projection.assumptions.benchmarkKwhPerSession).toBe(40);
     expect(pessimistic.scenarioEvPercent).toBe(5);
     expect(realistic.scenarioEvPercent).toBe(10);
@@ -42,17 +45,35 @@ describe("proyección financiera por demanda vehicular de espacios", () => {
     expect(realistic.waterfall.evgreenPool).toBe(47_520_000);
   });
 
-  it("limita sesiones únicamente por capacidad física de cargadores duales", () => {
-    const oneCharger = buildSpaceTrafficProjection({ ...base, estimatedDailyVehicles: 4_000, estimatedEvPercent: 5, chargerCount: 1 });
-    const fourChargers = buildSpaceTrafficProjection({ ...base, estimatedDailyVehicles: 4_000, estimatedEvPercent: 5, chargerCount: 4 });
+  it("limita sesiones por el menor techo entre mangueras y potencia instalada", () => {
+    const oneCharger = buildSpaceTrafficProjection({ ...base, estimatedDailyVehicles: 4_000, estimatedEvPercent: 5, chargerCount: 1, totalPowerKw: 120 });
+    const fourChargers = buildSpaceTrafficProjection({ ...base, estimatedDailyVehicles: 4_000, estimatedEvPercent: 5, chargerCount: 4, totalPowerKw: 480 });
 
     expect(oneCharger.scenarios.REALISTIC.unconstrainedSessionsPerDay).toBe(200);
-    expect(oneCharger.scenarios.REALISTIC.capacitySessionsPerDay).toBe(42);
-    expect(oneCharger.scenarios.REALISTIC.sessionsPerDay).toBe(42);
+    expect(oneCharger.scenarios.REALISTIC.capacitySessionsPerDay).toBe(40.2);
+    expect(oneCharger.scenarios.REALISTIC.connectorCapacitySessionsPerDay).toBe(40.2);
+    expect(oneCharger.scenarios.REALISTIC.powerCapacitySessionsPerDay).toBeCloseTo(44.16, 2);
+    expect(oneCharger.scenarios.REALISTIC.capacityConstraint).toBe("CONNECTORS");
+    expect(oneCharger.scenarios.REALISTIC.sessionsPerDay).toBe(40.2);
     expect(oneCharger.scenarios.REALISTIC.capacityLimited).toBe(true);
-    expect(fourChargers.scenarios.REALISTIC.capacitySessionsPerDay).toBe(168);
-    expect(fourChargers.scenarios.REALISTIC.sessionsPerDay).toBe(168);
+    expect(fourChargers.scenarios.REALISTIC.capacitySessionsPerDay).toBe(160.8);
+    expect(fourChargers.scenarios.REALISTIC.sessionsPerDay).toBe(160.8);
     expect(fourChargers.scenarios.REALISTIC.capacityLimited).toBe(true);
+  });
+
+  it("reduce capacidad cuando la ventana y potencia no permiten servir todas las mangueras", () => {
+    const lowPowerWindow = buildSpaceTrafficProjection({
+      ...base,
+      chargerCount: 1,
+      totalPowerKw: 120,
+      operatingHoursPerDay: 6,
+    }).scenarios.REALISTIC;
+
+    expect(lowPowerWindow.connectorCapacitySessionsPerDay).toBe(40.2);
+    expect(lowPowerWindow.powerCapacityKwhPerDay).toBe(662.4);
+    expect(lowPowerWindow.powerCapacitySessionsPerDay).toBeCloseTo(16.56, 2);
+    expect(lowPowerWindow.capacitySessionsPerDay).toBeCloseTo(16.56, 2);
+    expect(lowPowerWindow.capacityConstraint).toBe("POWER");
   });
 
   it("calcula ROI y recuperación desde la cascada financiera, con dirección correcta entre escenarios", () => {

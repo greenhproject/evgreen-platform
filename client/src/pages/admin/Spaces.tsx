@@ -115,6 +115,19 @@ function numericInputError(label: string, value: unknown, integer = false): stri
   return parsed === undefined ? `${label}: ingresa un número válido. Puedes usar 1.500.000, 1,500,000, 112,5 o 112.5.` : null;
 }
 
+function getOperatingHoursPerDay(start: unknown, end: unknown, is24Hours: unknown): number {
+  if (Boolean(is24Hours)) return 24;
+  const toMinutes = (value: unknown) => {
+    const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(String(value ?? ""));
+    return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+  };
+  const startMinutes = toMinutes(start);
+  const endMinutes = toMinutes(end);
+  if (startMinutes === null || endMinutes === null) return 16;
+  const duration = endMinutes > startMinutes ? endMinutes - startMinutes : (24 * 60 - startMinutes) + endMinutes;
+  return duration > 0 ? duration / 60 : 16;
+}
+
 function humanizeSpaceError(message: string, action: "crear" | "actualizar") {
   if (/failed query|insert into [`"]?space_submissions|unknown column|incorrect decimal|data truncated/i.test(message)) {
     return `No fue posible ${action} el espacio. Revisa los valores numéricos: puedes usar punto o coma (por ejemplo, 1.500.000 o 112,5) e inténtalo de nuevo.`;
@@ -1289,6 +1302,9 @@ function SpaceDetailDialog({
         estimatedDailyVehicles: dailyVehicles,
         estimatedEvPercent: evPercent,
         chargerCount: chargerCount || 1,
+        totalPowerKw,
+        operatingHoursPerDay: getOperatingHoursPerDay(editForm.operatingHoursStart, editForm.operatingHoursEnd, editForm.is24Hours),
+        efficiencyPercent: Number(calculatorParams?.eficienciaCargaDc ?? 92),
         spaceType: space.spaceType,
         salePricePerKwh: Number(calculatorParams?.precioVentaDefault ?? 1800),
         energyCostPerKwh: Number(calculatorParams?.costoEnergiaRed ?? 700),
@@ -2309,7 +2325,7 @@ function SpaceDetailDialog({
                     <div>
                       <p className="text-xs font-semibold text-emerald-300">Proyección sugerida · escenario {suggestedFinancialProjection.selectedScenario}</p>
                       <p className="mt-0.5 text-[11px] leading-4 text-emerald-100/75">
-                        Demanda realista: {suggestedFinancialProjection.snapshot.assumptions.estimatedDailyVehicles.toLocaleString("es-CO")} vehículos/día × {suggestedFinancialProjection.snapshot.assumptions.estimatedEvPercent}% EV = {suggestedFinancialProjection.selected.eligibleEvVehiclesPerDay.toLocaleString("es-CO")} sesiones potenciales/día. Se modelan {suggestedFinancialProjection.selected.sessionsPerDay.toLocaleString("es-CO")} según la capacidad técnica ({suggestedFinancialProjection.selected.capacitySessionsPerDay.toLocaleString("es-CO")} máx./día), a {suggestedFinancialProjection.snapshot.assumptions.benchmarkKwhPerSession} kWh/sesión.
+                        Demanda realista: {suggestedFinancialProjection.snapshot.assumptions.estimatedDailyVehicles.toLocaleString("es-CO")} vehículos/día × {suggestedFinancialProjection.snapshot.assumptions.estimatedEvPercent}% EV = {suggestedFinancialProjection.selected.eligibleEvVehiclesPerDay.toLocaleString("es-CO")} sesiones potenciales/día. Se modelan {suggestedFinancialProjection.selected.sessionsPerDay.toLocaleString("es-CO")} según el menor límite: {suggestedFinancialProjection.selected.connectorCapacitySessionsPerDay.toLocaleString("es-CO")} por mangueras y {suggestedFinancialProjection.selected.powerCapacitySessionsPerDay?.toLocaleString("es-CO") ?? "—"} por potencia ({suggestedFinancialProjection.snapshot.assumptions.totalPowerKw?.toLocaleString("es-CO") ?? "—"} kW), a {suggestedFinancialProjection.snapshot.assumptions.benchmarkKwhPerSession} kWh/sesión.
                       </p>
                     </div>
                     <Button

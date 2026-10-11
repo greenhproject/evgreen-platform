@@ -84,6 +84,23 @@ function firstPositiveNumber(...values: unknown[]): number | null {
   return null;
 }
 
+function resolveSpaceOperatingHours(input: {
+  operatingHoursStart?: string | null;
+  operatingHoursEnd?: string | null;
+  is24Hours?: boolean | number | null;
+}): number {
+  if (Boolean(input.is24Hours)) return 24;
+  const toMinutes = (value: string | null | undefined) => {
+    const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(value ?? "");
+    return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+  };
+  const start = toMinutes(input.operatingHoursStart);
+  const end = toMinutes(input.operatingHoursEnd);
+  if (start === null || end === null) return 16;
+  const duration = end > start ? end - start : (24 * 60 - start) + end;
+  return duration > 0 ? duration / 60 : 16;
+}
+
 type FinancialProjectionSnapshot = CrowdfundingProjectionSnapshot | SpaceTrafficProjectionSnapshot;
 
 function parseProjectionSnapshot(value: unknown): FinancialProjectionSnapshot | null {
@@ -105,6 +122,9 @@ async function buildSpaceCrowdfundingProjection(input: {
   estimatedDailyVehicles?: number | null;
   estimatedEvPercent?: number | null;
   chargerCount?: number | null;
+  operatingHoursStart?: string | null;
+  operatingHoursEnd?: string | null;
+  is24Hours?: boolean | number | null;
   currentProject?: any;
 }) {
   if (input.investmentCop <= 0 || input.totalPowerKw <= 0) return null;
@@ -150,6 +170,9 @@ async function buildSpaceCrowdfundingProjection(input: {
       estimatedDailyVehicles,
       estimatedEvPercent,
       chargerCount,
+      totalPowerKw: input.totalPowerKw,
+      operatingHoursPerDay: resolveSpaceOperatingHours(input),
+      efficiencyPercent,
       spaceType: input.spaceType,
       salePricePerKwh,
       energyCostPerKwh,
@@ -486,6 +509,9 @@ export const spacesRouter = router({
         estimatedDailyVehicles: input.estimatedDailyVehicles,
         estimatedEvPercent: input.estimatedEvPercent,
         chargerCount: input.estimatedChargerCount,
+        operatingHoursStart: input.operatingHoursStart,
+        operatingHoursEnd: input.operatingHoursEnd,
+        is24Hours: input.is24Hours,
       });
       if (projection) {
         await db.update(spaceSubmissions)
@@ -1614,6 +1640,9 @@ export const spacesRouter = router({
             estimatedChargerCount: spaceSubmissions.estimatedChargerCount,
             estimatedDailyVehicles: spaceSubmissions.estimatedDailyVehicles,
             estimatedEvPercent: spaceSubmissions.estimatedEvPercent,
+            operatingHoursStart: spaceSubmissions.operatingHoursStart,
+            operatingHoursEnd: spaceSubmissions.operatingHoursEnd,
+            is24Hours: spaceSubmissions.is24Hours,
             hasSolarPanels: spaceSubmissions.hasSolarPanels,
           })
           .from(spaceSubmissions)
@@ -1638,13 +1667,16 @@ export const spacesRouter = router({
         if (cleanFields.estimatedPowerKw !== undefined && cleanFields.estimatedPowerKw < 120) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "EVGreen solo instala cargadores rápidos DC desde 120 kW." });
         }
-        const projectionInputChanged = [
+        const numericProjectionInputChanged = [
           "estimatedInvestmentCop",
           "estimatedPowerKw",
           "estimatedChargerCount",
           "estimatedDailyVehicles",
           "estimatedEvPercent",
         ].some((field) => cleanFields[field] !== undefined && Number(cleanFields[field]) !== Number(previousSubmission[field as keyof typeof previousSubmission]));
+        const operatingProjectionInputChanged = ["operatingHoursStart", "operatingHoursEnd", "is24Hours"]
+          .some((field) => cleanFields[field] !== undefined && String(cleanFields[field]) !== String(previousSubmission[field as keyof typeof previousSubmission]));
+        const projectionInputChanged = numericProjectionInputChanged || operatingProjectionInputChanged;
         if (
           cleanFields.estimatedInvestmentCop !== undefined ||
           cleanFields.minimumInvestmentCop !== undefined ||
@@ -1714,6 +1746,9 @@ export const spacesRouter = router({
               estimatedDailyVehicles: submissionForProjection.estimatedDailyVehicles,
               estimatedEvPercent: submissionForProjection.estimatedEvPercent,
               chargerCount: submissionForProjection.estimatedChargerCount,
+              operatingHoursStart: submissionForProjection.operatingHoursStart,
+              operatingHoursEnd: submissionForProjection.operatingHoursEnd,
+              is24Hours: submissionForProjection.is24Hours,
               currentProject,
             })
             : null;
