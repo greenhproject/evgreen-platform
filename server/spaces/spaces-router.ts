@@ -72,6 +72,84 @@ async function getDatabase() {
   return db;
 }
 
+function safePdfSegment(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "espacio";
+}
+
+/**
+ * Genera únicamente la ficha técnica/comercial del aliado.
+ * El objeto enviado al servicio PDF se construye de forma explícita para
+ * impedir que CAPEX, ROI, payback, waterfall o participaciones financieras
+ * lleguen accidentalmente al documento destinado al propietario del espacio.
+ */
+async function generateAllySpacePdfForSubmission(submissionId: number) {
+  const db = await getDatabase();
+  const [submission] = await db.select().from(spaceSubmissions)
+    .where(eq(spaceSubmissions.id, submissionId))
+    .limit(1);
+
+  if (!submission) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "Espacio no encontrado" });
+  }
+
+  const photos = await db.select().from(spacePhotos)
+    .where(eq(spacePhotos.submissionId, submissionId))
+    .orderBy(desc(spacePhotos.isCover), spacePhotos.sortOrder);
+
+  const { generateAllySpacePdf } = await import("./ally-space-pdf-service");
+  const pdfBuffer = await generateAllySpacePdf({
+    code: submission.code,
+    spaceName: submission.spaceName,
+    spaceType: submission.spaceType,
+    spaceTypeOther: submission.spaceTypeOther,
+    address: submission.address,
+    city: submission.city,
+    department: submission.department,
+    country: submission.country,
+    status: submission.spaceStatus,
+    submitterName: submission.submitterName,
+    submitterCompany: submission.submitterCompany,
+    availableAreaM2: submission.availableAreaM2 ? Number(submission.availableAreaM2) : null,
+    parkingSpots: submission.parkingSpots,
+    transformerCapacityKva: submission.transformerCapacityKva ? Number(submission.transformerCapacityKva) : null,
+    hasElectricalPanel: Boolean(submission.hasElectricalPanel),
+    hasSolarPanels: Boolean(submission.hasSolarPanels),
+    electricalDistance: submission.electricalDistance,
+    hasInternet: Boolean(submission.hasInternet),
+    operatingHoursStart: submission.operatingHoursStart,
+    operatingHoursEnd: submission.operatingHoursEnd,
+    is24Hours: Boolean(submission.is24Hours),
+    estimatedDailyVehicles: submission.estimatedDailyVehicles,
+    estimatedEvPercent: submission.estimatedEvPercent,
+    nearbyAttractions: submission.nearbyAttractions,
+    socioeconomicStratum: submission.socioeconomicStratum,
+    electricalViability: submission.electricalViability,
+    estimatedPowerKw: submission.estimatedPowerKw,
+    estimatedChargerCount: submission.estimatedChargerCount,
+    recommendedChargerType: submission.recommendedChargerType,
+    photos: photos.map(photo => ({
+      url: photo.photoUrl,
+      type: photo.photoType,
+      caption: photo.caption,
+      isCover: Boolean(photo.isCover),
+      isConceptual: Boolean(photo.isConceptual),
+    })),
+    generatedAt: new Date(),
+  });
+
+  const randomSuffix = randomBytes(8).toString("hex");
+  const fileName = `Ficha-Aliado-${submission.code}-${safePdfSegment(submission.spaceName)}.pdf`;
+  const fileKey = `spaces/fichas-aliados/${submission.code}-${randomSuffix}.pdf`;
+  const { url: pdfUrl } = await storagePut(fileKey, pdfBuffer, "application/pdf");
+  console.log(`[Spaces] Ficha PDF del aliado generada para ${submission.code}`);
+  return { success: true as const, pdfUrl, fileName };
+}
+
 function toSqlTimestamp(date = new Date()) {
   return date.toISOString().slice(0, 19).replace("T", " ");
 }
@@ -2301,6 +2379,41 @@ export const spacesRouter = router({
 
       console.log(`[Spaces] Prospecto PDF generado: ${pdfUrl}`);
       return { success: true, pdfUrl, fileName: `Prospecto-${submission.code}-${submission.city}.pdf` };
+    }),
+
+  // ============================================================
+  // FICHA TÉCNICA/COMERCIAL DEL ALIADO — SIN DATOS DE INVERSIÓN
+  // ============================================================
+  generateAllySpacePdf: adminProcedure
+    .input(z.object({ submissionId: z.number() }))
+    .mutation(async ({ input }) => generateAllySpacePdfForSubmission(input.submissionId)),
+
+  /**
+   * Descarga pública controlada para el aliado que ya firmó la carta.
+   * El token no se acepta mientras la carta siga pendiente y la ficha nunca
+   * incluye la información financiera reservada al inversionista.
+   */
+  downloadAllySpacePdf: publicProcedure
+    .input(z.object({ token: z.string().min(20) }))
+    .mutation(async ({ input }) => {
+      const db = await getDatabase();
+      const [submission] = await db.select({
+        id: spaceSubmissions.id,
+        letterAcceptedAt: spaceSubmissions.letterAcceptedAt,
+        spaceStatus: spaceSubmissions.spaceStatus,
+      })
+        .from(spaceSubmissions)
+        .where(eq(spaceSubmissions.letterToken, input.token))
+        .limit(1);
+
+      if (!submission) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Enlace de aliado inválido o expirado" });
+      }
+      if (!submission.letterAcceptedAt || submission.spaceStatus === "letter_sent") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "La ficha del aliado estará disponible después de firmar la carta de intención" });
+      }
+
+      return generateAllySpacePdfForSubmission(submission.id);
     }),
 });
 

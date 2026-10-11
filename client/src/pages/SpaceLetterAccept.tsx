@@ -22,6 +22,24 @@ export default function SpaceLetterAccept() {
   const [result, setResult] = useState<{ success: boolean; spaceName?: string; code?: string; pdfUrl?: string } | null>(null);
 
   const acceptMutation = trpc.spaces.acceptLetter.useMutation();
+  const allyPdfMutation = trpc.spaces.downloadAllySpacePdf.useMutation();
+
+  const handleDownloadAllyPdf = async () => {
+    try {
+      const pdf = await allyPdfMutation.mutateAsync({ token });
+      const link = document.createElement("a");
+      link.href = pdf.pdfUrl;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.download = pdf.fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success("Ficha técnica del aliado descargada");
+    } catch (err: any) {
+      toast.error(err.message || "No fue posible generar la ficha del aliado");
+    }
+  };
 
   const handleAccept = async () => {
     if (!signerName.trim()) {
@@ -102,6 +120,30 @@ export default function SpaceLetterAccept() {
               <Mail className="w-3.5 h-3.5" />
               <span>También se ha enviado una copia a su correo electrónico</span>
             </div>
+          </div>
+
+          {/* Ficha técnica/comercial sin información reservada de inversión */}
+          <div className="bg-[#111827] border border-sky-500/30 rounded-2xl p-6 mb-6 text-left">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-xl bg-sky-500/20 flex items-center justify-center">
+                <FileText className="w-5 h-5 text-sky-300" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-white">Ficha técnica para el aliado</h3>
+                <p className="text-xs text-gray-500">Información del espacio, operación, fotos y próximos pasos</p>
+              </div>
+            </div>
+            <p className="text-sm text-gray-400 mb-4">
+              Esta ficha está preparada para el propietario o aportante del espacio. No incluye la información financiera reservada al proceso de inversión.
+            </p>
+            <Button
+              onClick={handleDownloadAllyPdf}
+              disabled={allyPdfMutation.isPending}
+              className="w-full bg-sky-600 hover:bg-sky-700 text-white"
+            >
+              {allyPdfMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
+              {allyPdfMutation.isPending ? "Generando ficha..." : "Descargar ficha del espacio"}
+            </Button>
           </div>
 
           <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 mb-6 text-left">

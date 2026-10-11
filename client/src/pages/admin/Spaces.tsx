@@ -1223,6 +1223,7 @@ function SpaceDetailDialog({
   const deleteSpaceMutation = trpc.spaces.admin.deleteSpace.useMutation();
   const advanceCommercialStageMutation = trpc.spaces.admin.advanceCommercialStage.useMutation();
   const generateProspectoMutation = trpc.spaces.generateProspectoPdf.useMutation();
+  const generateAllyPdfMutation = trpc.spaces.generateAllySpacePdf.useMutation();
   const [showPublishDialog, setShowPublishDialog] = useState(false);
   const [showPipelineActionDialog, setShowPipelineActionDialog] = useState(false);
   const [showCommercialStageDialog, setShowCommercialStageDialog] = useState(false);
@@ -1349,6 +1350,23 @@ function SpaceDetailDialog({
       technicalConditionNote: "",
     });
     setShowProspectoDialog(true);
+  };
+
+  const handleGenerateAllyPdf = async () => {
+    try {
+      const result = await generateAllyPdfMutation.mutateAsync({ submissionId: id });
+      const link = document.createElement("a");
+      link.href = result.pdfUrl;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.download = result.fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success("Ficha técnica del aliado generada y descargada");
+    } catch (err: any) {
+      toast.error(err.message || "No fue posible generar la ficha del aliado");
+    }
   };
 
   const handleStatusUpdate = async (status: string) => {
@@ -1596,11 +1614,22 @@ function SpaceDetailDialog({
                 evidence={(space as any).manualFormalizationEvidence}
               />
             )}
-              {/* Row 2: Permanent actions - always visible 2x2 grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {/* Row 2: documentos y acciones administrativas */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                 <Button size="sm" onClick={handleOpenProspectoDialog} className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs w-full">
                   <FileDown className="w-3.5 h-3.5 mr-1" /> Prospecto PDF
                 </Button>
+                {canManageAdministrativeDetails && <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleGenerateAllyPdf}
+                  disabled={generateAllyPdfMutation.isPending}
+                  title="Genera una ficha sin CAPEX, ROI, payback ni waterfall"
+                  className="border-sky-500/40 text-sky-200 hover:bg-sky-500/10 text-xs w-full"
+                >
+                  {generateAllyPdfMutation.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <FileText className="w-3.5 h-3.5 mr-1" />}
+                  Ficha aliado
+                </Button>}
                 {canManageAdministrativeDetails && <Button size="sm" variant="outline" onClick={handleGenerateAI} disabled={generateAIMutation.isPending} className="border-[#374151] text-gray-300 text-xs w-full">
                   {generateAIMutation.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Brain className="w-3.5 h-3.5 mr-1" />}
                   Re-evaluar IA
