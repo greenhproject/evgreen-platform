@@ -72,4 +72,4 @@
 - [x] Identificar la causa: la prueba de proyección automática insertaba con `proyeccion-automatica@example.com` en la BD compartida y el listado de limpieza omitía ese fixture.
 - [x] Bloquear todas las pruebas que crean postulaciones, cartas o seguimiento de espacios si no existe `TEST_DATABASE_URL` explícita y distinta de `DATABASE_URL`.
 - [x] Validar que la suite completa no creó nuevos registros: se mantienen únicamente los cinco fixtures históricos identificados, sin fotos, eventos de carta, contratos ni crowdfunding asociados.
-- [ ] Eliminar los cinco fixtures históricos SPE-2026-0021 a SPE-2026-0025, sólo tras confirmación expresa de la operación destructiva.
+- [x] Tras confirmación expresa, eliminar de forma exacta los cinco fixtures históricos SPE-2026-0021 a SPE-2026-0025; verificación posterior: 0 registros restantes y ninguna dependencia asociada.
