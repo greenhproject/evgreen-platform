@@ -129,6 +129,9 @@ function getOperatingHoursPerDay(start: unknown, end: unknown, is24Hours: unknow
 }
 
 function humanizeSpaceError(message: string, action: "crear" | "actualizar") {
+  if (/out of range|data truncated|value is out of range/i.test(message)) {
+    return `Uno de los valores numéricos excede el rango permitido para ${action} el espacio. Verifica importes, porcentajes o potencias e inténtalo de nuevo.`;
+  }
   if (/failed query|insert into [`"]?space_submissions|unknown column|incorrect decimal|data truncated/i.test(message)) {
     return `No fue posible ${action} el espacio. Revisa los valores numéricos: puedes usar punto o coma (por ejemplo, 1.500.000 o 112,5) e inténtalo de nuevo.`;
   }
@@ -205,6 +208,18 @@ export default function AdminSpaces() {
     estimatedInvestmentCop: "", estimatedPowerKw: "120", estimatedChargerCount: "1",
     hasSolarPanels: false,
     solarCoveragePercent: "", solarEnergyCostPerKwh: "",
+    electricalDistance: "",
+    hasElectricalPanel: false,
+    hasInternet: false,
+    operatingHoursStart: "06:00",
+    operatingHoursEnd: "22:00",
+    is24Hours: false,
+    requiresNewTransformer: false,
+    proposedTransformerKva: "",
+    electricalViability: "",
+    investmentType: "individual",
+    additionalNotes: "",
+    nearbyAttractions: "",
   });
   const [createPhotos, setCreatePhotos] = useState<Array<{ file: File; preview: string; photoType: string; isCover?: boolean; isConceptual?: boolean }>>([]);
   const [dateTo, setDateTo] = useState("");
@@ -275,6 +290,18 @@ export default function AdminSpaces() {
         estimatedInvestmentCop: "", estimatedPowerKw: "120", estimatedChargerCount: "1",
         hasSolarPanels: false,
         solarCoveragePercent: "", solarEnergyCostPerKwh: "",
+        electricalDistance: "",
+        hasElectricalPanel: false,
+        hasInternet: false,
+        operatingHoursStart: "06:00",
+        operatingHoursEnd: "22:00",
+        is24Hours: false,
+        requiresNewTransformer: false,
+        proposedTransformerKva: "",
+        electricalViability: "",
+        investmentType: "individual",
+        additionalNotes: "",
+        nearbyAttractions: "",
       });
       createPhotos.forEach(p => URL.revokeObjectURL(p.preview));
       setCreatePhotos([]);
@@ -967,6 +994,32 @@ export default function AdminSpaces() {
                   <Label className="text-gray-300 text-xs mb-1 block">Longitud</Label>
                   <Input value={createForm.longitude} onChange={e => setCreateForm(p => ({ ...p, longitude: e.target.value }))} placeholder="Ej: -74.0721" className="bg-[#111827] border-[#374151] text-white text-sm" />
                 </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Distancia tablero/transformador (m)</Label>
+                  <Input inputMode="numeric" value={createForm.electricalDistance} onChange={e => setCreateForm(p => ({ ...p, electricalDistance: e.target.value }))} placeholder="Ej: 25" className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Horario inicio</Label>
+                  <Input type="time" value={createForm.operatingHoursStart} onChange={e => setCreateForm(p => ({ ...p, operatingHoursStart: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Horario fin</Label>
+                  <Input type="time" value={createForm.operatingHoursEnd} onChange={e => setCreateForm(p => ({ ...p, operatingHoursEnd: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-4 mt-3">
+                <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
+                  <input type="checkbox" checked={createForm.hasElectricalPanel} onChange={e => setCreateForm(p => ({ ...p, hasElectricalPanel: e.target.checked }))} className="accent-emerald-500" />
+                  Tablero eléctrico accesible
+                </label>
+                <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
+                  <input type="checkbox" checked={createForm.hasInternet} onChange={e => setCreateForm(p => ({ ...p, hasInternet: e.target.checked }))} className="accent-emerald-500" />
+                  Internet disponible
+                </label>
+                <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
+                  <input type="checkbox" checked={createForm.is24Hours} onChange={e => setCreateForm(p => ({ ...p, is24Hours: e.target.checked }))} className="accent-emerald-500" />
+                  Operación 24 horas
+                </label>
               </div>
               <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-lg border border-amber-400/25 bg-amber-400/5 p-2.5 text-xs text-amber-50">
                 <input type="checkbox" checked={createForm.hasSolarPanels} onChange={e => setCreateForm(p => ({ ...p, hasSolarPanels: e.target.checked }))} className="mt-0.5 h-4 w-4 accent-amber-400" />
@@ -987,6 +1040,36 @@ export default function AdminSpaces() {
               )}
             </div>
 
+            {/* Infraestructura Eléctrica y Viabilidad */}
+            <div className="bg-[#0a0f1a] border border-orange-500/30 rounded-lg p-3">
+              <p className="text-orange-400 text-xs font-semibold mb-2 uppercase tracking-wide">🔧 Infraestructura Eléctrica</p>
+              <div className="space-y-2">
+                <label className="flex items-center gap-2 text-sm text-gray-200 cursor-pointer">
+                  <input type="checkbox" checked={createForm.requiresNewTransformer} onChange={e => setCreateForm(p => ({ ...p, requiresNewTransformer: e.target.checked }))} className="accent-orange-500 w-4 h-4" />
+                  <span>Requiere instalación de <strong>transformador nuevo</strong></span>
+                </label>
+                {createForm.requiresNewTransformer && (
+                  <div className="ml-6">
+                    <Label className="text-gray-300 text-xs mb-1 block">Capacidad propuesta del nuevo transformador (kVA)</Label>
+                    <Input inputMode="decimal" placeholder="Ej: 250" value={createForm.proposedTransformerKva} onChange={e => setCreateForm(p => ({ ...p, proposedTransformerKva: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm w-40" />
+                  </div>
+                )}
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Viabilidad eléctrica preliminar</Label>
+                  <Select value={createForm.electricalViability} onValueChange={v => setCreateForm(p => ({ ...p, electricalViability: v }))}>
+                    <SelectTrigger className="bg-[#111827] border-[#374151] text-white text-sm">
+                      <SelectValue placeholder="Seleccionar viabilidad..." />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1f2937] border-[#374151]">
+                      <SelectItem value="viable" className="text-green-300">✅ Viable</SelectItem>
+                      <SelectItem value="requires_upgrade" className="text-yellow-300">⚠️ Requiere mejora</SelectItem>
+                      <SelectItem value="not_viable" className="text-red-300">❌ No viable</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+
             <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3">
               <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-emerald-300">Proyección preliminar (opcional)</p>
               <p className="mb-2 text-[11px] leading-4 text-emerald-100/70">Al guardar, el ROI y el payback se calculan a partir del flujo, adopción EV y el valor de inversión. Después quedan editables en el expediente.</p>
@@ -1003,6 +1086,18 @@ export default function AdminSpaces() {
                   <Label className="mb-1 block text-xs text-gray-300">Cargadores duales</Label>
                   <Input inputMode="numeric" value={createForm.estimatedChargerCount} onChange={e => setCreateForm(p => ({ ...p, estimatedChargerCount: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" />
                 </div>
+              </div>
+              <div className="mt-2">
+                <Label className="text-gray-300 text-xs mb-1 block">Tipo de inversión</Label>
+                <Select value={createForm.investmentType} onValueChange={v => setCreateForm(p => ({ ...p, investmentType: v }))}>
+                  <SelectTrigger className="bg-[#111827] border-[#374151] text-white text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#1f2937] border-[#374151]">
+                    <SelectItem value="individual" className="text-white">Individual</SelectItem>
+                    <SelectItem value="colectiva" className="text-white">Colectiva (Premium)</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
@@ -1026,6 +1121,19 @@ export default function AdminSpaces() {
                   <Label className="text-gray-300 text-xs mb-1 block">Empresa</Label>
                   <Input value={createForm.submitterCompany} onChange={e => setCreateForm(p => ({ ...p, submitterCompany: e.target.value }))} placeholder="Nombre de la empresa" className="bg-[#111827] border-[#374151] text-white text-sm" />
                 </div>
+              </div>
+            </div>
+
+            {/* Notas y entorno */}
+            <div className="bg-[#0a0f1a] border border-[#374151] rounded-lg p-3 space-y-2">
+              <p className="text-gray-400 text-xs font-semibold uppercase tracking-wide">Notas y Entorno</p>
+              <div>
+                <Label className="text-gray-300 text-xs mb-1 block">Puntos de interés cercanos</Label>
+                <Textarea value={createForm.nearbyAttractions} onChange={e => setCreateForm(p => ({ ...p, nearbyAttractions: e.target.value }))} rows={2} placeholder="Centros comerciales, vías principales, peajes..." className="bg-[#111827] border-[#374151] text-white text-sm resize-none" />
+              </div>
+              <div>
+                <Label className="text-gray-300 text-xs mb-1 block">Notas adicionales</Label>
+                <Textarea value={createForm.additionalNotes} onChange={e => setCreateForm(p => ({ ...p, additionalNotes: e.target.value }))} rows={2} placeholder="Observaciones técnicas o comerciales..." className="bg-[#111827] border-[#374151] text-white text-sm resize-none" />
               </div>
             </div>
 
@@ -1140,6 +1248,8 @@ export default function AdminSpaces() {
                   numericInputError("Estrato", createForm.socioeconomicStratum, true),
                   numericInputError("Latitud", createForm.latitude),
                   numericInputError("Longitud", createForm.longitude),
+                  numericInputError("Distancia al transformador", createForm.electricalDistance, true),
+                  numericInputError("Transformador propuesto", createForm.proposedTransformerKva),
                   numericInputError("Inversión estimada", createForm.estimatedInvestmentCop),
                   numericInputError("Potencia DC", createForm.estimatedPowerKw, true),
                   numericInputError("Cargadores", createForm.estimatedChargerCount, true),
@@ -1193,6 +1303,18 @@ export default function AdminSpaces() {
                     hasSolarPanels: createForm.hasSolarPanels,
                     solarCoveragePercent: toOptionalNumber(createForm.solarCoveragePercent),
                     solarEnergyCostPerKwh: toOptionalInteger(createForm.solarEnergyCostPerKwh),
+                    electricalDistance: toOptionalInteger(createForm.electricalDistance),
+                    hasElectricalPanel: createForm.hasElectricalPanel,
+                    hasInternet: createForm.hasInternet,
+                    operatingHoursStart: createForm.operatingHoursStart || undefined,
+                    operatingHoursEnd: createForm.operatingHoursEnd || undefined,
+                    is24Hours: createForm.is24Hours,
+                    requiresNewTransformer: createForm.requiresNewTransformer,
+                    proposedTransformerKva: toOptionalNumber(createForm.proposedTransformerKva),
+                    electricalViability: (createForm.electricalViability as any) || undefined,
+                    investmentType: (createForm.investmentType as any) || "individual",
+                    nearbyAttractions: createForm.nearbyAttractions.trim() || undefined,
+                    additionalNotes: createForm.additionalNotes.trim() || undefined,
                     photos: photosData.length > 0 ? photosData : undefined,
                   });
                 };

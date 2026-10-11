@@ -154,6 +154,22 @@ function toSqlTimestamp(date = new Date()) {
   return date.toISOString().slice(0, 19).replace("T", " ");
 }
 
+/** Limita el ROI para que nunca desborde el campo DECIMAL(7,2) en base de datos (-99999.99 a 99999.99) */
+function sanitizeProjectionRoi(roiAnnualPercent: number | undefined | null): string | null {
+  if (roiAnnualPercent === undefined || roiAnnualPercent === null || !Number.isFinite(roiAnnualPercent) || roiAnnualPercent <= 0) {
+    return null;
+  }
+  const bounded = Math.min(roiAnnualPercent, 99999.99);
+  return bounded.toFixed(2);
+}
+
+function sanitizeProjectionPayback(paybackMonths: number | undefined | null): number | null {
+  if (paybackMonths === undefined || paybackMonths === null || !Number.isFinite(paybackMonths) || paybackMonths <= 0) {
+    return null;
+  }
+  return Math.max(1, Math.round(paybackMonths));
+}
+
 function firstPositiveNumber(...values: unknown[]): number | null {
   for (const value of values) {
     const numeric = Number(value);
@@ -510,6 +526,10 @@ export const spacesRouter = router({
       operatingHoursStart: z.string().optional(),
       operatingHoursEnd: z.string().optional(),
       is24Hours: z.boolean().optional(),
+      electricalViability: z.enum(["viable", "requires_upgrade", "not_viable"]).optional(),
+      requiresNewTransformer: z.boolean().optional(),
+      proposedTransformerKva: optionalFormNumber(),
+      investmentType: z.enum(["individual", "colectiva"]).optional(),
 
       // Tráfico y contexto
       estimatedDailyVehicles: optionalFormInteger(),
@@ -539,6 +559,14 @@ export const spacesRouter = router({
     .mutation(async ({ input, ctx }) => {
       const db = await getDatabase();
       const { code, result } = await db.transaction(async (tx: any) => {
+        let technicalNotesJson: string | null = null;
+        if (input.requiresNewTransformer !== undefined || input.proposedTransformerKva !== undefined) {
+          const notesData: Record<string, unknown> = {};
+          if (input.requiresNewTransformer !== undefined) notesData.requiresNewTransformer = input.requiresNewTransformer;
+          if (input.proposedTransformerKva !== undefined) notesData.proposedTransformerKva = input.proposedTransformerKva;
+          technicalNotesJson = JSON.stringify(notesData);
+        }
+
         const created = await insertSubmissionWithCodeRetry(tx, (code) => ({
             code,
             submitterName: input.submitterName,
@@ -574,6 +602,9 @@ export const spacesRouter = router({
             nearbyAttractions: input.nearbyAttractions || null,
             socioeconomicStratum: input.socioeconomicStratum || null,
             additionalNotes: input.additionalNotes || null,
+            electricalViability: input.electricalViability || null,
+            technicalNotes: technicalNotesJson,
+            investmentType: input.investmentType || "individual",
             spaceStatus: "pending",
           }));
 
@@ -611,8 +642,8 @@ export const spacesRouter = router({
       if (projection) {
         await db.update(spaceSubmissions)
           .set({
-            estimatedRoiPercent: String(projection.selected.roiAnnualPercent),
-            estimatedPaybackMonths: Math.max(1, Math.round(projection.selected.paybackMonths)),
+            estimatedRoiPercent: sanitizeProjectionRoi(projection.selected.roiAnnualPercent),
+            estimatedPaybackMonths: sanitizeProjectionPayback(projection.selected.paybackMonths),
             financialProjectionUpdatedAt: toSqlTimestamp(),
           })
           .where(eq(spaceSubmissions.id, submissionId));
@@ -1902,8 +1933,8 @@ export const spacesRouter = router({
           if (projection) {
             await db.update(spaceSubmissions)
               .set({
-                estimatedRoiPercent: String(projection.selected.roiAnnualPercent),
-                estimatedPaybackMonths: Math.max(1, Math.round(projection.selected.paybackMonths)),
+                estimatedRoiPercent: sanitizeProjectionRoi(projection.selected.roiAnnualPercent),
+                estimatedPaybackMonths: sanitizeProjectionPayback(projection.selected.paybackMonths),
                 financialProjectionUpdatedAt: toSqlTimestamp(),
                 financialProjectionUpdatedBy: ctx.user.id,
               })
