@@ -60,9 +60,15 @@ export function getCrowdfundingInheritanceSnapshot(space: any, photos: Inherited
 		nearbyAttractions: space.nearbyAttractions ?? null,
 		investmentType: space.investmentType ?? null,
 		financialProjectionUpdatedAt: space.financialProjectionUpdatedAt ?? null,
-		photos: [...photos]
-			.sort((a, b) => Number(a.sortOrder ?? 0) - Number(b.sortOrder ?? 0))
-			.map((photo) => ({ url: photo.url, type: photo.type, caption: photo.caption })),
+			photos: [...photos]
+				.sort((a, b) => Number(Boolean(b.isCover)) - Number(Boolean(a.isCover)) || Number(a.sortOrder ?? 0) - Number(b.sortOrder ?? 0))
+				.map((photo) => ({
+					url: photo.url,
+					type: photo.type,
+					caption: photo.caption,
+					...(Boolean(photo.isCover) ? { isCover: true } : {}),
+					...(Boolean(photo.isConceptual) ? { isConceptual: true } : {}),
+				})),
     missingFinancialFields,
     isFinancialProjectionComplete: missingFinancialFields.length === 0,
   };
@@ -95,22 +101,27 @@ export function buildCrowdfundingProjectInheritanceUpdate(space: any, photos: In
 }
 
 export type InheritedSpacePhoto = {
-  submissionId: number;
-  url: string;
-  type: string;
-  caption: string | null;
-  sortOrder?: number | null;
+	submissionId: number;
+	url: string;
+	type: string;
+	caption: string | null;
+	sortOrder?: number | null;
+	isCover?: boolean | number | null;
+	isConceptual?: boolean | number | null;
 };
 
 /** Agrupa la galería original sin alterar captions ni orden visual del espacio. */
 export function mapInheritedSpacePhotos(photos: InheritedSpacePhoto[]) {
-  const photosBySpace: Record<number, Array<{ url: string; type: string; caption: string | null }>> = {};
-  for (const photo of [...photos].sort((a, b) => Number(a.sortOrder ?? 0) - Number(b.sortOrder ?? 0))) {
-    (photosBySpace[photo.submissionId] ||= []).push({
+  const photosBySpace: Record<number, Array<{ url: string; type: string; caption: string | null; isCover?: boolean; isConceptual?: boolean }>> = {};
+  for (const photo of [...photos].sort((a, b) => Number(Boolean(b.isCover)) - Number(Boolean(a.isCover)) || Number(a.sortOrder ?? 0) - Number(b.sortOrder ?? 0))) {
+    const normalized = {
       url: photo.url,
       type: photo.type,
       caption: photo.caption,
-    });
+      ...(Boolean(photo.isCover) ? { isCover: true } : {}),
+      ...(Boolean(photo.isConceptual) ? { isConceptual: true } : {}),
+    };
+    (photosBySpace[photo.submissionId] ||= []).push(normalized);
   }
   return photosBySpace;
 }

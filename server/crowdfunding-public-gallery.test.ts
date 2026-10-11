@@ -16,4 +16,16 @@ describe("galería pública heredada de crowdfunding", () => {
       }),
     })).toEqual([{ url: "https://cdn.evgreen.lat/site.jpg", type: "parking_area" }]);
   });
+
+  it("prioriza la portada y conserva la etiqueta de render conceptual", () => {
+    expect(resolveInheritedProjectPhotos({
+      inheritedPhotos: [
+        { url: "https://cdn.evgreen.lat/general.jpg", type: "general", isConceptual: true },
+        { url: "https://cdn.evgreen.lat/render.jpg", type: "general", isCover: 1, isConceptual: 1 },
+      ],
+    })).toEqual([
+      { url: "https://cdn.evgreen.lat/render.jpg", type: "general", isCover: true, isConceptual: true },
+      { url: "https://cdn.evgreen.lat/general.jpg", type: "general", isConceptual: true },
+    ]);
+  });
 });

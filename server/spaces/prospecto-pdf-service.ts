@@ -73,7 +73,7 @@ export interface ProspectoPdfData {
   capexIncludesGridUpgrade: boolean;
   technicalConditionNote?: string | null;
   // Fotos del espacio
-  photos: Array<{ url: string; caption?: string | null }>;
+  photos: Array<{ url: string; caption?: string | null; isCover?: boolean; isConceptual?: boolean }>;
   generatedAt: Date;
 }
 
@@ -238,8 +238,14 @@ export async function generateProspectoPdf(data: ProspectoPdfData): Promise<Buff
     try { aiData = JSON.parse(data.aiAnalysis); } catch { /* ignore */ }
   }
 
+  // Identificar si existe una foto marcada explícitamente como portada del espacio
+  const coverIndex = data.photos.findIndex(p => Boolean(p.isCover));
+  const activeCoverPhoto = coverIndex >= 0 ? data.photos[coverIndex] : null;
+  const activeCoverImg = coverIndex >= 0 ? photoImgs[coverIndex] : null;
+  const primaryCoverBg = activeCoverImg || coverBgImg;
+
   // PÁGINA 1 — PORTADA IMPACTANTE
-  addPortada(doc, data, PW, PH, M, CW, logoImg, coverBgImg, photoImgs[0]);
+  addPortada(doc, data, PW, PH, M, CW, logoImg, primaryCoverBg, activeCoverPhoto);
 
   // PÁGINA 2 — RESUMEN EJECUTIVO
   doc.addPage();
@@ -250,9 +256,13 @@ export async function generateProspectoPdf(data: ProspectoPdfData): Promise<Buff
   doc.addPage();
   y = addPageHeader(doc, data, PW, M, logoImg);
   y = addDatosTecnicos(doc, data, y, M, CW, PW, PH);
-  // Fotos: primera en portada, resto en página 3 y páginas adicionales si es necesario
-  const remainingPhotos = photoImgs.slice(1);
-  const remainingPhotoData = data.photos.slice(1);
+  // Si la portada usó una foto específica del espacio, omitirla del grid interno para no duplicar
+  const remainingPhotos = coverIndex >= 0
+    ? photoImgs.filter((_, idx) => idx !== coverIndex)
+    : photoImgs.slice(1);
+  const remainingPhotoData = coverIndex >= 0
+    ? data.photos.filter((_, idx) => idx !== coverIndex)
+    : data.photos.slice(1);
   y = addFotos(doc, remainingPhotos, remainingPhotoData, y, M, CW, PW, PH, doc, logoImg);
 
   // PÁGINA 4 — PROYECCIÓN FINANCIERA POR ESCENARIOS
@@ -290,7 +300,7 @@ function addPortada(
   PW: number, PH: number, M: number, CW: number,
   logoImg: { data: string; format: string } | null,
   coverBgImg: { data: string; format: string } | null,
-  spaceImg: { data: string; format: string } | null,
+  coverPhotoMeta: { caption?: string | null; isConceptual?: boolean } | null,
 ) {
   // Imagen de fondo IA (portada completa)
   if (coverBgImg) {
@@ -332,6 +342,20 @@ function addPortada(
   setColor(doc, C.white, "text");
   doc.setFontSize(7); doc.setFont("helvetica", "bold");
   doc.text("PROSPECTO DE INVERSIÓN", PW - M - 30, 18, { align: "center" });
+
+  // Badge opcional de Render / Ilustración Conceptual en la portada
+  if (coverPhotoMeta?.isConceptual) {
+    setColor(doc, C.navy, "fill");
+    try { doc.setGState(new (doc as any).GState({ opacity: 0.85 })); } catch { /* skip */ }
+    doc.roundedRect(PW - M - 60, 25, 60, 9, 2, 2, "F");
+    try { doc.setGState(new (doc as any).GState({ opacity: 1 })); } catch { /* skip */ }
+    setColor(doc, C.amber, "draw");
+    doc.setLineWidth(0.4);
+    doc.roundedRect(PW - M - 60, 25, 60, 9, 2, 2, "S");
+    setColor(doc, C.amber, "text");
+    doc.setFontSize(6.5); doc.setFont("helvetica", "bold");
+    doc.text("RENDER CONCEPTUAL", PW - M - 30, 31, { align: "center" });
+  }
 
   // Línea decorativa verde
   const textY = PH - 128;

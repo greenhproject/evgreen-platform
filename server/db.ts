@@ -5668,7 +5668,7 @@ export async function getCrowdfundingProjects(options?: {
     const result = await db.execute(sql.raw(query));
 	    const rows = ((result as any)[0] as CrowdfundingProject[]) || [];
 	    const linkedSpaceIds = rows.map((row: any) => row.spaceSubmissionId).filter(Boolean) as number[];
-	    let photosBySpace: Record<number, Array<{ url: string; type: string; caption: string | null }>> = {};
+	    let photosBySpace: Record<number, Array<{ url: string; type: string; caption: string | null; isCover?: boolean; isConceptual?: boolean }>> = {};
 
 	    if (linkedSpaceIds.length > 0) {
 	      const inheritedPhotos = await db
@@ -5677,7 +5677,9 @@ export async function getCrowdfundingProjects(options?: {
 	          url: spacePhotos.photoUrl,
 	          type: spacePhotos.photoType,
 	          caption: spacePhotos.caption,
-			sortOrder: spacePhotos.sortOrder,
+				sortOrder: spacePhotos.sortOrder,
+				isCover: spacePhotos.isCover,
+				isConceptual: spacePhotos.isConceptual,
 	        })
 	        .from(spacePhotos)
 	        .where(inArray(spacePhotos.submissionId, linkedSpaceIds))

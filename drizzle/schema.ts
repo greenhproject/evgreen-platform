@@ -1631,6 +1631,8 @@ export const spacePhotos = mysqlTable("space_photos", {
 	caption: varchar({ length: 255 }),
 	photoType: mysqlEnum("photo_type", ['general','electrical_panel','transformer','parking_area','access_road','surroundings','other']).default('general').notNull(),
 	sortOrder: int().default(0).notNull(),
+	isCover: tinyint("is_cover").default(0).notNull(),
+	isConceptual: tinyint("is_conceptual").default(0).notNull(),
 	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
 });
 

@@ -713,8 +713,8 @@ describe("spaces → crowdfunding integration", () => {
 	    });
 	    const db = await getDb();
 	    await db!.insert(spacePhotos).values([
-      { submissionId, photoUrl: "https://cdn.example.test/site-overview.jpg", photoKey: `tests/${submissionId}/site-overview.jpg`, photoType: "general", caption: "Vista general", sortOrder: 2 },
-      { submissionId, photoUrl: "https://cdn.example.test/electrical-panel.jpg", photoKey: `tests/${submissionId}/electrical-panel.jpg`, photoType: "electrical_panel", caption: "Tablero eléctrico", sortOrder: 1 },
+	      { submissionId, photoUrl: "https://cdn.example.test/site-overview.jpg", photoKey: `tests/${submissionId}/site-overview.jpg`, photoType: "general", caption: "Vista general", sortOrder: 2, isConceptual: 1 },
+	      { submissionId, photoUrl: "https://cdn.example.test/electrical-panel.jpg", photoKey: `tests/${submissionId}/electrical-panel.jpg`, photoType: "electrical_panel", caption: "Tablero eléctrico", sortOrder: 1, isCover: 1 },
 	    ]);
 
 	    await adminCaller.spaces.admin.updateStatus({ id: submissionId, status: "approved" });
@@ -722,8 +722,8 @@ describe("spaces → crowdfunding integration", () => {
 	    const linked = (await adminCaller.crowdfunding.getAllProjects()).find((project: any) => project.id === detail.crowdfundingProjectId) as any;
 
 	    expect(linked.inheritedPhotos).toEqual([
-	      { url: "https://cdn.example.test/electrical-panel.jpg", type: "electrical_panel", caption: "Tablero eléctrico" },
-	      { url: "https://cdn.example.test/site-overview.jpg", type: "general", caption: "Vista general" },
+	      { url: "https://cdn.example.test/electrical-panel.jpg", type: "electrical_panel", caption: "Tablero eléctrico", isCover: true },
+	      { url: "https://cdn.example.test/site-overview.jpg", type: "general", caption: "Vista general", isConceptual: true },
 	    ]);
 	    expect(linked.spaceInheritanceSnapshot.photos).toEqual(linked.inheritedPhotos);
 	  });

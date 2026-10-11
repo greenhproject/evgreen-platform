@@ -423,6 +423,8 @@ export const spacesRouter = router({
         contentType: z.string(),
         photoType: z.enum(["general", "electrical_panel", "transformer", "parking_area", "access_road", "surroundings", "other"]).optional(),
         caption: z.string().optional(),
+        isCover: z.boolean().optional(),
+        isConceptual: z.boolean().optional(),
       })).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
@@ -509,6 +511,8 @@ export const spacesRouter = router({
 
             const { url } = await storagePut(fileKey, buffer, photo.contentType || "image/jpeg");
 
+            // Si esta foto viene marcada como portada, asegurar unicidad
+            const isCover = photo.isCover ? 1 : (i === 0 && !input.photos.some(p => p.isCover) ? 1 : 0);
             await db.insert(spacePhotos).values({
               submissionId,
               photoUrl: url,
@@ -516,6 +520,8 @@ export const spacesRouter = router({
               caption: photo.caption || null,
               photoType: photo.photoType || "general",
               sortOrder: i,
+              isCover,
+              isConceptual: photo.isConceptual ? 1 : 0,
             });
           } catch (err) {
             console.error(`[Spaces] Error uploading photo ${i}:`, err);
@@ -747,7 +753,7 @@ export const spacesRouter = router({
       // Obtener TODAS las fotos de cada espacio (primera como thumbnail + galería completa)
       const submissionIds = published.map(s => s.id);
       let thumbnailMap: Record<number, string> = {};
-      let allPhotosMap: Record<number, Array<{ url: string; type: string; caption: string | null }>> = {};
+      let allPhotosMap: Record<number, Array<{ url: string; type: string; caption: string | null; isCover?: boolean; isConceptual?: boolean }>> = {};
 
       if (submissionIds.length > 0) {
         const photos = await db
@@ -756,10 +762,12 @@ export const spacesRouter = router({
             photoUrl: spacePhotos.photoUrl,
             photoType: spacePhotos.photoType,
             caption: spacePhotos.caption,
+            isCover: spacePhotos.isCover,
+            isConceptual: spacePhotos.isConceptual,
           })
           .from(spacePhotos)
           .where(inArray(spacePhotos.submissionId, submissionIds))
-          .orderBy(spacePhotos.sortOrder);
+          .orderBy(desc(spacePhotos.isCover), spacePhotos.sortOrder);
 
         for (const photo of photos) {
           if (!thumbnailMap[photo.submissionId]) {
@@ -772,6 +780,8 @@ export const spacesRouter = router({
             url: photo.photoUrl,
             type: photo.photoType,
             caption: photo.caption,
+            isCover: Boolean(photo.isCover),
+            isConceptual: Boolean(photo.isConceptual),
           });
         }
       }
@@ -1075,11 +1085,12 @@ export const spacesRouter = router({
             .where(eq(spaceSubmissions.id, input.id))
             .limit(1);
 
-		  if (submission && !submission.crowdfundingProjectId) {
-			const inheritedPhotos = await db.select({
-				submissionId: spacePhotos.submissionId, url: spacePhotos.photoUrl, type: spacePhotos.photoType,
-				caption: spacePhotos.caption, sortOrder: spacePhotos.sortOrder,
-			}).from(spacePhotos).where(eq(spacePhotos.submissionId, input.id)).orderBy(spacePhotos.sortOrder);
+			if (submission && !submission.crowdfundingProjectId) {
+				const inheritedPhotos = await db.select({
+					submissionId: spacePhotos.submissionId, url: spacePhotos.photoUrl, type: spacePhotos.photoType,
+					caption: spacePhotos.caption, sortOrder: spacePhotos.sortOrder,
+					isCover: spacePhotos.isCover, isConceptual: spacePhotos.isConceptual,
+				}).from(spacePhotos).where(eq(spacePhotos.submissionId, input.id)).orderBy(spacePhotos.sortOrder);
 				const inherited = getCrowdfundingInheritanceSnapshot(submission, inheritedPhotos);
 				const targetAmount = inherited.targetAmount ?? 0;
 				const totalPowerKw = inherited.totalPowerKw ?? 0;
@@ -1364,10 +1375,11 @@ export const spacesRouter = router({
           input.manualFormalizationEvidence,
         );
 
-		const inheritedPhotos = await db.select({
-			submissionId: spacePhotos.submissionId, url: spacePhotos.photoUrl, type: spacePhotos.photoType,
-			caption: spacePhotos.caption, sortOrder: spacePhotos.sortOrder,
-		}).from(spacePhotos).where(eq(spacePhotos.submissionId, input.id)).orderBy(spacePhotos.sortOrder);
+			const inheritedPhotos = await db.select({
+				submissionId: spacePhotos.submissionId, url: spacePhotos.photoUrl, type: spacePhotos.photoType,
+				caption: spacePhotos.caption, sortOrder: spacePhotos.sortOrder,
+				isCover: spacePhotos.isCover, isConceptual: spacePhotos.isConceptual,
+			}).from(spacePhotos).where(eq(spacePhotos.submissionId, input.id)).orderBy(spacePhotos.sortOrder);
 		const inherited = getCrowdfundingInheritanceSnapshot(submission, inheritedPhotos);
 			const [currentProject] = submission.crowdfundingProjectId
 				? await db.select().from(crowdfundingProjects).where(eq(crowdfundingProjects.id, submission.crowdfundingProjectId)).limit(1)
@@ -1790,15 +1802,17 @@ export const spacesRouter = router({
     addPhotos: adminProcedure
       .input(z.object({
         id: z.number(),
-        photos: z.array(z.object({
-          base64: z.string(),
-          fileName: z.string(),
-          contentType: z.string(),
-          photoType: z.enum(["general", "electrical_panel", "transformer", "parking_area", "access_road", "surroundings", "other"]).optional(),
-          caption: z.string().optional(),
-        })).min(1).max(20),
-      }))
-      .mutation(async ({ input }) => {
+	        photos: z.array(z.object({
+	          base64: z.string(),
+	          fileName: z.string(),
+	          contentType: z.string(),
+	          photoType: z.enum(["general", "electrical_panel", "transformer", "parking_area", "access_road", "surroundings", "other"]).optional(),
+	          caption: z.string().optional(),
+	          isCover: z.boolean().optional(),
+	          isConceptual: z.boolean().optional(),
+	        })).min(1).max(20),
+	      }))
+	      .mutation(async ({ input }) => {
         const db = await getDatabase();
         const [submission] = await db
           .select({ id: spaceSubmissions.id, code: spaceSubmissions.code })
@@ -1816,26 +1830,67 @@ export const spacesRouter = router({
             const randomSuffix = Math.random().toString(36).substring(2, 8);
             const ext = photo.fileName.split(".").pop() || "jpg";
             const fileKey = `spaces/${submission.code}/${Date.now()}-${randomSuffix}.${ext}`;
-            const { url } = await storagePut(fileKey, buffer, photo.contentType || "image/jpeg");
-            await db.insert(spacePhotos).values({
-              submissionId: input.id,
-              photoUrl: url,
-              photoKey: fileKey,
-              caption: photo.caption || null,
-              photoType: photo.photoType || "general",
-              sortOrder: i,
-            });
-            uploadedCount++;
+	            const { url } = await storagePut(fileKey, buffer, photo.contentType || "image/jpeg");
+	            if (photo.isCover) {
+	              await db.update(spacePhotos).set({ isCover: 0 }).where(eq(spacePhotos.submissionId, input.id));
+	            }
+	            await db.insert(spacePhotos).values({
+	              submissionId: input.id,
+	              photoUrl: url,
+	              photoKey: fileKey,
+	              caption: photo.caption || null,
+	              photoType: photo.photoType || "general",
+	              sortOrder: i,
+	              isCover: photo.isCover ? 1 : 0,
+	              isConceptual: photo.isConceptual ? 1 : 0,
+	            });
+	            uploadedCount++;
           } catch (err) {
             console.error(`[Spaces] Error uploading photo ${i}:`, err);
           }
         }
-        return { success: true, uploadedCount };
-      }),
+	        return { success: true, uploadedCount };
+	      }),
 
-    // ========================================================================
-    // ADMIN: Eliminar múltiples espacios en masa
-    // ========================================================================
+	    // ========================================================================
+	    // ADMIN: Establecer foto de portada principal del espacio
+	    // ========================================================================
+	    setCoverPhoto: adminProcedure
+	      .input(z.object({
+	        submissionId: z.number(),
+	        photoId: z.number(),
+	      }))
+	      .mutation(async ({ input }) => {
+	        const db = await getDatabase();
+	        await db.update(spacePhotos)
+	          .set({ isCover: 0 })
+	          .where(eq(spacePhotos.submissionId, input.submissionId));
+	        await db.update(spacePhotos)
+	          .set({ isCover: 1 })
+	          .where(and(eq(spacePhotos.id, input.photoId), eq(spacePhotos.submissionId, input.submissionId)));
+	        return { success: true };
+	      }),
+
+	    // ========================================================================
+	    // ADMIN: Alternar etiqueta de render / ilustración conceptual
+	    // ========================================================================
+	    toggleConceptualPhoto: adminProcedure
+	      .input(z.object({
+	        submissionId: z.number(),
+	        photoId: z.number(),
+	        isConceptual: z.boolean(),
+	      }))
+	      .mutation(async ({ input }) => {
+	        const db = await getDatabase();
+	        await db.update(spacePhotos)
+	          .set({ isConceptual: input.isConceptual ? 1 : 0 })
+	          .where(and(eq(spacePhotos.id, input.photoId), eq(spacePhotos.submissionId, input.submissionId)));
+	        return { success: true };
+	      }),
+
+	    // ========================================================================
+	    // ADMIN: Eliminar múltiples espacios en masa
+	    // ========================================================================
     bulkDelete: adminProcedure
       .input(z.object({ ids: z.array(z.number()).min(1).max(500) }))
       .mutation(async ({ input }) => {
@@ -2173,12 +2228,17 @@ export const spacesRouter = router({
 	        energyCostPerKwhCop: input.energyCostPerKwhCop ?? Number(platformSettings?.costoEnergiaRed ?? 850),
 	        efficiencyPercent: Number(platformSettings?.eficienciaCargaDc ?? 92),
 	        fixedMonthlyExpensesCop: input.fixedMonthlyExpensesCop,
-	        technicalCondition,
-	        capexIncludesGridUpgrade: input.capexIncludesGridUpgrade,
-	        technicalConditionNote,
-        photos: photos.map(p => ({ url: p.photoUrl, caption: p.caption })),
-        generatedAt: new Date(),
-      });
+		        technicalCondition,
+		        capexIncludesGridUpgrade: input.capexIncludesGridUpgrade,
+		        technicalConditionNote,
+	        photos: photos.map(p => ({
+	          url: p.photoUrl,
+	          caption: p.caption,
+	          isCover: Boolean(p.isCover),
+	          isConceptual: Boolean(p.isConceptual),
+	        })),
+	        generatedAt: new Date(),
+	      });
 
       // Subir a S3
       const { storagePut } = await import("../storage");

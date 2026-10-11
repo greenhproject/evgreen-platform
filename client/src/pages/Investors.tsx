@@ -646,6 +646,7 @@ export default function Investors() {
         chargerCount: Number(p.chargerCount),
         chargerPowerKw: Number(p.chargerPowerKw),
         hasSolar: Boolean(p.hasSolarPanels),
+        isConceptual: Boolean(photos[0]?.isConceptual),
         roiPercent: p.estimatedRoiPercent,
         paybackMonths: p.estimatedPaybackMonths,
         connectorType: "CCS2",
@@ -668,6 +669,7 @@ export default function Investors() {
       chargerCount: 4,
       chargerPowerKw: 120,
       hasSolar: true,
+      isConceptual: false,
       roiPercent: null,
       paybackMonths: null,
       connectorType: "CCS2",
@@ -719,6 +721,7 @@ export default function Investors() {
                   chargerCount={estacion.chargerCount}
                   chargerPowerKw={estacion.chargerPowerKw}
                   hasSolar={estacion.hasSolar}
+                  isConceptual={estacion.isConceptual}
                   roiPercent={estacion.roiPercent}
                   paybackMonths={estacion.paybackMonths}
                   connectorType={estacion.connectorType}
@@ -1790,6 +1793,7 @@ export default function Investors() {
                         chargerCount={Number(project.chargerCount)}
                         chargerPowerKw={Number(project.chargerPowerKw)}
                         hasSolar={Boolean(project.hasSolarPanels)}
+                        isConceptual={Boolean(photos[0]?.isConceptual)}
                         roiPercent={project.estimatedRoiPercent}
                         paybackMonths={project.estimatedPaybackMonths}
                         connectorType="CCS2"
@@ -1822,6 +1826,7 @@ export default function Investors() {
                       powerKw={Number(space.estimatedPowerKw) || null}
                       chargerCount={Number(space.estimatedChargerCount) || null}
                       connectorType="CCS2"
+                      isConceptual={Boolean(space.photos?.find((p: any) => p.url === space.thumbnailUrl)?.isConceptual || space.photos?.[0]?.isConceptual)}
                       aiScore={Number(space.aiScore) || null}
                       viewCount={Number(space.viewCount) || 0}
                       onSelect={() => {

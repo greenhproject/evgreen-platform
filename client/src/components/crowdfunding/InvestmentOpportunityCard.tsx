@@ -38,6 +38,7 @@ export type InvestmentOpportunityCardProps = {
   chargerPowerKw?: number | null;
   connectorType?: string | null;
   hasSolar?: boolean;
+  isConceptual?: boolean;
   roiPercent?: number | string | null;
   paybackMonths?: number | null;
   aiScore?: number | null;
@@ -107,6 +108,7 @@ export function InvestmentOpportunityCard({
   chargerPowerKw,
   connectorType = "CCS2",
   hasSolar = false,
+  isConceptual = false,
   roiPercent,
   paybackMonths,
   aiScore,
@@ -190,10 +192,18 @@ export function InvestmentOpportunityCard({
             <StatusIcon className="h-3.5 w-3.5" />
             {statusCopy.label}
           </span>
+          <div className="flex items-center gap-1.5">
+            {isConceptual && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/40 bg-amber-500/20 px-2 py-0.5 text-[10px] font-semibold text-amber-200 backdrop-blur-md">
+                <Sparkles className="h-3 w-3 text-amber-300" />
+                Render conceptual
+              </span>
+            )}
           <span className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-black/35 px-2.5 py-1 text-[11px] font-semibold text-white/85 backdrop-blur-md">
             <BatteryCharging className={`h-3.5 w-3.5 ${palette.accent}`} />
             {connectorType || "CCS2"}
           </span>
+          </div>
         </div>
         <div className="absolute bottom-3 left-4 right-4 flex items-end justify-between gap-3">
           <div className="min-w-0">

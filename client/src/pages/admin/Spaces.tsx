@@ -188,7 +188,7 @@ export default function AdminSpaces() {
     estimatedInvestmentCop: "", estimatedPowerKw: "120", estimatedChargerCount: "1",
     hasSolarPanels: false,
   });
-  const [createPhotos, setCreatePhotos] = useState<Array<{ file: File; preview: string; photoType: string }>>([]);
+  const [createPhotos, setCreatePhotos] = useState<Array<{ file: File; preview: string; photoType: string; isCover?: boolean; isConceptual?: boolean }>>([]);
   const [dateTo, setDateTo] = useState("");
   const [scoreFilter, setScoreFilter] = useState<"all" | "scored" | "unscored">("all");
 
@@ -1012,10 +1012,13 @@ export default function AdminSpaces() {
                       className="hidden"
                       onChange={(e) => {
                         const files = Array.from(e.target.files || []);
-                        const newPhotos = files.map(file => ({
+                        const hasAnyCover = createPhotos.some(p => p.isCover);
+                        const newPhotos = files.map((file, fileIdx) => ({
                           file,
                           preview: URL.createObjectURL(file),
                           photoType: "general",
+                          isCover: !hasAnyCover && fileIdx === 0,
+                          isConceptual: false,
                         }));
                         setCreatePhotos(prev => [...prev, ...newPhotos]);
                         e.target.value = "";
@@ -1029,8 +1032,29 @@ export default function AdminSpaces() {
                 {createPhotos.length > 0 && (
                   <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                     {createPhotos.map((photo, idx) => (
-                      <div key={idx} className="relative group">
+                      <div key={idx} className={`relative group rounded-md border p-1 bg-black/40 ${photo.isCover ? "border-amber-400/80 ring-1 ring-amber-400/50" : "border-[#374151]"}`}>
                         <img src={photo.preview} alt={`Foto ${idx + 1}`} className="w-full h-16 sm:h-20 object-cover rounded-md border border-[#374151]" />
+                        <div className="mt-1 flex items-center justify-between gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCreatePhotos(prev => prev.map((p, i) => ({ ...p, isCover: i === idx })));
+                            }}
+                            className={`text-[9px] px-1.5 py-0.5 rounded font-medium transition-colors ${photo.isCover ? "bg-amber-400 text-slate-950 font-bold" : "bg-white/10 text-gray-300 hover:bg-white/20"}`}
+                          >
+                            {photo.isCover ? "★ Portada" : "Portada"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCreatePhotos(prev => prev.map((p, i) => i === idx ? { ...p, isConceptual: !p.isConceptual } : p));
+                            }}
+                            className={`text-[9px] px-1.5 py-0.5 rounded font-medium transition-colors ${photo.isConceptual ? "bg-purple-500 text-white font-bold" : "bg-white/10 text-gray-300 hover:bg-white/20"}`}
+                            title="Marcar como render o maqueta conceptual 3D"
+                          >
+                            {photo.isConceptual ? "Render" : "Real"}
+                          </button>
+                        </div>
                         <select
                           value={photo.photoType}
                           onChange={(e) => {
@@ -1038,7 +1062,7 @@ export default function AdminSpaces() {
                             updated[idx] = { ...updated[idx], photoType: e.target.value };
                             setCreatePhotos(updated);
                           }}
-                          className="absolute bottom-0 left-0 right-0 bg-black/70 text-[9px] text-white border-0 rounded-b-md px-1 py-0.5"
+                          className="mt-1 w-full bg-[#111827] text-[9px] text-white border border-[#374151] rounded px-1 py-0.5"
                         >
                           <option value="general">General</option>
                           <option value="electrical_panel">Tablero</option>
@@ -1108,6 +1132,8 @@ export default function AdminSpaces() {
                         fileName: photo.file.name,
                         contentType: "image/jpeg",
                         photoType: photo.photoType as any,
+                        isCover: Boolean(photo.isCover),
+                        isConceptual: Boolean(photo.isConceptual),
                       };
                     })
                   );
@@ -1205,10 +1231,18 @@ function SpaceDetailDialog({
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [editForm, setEditForm] = useState<Record<string, any>>({});
-  const [editPhotos, setEditPhotos] = useState<Array<{ file: File; preview: string; photoType: string }>>([]);
+  const [editPhotos, setEditPhotos] = useState<Array<{ file: File; preview: string; photoType: string; isCover?: boolean; isConceptual?: boolean }>>([]);
   const [showGestorDialog, setShowGestorDialog] = useState(false);
   const [letterShareLink, setLetterShareLink] = useState<string | null>(null);
   const addPhotosMutation = trpc.spaces.admin.addPhotos.useMutation();
+  const setCoverPhotoMutation = trpc.spaces.admin.setCoverPhoto.useMutation({
+    onSuccess: () => { toast.success("Foto principal de portada actualizada"); refetch(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const toggleConceptualPhotoMutation = trpc.spaces.admin.toggleConceptualPhoto.useMutation({
+    onSuccess: () => { toast.success("Etiqueta de render conceptual actualizada"); refetch(); },
+    onError: (e) => toast.error(e.message),
+  });
   const [gestorForm, setGestorForm] = useState({ gestorId: "", commissionPercent: "3.75" });
   const { data: gestoresData } = trpc.gestor.listarGestores.useQuery();
   const asignarGestorMutation = trpc.gestor.asignarGestorAEspacio.useMutation({
@@ -1812,24 +1846,43 @@ function SpaceDetailDialog({
                 {/* Photos */}
                 {space.photos && space.photos.length > 0 && (
                   <DetailSection title={`Fotos (${space.photos.length})`} icon={<Camera className="w-4 h-4 text-emerald-400" />}>
-                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                       {space.photos.map((photo: any, i: number) => (
-                        <button
-                          key={i}
-                          type="button"
-                          onClick={() => setActivePhotoIndex(i)}
-                          className="block relative group rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#111827]"
-                          aria-label={`Abrir ${photo.caption || `fotografía ${i + 1}`} en la galería`}
-                        >
-                          <img
-                            src={photo.photoUrl}
-                            alt={photo.caption || `Foto ${i + 1}`}
-                            className="w-full h-16 sm:h-20 object-cover rounded-lg border border-[#374151] group-hover:border-emerald-500/30 transition-colors"
-                          />
-                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 rounded-lg transition-colors flex items-center justify-center">
-                            <Eye className="w-4 h-4 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                        <div key={photo.id ?? i} className={`rounded-lg border p-1.5 ${photo.isCover ? "border-amber-400/80 bg-amber-400/5" : "border-[#374151] bg-black/10"}`}>
+                          <button
+                            type="button"
+                            onClick={() => setActivePhotoIndex(i)}
+                            className="block relative group w-full rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#111827]"
+                            aria-label={`Abrir ${photo.caption || `fotografía ${i + 1}`} en la galería`}
+                          >
+                            <img
+                              src={photo.photoUrl}
+                              alt={photo.caption || `Foto ${i + 1}`}
+                              className="w-full h-20 sm:h-24 object-cover rounded-md group-hover:brightness-110 transition-all"
+                            />
+                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 rounded-md transition-colors flex items-center justify-center">
+                              <Eye className="w-4 h-4 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </div>
+                          </button>
+                          <div className="mt-1 flex flex-wrap items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setCoverPhotoMutation.mutate({ submissionId: id, photoId: photo.id })}
+                              disabled={setCoverPhotoMutation.isPending || !photo.id}
+                              className={`rounded px-1.5 py-0.5 text-[9px] font-semibold transition-colors ${photo.isCover ? "bg-amber-400 text-slate-950" : "bg-white/10 text-gray-300 hover:bg-white/20"}`}
+                            >
+                              {photo.isCover ? "★ Portada" : "Hacer portada"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => toggleConceptualPhotoMutation.mutate({ submissionId: id, photoId: photo.id, isConceptual: !Boolean(photo.isConceptual) })}
+                              disabled={toggleConceptualPhotoMutation.isPending || !photo.id}
+                              className={`rounded px-1.5 py-0.5 text-[9px] font-semibold transition-colors ${photo.isConceptual ? "bg-purple-500 text-white" : "bg-white/10 text-gray-300 hover:bg-white/20"}`}
+                            >
+                              {photo.isConceptual ? "Render conceptual" : "Marcar render"}
+                            </button>
                           </div>
-                        </button>
+                        </div>
                       ))}
                     </div>
                   </DetailSection>
@@ -2314,9 +2367,29 @@ function SpaceDetailDialog({
                 {space.photos && space.photos.length > 0 && (
                   <div>
                     <p className="text-[10px] text-gray-500 mb-1">Fotos actuales ({space.photos.length})</p>
-                    <div className="grid grid-cols-4 gap-1.5">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       {space.photos.map((photo: any, i: number) => (
-                        <img key={i} src={photo.photoUrl} alt={photo.caption || `Foto ${i + 1}`} className="w-full h-14 object-cover rounded border border-[#374151]" />
+                        <div key={photo.id ?? i} className={`rounded-md border p-1 ${photo.isCover ? "border-amber-400/80 bg-amber-400/5" : "border-[#374151]"}`}>
+                          <img src={photo.photoUrl} alt={photo.caption || `Foto ${i + 1}`} className="w-full h-14 object-cover rounded" />
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setCoverPhotoMutation.mutate({ submissionId: id, photoId: photo.id })}
+                              disabled={setCoverPhotoMutation.isPending || !photo.id}
+                              className={`rounded px-1 py-0.5 text-[8px] font-semibold ${photo.isCover ? "bg-amber-400 text-slate-950" : "bg-white/10 text-gray-300 hover:bg-white/20"}`}
+                            >
+                              {photo.isCover ? "★ Portada" : "Portada"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => toggleConceptualPhotoMutation.mutate({ submissionId: id, photoId: photo.id, isConceptual: !Boolean(photo.isConceptual) })}
+                              disabled={toggleConceptualPhotoMutation.isPending || !photo.id}
+                              className={`rounded px-1 py-0.5 text-[8px] font-semibold ${photo.isConceptual ? "bg-purple-500 text-white" : "bg-white/10 text-gray-300 hover:bg-white/20"}`}
+                            >
+                              {photo.isConceptual ? "Render" : "Real"}
+                            </button>
+                          </div>
+                        </div>
                       ))}
                     </div>
                   </div>
@@ -2333,10 +2406,13 @@ function SpaceDetailDialog({
                       className="hidden"
                       onChange={(e) => {
                         const files = Array.from(e.target.files || []);
-                        const newPhotos = files.map(file => ({
+                        const hasCover = Boolean(space.photos?.some((p: any) => p.isCover) || editPhotos.some(p => p.isCover));
+                        const newPhotos = files.map((file, fileIdx) => ({
                           file,
                           preview: URL.createObjectURL(file),
                           photoType: "general",
+                          isCover: !hasCover && fileIdx === 0,
+                          isConceptual: false,
                         }));
                         setEditPhotos(prev => [...prev, ...newPhotos]);
                         e.target.value = "";
@@ -2350,8 +2426,24 @@ function SpaceDetailDialog({
                 {editPhotos.length > 0 && (
                   <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                     {editPhotos.map((photo, idx) => (
-                      <div key={idx} className="relative group">
-                        <img src={photo.preview} alt={`Nueva ${idx + 1}`} className="w-full h-14 sm:h-16 object-cover rounded-md border border-emerald-500/30" />
+                      <div key={idx} className={`relative group rounded-md border p-1 bg-black/40 ${photo.isCover ? "border-amber-400/80 ring-1 ring-amber-400/50" : "border-emerald-500/30"}`}>
+                        <img src={photo.preview} alt={`Nueva ${idx + 1}`} className="w-full h-14 sm:h-16 object-cover rounded-md" />
+                        <div className="mt-1 flex items-center justify-between gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setEditPhotos(prev => prev.map((p, i) => ({ ...p, isCover: i === idx })))}
+                            className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${photo.isCover ? "bg-amber-400 text-slate-950 font-bold" : "bg-white/10 text-gray-300 hover:bg-white/20"}`}
+                          >
+                            {photo.isCover ? "★ Portada" : "Portada"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditPhotos(prev => prev.map((p, i) => i === idx ? { ...p, isConceptual: !p.isConceptual } : p))}
+                            className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${photo.isConceptual ? "bg-purple-500 text-white font-bold" : "bg-white/10 text-gray-300 hover:bg-white/20"}`}
+                          >
+                            {photo.isConceptual ? "Render" : "Real"}
+                          </button>
+                        </div>
                         <select
                           value={photo.photoType}
                           onChange={(e) => {
@@ -2359,7 +2451,7 @@ function SpaceDetailDialog({
                             updated[idx] = { ...updated[idx], photoType: e.target.value };
                             setEditPhotos(updated);
                           }}
-                          className="absolute bottom-0 left-0 right-0 bg-black/70 text-[9px] text-white border-0 rounded-b-md px-1 py-0.5"
+                          className="mt-1 w-full bg-[#111827] text-[9px] text-white border border-[#374151] rounded px-1 py-0.5"
                         >
                           <option value="general">General</option>
                           <option value="electrical_panel">Tablero</option>
@@ -2504,6 +2596,8 @@ function SpaceDetailDialog({
                         fileName: photo.file.name,
                         contentType: "image/jpeg",
                         photoType: photo.photoType as any,
+                        isCover: Boolean(photo.isCover),
+                        isConceptual: Boolean(photo.isConceptual),
                       };
                     })
                   );
