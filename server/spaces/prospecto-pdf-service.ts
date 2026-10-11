@@ -161,6 +161,9 @@ async function downloadImageAsBase64(url: string): Promise<{ data: string; forma
     // Compress and resize images to keep PDF under 5MB
     const sharp = (await import("sharp")).default;
     const imgBuffer = Buffer.from(response.data);
+    const meta = await sharp(imgBuffer).metadata();
+    const rawW = meta.width || 1200;
+    const rawH = meta.height || 800;
     const contentType = String(response.headers["content-type"] || "").toLowerCase();
     const isPng = contentType.includes("png") || url.toLowerCase().endsWith(".png");
     if (isPng) {
@@ -170,7 +173,7 @@ async function downloadImageAsBase64(url: string): Promise<{ data: string; forma
         .png({ quality: 70, compressionLevel: 9 })
         .toBuffer();
       const base64 = compressed.toString("base64");
-      return { data: `data:image/png;base64,${base64}`, format: "PNG" };
+      return { data: `data:image/png;base64,${base64}`, format: "PNG", width: rawW, height: rawH, aspect: rawW / rawH } as any;
     } else {
       // Convert to JPEG for photos (smaller size)
       const compressed = await sharp(imgBuffer)
@@ -178,7 +181,7 @@ async function downloadImageAsBase64(url: string): Promise<{ data: string; forma
         .jpeg({ quality: 60, mozjpeg: true })
         .toBuffer();
       const base64 = compressed.toString("base64");
-      return { data: `data:image/jpeg;base64,${base64}`, format: "JPEG" };
+      return { data: `data:image/jpeg;base64,${base64}`, format: "JPEG", width: rawW, height: rawH, aspect: rawW / rawH } as any;
     }
   } catch { return null; }
 }
@@ -302,87 +305,83 @@ function addPortada(
   coverBgImg: { data: string; format: string } | null,
   coverPhotoMeta: { caption?: string | null; isConceptual?: boolean } | null,
 ) {
-  // Imagen de fondo IA (portada completa)
-  if (coverBgImg) {
-    try { doc.addImage(coverBgImg.data, coverBgImg.format, 0, 0, PW, PH, undefined, "FAST"); } catch { /* skip */ }
-  } else {
-    setColor(doc, C.navy, "fill");
-    doc.rect(0, 0, PW, PH, "F");
-  }
+  // Fondo principal Navy oscuro elegante (#0b1322)
+  setColor(doc, [11, 19, 34], "fill");
+  doc.rect(0, 0, PW, PH, "F");
 
-  // Overlay oscuro en la parte superior (para logo)
-  setColor(doc, C.navy, "fill");
-  try { doc.setGState(new (doc as any).GState({ opacity: 0.78 })); } catch { /* GState not supported in this env */ }
-  doc.rect(0, 0, PW, 42, "F");
-  try { doc.setGState(new (doc as any).GState({ opacity: 1 })); } catch { /* skip */ }
-
-  // Overlay oscuro en la parte inferior (para texto)
-  setColor(doc, C.navy, "fill");
-  try { doc.setGState(new (doc as any).GState({ opacity: 0.85 })); } catch { /* skip */ }
-  doc.rect(0, PH - 138, PW, 138, "F");
-  try { doc.setGState(new (doc as any).GState({ opacity: 1 })); } catch { /* skip */ }
-
-  // Logo EVGreen
+  // Logo EVGreen oficial
   if (logoImg) {
-    try { doc.addImage(logoImg.data, logoImg.format, M, 8, 54, 21); } catch { /* skip */ }
+    try { doc.addImage(logoImg.data, logoImg.format, M, 10, 48, 15); } catch { /* skip */ }
   } else {
     setColor(doc, C.white, "text");
-    doc.setFontSize(20); doc.setFont("helvetica", "bold");
-    doc.text("EVGreen", M, 24);
+    doc.setFontSize(22); doc.setFont("helvetica", "bold");
+    doc.text("EVGreen", M, 21);
+    setColor(doc, C.greenMid, "text");
+    doc.setFontSize(7.5); doc.setFont("helvetica", "italic");
+    doc.text("by Green House Project", M, 27);
   }
-
-  // "by Green House Project"
-  setColor(doc, C.greenMid, "text");
-  doc.setFontSize(7.5); doc.setFont("helvetica", "italic");
-  doc.text("by Green House Project", M, 34);
 
   // Badge "PROSPECTO DE INVERSIÓN"
   setColor(doc, C.green, "fill");
-  doc.roundedRect(PW - M - 60, 11, 60, 11, 2, 2, "F");
+  doc.roundedRect(PW - M - 64, 10, 64, 7.5, 2, 2, "F");
   setColor(doc, C.white, "text");
-  doc.setFontSize(7); doc.setFont("helvetica", "bold");
-  doc.text("PROSPECTO DE INVERSIÓN", PW - M - 30, 18, { align: "center" });
+  doc.setFontSize(6.8); doc.setFont("helvetica", "bold");
+  doc.text("PROSPECTO DE INVERSIÓN", PW - M - 32, 15.2, { align: "center" });
 
   // Badge opcional de Render / Ilustración Conceptual en la portada
   if (coverPhotoMeta?.isConceptual) {
-    setColor(doc, C.navy, "fill");
-    try { doc.setGState(new (doc as any).GState({ opacity: 0.85 })); } catch { /* skip */ }
-    doc.roundedRect(PW - M - 60, 25, 60, 9, 2, 2, "F");
-    try { doc.setGState(new (doc as any).GState({ opacity: 1 })); } catch { /* skip */ }
+    setColor(doc, [11, 19, 34], "fill");
+    doc.roundedRect(PW - M - 64, 19.5, 64, 7, 2, 2, "F");
     setColor(doc, C.amber, "draw");
     doc.setLineWidth(0.4);
-    doc.roundedRect(PW - M - 60, 25, 60, 9, 2, 2, "S");
+    doc.roundedRect(PW - M - 64, 19.5, 64, 7, 2, 2, "S");
     setColor(doc, C.amber, "text");
-    doc.setFontSize(6.5); doc.setFont("helvetica", "bold");
-    doc.text("RENDER CONCEPTUAL", PW - M - 30, 31, { align: "center" });
+    doc.setFontSize(6.2); doc.setFont("helvetica", "bold");
+    doc.text("RENDER CONCEPTUAL", PW - M - 32, 24.4, { align: "center" });
   }
 
-  // Línea decorativa verde
-  const textY = PH - 128;
+  // VENTANA HERO AUTOREDIMENSIONADA Y PROPORCIONAL
+  // Mantiene intacta la relación de aspecto real de la foto/render sin deformar ni estirar
+  const heroY = 30;
+  const heroW = CW;
+  const aspect = (coverBgImg as any)?.aspect && (coverBgImg as any).aspect > 0 ? (coverBgImg as any).aspect : 1.77;
+  const maxHeroH = 105;
+  const heroH = Math.min(maxHeroH, heroW / aspect);
+
+  if (coverBgImg) {
+    try {
+      doc.addImage(coverBgImg.data, coverBgImg.format, M, heroY, heroW, heroH, undefined, "FAST");
+      setColor(doc, C.green, "draw");
+      doc.setLineWidth(0.4);
+      doc.rect(M, heroY, heroW, heroH);
+    } catch { /* skip */ }
+  } else {
+    setColor(doc, [18, 28, 48], "fill");
+    doc.rect(M, heroY, heroW, heroH, "F");
+  }
+
+  // Título y datos debajo del hero
+  const textY = heroY + heroH + 11;
   setColor(doc, C.green, "draw");
-  doc.setLineWidth(2);
+  doc.setLineWidth(2.5);
   doc.line(M, textY, M + 28, textY);
 
   // Nombre del espacio
   setColor(doc, C.white, "text");
   doc.setFontSize(26); doc.setFont("helvetica", "bold");
   const nameLines = doc.splitTextToSize(data.spaceName.toUpperCase(), CW);
-  doc.text(nameLines.slice(0, 2), M, textY + 14);
+  doc.text(nameLines.slice(0, 2), M, textY + 11);
 
   // Ciudad y tipo
   setColor(doc, C.greenMid, "text");
-  doc.setFontSize(11); doc.setFont("helvetica", "normal");
-  doc.text(`${data.city}${data.department ? ", " + data.department : ""}  ·  ${spaceTypeLabel(data.spaceType, data.spaceTypeOther)}`, M, textY + 30);
+  doc.setFontSize(10.5); doc.setFont("helvetica", "normal");
+  doc.text(`${data.city}${data.department ? ", " + data.department : ""}  ·  ${spaceTypeLabel(data.spaceType, data.spaceTypeOther)}`, M, textY + 20);
 
-  // Separador
-  setColor(doc, C.green, "fill");
-  try { doc.setGState(new (doc as any).GState({ opacity: 0.35 })); } catch { /* skip */ }
-  doc.rect(M, textY + 35, CW, 0.5, "F");
-  try { doc.setGState(new (doc as any).GState({ opacity: 1 })); } catch { /* skip */ }
-
-  // Métricas clave en 3 columnas
-  const metricsY = textY + 46;
-  const colW = CW / 3;
+  // Métricas clave en 3 tarjetas tipo dark card
+  const metricsY = textY + 28;
+  const colGap = 5;
+  const cardW = (CW - colGap * 2) / 3;
+  const cardH = 35;
   const inv = data.estimatedInvestmentCop || 0;
   const powerKw = data.installedPowerKw || data.estimatedPowerKw || 0;
   const chargers = data.estimatedChargerCount || 0;
@@ -401,24 +400,48 @@ function addPortada(
   ];
 
   metrics.forEach((m, i) => {
-    const mx = M + i * colW;
+    const mx = M + i * (cardW + colGap);
+    setColor(doc, [18, 28, 48], "fill");
+    doc.roundedRect(mx, metricsY, cardW, cardH, 3, 3, "F");
+    setColor(doc, [38, 54, 82], "draw");
+    doc.setLineWidth(0.3);
+    doc.roundedRect(mx, metricsY, cardW, cardH, 3, 3, "S");
+
     setColor(doc, C.greenMid, "text");
-    doc.setFontSize(6.5); doc.setFont("helvetica", "bold");
-    doc.text(m.label, mx, metricsY);
+    doc.setFontSize(6.8); doc.setFont("helvetica", "bold");
+    doc.text(m.label, mx + cardW / 2, metricsY + 8.5, { align: "center" });
     setColor(doc, C.white, "text");
-    doc.setFontSize(15); doc.setFont("helvetica", "bold");
-    doc.text(m.value, mx, metricsY + 10);
+    doc.setFontSize(14); doc.setFont("helvetica", "bold");
+    doc.text(m.value, mx + cardW / 2, metricsY + 19.5, { align: "center" });
     setColor(doc, C.gray200, "text");
-    doc.setFontSize(7.5); doc.setFont("helvetica", "normal");
-    doc.text(m.sub, mx, metricsY + 17);
+    doc.setFontSize(7.2); doc.setFont("helvetica", "normal");
+    doc.text(m.sub, mx + cardW / 2, metricsY + 27.5, { align: "center" });
   });
+
+  // Tarjeta resumen inferior con detalles de prefactibilidad
+  const summaryY = metricsY + cardH + 8;
+  const summaryH = 26;
+  setColor(doc, [15, 25, 42], "fill");
+  doc.roundedRect(M, summaryY, CW, summaryH, 3, 3, "F");
+  setColor(doc, [24, 38, 62], "draw");
+  doc.setLineWidth(0.3);
+  doc.roundedRect(M, summaryY, CW, summaryH, 3, 3, "S");
+
+  setColor(doc, C.green, "text");
+  doc.setFontSize(7.5); doc.setFont("helvetica", "bold");
+  doc.text("RESUMEN DE PREFACTIBILIDAD TÉCNICA Y COMERCIAL", M + 6, summaryY + 7.5);
+  setColor(doc, [209, 213, 219], "text");
+  doc.setFontSize(7.3); doc.setFont("helvetica", "normal");
+  const summaryText = "Punto estratégico evaluado para despliegue de infraestructura de carga rápida DC. Cuenta con análisis preliminar de acometida eléctrica, estimación de tráfico vehicular y modelo financiero parametrizado para retorno sobre inversión.";
+  const summaryLines = doc.splitTextToSize(summaryText, CW - 12);
+  doc.text(summaryLines, M + 6, summaryY + 14);
 
   // Código y fecha
   setColor(doc, C.gray500, "text");
   doc.setFontSize(7.5); doc.setFont("helvetica", "normal");
   doc.text(
-    `${data.code}  ·  ${data.generatedAt.toLocaleDateString("es-CO", { year: "numeric", month: "long", day: "numeric" })}  ·  Confidencial`,
-    PW / 2, PH - 12, { align: "center" }
+    `${data.code}  ·  ${data.generatedAt.toLocaleDateString("es-CO", { year: "numeric", month: "long", day: "numeric" })}  ·  Documento Confidencial de Preinversión`,
+    PW / 2, PH - 11, { align: "center" }
   );
 }
 
