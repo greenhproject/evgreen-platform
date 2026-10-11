@@ -58,6 +58,7 @@ describe("getCrowdfundingInheritanceSnapshot", () => {
       estimatedPaybackMonths: 22,
       estimatedPowerKw: 240,
       estimatedChargerCount: 2,
+      hasSolarPanels: true,
     });
 
     expect(update).toMatchObject({
@@ -69,8 +70,26 @@ describe("getCrowdfundingInheritanceSnapshot", () => {
       totalPowerKw: 240,
       chargerCount: 2,
       chargerPowerKw: 120,
+      hasSolarPanels: 1,
     });
-    expect(update).not.toHaveProperty("hasSolarPanels");
+  });
+
+  it("hereda explícitamente solar no incluido para no conservar un valor anterior del proyecto", () => {
+    const snapshot = getCrowdfundingInheritanceSnapshot({
+      spaceName: "EDS sin solar",
+      city: "Bogotá",
+      address: "Calle 1",
+      hasSolarPanels: 0,
+    });
+    const update = buildCrowdfundingProjectInheritanceUpdate({
+      spaceName: "EDS sin solar",
+      city: "Bogotá",
+      address: "Calle 1",
+      hasSolarPanels: false,
+    });
+
+    expect(snapshot.hasSolarPanels).toBe(false);
+    expect(update.hasSolarPanels).toBe(0);
   });
 
   it("mantiene las fotos del espacio en orden y con captions para la galería de crowdfunding", () => {
@@ -104,6 +123,7 @@ describe("getCrowdfundingInheritanceSnapshot", () => {
       parkingSpots: 35,
       transformerCapacityKva: "500",
       hasElectricalPanel: true,
+      hasSolarPanels: true,
       electricalDistance: 18,
       hasInternet: true,
       is24Hours: true,
@@ -129,6 +149,7 @@ describe("getCrowdfundingInheritanceSnapshot", () => {
       availableAreaM2: "68.5",
       parkingSpots: 35,
       transformerCapacityKva: "500",
+      hasSolarPanels: true,
       electricalDistanceM: 18,
       estimatedDailyVehicles: 650,
       estimatedEvPercent: 7,

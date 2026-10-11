@@ -28,6 +28,7 @@ import {
   TrendingUp, DollarSign, ArrowUpRight, ExternalLink, RefreshCw,
   ChevronDown, X, Pencil, Trash2, AlertTriangle, Users, Download,
   CheckSquare, Square, Minus, SlidersHorizontal, Calendar, FileDown, Settings2, Plus, Copy, Link2, MessageCircle,
+  Sun,
 } from "lucide-react";
 
 // ============================================================================
@@ -185,6 +186,7 @@ export default function AdminSpaces() {
     transformerCapacityKva: "", parkingSpots: "", availableAreaM2: "",
     estimatedDailyVehicles: "", estimatedEvPercent: "5", socioeconomicStratum: "",
     estimatedInvestmentCop: "", estimatedPowerKw: "120", estimatedChargerCount: "1",
+    hasSolarPanels: false,
   });
   const [createPhotos, setCreatePhotos] = useState<Array<{ file: File; preview: string; photoType: string }>>([]);
   const [dateTo, setDateTo] = useState("");
@@ -253,6 +255,7 @@ export default function AdminSpaces() {
         transformerCapacityKva: "", parkingSpots: "", availableAreaM2: "",
         estimatedDailyVehicles: "", estimatedEvPercent: "5", socioeconomicStratum: "",
         estimatedInvestmentCop: "", estimatedPowerKw: "120", estimatedChargerCount: "1",
+        hasSolarPanels: false,
       });
       createPhotos.forEach(p => URL.revokeObjectURL(p.preview));
       setCreatePhotos([]);
@@ -946,6 +949,10 @@ export default function AdminSpaces() {
                   <Input value={createForm.longitude} onChange={e => setCreateForm(p => ({ ...p, longitude: e.target.value }))} placeholder="Ej: -74.0721" className="bg-[#111827] border-[#374151] text-white text-sm" />
                 </div>
               </div>
+              <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-lg border border-amber-400/25 bg-amber-400/5 p-2.5 text-xs text-amber-50">
+                <input type="checkbox" checked={createForm.hasSolarPanels} onChange={e => setCreateForm(p => ({ ...p, hasSolarPanels: e.target.checked }))} className="mt-0.5 h-4 w-4 accent-amber-400" />
+                <span><strong className="block text-amber-200">Incluir sistema solar en el alcance</strong><span className="mt-0.5 block leading-4 text-amber-100/75">Se registrará como alcance técnico. El ahorro, CAPEX y retorno se definen después de factura, consumo y diseño específico.</span></span>
+              </label>
             </div>
 
             <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3">
@@ -1125,6 +1132,7 @@ export default function AdminSpaces() {
                     estimatedInvestmentCop: toOptionalNumber(createForm.estimatedInvestmentCop),
                     estimatedPowerKw: toOptionalInteger(createForm.estimatedPowerKw),
                     estimatedChargerCount: toOptionalInteger(createForm.estimatedChargerCount),
+                    hasSolarPanels: createForm.hasSolarPanels,
                     photos: photosData.length > 0 ? photosData : undefined,
                   });
                 };
@@ -1160,6 +1168,7 @@ function SpaceDetailDialog({
   const { data: space, isLoading, refetch } = trpc.spaces.admin.getById.useQuery({ id });
   const { data: calculatorParams } = trpc.settings.getCalculatorParams.useQuery();
   const { data: statusHistory } = trpc.spaces.admin.getStatusHistory.useQuery({ id });
+  const { data: solarScopeHistory } = trpc.spaces.admin.getSolarScopeHistory.useQuery({ id });
   const updateStatusMutation = trpc.spaces.admin.updateStatus.useMutation();
   const sendLetterMutation = trpc.spaces.admin.sendLetter.useMutation();
   const getLetterShareLinkMutation = trpc.spaces.admin.getLetterShareLink.useMutation();
@@ -1567,8 +1576,9 @@ function SpaceDetailDialog({
                       socioeconomicStratum: (space as any).socioeconomicStratum ?? "",
                       operatingHoursStart: (space as any).operatingHoursStart || "06:00",
                       operatingHoursEnd: (space as any).operatingHoursEnd || "22:00",
-                      hasElectricalPanel: !!space.hasElectricalPanel,
-                      hasInternet: !!space.hasInternet,
+	                      hasElectricalPanel: !!space.hasElectricalPanel,
+	                      hasSolarPanels: !!(space as any).hasSolarPanels,
+	                      hasInternet: !!space.hasInternet,
                       is24Hours: !!(space as any).is24Hours,
                       electricalViability: (space as any).electricalViability || "",
                       requiresNewTransformer: !!techNotes.requiresNewTransformer,
@@ -1640,10 +1650,24 @@ function SpaceDetailDialog({
                   {space.parkingSpots && <DetailRow label="Parqueos" value={space.parkingSpots.toString()} />}
                   {space.transformerCapacityKva && <DetailRow label="Trafo" value={`${space.transformerCapacityKva} kVA`} />}
                   <DetailRow label="Tablero" value={space.hasElectricalPanel ? "Sí" : "No"} />
+                  <DetailRow label="Sistema solar" value={(space as any).hasSolarPanels ? "Incluido en el alcance" : "No incluido"} />
                   {space.electricalDistance && <DetailRow label="Dist. tablero" value={`${space.electricalDistance} m`} />}
                   <DetailRow label="Internet" value={space.hasInternet ? "Sí" : "No"} />
                   <DetailRow label="Horario" value={space.is24Hours ? "24h" : `${space.operatingHoursStart || "—"} - ${space.operatingHoursEnd || "—"}`} />
                 </DetailSection>
+                {solarScopeHistory && solarScopeHistory.length > 0 && (
+                  <div className="rounded-xl border border-amber-400/25 bg-amber-400/5 p-3">
+                    <p className="flex items-center gap-2 text-sm font-medium text-amber-200"><Sun className="h-4 w-4" /> Bitácora de alcance solar</p>
+                    <div className="mt-2 space-y-1.5">
+                      {solarScopeHistory.slice(0, 2).map((event, index) => (
+                        <div key={`${event.createdAt}-${index}`} className="flex flex-col gap-0.5 text-[11px] text-amber-100/80 sm:flex-row sm:items-center sm:justify-between">
+                          <span>{event.changeSource === "SUBMISSION" ? "Registro inicial" : "Edición administrativa"}: <strong className="text-amber-100">{Number(event.nextHasSolarPanels) === 1 ? "Solar incluido" : "Solar no incluido"}</strong></span>
+                          <span className="shrink-0 text-amber-100/55">{new Date(event.createdAt).toLocaleString("es-CO")}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Right column */}
@@ -1727,6 +1751,12 @@ function SpaceDetailDialog({
                       <div className="mt-3 rounded-lg border border-emerald-400/20 bg-emerald-500/5 p-2.5 text-[11px] text-emerald-100">
                         <p className="font-semibold text-emerald-200">Distribución aplicable sobre margen neto</p>
                         <p className="mt-1">{aiAnalysis.revenueDistribution.summary}</p>
+                      </div>
+                    )}
+                    {aiAnalysis.solarScope?.included && (
+                      <div className="mt-3 rounded-lg border border-amber-400/25 bg-amber-400/10 p-2.5 text-[11px] leading-relaxed text-amber-100">
+                        <p className="flex items-center gap-1 font-semibold text-amber-200"><Sun className="h-3.5 w-3.5" /> Alcance solar considerado (+{aiAnalysis.solarScope.technicalScoreBonus || 0} técnico)</p>
+                        <p className="mt-1">{aiAnalysis.solarScope.note}</p>
                       </div>
                     )}
                   </DetailSection>
@@ -2107,6 +2137,10 @@ function SpaceDetailDialog({
                     <Input inputMode="decimal" placeholder="Ej: 250" value={editForm.proposedTransformerKva || ""} onChange={e => setEditForm(p => ({ ...p, proposedTransformerKva: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm w-40" />
                   </div>
                 )}
+                <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-amber-400/30 bg-amber-400/5 p-2.5 text-sm text-amber-50">
+                  <input type="checkbox" checked={!!editForm.hasSolarPanels} onChange={e => setEditForm(p => ({ ...p, hasSolarPanels: e.target.checked }))} className="mt-0.5 h-4 w-4 accent-amber-400" />
+                  <span><span className="flex items-center gap-1 font-medium text-amber-200"><Sun className="h-3.5 w-3.5" /> Incluir sistema solar en el alcance</span><span className="mt-1 block text-[11px] leading-4 text-amber-100/75">Suma hasta 3 puntos técnicos al re-evaluar con IA. No modifica ahorro, CAPEX, ROI ni payback sin factura, consumo y diseño solar específico.</span></span>
+                </label>
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">Viabilidad eléctrica</Label>
                   <Select value={editForm.electricalViability || ""} onValueChange={v => setEditForm(p => ({ ...p, electricalViability: v }))}>
@@ -2419,6 +2453,7 @@ function SpaceDetailDialog({
                 if (editForm.operatingHoursStart) payload.operatingHoursStart = editForm.operatingHoursStart;
                 if (editForm.operatingHoursEnd) payload.operatingHoursEnd = editForm.operatingHoursEnd;
                 if (editForm.hasElectricalPanel !== undefined) payload.hasElectricalPanel = editForm.hasElectricalPanel;
+                if (editForm.hasSolarPanels !== undefined) payload.hasSolarPanels = editForm.hasSolarPanels;
                 if (editForm.hasInternet !== undefined) payload.hasInternet = editForm.hasInternet;
                 if (editForm.is24Hours !== undefined) payload.is24Hours = editForm.is24Hours;
                 if (editForm.electricalViability) payload.electricalViability = editForm.electricalViability;

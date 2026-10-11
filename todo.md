@@ -73,3 +73,12 @@
 - [x] Bloquear todas las pruebas que crean postulaciones, cartas o seguimiento de espacios si no existe `TEST_DATABASE_URL` explícita y distinta de `DATABASE_URL`.
 - [x] Validar que la suite completa no creó nuevos registros: se mantienen únicamente los cinco fixtures históricos identificados, sin fotos, eventos de carta, contratos ni crowdfunding asociados.
 - [x] Tras confirmación expresa, eliminar de forma exacta los cinco fixtures históricos SPE-2026-0021 a SPE-2026-0025; verificación posterior: 0 registros restantes y ninguna dependencia asociada.
+
+## Espacios — alcance solar heredable y scoring trazable (2026-10-11)
+
+- [x] Persistir si el alcance del espacio incluye sistema solar, con valor seguro `No` para registros históricos y bitácora de cambios por actor.
+- [x] Exponer la casilla en creación y edición, mostrar el estado técnico y heredar la decisión a Crowdfunding al aprobar, publicar o sincronizar un espacio vinculado.
+- [x] Aplicar un bono técnico determinista de hasta 3 puntos durante la re-evaluación IA, sin alterar ahorro, CAPEX, ROI ni payback hasta contar con factura, perfil de consumo y diseño validado.
+- [x] Validar migración, persistencia, herencia y pruebas sin crear datos operativos.
+- [ ] Realizar QA visual verificable del diálogo de Espacios en escritorio y móvil, confirmando que la casilla solar aparece, se guarda y no rompe el layout.
+- [ ] Guardar checkpoint WebDev, ejecutar publicación segura a GitHub y verificar el despliegue tras la mejora solar.

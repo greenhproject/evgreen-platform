@@ -23,6 +23,7 @@ type SpaceForScoring = {
   parkingSpots: number | null;
   transformerCapacityKva: string | number | null;
   hasElectricalPanel: number | boolean | null;
+  hasSolarPanels: number | boolean | null;
   electricalDistance: number | null;
   hasInternet: number | boolean | null;
   operatingHoursStart: string | null;
@@ -64,7 +65,7 @@ type LlmSpaceAnalysis = {
 };
 
 export type SpaceInvestmentAnalysis = {
-  version: 2;
+	version: 3;
   score: number;
   summary: string;
   strengths: string[];
@@ -77,6 +78,11 @@ export type SpaceInvestmentAnalysis = {
   scoreComponents: LlmSpaceAnalysis["scoreComponents"];
   visualAnalysis: LlmSpaceAnalysis["visualAnalysis"];
   evidenceLimitations: string[];
+  solarScope: {
+    included: boolean;
+    technicalScoreBonus: number;
+    note: string;
+  };
   dcInfrastructure: DcInfrastructureRequirement;
   revenueDistribution: RevenueDistribution;
 };
@@ -88,6 +94,13 @@ const SCORE_LIMITS = {
   demandContext: 15,
   operatingAccess: 10,
 } as const;
+
+/**
+ * El alcance solar aporta preparación técnica y de sostenibilidad, no una
+ * estimación financiera. El bono se aplica de manera determinista y queda
+ * limitado por el máximo del componente técnico (25 puntos).
+ */
+const SOLAR_SCOPE_TECHNICAL_BONUS = 3;
 
 function clampInteger(value: unknown, max: number): number {
   const numeric = Number(value);
@@ -110,7 +123,7 @@ function sanitizeList(value: unknown, fallback: string[] = []): string[] {
   return items.length > 0 ? items : fallback;
 }
 
-function normalizeModelAnalysis(input: LlmSpaceAnalysis, space: Pick<SpaceForScoring, "spaceType" | "transformerCapacityKva" | "estimatedPowerKw" | "estimatedChargerCount">): SpaceInvestmentAnalysis {
+function normalizeModelAnalysis(input: LlmSpaceAnalysis, space: Pick<SpaceForScoring, "spaceType" | "transformerCapacityKva" | "estimatedPowerKw" | "estimatedChargerCount" | "hasSolarPanels">): SpaceInvestmentAnalysis {
   const estimatedPowerKw = Math.max(120, Math.round(Number(input.estimatedPowerKw) || 0), Math.round(Number(space.estimatedPowerKw) || 0));
   const estimatedChargers = Math.max(1, Math.round(Number(input.estimatedChargers) || 0), Math.round(Number(space.estimatedChargerCount) || 0));
   const transformerCapacityKva = Number(space.transformerCapacityKva);
@@ -121,8 +134,15 @@ function normalizeModelAnalysis(input: LlmSpaceAnalysis, space: Pick<SpaceForSco
   });
   const distribution = getRevenueDistributionForSpaceType(space.spaceType);
   const isEds = isGasStation(space.spaceType);
+  const hasSolarPanels = space.hasSolarPanels === true || Number(space.hasSolarPanels) === 1;
+  const baseTechnicalScore = clampInteger(input.scoreComponents?.technical, SCORE_LIMITS.technical);
+  const technicalScore = Math.min(
+    SCORE_LIMITS.technical,
+    baseTechnicalScore + (hasSolarPanels ? SOLAR_SCOPE_TECHNICAL_BONUS : 0),
+  );
+  const solarTechnicalScoreBonus = technicalScore - baseTechnicalScore;
   const scoreComponents = {
-    technical: clampInteger(input.scoreComponents?.technical, SCORE_LIMITS.technical),
+    technical: technicalScore,
     // Una EDS es una señal operativa fuerte; no reemplaza conteos físicos ni aforos.
     traffic: Math.max(clampInteger(input.scoreComponents?.traffic, SCORE_LIMITS.traffic), isEds ? 18 : 0),
     visualSite: clampInteger(input.scoreComponents?.visualSite, SCORE_LIMITS.visualSite),
@@ -135,14 +155,20 @@ function normalizeModelAnalysis(input: LlmSpaceAnalysis, space: Pick<SpaceForSco
   if (isEds && !strengths.some((item) => /EDS|estaci[oó]n de servicio/i.test(item))) {
     strengths.unshift("El tipo EDS aporta una base operativa de flujo vehicular; debe conservarse el aforo para dimensionar la demanda.");
   }
+  if (hasSolarPanels && !strengths.some((item) => /solar/i.test(item))) {
+    strengths.unshift("El alcance incluye sistema solar, una señal de preparación técnica y sostenibilidad sujeta a diseño específico del sitio.");
+  }
 
   const limitations = sanitizeList(input.evidenceLimitations, []);
   if (!limitations.some((item) => /transformador|red|operador/i.test(item))) {
     limitations.push("La capacidad y la ampliación de red requieren estudio eléctrico, cotización y aprobación del operador de red.");
   }
+  if (hasSolarPanels && !limitations.some((item) => /factura|autoconsumo|solar/i.test(item))) {
+    limitations.push("El alcance solar requiere factura base, perfil de consumo, diseño y validación de autoconsumo; no se infieren ahorro, CAPEX ni retorno.");
+  }
 
   return {
-    version: 2,
+    version: 3,
     score,
     summary: sanitizeText(input.summary, "Evaluación preliminar basada en la información declarada y el registro fotográfico disponible."),
     strengths: strengths.slice(0, 6),
@@ -162,6 +188,13 @@ function normalizeModelAnalysis(input: LlmSpaceAnalysis, space: Pick<SpaceForSco
       findings: sanitizeList(input.visualAnalysis?.findings, ["El registro fotográfico debe complementarse con visita técnica y mediciones de campo."]),
     },
     evidenceLimitations: limitations.slice(0, 6),
+    solarScope: {
+      included: hasSolarPanels,
+      technicalScoreBonus: solarTechnicalScoreBonus,
+      note: hasSolarPanels
+        ? "Bono técnico de alcance solar; no representa ahorro, generación validada ni cambio automático en CAPEX, ROI o payback."
+        : "No se incluyó sistema solar dentro del alcance técnico del espacio.",
+    },
     dcInfrastructure,
     revenueDistribution: distribution,
   };
@@ -201,8 +234,11 @@ DATOS DEL ESPACIO:
 - Estrato: ${space.socioeconomicStratum || "No informado"}
 - Puntos de interés: ${space.nearbyAttractions || "No informados"}
 - Notas: ${space.additionalNotes || "Ninguna"}
+- Sistema solar incluido en el alcance: ${space.hasSolarPanels ? "Sí" : "No"}
 - Potencia DC ya definida (si existe): ${space.estimatedPowerKw || "No definida"} kW
 - Cargadores ya definidos (si existe): ${space.estimatedChargerCount || "No definido"}
+
+Si el alcance solar está marcado como Sí, descríbelo como una condición técnica prevista. No asumas paneles instalados, generación, autoconsumo, ahorro, CAPEX, ROI ni payback. No sumes puntos por este dato: el sistema aplica de manera determinista un bono técnico limitado después de tu respuesta.
 
 REGISTRO FOTOGRÁFICO:
 ${photosSummary}`;

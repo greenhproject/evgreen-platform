@@ -9,6 +9,7 @@ export function getCrowdfundingInheritanceSnapshot(space: any, photos: Inherited
   const chargerPowerKw = totalPowerKw && chargerCount
     ? Math.round(Number(totalPowerKw) / Number(chargerCount))
     : null;
+  const hasSolarPanels = space.hasSolarPanels === true || Number(space.hasSolarPanels) === 1;
 
   const missingFinancialFields = [
     !space.estimatedInvestmentCop ? "meta de inversión" : null,
@@ -38,6 +39,7 @@ export function getCrowdfundingInheritanceSnapshot(space: any, photos: Inherited
     totalPowerKw,
     chargerCount,
     chargerPowerKw,
+    hasSolarPanels,
     estimatedRoiPercent: space.estimatedRoiPercent ? String(space.estimatedRoiPercent) : null,
     estimatedPaybackMonths: space.estimatedPaybackMonths ?? null,
     recommendedChargerType: space.recommendedChargerType ?? null,
@@ -83,6 +85,9 @@ export function buildCrowdfundingProjectInheritanceUpdate(space: any, photos: In
   if (inherited.totalPowerKw !== null) update.totalPowerKw = inherited.totalPowerKw;
   if (inherited.chargerCount !== null) update.chargerCount = inherited.chargerCount;
   if (inherited.chargerPowerKw !== null) update.chargerPowerKw = inherited.chargerPowerKw;
+  // Alcance técnico heredado; no forma parte de los campos financieros ni
+  // autoriza cambios automáticos de CAPEX, ahorro, ROI o payback.
+  update.hasSolarPanels = inherited.hasSolarPanels ? 1 : 0;
   if (inherited.estimatedRoiPercent !== null) update.estimatedRoiPercent = inherited.estimatedRoiPercent;
   if (inherited.estimatedPaybackMonths !== null) update.estimatedPaybackMonths = inherited.estimatedPaybackMonths;
 

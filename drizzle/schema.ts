@@ -1655,6 +1655,7 @@ export const spaceSubmissions = mysqlTable("space_submissions", {
 	parkingSpots: int(),
 	transformerCapacityKva: decimal({ precision: 10, scale: 2 }),
 	hasElectricalPanel: tinyint().default(0),
+	hasSolarPanels: tinyint("has_solar_panels").default(0).notNull(),
 	electricalDistance: int(),
 	hasInternet: tinyint().default(0),
 	operatingHoursStart: varchar({ length: 5 }).default('06:00'),
@@ -1732,6 +1733,24 @@ export const spaceStatusHistory = mysqlTable("space_status_history", {
 	createdAt: timestamp("created_at", { mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
 }, (table) => [
 	index("idx_space_status_history_submission_created").on(table.submissionId, table.createdAt),
+]);
+
+/**
+ * Bitácora inmutable de la decisión de incluir solar dentro del alcance de un
+ * espacio. No valida generación, CAPEX ni ahorro: conserva únicamente la
+ * decisión operativa y el actor que la registró o modificó.
+ */
+export const spaceSolarScopeHistory = mysqlTable("space_solar_scope_history", {
+	id: int().autoincrement().notNull(),
+	submissionId: int("submission_id").notNull(),
+	previousHasSolarPanels: tinyint("previous_has_solar_panels"),
+	nextHasSolarPanels: tinyint("next_has_solar_panels").notNull(),
+	changedById: int("changed_by_id"),
+	changedByRole: varchar("changed_by_role", { length: 32 }),
+	changeSource: mysqlEnum("change_source", ['SUBMISSION','ADMIN_EDIT']).notNull(),
+	createdAt: timestamp("created_at", { mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
+}, (table) => [
+	index("idx_space_solar_scope_history_submission_created").on(table.submissionId, table.createdAt),
 ]);
 
 export const letterEmailEvents = mysqlTable("letter_email_events", {

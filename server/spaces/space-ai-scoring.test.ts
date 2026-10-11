@@ -34,6 +34,7 @@ describe("normalización del scoring multimodal de espacios", () => {
       transformerCapacityKva: 112.5,
       estimatedPowerKw: null,
       estimatedChargerCount: null,
+      hasSolarPanels: false,
     });
 
     expect(analysis.score).toBe(75);
@@ -55,11 +56,44 @@ describe("normalización del scoring multimodal de espacios", () => {
       transformerCapacityKva: null,
       estimatedPowerKw: 240,
       estimatedChargerCount: 2,
+      hasSolarPanels: false,
     });
 
     expect(analysis.estimatedPowerKw).toBe(240);
     expect(analysis.estimatedChargers).toBe(2);
     expect(analysis.dcInfrastructure.requiredTransformerKva).toBe(300);
     expect(analysis.revenueDistribution).toMatchObject({ investorSharePercent: 70, evgreenSharePercent: 30 });
+  });
+
+  it("aplica hasta tres puntos técnicos trazables cuando solar está incluido en el alcance", () => {
+    const analysis = __testables.normalizeModelAnalysis(modelResponse, {
+      spaceType: "mall",
+      transformerCapacityKva: null,
+      estimatedPowerKw: 120,
+      estimatedChargerCount: 1,
+      hasSolarPanels: true,
+    });
+
+    expect(analysis.scoreComponents.technical).toBe(23);
+    expect(analysis.score).toBe(72);
+    expect(analysis.solarScope).toMatchObject({ included: true, technicalScoreBonus: 3 });
+    expect(analysis.strengths.join(" ")).toMatch(/solar/i);
+    expect(analysis.evidenceLimitations.join(" ")).toMatch(/no se infieren ahorro, CAPEX ni retorno/i);
+  });
+
+  it("respeta el máximo técnico aunque el alcance solar esté incluido", () => {
+    const analysis = __testables.normalizeModelAnalysis({
+      ...modelResponse,
+      scoreComponents: { ...modelResponse.scoreComponents, technical: 24 },
+    }, {
+      spaceType: "mall",
+      transformerCapacityKva: null,
+      estimatedPowerKw: 120,
+      estimatedChargerCount: 1,
+      hasSolarPanels: true,
+    });
+
+    expect(analysis.scoreComponents.technical).toBe(25);
+    expect(analysis.solarScope.technicalScoreBonus).toBe(1);
   });
 });

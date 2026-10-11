@@ -17,6 +17,7 @@ import {
   investorLeads,
   letterEmailEvents,
   spaceStatusHistory,
+  spaceSolarScopeHistory,
 } from "../../drizzle/schema";
 import { eq, desc, and, sql, like, or, inArray, count, gte, lte, isNull, isNotNull } from "drizzle-orm";
 import { randomBytes } from "crypto";
@@ -394,6 +395,7 @@ export const spacesRouter = router({
       parkingSpots: optionalFormInteger(),
       transformerCapacityKva: optionalLocalizedDecimalString(),
       hasElectricalPanel: z.boolean().optional(),
+      hasSolarPanels: z.boolean().optional(),
       electricalDistance: optionalFormInteger(),
       hasInternet: z.boolean().optional(),
       operatingHoursStart: z.string().optional(),
@@ -423,9 +425,10 @@ export const spacesRouter = router({
         caption: z.string().optional(),
       })).optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDatabase();
-      const { code, result } = await insertSubmissionWithCodeRetry(db, (code) => ({
+      const { code, result } = await db.transaction(async (tx: any) => {
+        const created = await insertSubmissionWithCodeRetry(tx, (code) => ({
             code,
             submitterName: input.submitterName,
             submitterEmail: input.submitterEmail,
@@ -444,6 +447,7 @@ export const spacesRouter = router({
             parkingSpots: input.parkingSpots || null,
             transformerCapacityKva: input.transformerCapacityKva || null,
             hasElectricalPanel: input.hasElectricalPanel ? 1 : 0,
+            hasSolarPanels: input.hasSolarPanels ? 1 : 0,
             electricalDistance: input.electricalDistance || null,
             hasInternet: input.hasInternet ? 1 : 0,
             operatingHoursStart: input.operatingHoursStart || "06:00",
@@ -459,6 +463,17 @@ export const spacesRouter = router({
             additionalNotes: input.additionalNotes || null,
             spaceStatus: "pending",
           }));
+
+        await tx.insert(spaceSolarScopeHistory).values({
+          submissionId: created.result.insertId,
+          previousHasSolarPanels: null,
+          nextHasSolarPanels: input.hasSolarPanels ? 1 : 0,
+          changedById: ctx.user?.id ?? null,
+          changedByRole: ctx.user?.role ?? "external_submitter",
+          changeSource: "SUBMISSION",
+        } as any);
+        return created;
+      });
 
       const submissionId = result.insertId;
 
@@ -953,6 +968,26 @@ export const spacesRouter = router({
       }),
 
     // ========================================================================
+    // ADMIN: Bitácora de alcance solar del espacio
+    // ========================================================================
+    getSolarScopeHistory: commercialPipelineProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const db = await getDatabase();
+        return db.select({
+          previousHasSolarPanels: spaceSolarScopeHistory.previousHasSolarPanels,
+          nextHasSolarPanels: spaceSolarScopeHistory.nextHasSolarPanels,
+          changedByRole: spaceSolarScopeHistory.changedByRole,
+          changeSource: spaceSolarScopeHistory.changeSource,
+          createdAt: spaceSolarScopeHistory.createdAt,
+        })
+          .from(spaceSolarScopeHistory)
+          .where(eq(spaceSolarScopeHistory.submissionId, input.id))
+          .orderBy(desc(spaceSolarScopeHistory.createdAt))
+          .limit(6);
+      }),
+
+    // ========================================================================
     // ADMIN: Actualizar estado de una postulación
     // ========================================================================
     updateStatus: adminProcedure
@@ -1058,9 +1093,9 @@ export const spacesRouter = router({
               targetAmount,
 				minimumInvestment: inherited.minimumInvestment ?? 0,
 					totalPowerKw,
-				chargerCount: inherited.chargerCount ?? 0,
-				chargerPowerKw: inherited.chargerPowerKw ?? 0,
-                            hasSolarPanels: 0,
+					chargerCount: inherited.chargerCount ?? 0,
+					chargerPowerKw: inherited.chargerPowerKw ?? 0,
+	                            hasSolarPanels: inherited.hasSolarPanels ? 1 : 0,
               raisedAmount: 0,
 					estimatedRoiPercent: projection ? projection.selected.roiAnnualPercent.toFixed(2) : "0.00",
 					estimatedPaybackMonths: projection ? Math.ceil(projection.selected.paybackMonths) : 0,
@@ -1366,10 +1401,11 @@ export const spacesRouter = router({
 	          // Ya existe un proyecto CF (creado auto al aprobar) → actualizar
 		          await db.update(crowdfundingProjects)
 		            .set({
-						spaceInheritanceSnapshot: inherited,
-						targetAmount,
+					spaceInheritanceSnapshot: inherited,
+					targetAmount,
 					minimumInvestment: firstPositiveNumber(currentProject?.minimumInvestment, inherited.minimumInvestment, input.minimumInvestment, 50000000)!,
 					totalPowerKw,
+					hasSolarPanels: inherited.hasSolarPanels ? 1 : 0,
 					...projectionValues,
 	              status: "OPEN",
               launchDate: new Date().toISOString().slice(0, 19).replace("T", " "),
@@ -1389,7 +1425,7 @@ export const spacesRouter = router({
 				totalPowerKw,
 			chargerCount: inherited.chargerCount ?? 2,
 			chargerPowerKw: inherited.chargerPowerKw ?? 60,
-            hasSolarPanels: 0,
+	            hasSolarPanels: inherited.hasSolarPanels ? 1 : 0,
             raisedAmount: 0,
 				...projectionValues,
             status: "OPEN",
@@ -1517,6 +1553,7 @@ export const spacesRouter = router({
         parkingSpots: optionalFormInteger(),
         transformerCapacityKva: optionalLocalizedDecimalString(),
         hasElectricalPanel: z.boolean().optional(),
+        hasSolarPanels: z.boolean().optional(),
         electricalDistance: optionalFormInteger(),
         electricalDistanceM: optionalFormInteger(),
         hasInternet: z.boolean().optional(),
@@ -1565,6 +1602,7 @@ export const spacesRouter = router({
             estimatedChargerCount: spaceSubmissions.estimatedChargerCount,
             estimatedDailyVehicles: spaceSubmissions.estimatedDailyVehicles,
             estimatedEvPercent: spaceSubmissions.estimatedEvPercent,
+            hasSolarPanels: spaceSubmissions.hasSolarPanels,
           })
           .from(spaceSubmissions)
           .where(eq(spaceSubmissions.id, id))
@@ -1581,6 +1619,9 @@ export const spacesRouter = router({
         }
         if (cleanFields.electricalDistance === undefined && electricalDistanceM !== undefined) {
           cleanFields.electricalDistance = electricalDistanceM;
+        }
+        if (cleanFields.hasSolarPanels !== undefined) {
+          cleanFields.hasSolarPanels = cleanFields.hasSolarPanels ? 1 : 0;
         }
         if (cleanFields.estimatedPowerKw !== undefined && cleanFields.estimatedPowerKw < 120) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "EVGreen solo instala cargadores rápidos DC desde 120 kW." });
@@ -1620,9 +1661,24 @@ export const spacesRouter = router({
           throw new TRPCError({ code: "BAD_REQUEST", message: "No se proporcionaron campos para actualizar" });
         }
 
-        await db.update(spaceSubmissions)
-          .set(cleanFields)
-          .where(eq(spaceSubmissions.id, id));
+        const previousHasSolarPanels = Number(previousSubmission.hasSolarPanels) === 1;
+        const nextHasSolarPanels = Number(cleanFields.hasSolarPanels) === 1;
+        await db.transaction(async (tx: any) => {
+          await tx.update(spaceSubmissions)
+            .set(cleanFields)
+            .where(eq(spaceSubmissions.id, id));
+
+          if (cleanFields.hasSolarPanels !== undefined && previousHasSolarPanels !== nextHasSolarPanels) {
+            await tx.insert(spaceSolarScopeHistory).values({
+              submissionId: id,
+              previousHasSolarPanels: previousHasSolarPanels ? 1 : 0,
+              nextHasSolarPanels: nextHasSolarPanels ? 1 : 0,
+              changedById: ctx.user.id,
+              changedByRole: ctx.user.role,
+              changeSource: "ADMIN_EDIT",
+            } as any);
+          }
+        });
 
         let updatedSubmission: any;
         if (projectionInputChanged) {
@@ -1678,7 +1734,7 @@ export const spacesRouter = router({
           "estimatedInvestmentCop", "minimumInvestmentCop", "estimatedRoiPercent",
           "estimatedPaybackMonths", "estimatedPowerKw", "estimatedChargerCount",
           "estimatedDailyVehicles", "estimatedEvPercent", "recommendedChargerType",
-          "technicalScore", "technicalNotes", "aiScore", "aiAnalysis",
+          "technicalScore", "technicalNotes", "aiScore", "aiAnalysis", "hasSolarPanels",
         ];
         if (inheritedFields.some((field) => cleanFields[field] !== undefined)) {
           [updatedSubmission] = await db
