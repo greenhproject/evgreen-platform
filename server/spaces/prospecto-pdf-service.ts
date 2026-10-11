@@ -18,6 +18,7 @@ import {
   type ProspectoTechnicalCondition,
 } from "../../shared/prospecto-financial-scenario";
 import { getPhotoMarkerLabel, getPhotoTypeLabel } from "../../shared/photo-type-labels";
+import { buildSpaceTrafficProjection } from "../../shared/space-traffic-financial-projection";
 
 // ============================================================
 // ASSETS ESTÁTICOS (CDN público — disponible en el servidor)
@@ -682,7 +683,7 @@ function addFotos(
 }
 
 // ============================================================
-// PROYECCIÓN FINANCIERA — MODELO POR POTENCIA Y ESCENARIOS
+// PROYECCIÓN FINANCIERA — DEMANDA DEL PREDIO Y ESCENARIOS
 // ============================================================
 function addProyeccionFinanciera(
   doc: InstanceType<typeof jsPDF>, data: ProspectoPdfData,
@@ -753,47 +754,92 @@ function addProyeccionFinanciera(
     y += conditionH + 5;
   }
 
-	  if (powerKw > 0 && inv > 0) {
+  if (powerKw > 0 && inv > 0) {
       const powerStatus = data.technicalCondition.requiresGridUpgrade ? "PROYECTADOS" : "INSTALADOS";
-	    y = drawSectionTitle(doc, `ESCENARIOS DE OPERACIÓN — ${powerKw} kW ${powerStatus}  ·  Tarifa: ${formatCOP(tarifaKwh)}/kWh`, M, y, CW);
+      const dailyVehicles = Number(data.estimatedDailyVehicles ?? 0);
+      const evPercent = Number(data.estimatedEvPercent ?? 0);
+      const chargerCount = Math.max(1, Number(data.estimatedChargerCount ?? 1));
+      const hasTrafficDemandInputs = dailyVehicles > 0 && evPercent > 0;
 
-	    const { projection } = buildProspectoFinancialScenario({
-	      investmentCop: inv,
-	      totalPowerKw: powerKw,
-	      salePricePerKwh: tarifaKwh,
-	      energyCostPerKwh,
-	      hostSharePercent: allyPct,
-	      investorSharePercent: investorNetPct,
-	      evgreenSharePercent: platformNetPct,
-	      efficiencyPercent,
-	      fixedMonthlyExpenses,
-	      transformerCapacityKva: data.transformerCapacityKva,
-	      electricalViability: data.technicalCondition.requiresGridUpgrade ? "requires_upgrade" : "viable",
-	    });
+	    y = drawSectionTitle(
+        doc,
+        hasTrafficDemandInputs
+          ? `ESCENARIOS POR DEMANDA DEL PREDIO — ${powerKw} kW ${powerStatus}  ·  Tarifa: ${formatCOP(tarifaKwh)}/kWh`
+          : `ESCENARIOS DE OPERACIÓN — ${powerKw} kW ${powerStatus}  ·  Tarifa: ${formatCOP(tarifaKwh)}/kWh`,
+        M,
+        y,
+        CW,
+      );
+
 	    const scenarios = [
 	      { key: "PESSIMISTIC" as const, name: "PESIMISTA", color: C.amber },
 	      { key: "REALISTIC" as const, name: "REALISTA", color: C.green },
 	      { key: "OPTIMISTIC" as const, name: "OPTIMISTA", color: C.greenDark },
 	    ];
-	    const scenarioData = scenarios.map(({ key, name, color }) => {
-	      const result = projection.scenarios[key];
-	      return {
-	        name,
-	        color,
-	        hours: result.hoursPerDay,
-	        kwhDay: result.energyKwhPerDay,
-	        kwhMonth: result.energyKwhPerMonth,
-	        investorMonth: result.investorMonthlyCashflow,
-	        investorYear: result.investorAnnualCashflow,
-	        roi: result.roiAnnualPercent,
-	        payback: result.paybackMonths,
-	        waterfall: result.waterfall,
-	      };
-	    });
+      const fallbackProjection = hasTrafficDemandInputs ? null : buildProspectoFinancialScenario({
+        investmentCop: inv,
+        totalPowerKw: powerKw,
+        salePricePerKwh: tarifaKwh,
+        energyCostPerKwh,
+        hostSharePercent: allyPct,
+        investorSharePercent: investorNetPct,
+        evgreenSharePercent: platformNetPct,
+        efficiencyPercent,
+        fixedMonthlyExpenses,
+        transformerCapacityKva: data.transformerCapacityKva,
+        electricalViability: data.technicalCondition.requiresGridUpgrade ? "requires_upgrade" : "viable",
+      }).projection;
+      const trafficProjection = hasTrafficDemandInputs ? buildSpaceTrafficProjection({
+        investmentCop: inv,
+        estimatedDailyVehicles: dailyVehicles,
+        estimatedEvPercent: evPercent,
+        chargerCount,
+        spaceType: data.spaceType,
+        salePricePerKwh: tarifaKwh,
+        energyCostPerKwh,
+        hostSharePercent: allyPct,
+        fixedMonthlyExpenses,
+      }) : null;
+      const scenarioData = scenarios.map(({ key, name, color }) => {
+        if (trafficProjection) {
+          const result = trafficProjection.scenarios[key];
+          return {
+            name,
+            color,
+            operationalSummary: `${result.sessionsPerDay.toLocaleString("es-CO")} sesiones/día`,
+            operationalDetail: `${result.scenarioEvPercent.toLocaleString("es-CO")}% EV · ${result.capacitySessionsPerDay.toLocaleString("es-CO")} máx./día${result.capacityLimited ? " (limitado por equipos)" : ""}`,
+            kwhMonth: result.energyKwhPerMonth,
+            investorMonth: result.investorMonthlyCashflow,
+            investorYear: result.investorAnnualCashflow,
+            roi: result.roiAnnualPercent,
+            payback: result.paybackMonths,
+            waterfall: result.waterfall,
+          };
+        }
+        const result = fallbackProjection!.scenarios[key];
+        return {
+          name,
+          color,
+          operationalSummary: `${result.hoursPerDay} h equivalentes/día`,
+          operationalDetail: `${powerKw} kW × ${efficiencyPercent}% eficiencia`,
+          kwhMonth: result.energyKwhPerMonth,
+          investorMonth: result.investorMonthlyCashflow,
+          investorYear: result.investorAnnualCashflow,
+          roi: result.roiAnnualPercent,
+          payback: result.paybackMonths,
+          waterfall: result.waterfall,
+        };
+      });
 
     setColor(doc, C.gray500, "text");
     doc.setFontSize(7.2); doc.setFont("helvetica", "normal");
-    doc.text("Horas equivalentes de entrega a potencia proyectada · Cifras monetarias en millones de COP", M, y - 3);
+    doc.text(
+      hasTrafficDemandInputs
+        ? `Demanda basada en ${dailyVehicles.toLocaleString("es-CO")} vehículos/día y ${evPercent.toLocaleString("es-CO")}% EV declarado · Cifras monetarias en millones de COP`
+        : "Horas equivalentes de entrega a potencia proyectada · Cifras monetarias en millones de COP",
+      M,
+      y - 3,
+    );
 
     // Tarjetas de escenario: resumen legible con importes compactos.
     const cardW = (CW - 8) / 3;
@@ -815,7 +861,9 @@ function addProyeccionFinanciera(
 
       setColor(doc, C.gray500, "text");
       doc.setFontSize(7.1); doc.setFont("helvetica", "normal");
-      doc.text(`${s.hours} h equivalentes/día`, cx + cardW / 2, cy + 18, { align: "center" });
+      doc.text(s.operationalSummary, cx + cardW / 2, cy + 18, { align: "center" });
+      doc.setFontSize(5.7);
+      doc.text(s.operationalDetail, cx + cardW / 2, cy + 22, { align: "center" });
 
       const items = [
         { label: "kWh/mes", value: `${Math.round(s.kwhMonth).toLocaleString("es-CO")} kWh`, highlight: false },
@@ -832,7 +880,7 @@ function addProyeccionFinanciera(
       ];
 
       items.forEach((item, j) => {
-        const iy = cy + 23 + j * 7;
+        const iy = cy + 27 + j * 7;
         setColor(doc, C.gray500, "text");
         doc.setFontSize(6.7); doc.setFont("helvetica", "normal");
         doc.text(item.label, cx + 4, iy);
@@ -848,7 +896,9 @@ function addProyeccionFinanciera(
     // Nota metodológica
     setColor(doc, C.gray500, "text");
     doc.setFontSize(7.8); doc.setFont("helvetica", "italic");
-	    const nota = `Base: ${powerKw} kW de potencia proyectada × horas equivalentes/día × ${efficiencyPercent}% de eficiencia × 30 días. Tarifa: ${formatCOP(tarifaKwh)}/kWh; energía: ${formatCOP(energyCostPerKwh)}/kWh${fixedMonthlyExpenses > 0 ? `; gastos fijos: ${formatCOP(fixedMonthlyExpenses)}/mes` : "; gastos fijos: no incluidos"}. El retorno corresponde al ${investorNetPct}% del margen neto después de energía, gastos fijos y aliado. *ROI anual simple = retorno anual estimado ÷ inversión; recuperación simple = inversión ÷ retorno mensual estimado. No son TIR ni garantía de rentabilidad. Rubros no incorporados como gastos fijos, incluidos impuestos, seguros, fiducia, financiación y depreciación, deben validarse antes de invertir. ${data.technicalCondition.requiresGridUpgrade ? "Resultado condicionado a la ampliación eléctrica y al CAPEX total declarado." : "Cifras orientativas; no constituyen garantía de rentabilidad."}`;
+    const nota = hasTrafficDemandInputs
+      ? `Base de demanda: flujo del predio (${dailyVehicles.toLocaleString("es-CO")} vehículos/día) × participación EV/sesiones declarada (${evPercent.toLocaleString("es-CO")}% en el escenario realista) × 40 kWh/sesión × 30 días. Pesimista y optimista aplican 50% y 150% de esa participación. La demanda se limita a ${chargerCount} cargador${chargerCount === 1 ? "" : "es"} × 2 mangueras × 21 sesiones/manguera/día. Tarifa: ${formatCOP(tarifaKwh)}/kWh; energía: ${formatCOP(energyCostPerKwh)}/kWh${fixedMonthlyExpenses > 0 ? `; gastos fijos: ${formatCOP(fixedMonthlyExpenses)}/mes` : "; gastos fijos: no incluidos"}. El aliado recibe ${allyPct}% del margen bruto; el retorno corresponde al ${investorNetPct}% del margen neto distribuible. *ROI anual simple = retorno anual estimado ÷ inversión; recuperación simple = inversión ÷ retorno mensual estimado. No son TIR ni garantía de rentabilidad. La participación EV y la conversión efectiva a sesiones deben validarse con aforos, histórico de recargas y operación real. Rubros no incorporados como gastos fijos, incluidos impuestos, seguros, fiducia, financiación y depreciación, deben validarse antes de invertir. ${data.technicalCondition.requiresGridUpgrade ? "Resultado condicionado a la ampliación eléctrica y al CAPEX total declarado." : "Cifras orientativas; no constituyen garantía de rentabilidad."}`
+      : `Base alternativa sin datos de tráfico: ${powerKw} kW de potencia proyectada × horas equivalentes/día × ${efficiencyPercent}% de eficiencia × 30 días. Tarifa: ${formatCOP(tarifaKwh)}/kWh; energía: ${formatCOP(energyCostPerKwh)}/kWh${fixedMonthlyExpenses > 0 ? `; gastos fijos: ${formatCOP(fixedMonthlyExpenses)}/mes` : "; gastos fijos: no incluidos"}. El retorno corresponde al ${investorNetPct}% del margen neto después de energía, gastos fijos y aliado. *ROI anual simple = retorno anual estimado ÷ inversión; recuperación simple = inversión ÷ retorno mensual estimado. No son TIR ni garantía de rentabilidad. Rubros no incorporados como gastos fijos, incluidos impuestos, seguros, fiducia, financiación y depreciación, deben validarse antes de invertir. ${data.technicalCondition.requiresGridUpgrade ? "Resultado condicionado a la ampliación eléctrica y al CAPEX total declarado." : "Cifras orientativas; no constituyen garantía de rentabilidad."}`;
     const notaLines = doc.splitTextToSize(nota, CW);
     doc.text(notaLines, M, y);
     y += notaLines.length * 4.5 + 6;
