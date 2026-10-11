@@ -17,6 +17,7 @@ import {
   buildProspectoFinancialScenario,
   type ProspectoTechnicalCondition,
 } from "../../shared/prospecto-financial-scenario";
+import { getPhotoMarkerLabel, getPhotoTypeLabel } from "../../shared/photo-type-labels";
 
 // ============================================================
 // ASSETS ESTÁTICOS (CDN público — disponible en el servidor)
@@ -73,7 +74,7 @@ export interface ProspectoPdfData {
   capexIncludesGridUpgrade: boolean;
   technicalConditionNote?: string | null;
   // Fotos del espacio
-  photos: Array<{ url: string; caption?: string | null; isCover?: boolean; isConceptual?: boolean }>;
+  photos: Array<{ url: string; type?: string | null; caption?: string | null; isCover?: boolean; isConceptual?: boolean }>;
   generatedAt: Date;
 }
 
@@ -152,7 +153,7 @@ function buildTechnicalRecommendation(data: ProspectoPdfData): string {
   return `Se recomienda estructurar ${chargerText} ${powerText}, sujeto a la validación final de protecciones, capacidad disponible, diseño de acometida y aprobación del operador de red. La configuración definitiva debe responder al perfil de demanda, el tiempo de permanencia y la operación comercial del punto.`;
 }
 
-async function downloadImageAsBase64(url: string): Promise<{ data: string; format: string } | null> {
+async function downloadImageAsBase64(url: string): Promise<{ data: string; format: string; width: number; height: number; aspect: number } | null> {
   try {
     const response = await axios.get(url, {
       responseType: "arraybuffer", timeout: 10000,
@@ -173,7 +174,7 @@ async function downloadImageAsBase64(url: string): Promise<{ data: string; forma
         .png({ quality: 70, compressionLevel: 9 })
         .toBuffer();
       const base64 = compressed.toString("base64");
-      return { data: `data:image/png;base64,${base64}`, format: "PNG", width: rawW, height: rawH, aspect: rawW / rawH } as any;
+      return { data: `data:image/png;base64,${base64}`, format: "PNG", width: rawW, height: rawH, aspect: rawW / rawH };
     } else {
       // Convert to JPEG for photos (smaller size)
       const compressed = await sharp(imgBuffer)
@@ -181,7 +182,7 @@ async function downloadImageAsBase64(url: string): Promise<{ data: string; forma
         .jpeg({ quality: 60, mozjpeg: true })
         .toBuffer();
       const base64 = compressed.toString("base64");
-      return { data: `data:image/jpeg;base64,${base64}`, format: "JPEG", width: rawW, height: rawH, aspect: rawW / rawH } as any;
+      return { data: `data:image/jpeg;base64,${base64}`, format: "JPEG", width: rawW, height: rawH, aspect: rawW / rawH };
     }
   } catch { return null; }
 }
@@ -303,7 +304,7 @@ function addPortada(
   PW: number, PH: number, M: number, CW: number,
   logoImg: { data: string; format: string } | null,
   coverBgImg: { data: string; format: string } | null,
-  coverPhotoMeta: { caption?: string | null; isConceptual?: boolean } | null,
+  coverPhotoMeta: { type?: string | null; caption?: string | null; isConceptual?: boolean } | null,
 ) {
   // Fondo principal Navy oscuro elegante (#0b1322)
   setColor(doc, [11, 19, 34], "fill");
@@ -362,6 +363,11 @@ function addPortada(
 
   // Título y datos debajo del hero
   const textY = heroY + heroH + 11;
+  if (coverPhotoMeta) {
+    setColor(doc, C.gray500, "text");
+    doc.setFontSize(6.5); doc.setFont("helvetica", "normal");
+    doc.text(getPhotoMarkerLabel(coverPhotoMeta.type, coverPhotoMeta.caption), PW - M, textY - 3.5, { align: "right" });
+  }
   setColor(doc, C.green, "draw");
   doc.setLineWidth(2.5);
   doc.line(M, textY, M + 28, textY);
@@ -583,72 +589,93 @@ function addDatosTecnicos(
 function addFotos(
   doc: InstanceType<typeof jsPDF>,
   photoImgs: (({ data: string; format: string } | null))[],
-  photos: Array<{ url: string; caption?: string | null }>,
+  photos: Array<{ url: string; type?: string | null; caption?: string | null; isCover?: boolean; isConceptual?: boolean }>,
   y: number, M: number, CW: number, PW: number, PH: number,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _docRef?: InstanceType<typeof jsPDF>,
   logoImg?: { data: string; format: string } | null,
 ): number {
-  const validPhotos = photoImgs.filter(Boolean) as { data: string; format: string }[];
-  if (validPhotos.length === 0) return y;
+  if (!photoImgs.some(Boolean)) return y;
 
   const photoW = (CW - 6) / 2;
   const photoH = 45;
+  const photoRowGap = 22;
   const pageMarginBottom = 20;
 
   // Dividir fotos en grupos de 4 por página
   const PHOTOS_PER_PAGE = 4;
-  const groups: { data: string; format: string }[][] = [];
-  for (let i = 0; i < validPhotos.length; i += PHOTOS_PER_PAGE) {
-    groups.push(validPhotos.slice(i, i + PHOTOS_PER_PAGE));
+  const groups: Array<Array<{ img: { data: string; format: string }; photoIndex: number }>> = [];
+  for (let i = 0; i < photoImgs.length; i += PHOTOS_PER_PAGE) {
+    const group = photoImgs.slice(i, i + PHOTOS_PER_PAGE)
+      .map((img, offset) => img ? { img, photoIndex: i + offset } : null)
+      .filter(Boolean) as Array<{ img: { data: string; format: string }; photoIndex: number }>;
+    if (group.length > 0) groups.push(group);
   }
+
+  const startContinuationPage = () => {
+    doc.addPage();
+    if (logoImg !== undefined) {
+      setColor(doc, C.green, "fill");
+      doc.rect(0, 0, PW, 14, "F");
+      if (logoImg) {
+        try { doc.addImage(logoImg.data, logoImg.format, M, 2, 28, 10); } catch { /* skip */ }
+      }
+      setColor(doc, C.white, "text");
+      doc.setFontSize(7.5); doc.setFont("helvetica", "normal");
+      doc.text("Galería de Fotos (continuación)", PW - M, 9, { align: "right" });
+    }
+    y = 22;
+  };
 
   groups.forEach((group, groupIdx) => {
     if (groupIdx === 0) {
-      // Primera página de fotos: usar y actual
-      y = drawSectionTitle(doc, `GALERÍA DEL ESPACIO (${validPhotos.length} fotos)`, M, y, CW);
+      // Si los datos técnicos dejaron poco espacio, mover el título con la primera fila.
+      if (y + 14 + photoH + 18 > PH - pageMarginBottom) startContinuationPage();
+      y = drawSectionTitle(doc, `GALERÍA DEL ESPACIO (${photoImgs.filter(Boolean).length} fotos)`, M, y, CW);
     } else {
       // Páginas adicionales de fotos
-      doc.addPage();
-      if (logoImg !== undefined) {
-        // Redibujar header en página adicional
-        setColor(doc, C.green, "fill");
-        doc.rect(0, 0, PW, 14, "F");
-        if (logoImg) {
-          try { doc.addImage(logoImg.data, logoImg.format, M, 2, 28, 10); } catch { /* skip */ }
-        }
-        setColor(doc, C.white, "text");
-        doc.setFontSize(7.5); doc.setFont("helvetica", "normal");
-        doc.text("Galería de Fotos (continuación)", PW - M, 9, { align: "right" });
-      }
-      y = 22;
+      startContinuationPage();
       y = drawSectionTitle(doc, `GALERÍA DEL ESPACIO — Página ${groupIdx + 1}`, M, y, CW);
     }
 
-    group.forEach((img, i) => {
+    group.forEach((item, i) => {
+      const img = item.img;
       const col = i % 2;
       const row = Math.floor(i / 2);
       const px = M + col * (photoW + 6);
-      const py = y + row * (photoH + 8);
-      if (py + photoH > PH - pageMarginBottom) return;
+      const py = y + row * (photoH + photoRowGap);
+      if (py + photoH + 18 > PH - pageMarginBottom) return;
       try {
         doc.addImage(img.data, img.format, px, py, photoW, photoH, undefined, "FAST");
         setColor(doc, C.gray200, "draw");
         doc.setLineWidth(0.3);
         doc.rect(px, py, photoW, photoH);
         // Caption si existe
-        const photoIdx = groupIdx * PHOTOS_PER_PAGE + i;
-        const caption = photos[photoIdx]?.caption;
-        if (caption) {
-          setColor(doc, C.gray500, "text");
-          doc.setFontSize(6.5); doc.setFont("helvetica", "italic");
-          doc.text(caption.substring(0, 40), px + photoW / 2, py + photoH + 4, { align: "center" });
+        const photoIdx = item.photoIndex;
+        const photoMeta = photos[photoIdx];
+        const labelY = py + photoH + 4;
+        setColor(doc, C.greenDark, "fill");
+        doc.roundedRect(px + 2, labelY - 2.5, photoW - 4, 6, 1.5, 1.5, "F");
+        setColor(doc, C.white, "text");
+        doc.setFontSize(6.2); doc.setFont("helvetica", "bold");
+        doc.text(getPhotoTypeLabel(photoMeta?.type), px + photoW / 2, labelY + 1.2, { align: "center" });
+
+        const flags = [
+          photoMeta?.isCover ? "Portada" : null,
+          photoMeta?.isConceptual ? "Render conceptual" : "Fotografía del sitio",
+        ].filter(Boolean).join(" · ");
+        setColor(doc, C.gray500, "text");
+        doc.setFontSize(5.8); doc.setFont("helvetica", "normal");
+        doc.text(flags, px + photoW / 2, labelY + 6.5, { align: "center" });
+        if (photoMeta?.caption?.trim()) {
+          doc.setFontSize(5.8); doc.setFont("helvetica", "italic");
+          doc.text(photoMeta.caption.trim().substring(0, 50), px + photoW / 2, labelY + 11, { align: "center" });
         }
       } catch { /* skip */ }
     });
 
     const rows = Math.ceil(group.length / 2);
-    y = y + rows * (photoH + 8) + 6;
+    y = y + rows * (photoH + photoRowGap) + 6;
   });
 
   return y;

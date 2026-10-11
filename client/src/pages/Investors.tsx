@@ -18,6 +18,7 @@ import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { trpc } from "@/lib/trpc";
+import { getPhotoTypeLabel } from "@shared/photo-type-labels";
 import { 
   Zap, 
   TrendingUp, 
@@ -781,11 +782,6 @@ export default function Investors() {
     university: "Universidad", airport: "Aeropuerto", highway_rest: "Parador", other: "Otro",
   };
 
-  const PHOTO_TYPE_LABELS: Record<string, string> = {
-    general: "Vista general", electrical_panel: "Tablero eléctrico", transformer: "Transformador",
-    parking_area: "Área de parqueo", access_road: "Vía de acceso", surroundings: "Alrededores", other: "Otra",
-  };
-
   function getScoreColor(score: number): string {
     if (score >= 80) return "text-emerald-400";
     if (score >= 60) return "text-yellow-400";
@@ -1443,8 +1439,12 @@ export default function Investors() {
                         <div className="grid grid-cols-3 gap-2">
                           {selectedPremiumPhotos.map((photo, index) => (
                             <button key={`${photo.url}-${index}`} onClick={() => setLightboxIdx(index)} className="relative aspect-square overflow-hidden rounded-lg border border-amber-500/20 bg-black/30 hover:border-amber-400/70 focus:outline-none focus:ring-2 focus:ring-amber-400">
-                              <img src={photo.url} alt={photo.caption || PHOTO_TYPE_LABELS[photo.type] || "Foto del sitio"} className="h-full w-full object-cover" />
-                              <span className="absolute inset-x-1 bottom-1 truncate rounded bg-black/65 px-1.5 py-0.5 text-[10px] text-amber-100">{photo.caption || PHOTO_TYPE_LABELS[photo.type] || "Registro del sitio"}</span>
+                              <img src={photo.url} alt={photo.caption || getPhotoTypeLabel(photo.type) || "Foto del sitio"} className="h-full w-full object-cover" />
+                              <div className="absolute left-1 top-1 flex max-w-[calc(100%-0.5rem)] flex-wrap gap-1">
+                                {(photo as any).isCover && <span className="rounded bg-amber-400 px-1.5 py-0.5 text-[9px] font-semibold text-slate-950">Portada</span>}
+                                {(photo as any).isConceptual && <span className="rounded bg-purple-500 px-1.5 py-0.5 text-[9px] font-semibold text-white">Render</span>}
+                              </div>
+                              <span className="absolute inset-x-1 bottom-1 truncate rounded bg-black/65 px-1.5 py-0.5 text-[10px] text-amber-100">{getPhotoTypeLabel(photo.type)}{photo.caption ? ` · ${photo.caption}` : ""}</span>
                             </button>
                           ))}
                         </div>
@@ -1580,15 +1580,19 @@ export default function Investors() {
                             >
                               <img
                                 src={photo.url}
-                                alt={photo.caption || PHOTO_TYPE_LABELS[photo.type] || "Foto"}
+                                alt={photo.caption || getPhotoTypeLabel(photo.type) || "Foto"}
                                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                               />
                               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
                                 <ImageIcon className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
                               </div>
+                              <div className="absolute left-1 top-1 flex max-w-[calc(100%-0.5rem)] flex-wrap gap-1">
+                                {(photo as any).isCover && <span className="rounded bg-amber-400 px-1.5 py-0.5 text-[9px] font-semibold text-slate-950">Portada</span>}
+                                {(photo as any).isConceptual && <span className="rounded bg-purple-500 px-1.5 py-0.5 text-[9px] font-semibold text-white">Render</span>}
+                              </div>
                               <div className="absolute bottom-1 left-1 right-1">
                                 <span className="text-[10px] bg-black/60 text-gray-300 px-1.5 py-0.5 rounded-md backdrop-blur-sm truncate block text-center">
-                                  {PHOTO_TYPE_LABELS[photo.type] || photo.type}
+                                  {getPhotoTypeLabel(photo.type)}
                                 </span>
                               </div>
                             </button>
@@ -1890,7 +1894,7 @@ export default function Investors() {
               />
               <div className="text-center mt-4">
                 <span className="text-sm text-emerald-400 font-medium">
-                  {PHOTO_TYPE_LABELS[activeGalleryPhotos[lightboxIdx].type] || activeGalleryPhotos[lightboxIdx].type}
+                  {getPhotoTypeLabel(activeGalleryPhotos[lightboxIdx].type)}
                 </span>
                 {activeGalleryPhotos[lightboxIdx].caption && (
                   <p className="text-sm text-gray-400 mt-1">{activeGalleryPhotos[lightboxIdx].caption}</p>

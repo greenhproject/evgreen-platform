@@ -7,6 +7,7 @@ import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { MapView } from "@/components/Map";
 import { Button } from "@/components/ui/button";
+import { getPhotoTypeLabel } from "@shared/photo-type-labels";
 import {
   Zap, MapPin, TrendingUp, DollarSign, Battery, Users, Star,
   X, ExternalLink, MessageCircle, ChevronRight, Building2, Car,
@@ -22,6 +23,8 @@ interface SpacePhoto {
   url: string;
   type: string;
   caption: string | null;
+  isCover?: boolean;
+  isConceptual?: boolean;
 }
 
 interface PublishedSpace {
@@ -70,15 +73,6 @@ const SPACE_TYPE_LABELS: Record<string, string> = {
   other: "Otro",
 };
 
-const PHOTO_TYPE_LABELS: Record<string, string> = {
-  general: "Vista general",
-  electrical_panel: "Tablero eléctrico",
-  transformer: "Transformador",
-  parking_area: "Área de parqueo",
-  access_road: "Vía de acceso",
-  surroundings: "Alrededores",
-  other: "Otra",
-};
 
 function formatCOP(value: number): string {
   if (value >= 1_000_000_000) return `$${(value / 1_000_000_000).toFixed(1)}B`;
@@ -132,16 +126,20 @@ function PhotoGallery({ photos }: { photos: SpacePhoto[] }) {
             >
               <img
                 src={photo.url}
-                alt={photo.caption || PHOTO_TYPE_LABELS[photo.type] || "Foto del espacio"}
+                alt={photo.caption || getPhotoTypeLabel(photo.type) || "Foto del espacio"}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
               />
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
                 <ImageIcon className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
               </div>
+              <div className="absolute left-1 top-1 flex max-w-[calc(100%-0.5rem)] flex-wrap gap-1">
+                {photo.isCover && <span className="rounded bg-amber-400 px-1.5 py-0.5 text-[9px] font-semibold text-slate-950">Portada</span>}
+                {photo.isConceptual && <span className="rounded bg-purple-500 px-1.5 py-0.5 text-[9px] font-semibold text-white">Render</span>}
+              </div>
               {/* Photo type badge */}
               <div className="absolute bottom-1 left-1 right-1">
                 <span className="text-[10px] bg-black/60 text-gray-300 px-1.5 py-0.5 rounded-md backdrop-blur-sm truncate block text-center">
-                  {PHOTO_TYPE_LABELS[photo.type] || photo.type}
+                  {getPhotoTypeLabel(photo.type)}
                 </span>
               </div>
             </button>
@@ -192,7 +190,7 @@ function PhotoGallery({ photos }: { photos: SpacePhoto[] }) {
             {/* Caption */}
             <div className="text-center mt-4">
               <span className="text-sm text-emerald-400 font-medium">
-                {PHOTO_TYPE_LABELS[photos[lightboxIdx].type] || photos[lightboxIdx].type}
+                {getPhotoTypeLabel(photos[lightboxIdx].type)}
               </span>
               {photos[lightboxIdx].caption && (
                 <p className="text-sm text-gray-400 mt-1">{photos[lightboxIdx].caption}</p>

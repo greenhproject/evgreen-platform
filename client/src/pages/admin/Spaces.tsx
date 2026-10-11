@@ -21,6 +21,7 @@ import { toast } from "sonner";
 import { getSpacePipelineAction } from "@shared/space-pipeline-actions";
 import { getRevenueDistributionForSpaceType, resolveDcInfrastructureRequirement } from "@shared/space-investment-scoring-policy";
 import { buildSpaceTrafficProjection } from "@shared/space-traffic-financial-projection";
+import { getPhotoTypeLabel } from "@shared/photo-type-labels";
 import {
   MapPin, Search, Filter, Eye, Zap, Star, Send, Globe, Brain,
   CheckCircle2, XCircle, Clock, FileText, Loader2, ChevronLeft,
@@ -54,6 +55,9 @@ const SPACE_TYPE_LABELS: Record<string, string> = {
   residential: "Residencial", supermarket: "Supermercado", hospital: "Hospital",
   university: "Universidad", airport: "Aeropuerto", highway_rest: "Parador", other: "Otro",
 };
+const SPACE_PHOTO_TYPE_OPTIONS = [
+  "general", "electrical_panel", "transformer", "parking_area", "access_road", "surroundings", "other",
+] as const;
 
 const COMMERCIAL_NEXT_STEPS: Partial<Record<string, { status: "funded" | "in_construction" | "operational"; label: string; description: string }>> = {
   published: { status: "funded", label: "Confirmar fondeo", description: "La meta de inversión fue completada para esta oferta." },
@@ -1243,6 +1247,10 @@ function SpaceDetailDialog({
     onSuccess: () => { toast.success("Etiqueta de render conceptual actualizada"); refetch(); },
     onError: (e) => toast.error(e.message),
   });
+  const updatePhotoTypeMutation = trpc.spaces.admin.updatePhotoType.useMutation({
+    onSuccess: () => { toast.success("Tipo de foto actualizado"); refetch(); },
+    onError: (e) => toast.error(e.message),
+  });
   const [gestorForm, setGestorForm] = useState({ gestorId: "", commissionPercent: "3.75" });
   const { data: gestoresData } = trpc.gestor.listarGestores.useQuery();
   const asignarGestorMutation = trpc.gestor.asignarGestorAEspacio.useMutation({
@@ -1865,6 +1873,13 @@ function SpaceDetailDialog({
                             </div>
                           </button>
                           <div className="mt-1 flex flex-wrap items-center gap-1">
+                            <span className="rounded bg-blue-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-blue-200">
+                              {getPhotoTypeLabel(photo.photoType)}
+                            </span>
+                            {photo.isCover && <span className="rounded bg-amber-400 px-1.5 py-0.5 text-[9px] font-semibold text-slate-950">Portada</span>}
+                            {photo.isConceptual && <span className="rounded bg-purple-500 px-1.5 py-0.5 text-[9px] font-semibold text-white">Render conceptual</span>}
+                          </div>
+                          <div className="mt-1 flex flex-wrap items-center gap-1">
                             <button
                               type="button"
                               onClick={() => setCoverPhotoMutation.mutate({ submissionId: id, photoId: photo.id })}
@@ -1881,6 +1896,15 @@ function SpaceDetailDialog({
                             >
                               {photo.isConceptual ? "Render conceptual" : "Marcar render"}
                             </button>
+                            <select
+                              value={photo.photoType || "general"}
+                              onChange={(event) => updatePhotoTypeMutation.mutate({ submissionId: id, photoId: photo.id, photoType: event.target.value as any })}
+                              disabled={updatePhotoTypeMutation.isPending || !photo.id}
+                              className="min-w-0 flex-1 rounded border border-blue-400/30 bg-[#111827] px-1.5 py-0.5 text-[9px] text-blue-100"
+                              aria-label={`Tipo de ${photo.caption || `foto ${i + 1}`}`}
+                            >
+                              {SPACE_PHOTO_TYPE_OPTIONS.map((type) => <option key={type} value={type}>{getPhotoTypeLabel(type)}</option>)}
+                            </select>
                           </div>
                         </div>
                       ))}
@@ -2371,6 +2395,9 @@ function SpaceDetailDialog({
                       {space.photos.map((photo: any, i: number) => (
                         <div key={photo.id ?? i} className={`rounded-md border p-1 ${photo.isCover ? "border-amber-400/80 bg-amber-400/5" : "border-[#374151]"}`}>
                           <img src={photo.photoUrl} alt={photo.caption || `Foto ${i + 1}`} className="w-full h-14 object-cover rounded" />
+                          <span className="mt-1 block truncate rounded bg-blue-500/15 px-1 py-0.5 text-[9px] font-semibold text-blue-200" title={getPhotoTypeLabel(photo.photoType)}>
+                            {getPhotoTypeLabel(photo.photoType)}
+                          </span>
                           <div className="mt-1 flex flex-wrap gap-1">
                             <button
                               type="button"
@@ -2388,6 +2415,15 @@ function SpaceDetailDialog({
                             >
                               {photo.isConceptual ? "Render" : "Real"}
                             </button>
+                            <select
+                              value={photo.photoType || "general"}
+                              onChange={(event) => updatePhotoTypeMutation.mutate({ submissionId: id, photoId: photo.id, photoType: event.target.value as any })}
+                              disabled={updatePhotoTypeMutation.isPending || !photo.id}
+                              className="mt-1 w-full rounded border border-blue-400/30 bg-[#111827] px-1 py-0.5 text-[9px] text-blue-100"
+                              aria-label={`Clasificar foto ${i + 1}`}
+                            >
+                              {SPACE_PHOTO_TYPE_OPTIONS.map((type) => <option key={type} value={type}>{getPhotoTypeLabel(type)}</option>)}
+                            </select>
                           </div>
                         </div>
                       ))}

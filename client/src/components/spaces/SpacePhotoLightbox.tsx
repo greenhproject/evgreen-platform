@@ -13,6 +13,7 @@ import {
   wrapGalleryIndex,
   type GalleryDirection,
 } from "@shared/photo-gallery";
+import { getPhotoMarkerLabel, getPhotoTypeLabel } from "@shared/photo-type-labels";
 
 export interface SpaceGalleryPhoto {
   photoUrl: string;
@@ -25,18 +26,6 @@ interface SpacePhotoLightboxProps {
   activeIndex: number | null;
   onActiveIndexChange: (index: number | null) => void;
 }
-
-const PHOTO_TYPE_LABELS: Record<string, string> = {
-  general: "Vista general",
-  entrance: "Acceso",
-  access_road: "Vía de acceso",
-  parking: "Zona de parqueo",
-  parking_area: "Zona de parqueo",
-  electrical: "Infraestructura eléctrica",
-  electrical_panel: "Tablero eléctrico",
-  transformer: "Transformador",
-  surroundings: "Entorno",
-};
 
 export function SpacePhotoLightbox({
   photos,
@@ -52,10 +41,7 @@ export function SpacePhotoLightbox({
 
   const photoLabel = useMemo(() => {
     if (!activePhoto) return "Fotografía del espacio";
-    const typeLabel = activePhoto.photoType
-      ? PHOTO_TYPE_LABELS[activePhoto.photoType] ?? activePhoto.photoType.replaceAll("_", " ")
-      : "";
-    return activePhoto.caption?.trim() || typeLabel || `Fotografía ${normalizedIndex + 1}`;
+    return getPhotoMarkerLabel(activePhoto.photoType, activePhoto.caption) || `Fotografía ${normalizedIndex + 1}`;
   }, [activePhoto, normalizedIndex]);
 
   const move = (direction: GalleryDirection) => {
@@ -103,7 +89,7 @@ export function SpacePhotoLightbox({
             </DialogTitle>
             <DialogDescription className="mt-1 flex items-center gap-1.5 text-xs text-slate-400">
               <Images className="h-3.5 w-3.5" aria-hidden="true" />
-              Imagen {normalizedIndex + 1} de {photos.length}
+              {getPhotoTypeLabel(activePhoto?.photoType)} · Imagen {normalizedIndex + 1} de {photos.length}
             </DialogDescription>
           </div>
           <button
@@ -172,7 +158,7 @@ export function SpacePhotoLightbox({
           <div className="flex max-w-full gap-2 overflow-x-auto overscroll-x-contain pb-1" role="list" aria-label="Miniaturas de la galería">
             {photos.map((photo, index) => {
               const isActive = index === normalizedIndex;
-              const label = photo.caption?.trim() || `Fotografía ${index + 1}`;
+              const label = getPhotoMarkerLabel(photo.photoType, photo.caption) || `Fotografía ${index + 1}`;
               return (
                 <button
                   key={`${photo.photoUrl}-${index}`}
@@ -184,6 +170,7 @@ export function SpacePhotoLightbox({
                   aria-current={isActive ? "true" : undefined}
                 >
                   <img src={photo.photoUrl} alt="" className="h-full w-full object-cover" loading="lazy" draggable={false} />
+                  <span className="absolute inset-x-0 bottom-0 truncate bg-black/75 px-1 py-0.5 text-[8px] text-white">{getPhotoTypeLabel(photo.photoType)}</span>
                   <span className="absolute bottom-0.5 right-1 rounded bg-black/70 px-1 text-[10px] text-white">{index + 1}</span>
                 </button>
               );

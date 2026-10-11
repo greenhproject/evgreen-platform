@@ -1889,6 +1889,23 @@ export const spacesRouter = router({
 	      }),
 
 	    // ========================================================================
+	    // ADMIN: Clasificar una foto por su tipo técnico
+	    // ========================================================================
+	    updatePhotoType: adminProcedure
+	      .input(z.object({
+	        submissionId: z.number(),
+	        photoId: z.number(),
+	        photoType: z.enum(["general", "electrical_panel", "transformer", "parking_area", "access_road", "surroundings", "other"]),
+	      }))
+	      .mutation(async ({ input }) => {
+	        const db = await getDatabase();
+	        await db.update(spacePhotos)
+	          .set({ photoType: input.photoType })
+	          .where(and(eq(spacePhotos.id, input.photoId), eq(spacePhotos.submissionId, input.submissionId)));
+	        return { success: true };
+	      }),
+
+	    // ========================================================================
 	    // ADMIN: Eliminar múltiples espacios en masa
 	    // ========================================================================
     bulkDelete: adminProcedure
@@ -2233,6 +2250,7 @@ export const spacesRouter = router({
 		        technicalConditionNote,
 	        photos: photos.map(p => ({
 	          url: p.photoUrl,
+	          type: p.photoType,
 	          caption: p.caption,
 	          isCover: Boolean(p.isCover),
 	          isConceptual: Boolean(p.isConceptual),
