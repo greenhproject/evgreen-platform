@@ -1476,6 +1476,7 @@ function SpaceDetailDialog({
     projectTitle: string | null;
     unavailableFields: string[];
     warnings: string[];
+    mappedFields: string[];
   } | null>(null);
   const [editPhotos, setEditPhotos] = useState<Array<{ file: File; preview: string; photoType: string; isCover?: boolean; isConceptual?: boolean }>>([]);
   const [editSolarOfferPdf, setEditSolarOfferPdf] = useState<File | null>(null);
@@ -1603,16 +1604,35 @@ function SpaceDetailDialog({
         city: project.locality ?? previous.city,
         department: project.state ?? previous.department,
         latitude: project.latitude ?? previous.latitude,
-	        longitude: project.longitude ?? previous.longitude,
-	        hasSolarPanels: previous.hasSolarPanels || project.systemPowerKwp !== null,
-	        solarProgramEnabled: previous.solarProgramEnabled || project.systemPowerKwp !== null,
+        longitude: project.longitude ?? previous.longitude,
+        hasSolarPanels: previous.hasSolarPanels || project.systemPowerKwp !== null || project.annualGenerationKwh !== null,
+        // Sólo se activa el programa cuando OpenSolar entregó factura, consumo
+        // y cobertura derivados de generación/autoconsumo. Los demás datos
+        // técnicos sí se precargan, pero siguen pendientes de validación.
+        solarProgramEnabled: previous.solarProgramEnabled || project.canActivateAllySolarProgram,
         solarProgramCurrentBillCop: project.currentMonthlyBill ?? previous.solarProgramCurrentBillCop ?? "",
+        solarProgramSavingsCoveragePercent: project.solarSavingsCoveragePercent ?? previous.solarProgramSavingsCoveragePercent ?? "",
         solarSystemPowerKwp: project.systemPowerKwp ?? previous.solarSystemPowerKwp ?? "",
+        solarAnnualGenerationKwh: project.annualGenerationKwh ?? previous.solarAnnualGenerationKwh ?? "",
+        solarSelfConsumptionPercent: project.selfConsumptionPercent ?? previous.solarSelfConsumptionPercent ?? "",
+        solarExportPercent: project.exportPercent ?? previous.solarExportPercent ?? "",
+        solarGridTariffCopPerKwh: project.gridTariffCopPerKwh ?? previous.solarGridTariffCopPerKwh ?? "",
       }));
+      const mappedFieldLabels: Record<string, string> = {
+        annualConsumptionKwh: "consumo anual",
+        currentMonthlyBill: "factura mensual",
+        systemPowerKwp: "potencia solar",
+        annualGenerationKwh: "generación anual",
+        selfConsumptionPercent: "autoconsumo",
+        exportPercent: "exportación",
+        solarSavingsCoveragePercent: "cobertura de ahorro",
+        gridTariffCopPerKwh: "tarifa de red",
+      };
       setOpenSolarLookup({
         projectTitle: project.title,
         unavailableFields: result.unavailableFields ?? [],
         warnings: result.warnings ?? [],
+        mappedFields: Object.keys(project.fieldSources ?? {}).map((field) => mappedFieldLabels[field] ?? field),
       });
       toast.success("Datos de OpenSolar precargados. Revisa el formulario y guarda para confirmarlos.");
     } catch (error: any) {
@@ -2517,11 +2537,12 @@ function SpaceDetailDialog({
 	                          : <RefreshCw className="mr-1 h-3.5 w-3.5" />}
 	                        Consultar OpenSolar
 	                      </Button>
-	                    </div>
-	                    <p className="mt-1.5 text-[11px] leading-4 text-sky-100/75">Lee únicamente el proyecto y sus sistemas dentro de la organización configurada. Precarga datos técnicos y no guarda nada hasta confirmar <strong>Guardar espacio</strong>.</p>
+                    </div>
+	                    <p className="mt-1.5 text-[11px] leading-4 text-sky-100/75">Lee únicamente el proyecto y sus sistemas dentro de la organización configurada. Precarga ubicación, consumo, factura, potencia, generación y autoconsumo cuando OpenSolar los expone; no guarda nada hasta confirmar <strong>Guardar espacio</strong>.</p>
 	                    {openSolarLookup && (
 	                      <div className="mt-2 space-y-1 border-t border-sky-400/15 pt-2 text-[11px] leading-4">
-	                        <p className="text-sky-100">Proyecto consultado{openSolarLookup.projectTitle ? `: ${openSolarLookup.projectTitle}` : ""}. Potencia, ubicación y consumo/factura se llenan sólo cuando OpenSolar los expone.</p>
+	                        <p className="text-sky-100">Proyecto consultado{openSolarLookup.projectTitle ? `: ${openSolarLookup.projectTitle}` : ""}. Sólo se llenan valores expuestos por OpenSolar o cálculos trazables a esos valores.</p>
+	                        {openSolarLookup.mappedFields.length > 0 && <p className="text-emerald-100/90">Precargado: {openSolarLookup.mappedFields.join(", ")}.</p>}
 	                        {editForm.openSolarAnnualConsumptionKwh !== "" && editForm.openSolarAnnualConsumptionKwh !== undefined && <p className="text-sky-100/85">Consumo anual importado: {Number(editForm.openSolarAnnualConsumptionKwh).toLocaleString("es-CO")} kWh.</p>}
 	                        {openSolarLookup.unavailableFields.length > 0 && <p className="text-amber-100/90">Pendiente de validar: {openSolarLookup.unavailableFields.join(", ")}.</p>}
 	                        {openSolarLookup.warnings.map((warning) => <p key={warning} className="text-amber-100/90">Aviso: {warning}</p>)}
@@ -2536,7 +2557,7 @@ function SpaceDetailDialog({
                     <Label className="mb-1 block text-xs text-amber-100">Costo solar validado (COP/kWh)</Label>
                     <Input inputMode="numeric" min="0" placeholder="Ej.: 180" value={editForm.solarEnergyCostPerKwh ?? ""} onChange={e => setEditForm(p => ({ ...p, solarEnergyCostPerKwh: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" />
                   </div>
-                  <p className="sm:col-span-2 text-[11px] leading-4 text-amber-100/75">El descuento se aplica únicamente cuando la cobertura y el costo solar fueron validados con factura, consumo y diseño del sitio. De lo contrario el modelo conserva el costo de red.</p>
+	                  <p className="sm:col-span-2 text-[11px] leading-4 text-amber-100/75">El descuento se aplica únicamente cuando la cobertura y el costo solar fueron validados con factura, consumo y diseño del sitio. OpenSolar puede precargar la cobertura técnica; el costo solar/LCOE, CAPEX y los ahorros comerciales no se inventan y siguen requiriendo validación. De lo contrario el modelo conserva el costo de red.</p>
                 </div>
               )}
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">

@@ -123,7 +123,8 @@
 - [x] Validar en la documentación oficial que la lectura segura usa `GET /api/orgs/{orgId}/projects/{projectId}/` y `GET /systems/details/`, con el Bearer token del servidor y validación del `org_id` devuelto.
 - [x] Añadir a Espacios un campo de ID de proyecto OpenSolar y un botón **Consultar OpenSolar** que precargue potencia solar, ubicación y datos de consumo/factura sólo cuando la API los devuelva explícitamente.
 - [x] Persistir la referencia externa, título, consumo anual y fecha de importación de forma auditable; no almacenar respuestas completas, contactos, token ni contraseña. Migración aditiva 0060 aplicada y auditada con 0 espacios enlazados.
-- [x] Mostrar claramente los campos sin disponibilidad en el plan API y mantener cobertura, autoconsumo, costo solar, CAPEX y ahorro sujetos a validación humana/documental.
+- [x] Ampliar la precarga: cuando el plan API entrega el diseño, se extraen generación anual, autoconsumo y exportación; se derivan cobertura desde generación × autoconsumo ÷ consumo y tarifa COP/kWh sólo desde factura ÷ consumo colombiano. Cada cálculo queda etiquetado como derivado.
+- [x] Preservar los datos de diseño importados aun cuando el programa comercial de ahorro aún no se active; la activación automática requiere factura, consumo y cobertura válidos. Costo solar/LCOE, CAPEX y ahorros no se inventan.
 - [x] Cubrir acceso, pertenencia de organización, mapeo, ausencia de datos y errores; TypeScript y 23 pruebas focales aprobadas sin usar credenciales reales.
-- [x] Validación integral: 245 archivos / 2.359 pruebas aprobadas; 5 suites de integración y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo y bundle con el control **Consultar OpenSolar** aprobados.
-- [ ] Guardar checkpoint WebDev, ejecutar publicación segura y verificar el despliegue.
+- [x] Validación integral: 245 archivos / 2.361 pruebas aprobadas; 5 suites de integración y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo aprobado. El simulador OCPP que ralentizó un primer intento pasó aislado y en el reintento completo.
+- [ ] Realizar QA visual autenticado, guardar checkpoint, publicar de forma segura y verificar el despliegue.

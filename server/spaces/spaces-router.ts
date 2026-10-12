@@ -656,16 +656,19 @@ export const spacesRouter = router({
             solarCoveragePercent: input.solarCoveragePercent ?? 0,
             solarEnergyCostPerKwh: input.solarEnergyCostPerKwh ?? null,
             solarProgramEnabled: solarProgram ? 1 : 0,
-            solarProgramCurrentBillCop: solarAssumptions?.currentMonthlyBillCop ?? null,
-            solarProgramSavingsCoveragePercent: solarAssumptions?.savingsCoveragePercent ?? null,
-            solarProgramAgreementYears: solarAssumptions?.agreementYears ?? null,
-            solarProgramAnnualCpiPercent: solarAssumptions?.annualCpiPercent ?? null,
-            solarProgramUsefulLifeYears: solarAssumptions?.usefulLifeYears ?? null,
-            solarSystemPowerKwp: solarAssumptions?.systemPowerKwp ?? null,
-            solarAnnualGenerationKwh: solarAssumptions?.annualGenerationKwh ?? null,
-            solarSelfConsumptionPercent: solarAssumptions?.selfConsumptionPercent ?? null,
-            solarExportPercent: solarAssumptions?.exportPercent ?? null,
-            solarGridTariffCopPerKwh: solarAssumptions?.gridTariffCopPerKwh ?? null,
+            // Los datos importados desde OpenSolar se conservan aunque aún no
+            // exista una propuesta de ahorro activada. Activar el programa
+            // requiere la validación comercial posterior, no borra el diseño.
+            solarProgramCurrentBillCop: solarAssumptions?.currentMonthlyBillCop ?? input.solarProgramCurrentBillCop ?? null,
+            solarProgramSavingsCoveragePercent: solarAssumptions?.savingsCoveragePercent ?? input.solarProgramSavingsCoveragePercent ?? null,
+            solarProgramAgreementYears: solarAssumptions?.agreementYears ?? input.solarProgramAgreementYears ?? null,
+            solarProgramAnnualCpiPercent: solarAssumptions?.annualCpiPercent ?? input.solarProgramAnnualCpiPercent ?? null,
+            solarProgramUsefulLifeYears: solarAssumptions?.usefulLifeYears ?? input.solarProgramUsefulLifeYears ?? null,
+            solarSystemPowerKwp: solarAssumptions?.systemPowerKwp ?? input.solarSystemPowerKwp ?? null,
+            solarAnnualGenerationKwh: solarAssumptions?.annualGenerationKwh ?? input.solarAnnualGenerationKwh ?? null,
+            solarSelfConsumptionPercent: solarAssumptions?.selfConsumptionPercent ?? input.solarSelfConsumptionPercent ?? null,
+            solarExportPercent: solarAssumptions?.exportPercent ?? input.solarExportPercent ?? null,
+            solarGridTariffCopPerKwh: solarAssumptions?.gridTariffCopPerKwh ?? input.solarGridTariffCopPerKwh ?? null,
             openSolarProjectId: input.openSolarProjectId?.trim() || null,
             openSolarProjectTitle: input.openSolarProjectTitle?.trim() || null,
             openSolarAnnualConsumptionKwh: input.openSolarAnnualConsumptionKwh ?? null,
@@ -2032,7 +2035,9 @@ export const spacesRouter = router({
           }
           if (!solarProgram) {
             cleanFields.solarProgramEnabled = 0;
-            solarProgramFields.slice(1).forEach((field) => { cleanFields[field] = null; });
+            // La desactivación del programa impide proyectar ahorro, pero no
+            // puede borrar el diseño, consumo o factura importados. Esos datos
+            // quedan como referencia pendiente de aprobación humana.
           } else {
             cleanFields.solarProgramEnabled = 1;
             cleanFields.solarProgramCurrentBillCop = solarProgram.assumptions.currentMonthlyBillCop;

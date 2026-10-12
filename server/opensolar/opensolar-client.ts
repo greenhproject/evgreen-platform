@@ -1,3 +1,5 @@
+import { gunzipSync } from "node:zlib";
+
 const DEFAULT_BASE_URL = "https://api.opensolar.com";
 
 type OpenSolarCredentialInput = {
@@ -35,9 +37,13 @@ type OpenSolarProjectResponse = {
   state?: unknown;
   lat?: unknown;
   lon?: unknown;
+  country_iso2?: unknown;
+  currency?: unknown;
+  currency_code?: unknown;
   usage?: unknown;
   usage_annual_or_guess?: unknown;
   systems?: unknown;
+  design?: unknown;
   modified_date?: unknown;
   [key: string]: unknown;
 };
@@ -46,10 +52,23 @@ type OpenSolarSystemDetail = {
   kw_stc?: unknown;
   system_size?: unknown;
   system_size_kw?: unknown;
+  data?: unknown;
+  output?: unknown;
+  consumption?: unknown;
+  [key: string]: unknown;
 };
 
 type OpenSolarSystemsResponse = {
   systems?: unknown;
+};
+
+type FieldSource = "OpenSolar" | "Calculado desde datos OpenSolar";
+
+type OpenSolarSolarMetrics = {
+  annualGenerationKwh: number | null;
+  selfConsumptionPercent: number | null;
+  exportPercent: number | null;
+  sources: Partial<Record<"annualGenerationKwh" | "selfConsumptionPercent" | "exportPercent", FieldSource>>;
 };
 
 export type OpenSolarProjectPrefill = {
@@ -67,8 +86,18 @@ export type OpenSolarProjectPrefill = {
     annualConsumptionKwh: number | null;
     currentMonthlyBill: number | null;
     systemPowerKwp: number | null;
+    annualGenerationKwh: number | null;
+    selfConsumptionPercent: number | null;
+    exportPercent: number | null;
+    solarSavingsCoveragePercent: number | null;
+    gridTariffCopPerKwh: number | null;
+    canActivateAllySolarProgram: boolean;
     systemsCount: number;
     modifiedAt: string | null;
+    fieldSources: Partial<Record<
+      "annualConsumptionKwh" | "currentMonthlyBill" | "systemPowerKwp" | "annualGenerationKwh" | "selfConsumptionPercent" | "exportPercent" | "solarSavingsCoveragePercent" | "gridTariffCopPerKwh",
+      FieldSource
+    >>;
   };
   unavailableFields?: string[];
   warnings?: string[];
@@ -119,6 +148,131 @@ function sum(values: unknown): number | null {
   const numericValues = values.map(optionalFinite).filter((value): value is number => value !== null);
   if (numericValues.length !== values.length) return null;
   return numericValues.reduce((total, value) => total + value, 0);
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function normalizedKey(value: string): string {
+  return value.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+}
+
+/**
+ * Busca un campo numérico concreto en una respuesta técnica sin serializar ni
+ * devolver el objeto crudo. Limita profundidad y nodos para evitar procesar
+ * archivos, contactos u objetos voluminosos de forma no acotada.
+ */
+function firstKnownNumeric(value: unknown, keys: string[], maxDepth = 8): number | null {
+  const targets = new Set(keys.map(normalizedKey));
+  const visited = new Set<object>();
+  let remainingNodes = 1_500;
+
+  const visit = (node: unknown, depth: number): number | null => {
+    if (depth > maxDepth || remainingNodes-- <= 0 || node === null || node === undefined) return null;
+    if (Array.isArray(node)) {
+      for (const entry of node) {
+        const found = visit(entry, depth + 1);
+        if (found !== null) return found;
+      }
+      return null;
+    }
+    const record = asRecord(node);
+    if (!record || visited.has(record)) return null;
+    visited.add(record);
+
+    for (const [key, rawValue] of Object.entries(record)) {
+      if (targets.has(normalizedKey(key))) {
+        const numeric = optionalFinite(rawValue);
+        if (numeric !== null) return numeric;
+      }
+    }
+    for (const rawValue of Object.values(record)) {
+      const found = visit(rawValue, depth + 1);
+      if (found !== null) return found;
+    }
+    return null;
+  };
+
+  return visit(value, 0);
+}
+
+function decodeRawDesign(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  try {
+    const json = gunzipSync(Buffer.from(value, "base64")).toString("utf8");
+    return asRecord(JSON.parse(json));
+  } catch {
+    // La respuesta puede no tener Raw Data API o venir en otro formato. No se
+    // rechaza la importación base por un diseño no disponible.
+    return null;
+  }
+}
+
+function getSystemsFromResponse(body: unknown): OpenSolarSystemDetail[] {
+  if (Array.isArray(body)) return body as OpenSolarSystemDetail[];
+  const record = asRecord(body);
+  if (!record) return [];
+  if (Array.isArray(record.systems)) return record.systems as OpenSolarSystemDetail[];
+  if (Array.isArray(record.data)) return record.data as OpenSolarSystemDetail[];
+  return [];
+}
+
+function getSystemsFromRawDesign(rawDesign: Record<string, unknown> | null): OpenSolarSystemDetail[] {
+  if (!rawDesign || !Array.isArray(rawDesign.systems)) return [];
+  return rawDesign.systems as OpenSolarSystemDetail[];
+}
+
+function sumPerSystemField(systems: OpenSolarSystemDetail[], keys: string[]): number | null {
+  if (systems.length === 0) return null;
+  const values = systems.map((system) => firstKnownNumeric(system, keys));
+  if (values.some((value) => value === null)) return null;
+  return (values as number[]).reduce((total, value) => total + value, 0);
+}
+
+function resolveSolarMetrics(input: {
+  apiSystems: OpenSolarSystemDetail[];
+  rawDesign: Record<string, unknown> | null;
+}): OpenSolarSolarMetrics {
+  const annualGenerationKeys = [
+    "annual_generation_kwh", "annual_generation", "annual_output", "annual_production",
+    "annual_energy_kwh", "annual_energy", "annual_kwh", "yearly_generation",
+  ];
+  const selfConsumptionKeys = [
+    "self_consumption_percent", "self_consumption_percentage", "selfconsumptionpercent", "selfconsumptionpercentage",
+  ];
+  const exportKeys = [
+    "export_percent", "export_percentage", "exportpercent", "exportpercentage",
+  ];
+  const rawSystems = getSystemsFromRawDesign(input.rawDesign);
+  const sourceSystems = rawSystems.length > 0 ? rawSystems : input.apiSystems;
+  const root = input.rawDesign ?? ({ systems: input.apiSystems } as Record<string, unknown>);
+
+  const annualGenerationKwh = rounded(
+    sumPerSystemField(sourceSystems, annualGenerationKeys)
+      ?? firstKnownNumeric(root, annualGenerationKeys),
+  );
+  const selfConsumptionPercent = rounded(firstKnownNumeric(root, selfConsumptionKeys));
+  const exportPercent = rounded(firstKnownNumeric(root, exportKeys));
+
+  return {
+    annualGenerationKwh,
+    selfConsumptionPercent,
+    exportPercent,
+    sources: {
+      ...(annualGenerationKwh !== null ? { annualGenerationKwh: "OpenSolar" as const } : {}),
+      ...(selfConsumptionPercent !== null ? { selfConsumptionPercent: "OpenSolar" as const } : {}),
+      ...(exportPercent !== null ? { exportPercent: "OpenSolar" as const } : {}),
+    },
+  };
+}
+
+function resolveCopCurrency(project: OpenSolarProjectResponse): boolean {
+  const country = optionalText(project.country_iso2)?.toUpperCase();
+  const explicitCurrency = optionalText(project.currency_code ?? project.currency)?.toUpperCase();
+  return country === "CO" || explicitCurrency === "COP";
 }
 
 /** Extrae consumo y factura sólo de fuentes explícitas documentadas por OpenSolar. */
@@ -369,34 +523,66 @@ export async function getOpenSolarProjectPrefill(config: OpenSolarProjectLookupI
   const warnings: string[] = [];
   let systemsCount = Array.isArray(project.systems) ? project.systems.length : 0;
   let systemPowerKwp: number | null = null;
+  let apiSystems: OpenSolarSystemDetail[] = [];
   const detailsUrl = `${projectUrl}systems/details/`;
   const systemsResponse = await readOpenSolarJson(detailsUrl, config.bearerToken);
   if (systemsResponse.ok) {
-    const systemBody = systemsResponse.body as OpenSolarSystemsResponse | OpenSolarSystemDetail[] | { data?: unknown } | null;
-    const systemsFromObject = systemBody && !Array.isArray(systemBody) && Array.isArray((systemBody as OpenSolarSystemsResponse).systems)
-      ? (systemBody as OpenSolarSystemsResponse).systems as OpenSolarSystemDetail[]
-      : null;
-    const systems = Array.isArray(systemBody)
-      ? systemBody as OpenSolarSystemDetail[]
-      : systemsFromObject
-        ? systemsFromObject
-        : Array.isArray((systemBody as { data?: unknown } | null)?.data)
-          ? (systemBody as { data: OpenSolarSystemDetail[] }).data
-          : [];
-    systemsCount = systems.length;
-    const powers = systems.map((system) => optionalFinite(system.kw_stc ?? system.system_size ?? system.system_size_kw)).filter((value): value is number => value !== null && value > 0);
+    apiSystems = getSystemsFromResponse(systemsResponse.body);
+    systemsCount = apiSystems.length;
+    const powers = apiSystems
+      .map((system) => optionalFinite(system.kw_stc ?? system.system_size ?? system.system_size_kw))
+      .filter((value): value is number => value !== null && value > 0);
     systemPowerKwp = powers.length > 0 ? rounded(powers.reduce((total, value) => total + value, 0)) : null;
-    if (systemPowerKwp === null) unavailableFields.push("potencia solar (kWp)");
   } else {
-    unavailableFields.push("potencia solar (kWp)");
     warnings.push(errorMessageForRead(systemsResponse.status, "sistema"));
   }
 
+  const rawDesign = decodeRawDesign(project.design);
+  const rawDesignSystems = getSystemsFromRawDesign(rawDesign);
+  if (systemPowerKwp === null && rawDesignSystems.length > 0) {
+    const powers = rawDesignSystems
+      .map((system) => optionalFinite(system.kw_stc ?? system.system_size ?? system.system_size_kw))
+      .filter((value): value is number => value !== null && value > 0);
+    systemPowerKwp = powers.length > 0 ? rounded(powers.reduce((total, value) => total + value, 0)) : null;
+    systemsCount = Math.max(systemsCount, rawDesignSystems.length);
+  }
+
+  const solarMetrics = resolveSolarMetrics({ apiSystems, rawDesign });
+  const solarSavingsCoveragePercent = solarMetrics.annualGenerationKwh !== null
+    && solarMetrics.selfConsumptionPercent !== null
+    && usage.annualConsumptionKwh !== null
+    && usage.annualConsumptionKwh > 0
+    ? rounded(Math.min(100, (solarMetrics.annualGenerationKwh * (solarMetrics.selfConsumptionPercent / 100) / usage.annualConsumptionKwh) * 100))
+    : null;
+  const gridTariffCopPerKwh = resolveCopCurrency(project)
+    && usage.currentMonthlyBill !== null
+    && usage.annualConsumptionKwh !== null
+    && usage.annualConsumptionKwh > 0
+    ? rounded((usage.currentMonthlyBill * 12) / usage.annualConsumptionKwh)
+    : null;
+
+  if (systemPowerKwp === null) unavailableFields.push("potencia solar (kWp)");
   if (usage.annualConsumptionKwh === null) unavailableFields.push("consumo anual (kWh)");
   if (usage.currentMonthlyBill === null) unavailableFields.push("factura mensual");
-  // Los siguientes valores dependen de la simulación/propuesta y no están
-  // garantizados por API Access estándar; nunca se infieren desde kWp.
-  unavailableFields.push("generación anual, autoconsumo, exportación, cobertura y costo solar");
+  if (solarMetrics.annualGenerationKwh === null) unavailableFields.push("generación anual (kWh)");
+  if (solarMetrics.selfConsumptionPercent === null) unavailableFields.push("autoconsumo (%)");
+  if (solarMetrics.exportPercent === null) unavailableFields.push("exportación (%)");
+  if (solarSavingsCoveragePercent === null) unavailableFields.push("cobertura de ahorro solar (%)");
+  if (gridTariffCopPerKwh === null) unavailableFields.push("tarifa de red COP/kWh");
+  if (!rawDesign && solarMetrics.annualGenerationKwh === null) {
+    warnings.push("OpenSolar no expuso resultados de generación en este proyecto o plan API; se requiere Raw Data API o una propuesta/factura validada para completar esos campos.");
+  }
+
+  const fieldSources: OpenSolarProjectPrefill["project"] extends infer T
+    ? T extends { fieldSources: infer Sources } ? Sources : never
+    : never = {
+      ...(usage.annualConsumptionKwh !== null ? { annualConsumptionKwh: "OpenSolar" as const } : {}),
+      ...(usage.currentMonthlyBill !== null ? { currentMonthlyBill: "OpenSolar" as const } : {}),
+      ...(systemPowerKwp !== null ? { systemPowerKwp: "OpenSolar" as const } : {}),
+      ...solarMetrics.sources,
+      ...(solarSavingsCoveragePercent !== null ? { solarSavingsCoveragePercent: "Calculado desde datos OpenSolar" as const } : {}),
+      ...(gridTariffCopPerKwh !== null ? { gridTariffCopPerKwh: "Calculado desde datos OpenSolar" as const } : {}),
+    };
 
   return {
     success: true,
@@ -413,8 +599,15 @@ export async function getOpenSolarProjectPrefill(config: OpenSolarProjectLookupI
       annualConsumptionKwh: usage.annualConsumptionKwh,
       currentMonthlyBill: usage.currentMonthlyBill,
       systemPowerKwp,
+      annualGenerationKwh: solarMetrics.annualGenerationKwh,
+      selfConsumptionPercent: solarMetrics.selfConsumptionPercent,
+      exportPercent: solarMetrics.exportPercent,
+      solarSavingsCoveragePercent,
+      gridTariffCopPerKwh,
+      canActivateAllySolarProgram: usage.currentMonthlyBill !== null && solarSavingsCoveragePercent !== null && solarSavingsCoveragePercent > 0,
       systemsCount,
       modifiedAt: optionalText(project.modified_date),
+      fieldSources,
     },
     unavailableFields,
     warnings,

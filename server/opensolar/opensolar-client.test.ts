@@ -105,7 +105,8 @@ describe("precarga de proyecto OpenSolar", () => {
         systemsCount: 2,
       },
     });
-    expect(result.unavailableFields).toContain("generación anual, autoconsumo, exportación, cobertura y costo solar");
+    expect(result.unavailableFields).toContain("generación anual (kWh)");
+    expect(result.unavailableFields).toContain("autoconsumo (%)");
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
       "https://api.opensolar.com/api/orgs/org-evgreen/projects/101/",
@@ -116,6 +117,88 @@ describe("precarga de proyecto OpenSolar", () => {
       "https://api.opensolar.com/api/orgs/org-evgreen/projects/101/systems/details/",
       expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer token-prueba" }) }),
     );
+  });
+
+  it("mapea generación, autoconsumo, exportación y métricas derivadas únicamente desde diseño OpenSolar", async () => {
+    const { gzipSync } = await import("node:zlib");
+    const compressedDesign = gzipSync(Buffer.from(JSON.stringify({
+      systems: [{
+        kw_stc: 20,
+        output: { annual_generation_kwh: 30_000 },
+        consumption: { self_consumption_percent: 80, export_percent: 20 },
+      }],
+    }))).toString("base64");
+
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        id: 303,
+        org_id: "org-evgreen",
+        country_iso2: "CO",
+        usage: { usage_data_source: "kwh_annual", values: 100_000 },
+        usage_annual_or_guess: 100_000,
+        design: compressedDesign,
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ systems: [{ kw_stc: 20 }] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await getOpenSolarProjectPrefill({ bearerToken: "token-prueba", orgId: "org-evgreen", projectId: "303" });
+
+    expect(result).toMatchObject({
+      success: true,
+      project: {
+        systemPowerKwp: 20,
+        annualGenerationKwh: 30_000,
+        selfConsumptionPercent: 80,
+        exportPercent: 20,
+        solarSavingsCoveragePercent: 24,
+        gridTariffCopPerKwh: null,
+        canActivateAllySolarProgram: false,
+        fieldSources: {
+          annualGenerationKwh: "OpenSolar",
+          selfConsumptionPercent: "OpenSolar",
+          exportPercent: "OpenSolar",
+          solarSavingsCoveragePercent: "Calculado desde datos OpenSolar",
+        },
+      },
+    });
+    expect(result.unavailableFields).toContain("factura mensual");
+    expect(result.unavailableFields).toContain("tarifa de red COP/kWh");
+  });
+
+  it("deriva tarifa en COP y habilitabilidad del programa sólo con factura, consumo y cobertura reales", async () => {
+    const { gzipSync } = await import("node:zlib");
+    const compressedDesign = gzipSync(Buffer.from(JSON.stringify({
+      systems: [{
+        kw_stc: 10,
+        output: { annual_generation_kwh: 24_000 },
+        consumption: { self_consumption_percent: 50, export_percent: 50 },
+      }],
+    }))).toString("base64");
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        id: 304,
+        org_id: "org-evgreen",
+        country_iso2: "CO",
+        usage: { usage_data_source: "bill_annual", values: 12_000_000 },
+        usage_annual_or_guess: 12_000,
+        design: compressedDesign,
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ systems: [{ kw_stc: 10 }] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await getOpenSolarProjectPrefill({ bearerToken: "token-prueba", orgId: "org-evgreen", projectId: "304" });
+
+    expect(result.project).toMatchObject({
+      currentMonthlyBill: 1_000_000,
+      annualConsumptionKwh: 12_000,
+      annualGenerationKwh: 24_000,
+      solarSavingsCoveragePercent: 100,
+      gridTariffCopPerKwh: 1_000,
+      canActivateAllySolarProgram: true,
+      fieldSources: {
+        gridTariffCopPerKwh: "Calculado desde datos OpenSolar",
+      },
+    });
   });
 
   it("no consulta sistemas si el proyecto no pertenece a la organización configurada", async () => {
