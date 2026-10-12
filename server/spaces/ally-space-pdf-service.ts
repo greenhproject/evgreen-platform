@@ -9,6 +9,7 @@
 import jsPDFModule from "jspdf";
 import axios from "axios";
 import { getPhotoMarkerLabel, getPhotoTypeLabel } from "../../shared/photo-type-labels";
+import { buildAllyIncomeProjection, type AllyIncomeProjectionSnapshot } from "../../shared/ally-space-income-projection";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const jsPDF = ((jsPDFModule as any).jsPDF ?? (jsPDFModule as any).default?.jsPDF ?? (jsPDFModule as any).default ?? jsPDFModule) as typeof import("jspdf").jsPDF;
@@ -38,6 +39,7 @@ export interface AllySpacePdfData {
   operatingHoursStart?: string | null;
   operatingHoursEnd?: string | null;
   is24Hours?: boolean | null;
+  operatingHoursPerDay?: number | null;
   estimatedDailyVehicles?: number | null;
   estimatedEvPercent?: number | null;
   nearbyAttractions?: string | null;
@@ -46,6 +48,12 @@ export interface AllySpacePdfData {
   estimatedPowerKw?: number | null;
   estimatedChargerCount?: number | null;
   recommendedChargerType?: string | null;
+  salePricePerKwh?: number | null;
+  energyCostPerKwh?: number | null;
+  efficiencyPercent?: number | null;
+  allySharePercent?: number | null;
+  solarCoveragePercent?: number | null;
+  solarEnergyCostPerKwh?: number | null;
   technicalCondition?: string | null;
   photos: Array<{
     url: string;
@@ -63,6 +71,7 @@ export interface AllyPdfContent {
   profileRows: Array<[string, string]>;
   technicalRows: Array<[string, string]>;
   operatingRows: Array<[string, string]>;
+  incomeProjection: AllyIncomeProjectionSnapshot | null;
   allyResponsibilities: string[];
   evgreenResponsibilities: string[];
   nextSteps: string[];
@@ -157,6 +166,27 @@ export function buildAllySpacePdfContent(data: AllySpacePdfData): AllyPdfContent
     ? `${formatNumber(data.estimatedChargerCount)} cargador${Number(data.estimatedChargerCount) === 1 ? "" : "es"}`
     : "La cantidad de cargadores se definirá en la ingeniería de detalle";
   const powerText = data.estimatedPowerKw ? `${formatNumber(data.estimatedPowerKw, " kW")} DC` : "Por definir mediante ingeniería de detalle";
+  const incomeProjection = (() => {
+    if (!data.estimatedDailyVehicles || data.estimatedEvPercent === null || data.estimatedEvPercent === undefined) return null;
+    try {
+      return buildAllyIncomeProjection({
+        estimatedDailyVehicles: Number(data.estimatedDailyVehicles),
+        estimatedEvPercent: Number(data.estimatedEvPercent),
+        chargerCount: Number(data.estimatedChargerCount || 1),
+        totalPowerKw: data.estimatedPowerKw,
+        operatingHoursPerDay: data.operatingHoursPerDay ?? (data.is24Hours ? 24 : undefined),
+        efficiencyPercent: data.efficiencyPercent,
+        hasSolarPanels: data.hasSolarPanels,
+        solarCoveragePercent: data.solarCoveragePercent,
+        solarEnergyCostPerKwh: data.solarEnergyCostPerKwh,
+        salePricePerKwh: Number(data.salePricePerKwh ?? 1800),
+        energyCostPerKwh: Number(data.energyCostPerKwh ?? 850),
+        allySharePercent: Number(data.allySharePercent ?? 10),
+      });
+    } catch {
+      return null;
+    }
+  })();
 
   return {
     coverSubtitle: `Documento técnico y comercial para el aliado que aporta el espacio. ${spaceTypeDescription(data)}`,
@@ -181,6 +211,7 @@ export function buildAllySpacePdfContent(data: AllySpacePdfData): AllyPdfContent
       ["Tablero eléctrico", formatBoolean(data.hasElectricalPanel, "Disponible", "Por confirmar")],
       ["Distancia al tablero", data.electricalDistance ? formatNumber(data.electricalDistance, " m") : "Por confirmar"],
       ["Internet en el punto", formatBoolean(data.hasInternet)],
+      ["Mangueras preliminares", data.estimatedChargerCount ? formatNumber(Number(data.estimatedChargerCount) * 2) : "Por confirmar"],
       ["Alcance solar", data.hasSolarPanels ? "Considerado en la información registrada" : "No informado / fuera del alcance actual"],
     ],
     operatingRows: [
@@ -190,6 +221,7 @@ export function buildAllySpacePdfContent(data: AllySpacePdfData): AllyPdfContent
       ["Estrato socioeconómico", data.socioeconomicStratum ? formatNumber(data.socioeconomicStratum) : "Por confirmar"],
       ["Estado de la oportunidad", statusLabel(data.status)],
     ],
+    incomeProjection,
     allyResponsibilities: [
       "Acreditar la autorización para disponer del espacio y mantener actualizada la información suministrada.",
       "Facilitar el acceso para visitas técnicas, levantamientos, instalación y actividades de mantenimiento.",
@@ -276,6 +308,131 @@ function drawRows(doc: InstanceType<typeof jsPDF>, rows: Array<[string, string]>
     y += rowHeight;
   });
   return y;
+}
+
+function formatCop(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return "Por confirmar";
+  return `$${Math.round(Number(value)).toLocaleString("es-CO")}`;
+}
+
+function formatDecimal(value: number | null | undefined, digits = 1): string {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return "—";
+  return Number(value).toLocaleString("es-CO", { maximumFractionDigits: digits });
+}
+
+function drawIncomeProjectionPage(
+  doc: InstanceType<typeof jsPDF>,
+  data: AllySpacePdfData,
+  content: AllyPdfContent,
+  logo: { data: string; format: string } | null,
+  width: number,
+  height: number,
+  margin: number,
+) {
+  addHeader(doc, data, logo, width, margin);
+  const contentWidth = width - margin * 2;
+  let y = 23;
+  y = drawSectionTitle(doc, "PROYECCIÓN COMERCIAL PRELIMINAR", margin, y, contentWidth);
+
+  setColor(doc, COLORS.gray700);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  const intro = doc.splitTextToSize(
+    "Estimación orientativa de demanda e ingresos brutos del punto. Los escenarios parten del flujo vehicular registrado y escalan la adopción EV base al 50 %, 100 % y 150 %; la configuración definitiva depende de ingeniería, tarifa vigente, operación y validación en sitio.",
+    contentWidth,
+  );
+  doc.text(intro, margin, y);
+  y += intro.length * 4.5 + 7;
+
+  if (!content.incomeProjection) {
+    setColor(doc, [255, 251, 235], "fill");
+    doc.roundedRect(margin, y, contentWidth, 32, 3, 3, "F");
+    setColor(doc, [146, 64, 14]);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.5);
+    doc.text("DATOS INSUFICIENTES PARA PROYECTAR", margin + 6, y + 10);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.7);
+    doc.text("Se requiere registrar vehículos por día y porcentaje EV para construir los tres escenarios.", margin + 6, y + 18);
+    return;
+  }
+
+  const projection = content.incomeProjection;
+  const assumptions = projection.assumptions;
+  const assumptionRows: Array<[string, string]> = [
+    ["Base de demanda", `${formatNumber(assumptions.estimatedDailyVehicles)} vehículos/día × ${formatDecimal(assumptions.estimatedEvPercent, 1)}% EV`],
+    ["Configuración registrada", `${formatNumber(assumptions.chargerCount)} cargadores duales / ${formatNumber(assumptions.configuredConnectors)} mangueras`],
+    ["Energía por sesión", `${formatDecimal(assumptions.benchmarkKwhPerSession, 0)} kWh`],
+    ["Precio de venta modelado", `${formatCop(assumptions.salePricePerKwh)}/kWh`],
+    ["Costo energético modelado", `${formatCop(assumptions.effectiveEnergyCostPerKwh)}/kWh`],
+    ["Supuesto del aliado", `${formatDecimal(assumptions.allySharePercent, 1)}% del margen bruto`],
+  ];
+  y = drawRows(doc, assumptionRows, margin, y, contentWidth, 57) + 9;
+
+  y = drawSectionTitle(doc, "ESCENARIOS DE DEMANDA E INGRESOS", margin, y, contentWidth);
+  const columns = [
+    { label: "Indicador", width: 43 },
+    { label: "Pesimista", width: 38 },
+    { label: "Realista", width: 38 },
+    { label: "Optimista", width: contentWidth - 43 - 38 - 38 },
+  ];
+  const xPositions = [margin, margin + columns[0].width, margin + columns[0].width + columns[1].width, margin + columns[0].width + columns[1].width + columns[2].width];
+  const tableRows: Array<[string, (scenario: AllyIncomeProjectionSnapshot["scenarios"]["REALISTIC"]) => string]> = [
+    ["Adopción EV", scenario => `${formatDecimal(scenario.scenarioEvPercent, 1)}%`],
+    ["Vehículos EV/día", scenario => formatDecimal(scenario.eligibleEvVehiclesPerDay, 1)],
+    ["Sesiones atendidas/día", scenario => formatDecimal(scenario.sessionsPerDay, 1)],
+    ["Mangueras requeridas*", scenario => formatNumber(scenario.requiredConnectorsForDemand)],
+    ["Cargadores duales*", scenario => formatNumber(scenario.requiredChargersForDemand)],
+    ["Energía/mes", scenario => `${formatDecimal(scenario.energyKwhPerMonth, 0)} kWh`],
+    ["Ingreso bruto/mes", scenario => formatCop(scenario.grossRevenueMonthly)],
+    ["Margen bruto/mes", scenario => formatCop(scenario.grossMarginMonthly)],
+    ["Equivalente aliado/mes", scenario => formatCop(scenario.allyIncomeMonthly)],
+  ];
+  const scenarioOrder: Array<keyof AllyIncomeProjectionSnapshot["scenarios"]> = ["PESSIMISTIC", "REALISTIC", "OPTIMISTIC"];
+  const scenarioValues = scenarioOrder.map(key => projection.scenarios[key]);
+  const rowHeight = 8.5;
+
+  setColor(doc, COLORS.navy, "fill");
+  doc.rect(margin, y - 1, contentWidth, 9, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7.1);
+  columns.forEach((column, index) => {
+    setColor(doc, COLORS.white);
+    doc.text(column.label, xPositions[index] + 3, y + 4.5);
+  });
+  y += 8;
+
+  tableRows.forEach(([label, value], rowIndex) => {
+    setColor(doc, rowIndex % 2 === 0 ? COLORS.gray100 : COLORS.white, "fill");
+    doc.rect(margin, y - 1, contentWidth, rowHeight, "F");
+    setColor(doc, COLORS.gray700);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7.2);
+    doc.text(label, xPositions[0] + 3, y + 4.4);
+    scenarioValues.forEach((scenario, index) => {
+      setColor(doc, index === 1 ? COLORS.greenDark : COLORS.gray900);
+      doc.setFont("helvetica", index === 1 ? "bold" : "normal");
+      doc.setFontSize(7.2);
+      doc.text(value(scenario), xPositions[index + 1] + columns[index + 1].width / 2, y + 4.4, { align: "center" });
+    });
+    y += rowHeight;
+  });
+
+  y += 8;
+  setColor(doc, [236, 253, 245], "fill");
+  doc.roundedRect(margin, y, contentWidth, 34, 3, 3, "F");
+  setColor(doc, COLORS.greenDark);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.text("CÓMO LEER LA PROYECCIÓN", margin + 6, y + 9);
+  setColor(doc, COLORS.gray700);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.4);
+  const note = doc.splitTextToSize(
+    `* Las mangueras y cargadores marcados con asterisco son equivalentes teóricos para atender toda la demanda potencial; la configuración registrada es ${formatNumber(assumptions.chargerCount)} cargadores / ${formatNumber(assumptions.configuredConnectors)} mangueras. El ingreso bruto se calcula como sesiones atendidas × ${formatDecimal(assumptions.benchmarkKwhPerSession, 0)} kWh × ${formatCop(assumptions.salePricePerKwh)}/kWh. El margen bruto descuenta únicamente el costo energético modelado de ${formatCop(assumptions.effectiveEnergyCostPerKwh)}/kWh y no incluye gastos fijos no informados.`,
+    contentWidth - 12,
+  );
+  doc.text(note.slice(0, 4), margin + 6, y + 16);
 }
 
 function drawBulletList(doc: InstanceType<typeof jsPDF>, items: string[], x: number, y: number, width: number, color: [number, number, number]): number {
@@ -530,6 +687,8 @@ export async function generateAllySpacePdf(data: AllySpacePdfData): Promise<Buff
   addProfilePage(doc, data, content, logo, width, height, margin);
   doc.addPage();
   addResponsibilitiesPage(doc, data, content, logo, width, height, margin);
+  doc.addPage();
+  drawIncomeProjectionPage(doc, data, content, logo, width, height, margin);
 
   const galleryPhotos = data.photos
     .map((photo, index) => ({ photo, image: photoImages[index] || null }))

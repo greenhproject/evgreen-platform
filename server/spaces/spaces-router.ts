@@ -100,6 +100,7 @@ async function generateAllySpacePdfForSubmission(submissionId: number) {
   const photos = await db.select().from(spacePhotos)
     .where(eq(spacePhotos.submissionId, submissionId))
     .orderBy(desc(spacePhotos.isCover), spacePhotos.sortOrder);
+  const platformSettings = await getPlatformSettings();
 
   const { generateAllySpacePdf } = await import("./ally-space-pdf-service");
   const pdfBuffer = await generateAllySpacePdf({
@@ -124,6 +125,11 @@ async function generateAllySpacePdfForSubmission(submissionId: number) {
     operatingHoursStart: submission.operatingHoursStart,
     operatingHoursEnd: submission.operatingHoursEnd,
     is24Hours: Boolean(submission.is24Hours),
+    operatingHoursPerDay: resolveSpaceOperatingHours({
+      operatingHoursStart: submission.operatingHoursStart,
+      operatingHoursEnd: submission.operatingHoursEnd,
+      is24Hours: submission.is24Hours,
+    }),
     estimatedDailyVehicles: submission.estimatedDailyVehicles,
     estimatedEvPercent: submission.estimatedEvPercent,
     nearbyAttractions: submission.nearbyAttractions,
@@ -132,6 +138,12 @@ async function generateAllySpacePdfForSubmission(submissionId: number) {
     estimatedPowerKw: submission.estimatedPowerKw,
     estimatedChargerCount: submission.estimatedChargerCount,
     recommendedChargerType: submission.recommendedChargerType,
+    salePricePerKwh: Number(platformSettings?.precioVentaDefault ?? 1800),
+    energyCostPerKwh: Number(platformSettings?.costoEnergiaRed ?? 850),
+    efficiencyPercent: Number(platformSettings?.eficienciaCargaDc ?? 92),
+    allySharePercent: Number((platformSettings as any)?.hostSharePercent ?? 10),
+    solarCoveragePercent: submission.solarCoveragePercent === null ? null : Number(submission.solarCoveragePercent),
+    solarEnergyCostPerKwh: submission.solarEnergyCostPerKwh === null ? null : Number(submission.solarEnergyCostPerKwh),
     photos: photos.map(photo => ({
       url: photo.photoUrl,
       type: photo.photoType,

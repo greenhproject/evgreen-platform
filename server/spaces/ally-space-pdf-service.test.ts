@@ -30,6 +30,10 @@ const sampleData: AllySpacePdfData = {
   estimatedPowerKw: 120,
   estimatedChargerCount: 2,
   recommendedChargerType: "CCS2",
+  salePricePerKwh: 1800,
+  energyCostPerKwh: 850,
+  efficiencyPercent: 92,
+  allySharePercent: 10,
   photos: [],
   generatedAt: new Date("2026-10-11T20:00:00.000Z"),
 };
@@ -43,6 +47,11 @@ describe("buildAllySpacePdfContent", () => {
     expect(content.profileRows).toContainEqual(["Nombre del espacio", "EDS Aliada NQS"]);
     expect(content.technicalRows).toContainEqual(["Potencia proyectada", "120 kW DC"]);
     expect(content.operatingRows).toContainEqual(["Vehículos por día", "700"]);
+    expect(content.incomeProjection?.scenarios.PESSIMISTIC.scenarioEvPercent).toBe(5);
+    expect(content.incomeProjection?.scenarios.REALISTIC.scenarioEvPercent).toBe(10);
+    expect(content.incomeProjection?.scenarios.OPTIMISTIC.scenarioEvPercent).toBe(15);
+    expect(content.incomeProjection?.scenarios.REALISTIC.grossRevenueMonthly).toBeGreaterThan(0);
+    expect(content.incomeProjection?.scenarios.REALISTIC.allyIncomeMonthly).toBeGreaterThan(0);
     expect(content.allyResponsibilities.length).toBeGreaterThanOrEqual(4);
     expect(content.evgreenResponsibilities.length).toBeGreaterThanOrEqual(4);
     expect(content.nextSteps.length).toBeGreaterThanOrEqual(4);
