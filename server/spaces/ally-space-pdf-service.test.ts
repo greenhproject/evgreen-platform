@@ -62,6 +62,7 @@ describe("buildAllySpacePdfContent", () => {
     expect(content.nextSteps.length).toBeGreaterThanOrEqual(4);
     expect(allText).toContain("contrato");
     expect(allText).toContain("Carta aceptada");
+    expect(allText.toLowerCase()).not.toContain("nano banana");
   });
 
   it("no expone conceptos reservados del prospecto de inversión", () => {

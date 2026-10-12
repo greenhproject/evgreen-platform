@@ -15,8 +15,8 @@ import { buildAllyIncomeProjection, type AllyIncomeProjectionSnapshot } from "..
 const jsPDF = ((jsPDFModule as any).jsPDF ?? (jsPDFModule as any).default?.jsPDF ?? (jsPDFModule as any).default ?? jsPDFModule) as typeof import("jspdf").jsPDF;
 
 const LOGO_URL = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/FYcGXNchDiULWNfV.png";
-const COVER_BG_URL = "https://evgreen.manus.space/manus-storage/evgreen-ally-premium-hero_104767ce.png";
-const COMMERCIAL_ECOSYSTEM_URL = "https://evgreen.manus.space/manus-storage/evgreen-ally-commercial-ecosystem_cb877395.png";
+const COVER_BG_URL = "https://evgreen.manus.space/manus-storage/1000605862_8fd2217a.png";
+const COMMERCIAL_ECOSYSTEM_URL = "https://evgreen.manus.space/manus-storage/1000605863_a84485cf.png";
 
 export interface AllySpacePdfData {
   code: string;
@@ -614,7 +614,7 @@ function drawCommercialEcosystemPage(
   setColor(doc, COLORS.gray500);
   doc.setFont("helvetica", "italic");
   doc.setFontSize(6.6);
-  doc.text("Visual conceptual de referencia generado con Nano Banana Pro; no representa un diseño definitivo ni confirma comercios participantes.", margin, y + 88);
+  doc.text("Imagen conceptual de referencia; no representa un diseño definitivo ni confirma comercios participantes.", margin, y + 88);
   y += 99;
 
   const gap = 6;
