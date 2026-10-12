@@ -988,6 +988,8 @@ export default function AdminSettings() {
         </TabsContent>
 
         <TabsContent value="integrations">
+          <OpenSolarSettingsCard />
+
           <Card className="p-6 space-y-6">
             <div>
               <h3 className="font-semibold mb-4">UPME - Reporte OCPI</h3>
@@ -1648,8 +1650,113 @@ function ReconcileButton() {
   );
 }
 
-// ============ API Keys Section Component ============
+function OpenSolarSettingsCard() {
+  const { data, isLoading, refetch } = trpc.settings.getOpenSolarConfig.useQuery();
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [form, setForm] = useState({ enabled: false, orgId: "", apiKey: "" });
 
+  useEffect(() => {
+    if (!data) return;
+    setForm({ enabled: data.enabled, orgId: data.orgId || "", apiKey: "" });
+  }, [data]);
+
+  const save = trpc.settings.saveOpenSolarConfig.useMutation({
+    onSuccess: (result) => {
+      toast.success(result.message);
+      setForm(current => ({ ...current, apiKey: "" }));
+      refetch();
+    },
+    onError: error => toast.error(error.message),
+  });
+  const test = trpc.settings.testOpenSolarConnection.useMutation({
+    onSuccess: (result) => {
+      result.success ? toast.success(result.message) : toast.error(result.message);
+      refetch();
+    },
+    onError: error => toast.error(error.message),
+  });
+
+  const isConfigured = Boolean(data?.hasApiKey && form.orgId.trim());
+  const lastTestTone = data?.lastTestStatus === "SUCCESS"
+    ? "border-green-500/30 bg-green-500/5 text-green-700 dark:text-green-300"
+    : data?.lastTestStatus === "FAILED"
+      ? "border-red-500/30 bg-red-500/5 text-red-700 dark:text-red-300"
+      : "border-border bg-muted/30 text-muted-foreground";
+
+  return (
+    <Card className="mb-6 overflow-hidden border-emerald-500/20">
+      <div className="border-b border-emerald-500/15 bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-transparent p-5 sm:p-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
+              <Zap className="h-5 w-5" />
+              <span className="text-xs font-semibold uppercase tracking-[0.14em]">Energía solar</span>
+            </div>
+            <h3 className="mt-2 text-lg font-semibold">OpenSolar · diseño y consumo</h3>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
+              Conecte la organización solar para validar datos de diseño y consumo por sitio. Esta primera fase sólo prueba una lectura de organización: no crea proyectos, no actualiza diseños ni modifica ofertas.
+            </p>
+          </div>
+          <span className={`inline-flex w-fit shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${data?.enabled ? "bg-green-500/15 text-green-700 dark:text-green-300" : "bg-muted text-muted-foreground"}`}>
+            <span className={`h-1.5 w-1.5 rounded-full ${data?.enabled ? "bg-green-500" : "bg-muted-foreground/50"}`} />
+            {data?.enabled ? "Habilitado" : "Pendiente"}
+          </span>
+        </div>
+      </div>
+
+      <div className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[1.35fr_0.85fr]">
+        <section className="space-y-4">
+          <div className="flex items-center justify-between gap-4 rounded-lg border border-border p-4">
+            <div>
+              <Label htmlFor="opensolar-enabled" className="font-medium">Habilitar integración OpenSolar</Label>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">Exige un API key Bearer y el ID exacto de la organización antes de activar el uso futuro de datos solares.</p>
+            </div>
+            <Switch id="opensolar-enabled" checked={form.enabled} onCheckedChange={enabled => setForm(current => ({ ...current, enabled }))} />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="opensolar-org-id">ID de organización OpenSolar</Label>
+            <Input id="opensolar-org-id" value={form.orgId} onChange={event => setForm(current => ({ ...current, orgId: event.target.value }))} placeholder="Ej.: 123456" autoComplete="off" />
+            <p className="text-xs text-muted-foreground">El servidor verifica únicamente <code className="font-mono">GET /api/orgs/&#123;orgId&#125;/</code> dentro de esta organización.</p>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-3"><Label htmlFor="opensolar-api-key">API key Bearer</Label>{data?.hasApiKey ? <span className="inline-flex items-center gap-1 text-xs font-medium text-green-600 dark:text-green-400"><CheckCircle className="h-3.5 w-3.5" />Guardada y cifrada</span> : null}</div>
+            <div className="relative">
+              <Input id="opensolar-api-key" type={showApiKey ? "text" : "password"} value={form.apiKey} onChange={event => setForm(current => ({ ...current, apiKey: event.target.value }))} placeholder={data?.hasApiKey ? "Dejar vacío para conservar; escribir sólo para rotar" : "Pegue aquí el token generado en OpenSolar"} autoComplete="new-password" className="pr-11" />
+              <button type="button" aria-label={showApiKey ? "Ocultar API key de OpenSolar" : "Mostrar API key de OpenSolar"} className="absolute right-2 top-2.5 text-muted-foreground hover:text-foreground" onClick={() => setShowApiKey(current => !current)}>{showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
+            </div>
+            <p className="text-xs leading-5 text-muted-foreground">No se usan ni almacenan usuario/contraseña. La clave se cifra en el servidor y nunca vuelve al navegador.</p>
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Button onClick={() => save.mutate(form)} disabled={save.isPending || isLoading} className="w-full sm:w-auto">
+              {save.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Key className="mr-2 h-4 w-4" />}
+              Guardar OpenSolar
+            </Button>
+            <a href="https://developers.opensolar.com/api/" target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center justify-center rounded-md px-3 text-sm font-medium text-emerald-700 hover:bg-emerald-500/10 hover:text-emerald-800 dark:text-emerald-300 dark:hover:text-emerald-200">Documentación oficial <ExternalLink className="ml-1.5 h-3.5 w-3.5" /></a>
+          </div>
+        </section>
+
+        <aside className="space-y-4 rounded-xl border border-border bg-muted/20 p-4 sm:p-5">
+          <div><p className="text-sm font-semibold">Prueba segura de acceso</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Use este botón después de guardar. Sólo consulta la organización configurada y guarda el resultado técnico, sin PII ni token.</p></div>
+          <div className={`rounded-lg border p-3 text-sm ${lastTestTone}`}>
+            <div className="flex items-center gap-2 font-medium">{data?.lastTestStatus === "SUCCESS" ? <CheckCircle className="h-4 w-4" /> : data?.lastTestStatus === "FAILED" ? <XCircle className="h-4 w-4" /> : <Key className="h-4 w-4" />} {data?.lastTestStatus === "NEVER" ? "Sin prueba ejecutada" : data?.lastTestStatus === "SUCCESS" ? "Acceso verificado" : "Prueba no superada"}</div>
+            {data?.lastTestMessage ? <p className="mt-2 text-xs leading-5">{data.lastTestMessage}</p> : null}
+            {data?.lastTestAt ? <p className="mt-2 text-[11px] opacity-75">{new Date(data.lastTestAt).toLocaleString()}</p> : null}
+          </div>
+          <Button variant="outline" className="w-full" onClick={() => test.mutate()} disabled={test.isPending || !isConfigured}>
+            {test.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+            {test.isPending ? "Verificando..." : "Probar conexión"}
+          </Button>
+          {!isConfigured ? <p className="text-xs leading-5 text-muted-foreground">Guarde el ID de organización y el API key para habilitar la prueba. Si la clave ya existe, puede dejar el campo vacío al guardar cambios de estado.</p> : null}
+        </aside>
+      </div>
+    </Card>
+  );
+}
+
+// ============ API Keys Section Component ============
 function ApiKeysSection() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");

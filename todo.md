@@ -103,3 +103,12 @@
 - [x] Usar el benchmark aportado en el modelo EDS: 20,1 sesiones por manguera/día y 40 kWh por sesión; las cifras se muestran como supuestos de preinversión y no como demanda garantizada.
 - [x] Validación: TypeScript, 240 archivos / 2.337 pruebas aprobadas; 5 suites de integración y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo aprobado.
 - [x] Revalidar junto con el modelo solar ponderado: TypeScript, 241 archivos / 2.342 pruebas aprobadas; build productivo aprobado.
+
+## OpenSolar — configuración administrativa segura (2026-10-12)
+
+- [x] Añadir en Administración → Configuración → Integraciones un panel OpenSolar con activación explícita, ID de organización, API key Bearer enmascarado y enlace a la documentación oficial.
+- [x] Guardar el token únicamente cifrado en servidor; nunca usar, devolver ni almacenar usuario/contraseña en frontend, código cliente, logs o respuestas tRPC.
+- [x] Añadir una prueba de conexión de solo lectura con `GET /api/orgs/{orgId}/`, timeout y validación de coincidencia de la organización configurada; no crear, actualizar ni sincronizar proyectos en esta fase.
+- [x] Aplicar y auditar la migración aditiva 0059: las seis columnas OpenSolar existen con valores seguros por defecto y no se insertó configuración ni se alteró ningún proyecto solar.
+- [x] Validar TypeScript, 245 archivos / 2.354 pruebas aprobadas y build productivo. Las capturas automatizadas del área autenticada no pudieron iniciar sesión, pero la interfaz compiló y el contrato tRPC fue validado.
+- [ ] Guardar checkpoint WebDev, ejecutar publicación segura y verificar el despliegue.

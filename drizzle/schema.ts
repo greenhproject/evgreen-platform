@@ -1344,6 +1344,14 @@ export const platformSettings = mysqlTable("platform_settings", {
 	ocpiLastTestAt: timestamp("ocpi_last_test_at", { mode: 'string' }),
 	ocpiLastTestStatus: mysqlEnum("ocpi_last_test_status", ['NEVER','SUCCESS','FAILED']).default('NEVER').notNull(),
 	ocpiLastTestMessage: text("ocpi_last_test_message"),
+	// OpenSolar: configuración global de lectura para los estudios solares.
+	// El token se cifra y jamás se entrega al cliente.
+	openSolarEnabled: tinyint("opensolar_enabled").default(0).notNull(),
+	openSolarOrgId: varchar("opensolar_org_id", { length: 80 }),
+	openSolarApiKeyEncrypted: text("opensolar_api_key_encrypted"),
+	openSolarLastTestAt: timestamp("opensolar_last_test_at", { mode: 'string' }),
+	openSolarLastTestStatus: mysqlEnum("opensolar_last_test_status", ['NEVER','SUCCESS','FAILED']).default('NEVER').notNull(),
+	openSolarLastTestMessage: text("opensolar_last_test_message"),
 	// DocuSign: configuración administrable. Las credenciales sensibles se guardan cifradas.
 	docusignEnvironment: mysqlEnum("docusign_environment", ['SANDBOX', 'PRODUCTION']).default('SANDBOX').notNull(),
 	docusignEnabled: tinyint("docusign_enabled").default(0).notNull(),

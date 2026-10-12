@@ -4213,6 +4213,13 @@ const settingsRouter = router({
         resendApiKey: "",
         emailFrom: "noreply@evgreen.lat",
         resendWebhookSecretConfigured: false,
+        // OpenSolar
+        openSolarEnabled: false,
+        openSolarOrgId: "",
+        openSolarApiKeyConfigured: false,
+        openSolarLastTestAt: null,
+        openSolarLastTestStatus: "NEVER" as const,
+        openSolarLastTestMessage: "",
         // Soporte
         supportEmail: "soporte@greenhproject.com",
         supportPhone: "",
@@ -4288,6 +4295,13 @@ const settingsRouter = router({
       resendApiKey: settings.resendApiKey ? "re_****" + settings.resendApiKey.slice(-4) : "",
       emailFrom: settings.emailFrom || "noreply@evgreen.lat",
       resendWebhookSecretConfigured: !!(settings as any).resendWebhookSecretEncrypted,
+      // OpenSolar: el API key nunca se entrega al navegador.
+      openSolarEnabled: settings.openSolarEnabled === 1,
+      openSolarOrgId: settings.openSolarOrgId || "",
+      openSolarApiKeyConfigured: !!settings.openSolarApiKeyEncrypted,
+      openSolarLastTestAt: settings.openSolarLastTestAt || null,
+      openSolarLastTestStatus: settings.openSolarLastTestStatus || "NEVER",
+      openSolarLastTestMessage: settings.openSolarLastTestMessage || "",
       // Soporte
       supportEmail: settings.supportEmail || "soporte@greenhproject.com",
       supportPhone: settings.supportPhone || "",
@@ -4399,6 +4413,80 @@ const settingsRouter = router({
       return { success: true };
     }),
 
+  getOpenSolarConfig: adminProcedure.query(async () => {
+    const settings = await db.getPlatformSettings();
+    return {
+      enabled: settings?.openSolarEnabled === 1,
+      orgId: settings?.openSolarOrgId || "",
+      hasApiKey: !!settings?.openSolarApiKeyEncrypted,
+      lastTestAt: settings?.openSolarLastTestAt || null,
+      lastTestStatus: settings?.openSolarLastTestStatus || "NEVER",
+      lastTestMessage: settings?.openSolarLastTestMessage || "",
+    };
+  }),
+  saveOpenSolarConfig: adminProcedure
+    .input(z.object({
+      enabled: z.boolean(),
+      orgId: z.string().trim().max(80).optional(),
+      apiKey: z.string().trim().min(8).max(2000).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const current = await db.getPlatformSettings();
+      const orgId = input.orgId?.trim() || "";
+      const hasStoredApiKey = !!current?.openSolarApiKeyEncrypted;
+      const hasNewApiKey = !!input.apiKey?.trim();
+      if (input.enabled && (!orgId || (!hasStoredApiKey && !hasNewApiKey))) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Para activar OpenSolar configure el ID de organización y un API key Bearer.",
+        });
+      }
+
+      const data: Record<string, unknown> = {
+        openSolarEnabled: input.enabled ? 1 : 0,
+        openSolarOrgId: orgId || null,
+        updatedBy: ctx.user.id,
+      };
+      if (hasNewApiKey) {
+        const { encryptOpenSolarSecret } = await import("./opensolar/opensolar-secrets");
+        data.openSolarApiKeyEncrypted = encryptOpenSolarSecret(input.apiKey!.trim());
+      }
+      await db.upsertPlatformSettings(data as any);
+      return { success: true, message: "Configuración OpenSolar guardada. La clave permanece cifrada." };
+    }),
+  testOpenSolarConnection: adminProcedure.mutation(async ({ ctx }) => {
+    const settings = await db.getPlatformSettings();
+    if (!settings?.openSolarOrgId || !settings.openSolarApiKeyEncrypted) {
+      const message = "Guarde primero el ID de organización y el API key Bearer de OpenSolar.";
+      await db.upsertPlatformSettings({
+        openSolarLastTestAt: new Date().toISOString(),
+        openSolarLastTestStatus: "FAILED",
+        openSolarLastTestMessage: message,
+        updatedBy: ctx.user.id,
+      } as any);
+      return { success: false, status: 0, message };
+    }
+
+    const { decryptOpenSolarSecret } = await import("./opensolar/opensolar-secrets");
+    const { verifyOpenSolarOrganization } = await import("./opensolar/opensolar-client");
+    let result;
+    try {
+      result = await verifyOpenSolarOrganization({
+        apiKey: decryptOpenSolarSecret(settings.openSolarApiKeyEncrypted),
+        orgId: settings.openSolarOrgId,
+      });
+    } catch {
+      result = { success: false, status: 0, message: "No fue posible descifrar o probar la credencial de OpenSolar." };
+    }
+
+    await db.upsertPlatformSettings({
+      openSolarLastTestAt: new Date().toISOString(),
+      openSolarLastTestStatus: result.success ? "SUCCESS" : "FAILED",
+      openSolarLastTestMessage: result.message.slice(0, 1000),
+      updatedBy: ctx.user.id,
+    } as any);
+    return result;
+  }),
   clearResendWebhookSecret: adminProcedure.mutation(async ({ ctx }) => {
     await db.upsertPlatformSettings({
       resendWebhookSecretEncrypted: null,
