@@ -232,6 +232,92 @@ function sumPerSystemField(systems: OpenSolarSystemDetail[], keys: string[]): nu
   return (values as number[]).reduce((total, value) => total + value, 0);
 }
 
+function systemDataRecord(system: OpenSolarSystemDetail): Record<string, unknown> | null {
+  return asRecord(system.data);
+}
+
+/**
+ * El endpoint /systems/details/ entrega el rendimiento calculado en
+ * data.output.annual y la composición de consumo en data.consumption. Se
+ * consulta esa ruta explícita antes de recorrer el diseño bruto, para no
+ * confundir simulaciones de factura o precios con generación física.
+ */
+function getSystemAnnualGenerationKwh(system: OpenSolarSystemDetail): number | null {
+  const output = asRecord(systemDataRecord(system)?.output);
+  return optionalFinite(output?.annual)
+    ?? firstKnownNumeric(system, [
+      "annual_generation_kwh", "annual_generation", "annual_output", "annual_production",
+      "annual_energy_kwh", "annual_energy", "annual_kwh", "yearly_generation",
+    ]);
+}
+
+function getSystemSelfConsumptionPercent(system: OpenSolarSystemDetail): number | null {
+  const consumption = asRecord(systemDataRecord(system)?.consumption);
+  return optionalFinite(consumption?.self_consumption_percentage_no_battery)
+    ?? optionalFinite(consumption?.self_consumption_percentage_with_battery)
+    ?? firstKnownNumeric(system, [
+      "self_consumption_percent", "self_consumption_percentage", "selfconsumptionpercent", "selfconsumptionpercentage",
+    ]);
+}
+
+function sumSystemAnnualGenerationKwh(systems: OpenSolarSystemDetail[]): number | null {
+  if (systems.length === 0) return null;
+  const values = systems.map(getSystemAnnualGenerationKwh);
+  if (values.some((value) => value === null)) return null;
+  return (values as number[]).reduce((total, value) => total + value, 0);
+}
+
+function getAggregateSystemSelfConsumptionPercent(systems: OpenSolarSystemDetail[]): number | null {
+  if (systems.length === 0) return null;
+  const metrics = systems.map((system) => ({
+    annualGenerationKwh: getSystemAnnualGenerationKwh(system),
+    selfConsumptionPercent: getSystemSelfConsumptionPercent(system),
+  }));
+  if (metrics.some((metric) => metric.selfConsumptionPercent === null)) return null;
+
+  const withGeneration = metrics.filter((metric): metric is { annualGenerationKwh: number; selfConsumptionPercent: number } =>
+    metric.annualGenerationKwh !== null && metric.annualGenerationKwh > 0 && metric.selfConsumptionPercent !== null,
+  );
+  if (withGeneration.length === systems.length) {
+    const totalGeneration = withGeneration.reduce((total, metric) => total + metric.annualGenerationKwh, 0);
+    return totalGeneration > 0
+      ? withGeneration.reduce((total, metric) => total + (metric.annualGenerationKwh * metric.selfConsumptionPercent), 0) / totalGeneration
+      : null;
+  }
+
+  const percentages = metrics.map((metric) => metric.selfConsumptionPercent as number);
+  return percentages.reduce((total, value) => total + value, 0) / percentages.length;
+}
+
+/**
+ * OpenSolar devuelve bills_yearly como escenarios anuales. La primera fila de
+ * la factura actual representa el año base y contiene el promedio mensual en
+ * average_annual_bill_breakdown; si no existe, se deriva de total / 12.
+ * No se toma una factura propuesta ni se usan proyecciones de años futuros.
+ */
+function getCurrentMonthlyBillFromSystems(systems: OpenSolarSystemDetail[]): number | null {
+  for (const system of systems) {
+    const bills = asRecord(systemDataRecord(system)?.bills);
+    const current = asRecord(bills?.current);
+    const yearly = current?.bills_yearly;
+    if (!Array.isArray(yearly)) continue;
+
+    for (const year of yearly) {
+      const annual = asRecord(asRecord(year)?.annual);
+      const breakdown = asRecord(annual?.average_annual_bill_breakdown);
+      const averageMonthly = optionalFinite(breakdown?.total_inc_tax)
+        ?? optionalFinite(breakdown?.total_ex_tax);
+      if (averageMonthly !== null && averageMonthly >= 0) return rounded(averageMonthly);
+
+      const annualTotal = optionalFinite(annual?.total)
+        ?? optionalFinite(annual?.total_electricity_cost)
+        ?? optionalFinite(annual?.total_utility_bill_only);
+      if (annualTotal !== null && annualTotal >= 0) return rounded(annualTotal / 12);
+    }
+  }
+  return null;
+}
+
 function resolveSolarMetrics(input: {
   apiSystems: OpenSolarSystemDetail[];
   rawDesign: Record<string, unknown> | null;
@@ -251,11 +337,24 @@ function resolveSolarMetrics(input: {
   const root = input.rawDesign ?? ({ systems: input.apiSystems } as Record<string, unknown>);
 
   const annualGenerationKwh = rounded(
-    sumPerSystemField(sourceSystems, annualGenerationKeys)
+    (rawSystems.length > 0
+      ? sumPerSystemField(sourceSystems, annualGenerationKeys)
+      : sumSystemAnnualGenerationKwh(input.apiSystems))
       ?? firstKnownNumeric(root, annualGenerationKeys),
   );
-  const selfConsumptionPercent = rounded(firstKnownNumeric(root, selfConsumptionKeys));
-  const exportPercent = rounded(firstKnownNumeric(root, exportKeys));
+  const selfConsumptionPercent = rounded(
+    (rawSystems.length > 0
+      ? firstKnownNumeric(root, selfConsumptionKeys)
+      : getAggregateSystemSelfConsumptionPercent(input.apiSystems))
+      ?? firstKnownNumeric(root, selfConsumptionKeys),
+  );
+  const directExportPercent = rounded(firstKnownNumeric(root, exportKeys));
+  const exportPercent = directExportPercent ?? (selfConsumptionPercent === null ? null : rounded(Math.max(0, 100 - selfConsumptionPercent)));
+  const exportSource: FieldSource | null = exportPercent === null
+    ? null
+    : directExportPercent === null
+      ? "Calculado desde datos OpenSolar"
+      : "OpenSolar";
 
   return {
     annualGenerationKwh,
@@ -264,7 +363,7 @@ function resolveSolarMetrics(input: {
     sources: {
       ...(annualGenerationKwh !== null ? { annualGenerationKwh: "OpenSolar" as const } : {}),
       ...(selfConsumptionPercent !== null ? { selfConsumptionPercent: "OpenSolar" as const } : {}),
-      ...(exportPercent !== null ? { exportPercent: "OpenSolar" as const } : {}),
+      ...(exportSource !== null ? { exportPercent: exportSource } : {}),
     },
   };
 }
@@ -524,6 +623,7 @@ export async function getOpenSolarProjectPrefill(config: OpenSolarProjectLookupI
   let systemsCount = Array.isArray(project.systems) ? project.systems.length : 0;
   let systemPowerKwp: number | null = null;
   let apiSystems: OpenSolarSystemDetail[] = [];
+  let currentMonthlyBill = usage.currentMonthlyBill;
   const detailsUrl = `${projectUrl}systems/details/`;
   const systemsResponse = await readOpenSolarJson(detailsUrl, config.bearerToken);
   if (systemsResponse.ok) {
@@ -533,6 +633,13 @@ export async function getOpenSolarProjectPrefill(config: OpenSolarProjectLookupI
       .map((system) => optionalFinite(system.kw_stc ?? system.system_size ?? system.system_size_kw))
       .filter((value): value is number => value !== null && value > 0);
     systemPowerKwp = powers.length > 0 ? rounded(powers.reduce((total, value) => total + value, 0)) : null;
+    // Si el formulario de consumo del proyecto no contiene factura, la
+    // simulación actual del sistema sí puede exponer el promedio mensual base.
+    // Sólo se usa para proyectos colombianos/COP; no se mezclan propuestas ni
+    // escenarios de años futuros.
+    if (currentMonthlyBill === null && resolveCopCurrency(project)) {
+      currentMonthlyBill = getCurrentMonthlyBillFromSystems(apiSystems);
+    }
   } else {
     warnings.push(errorMessageForRead(systemsResponse.status, "sistema"));
   }
@@ -555,15 +662,15 @@ export async function getOpenSolarProjectPrefill(config: OpenSolarProjectLookupI
     ? rounded(Math.min(100, (solarMetrics.annualGenerationKwh * (solarMetrics.selfConsumptionPercent / 100) / usage.annualConsumptionKwh) * 100))
     : null;
   const gridTariffCopPerKwh = resolveCopCurrency(project)
-    && usage.currentMonthlyBill !== null
+    && currentMonthlyBill !== null
     && usage.annualConsumptionKwh !== null
     && usage.annualConsumptionKwh > 0
-    ? rounded((usage.currentMonthlyBill * 12) / usage.annualConsumptionKwh)
+    ? rounded((currentMonthlyBill * 12) / usage.annualConsumptionKwh)
     : null;
 
   if (systemPowerKwp === null) unavailableFields.push("potencia solar (kWp)");
   if (usage.annualConsumptionKwh === null) unavailableFields.push("consumo anual (kWh)");
-  if (usage.currentMonthlyBill === null) unavailableFields.push("factura mensual");
+  if (currentMonthlyBill === null) unavailableFields.push("factura mensual");
   if (solarMetrics.annualGenerationKwh === null) unavailableFields.push("generación anual (kWh)");
   if (solarMetrics.selfConsumptionPercent === null) unavailableFields.push("autoconsumo (%)");
   if (solarMetrics.exportPercent === null) unavailableFields.push("exportación (%)");
@@ -577,7 +684,7 @@ export async function getOpenSolarProjectPrefill(config: OpenSolarProjectLookupI
     ? T extends { fieldSources: infer Sources } ? Sources : never
     : never = {
       ...(usage.annualConsumptionKwh !== null ? { annualConsumptionKwh: "OpenSolar" as const } : {}),
-      ...(usage.currentMonthlyBill !== null ? { currentMonthlyBill: "OpenSolar" as const } : {}),
+      ...(currentMonthlyBill !== null ? { currentMonthlyBill: "OpenSolar" as const } : {}),
       ...(systemPowerKwp !== null ? { systemPowerKwp: "OpenSolar" as const } : {}),
       ...solarMetrics.sources,
       ...(solarSavingsCoveragePercent !== null ? { solarSavingsCoveragePercent: "Calculado desde datos OpenSolar" as const } : {}),
@@ -597,14 +704,14 @@ export async function getOpenSolarProjectPrefill(config: OpenSolarProjectLookupI
       latitude: rounded(optionalFinite(project.lat), 8),
       longitude: rounded(optionalFinite(project.lon), 8),
       annualConsumptionKwh: usage.annualConsumptionKwh,
-      currentMonthlyBill: usage.currentMonthlyBill,
+      currentMonthlyBill,
       systemPowerKwp,
       annualGenerationKwh: solarMetrics.annualGenerationKwh,
       selfConsumptionPercent: solarMetrics.selfConsumptionPercent,
       exportPercent: solarMetrics.exportPercent,
       solarSavingsCoveragePercent,
       gridTariffCopPerKwh,
-      canActivateAllySolarProgram: usage.currentMonthlyBill !== null && solarSavingsCoveragePercent !== null && solarSavingsCoveragePercent > 0,
+      canActivateAllySolarProgram: currentMonthlyBill !== null && solarSavingsCoveragePercent !== null && solarSavingsCoveragePercent > 0,
       systemsCount,
       modifiedAt: optionalText(project.modified_date),
       fieldSources,

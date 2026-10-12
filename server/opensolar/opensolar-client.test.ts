@@ -269,6 +269,92 @@ describe("precarga de proyecto OpenSolar", () => {
     });
   });
 
+  it("mapea la salida calculada, autoconsumo y factura actual de systems/details sin depender de Raw Data", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        id: 11062957,
+        org_id: "org-evgreen",
+        country_iso2: "CO",
+        usage_annual_or_guess: 28_800,
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        systems: [{
+          kw_stc: 23.8,
+          data: {
+            output: { annual: 30_147.11 },
+            consumption: {
+              usage_annual: 28_800,
+              self_consumption_percentage_no_battery: 37.77,
+              self_consumption_kwh_no_battery: 11_385.305676,
+            },
+            bills: {
+              current: {
+                bills_yearly: [{
+                  annual: {
+                    average_annual_bill_breakdown: { total_inc_tax: 2_249_520 },
+                    total: 26_994_240,
+                  },
+                }],
+              },
+            },
+          },
+        }],
+      }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await getOpenSolarProjectPrefill({ bearerToken: "token-prueba", orgId: "org-evgreen", projectId: "11062957" });
+
+    expect(result.project).toMatchObject({
+      annualConsumptionKwh: 28_800,
+      currentMonthlyBill: 2_249_520,
+      systemPowerKwp: 23.8,
+      annualGenerationKwh: 30_147.11,
+      selfConsumptionPercent: 37.77,
+      exportPercent: 62.23,
+      solarSavingsCoveragePercent: 39.54,
+      gridTariffCopPerKwh: 937.3,
+      canActivateAllySolarProgram: true,
+      fieldSources: {
+        annualConsumptionKwh: "OpenSolar",
+        currentMonthlyBill: "OpenSolar",
+        systemPowerKwp: "OpenSolar",
+        annualGenerationKwh: "OpenSolar",
+        selfConsumptionPercent: "OpenSolar",
+        exportPercent: "Calculado desde datos OpenSolar",
+        solarSavingsCoveragePercent: "Calculado desde datos OpenSolar",
+        gridTariffCopPerKwh: "Calculado desde datos OpenSolar",
+      },
+    });
+    expect(result.unavailableFields).toEqual([]);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("pondera el autoconsumo por generación cuando OpenSolar devuelve varios sistemas", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        id: 606,
+        org_id: "org-evgreen",
+        usage_annual_or_guess: 100_000,
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        systems: [
+          { kw_stc: 1, data: { output: { annual: 1_000 }, consumption: { self_consumption_percentage_no_battery: 20 } } },
+          { kw_stc: 3, data: { output: { annual: 3_000 }, consumption: { self_consumption_percentage_no_battery: 80 } } },
+        ],
+      }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await getOpenSolarProjectPrefill({ bearerToken: "token-prueba", orgId: "org-evgreen", projectId: "606" });
+
+    expect(result.project).toMatchObject({
+      systemPowerKwp: 4,
+      annualGenerationKwh: 4_000,
+      selfConsumptionPercent: 65,
+      exportPercent: 35,
+      solarSavingsCoveragePercent: 2.6,
+    });
+  });
+
   it("no consulta sistemas si el proyecto no pertenece a la organización configurada", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 101, org_id: "otra-org" }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);

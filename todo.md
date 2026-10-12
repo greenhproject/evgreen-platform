@@ -140,3 +140,13 @@
 - [x] QA visual autenticado: el editor muestra una casilla de alcance solar y los dos controles independientes “ID de proyecto OpenSolar de la electrolinera” y “ID de proyecto OpenSolar de la EDS o comercio”, en escritorio y móvil, sin guardar ni alterar datos.
 - [x] Validación integral: 245 archivos / 2.363 pruebas aprobadas; 5 suites de integración y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo aprobado.
 - [x] Guardar checkpoint `2e0d71f3`, publicar de forma segura y verificar Railway exitoso en staging y producción para la separación de fuentes solares.
+
+## OpenSolar — mapeo de métricas reales de sistema (2026-10-12)
+
+- [x] Auditar con lectura de solo lectura el proyecto autorizado `11062957`: OpenSolar expone consumo anual, diseño de 23,8 kWp, generación anual calculada, autoconsumo y factura actual dentro de `systems/details`, aunque no estén en Raw Data.
+- [x] Extender el mapeador para leer `data.output.annual`, `data.consumption.self_consumption_percentage_no_battery` y `data.bills.current.bills_yearly` (año base); derivar exportación, cobertura y tarifa exclusivamente desde dichas métricas.
+- [x] Confirmar contra la respuesta real que la precarga devuelve consumo 28.800 kWh/año, factura mensual COP 2.184.000, potencia 23,8 kWp, generación 30.147,11 kWh/año, autoconsumo 37,77 %, exportación derivada 62,23 %, cobertura 39,54 % y tarifa derivada COP 910/kWh. No se persistió ni modificó el Espacio.
+- [x] Añadir regresión sin credenciales reales para la forma de `systems/details`, incluidos todos los campos requeridos, sus fuentes de cálculo y el autoconsumo ponderado cuando hay varios sistemas.
+- [x] Validación integral: 245 archivos / 2.365 pruebas aprobadas; 5 suites de integración y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo aprobado.
+- [x] QA visual autenticado, sin guardar: consultar el ID `11062957` en el formulario del aliado precargó los siete campos esperados con los valores validados contra la respuesta real.
+- [ ] Guardar checkpoint WebDev, ejecutar publicación segura y verificar el despliegue.
