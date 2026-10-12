@@ -26,6 +26,8 @@ export interface AllySpacePdfData {
   city: string;
   department?: string | null;
   country?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   status?: string | null;
   submitterName?: string | null;
   submitterCompany?: string | null;
@@ -320,6 +322,23 @@ function formatDecimal(value: number | null | undefined, digits = 1): string {
   return Number(value).toLocaleString("es-CO", { maximumFractionDigits: digits });
 }
 
+function buildGoogleMapsSearchUrl(data: AllySpacePdfData): string {
+  const query = data.latitude !== null && data.latitude !== undefined && data.longitude !== null && data.longitude !== undefined
+    ? `${data.latitude},${data.longitude}`
+    : `${data.address}, ${data.city}${data.department ? `, ${data.department}` : ""}`;
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+}
+
+function buildStaticMapUrl(data: AllySpacePdfData): string | null {
+  if (data.latitude === null || data.latitude === undefined || data.longitude === null || data.longitude === undefined) return null;
+  const forgeApiUrl = (process.env.BUILT_IN_FORGE_API_URL || "").replace(/\/+$/, "");
+  const forgeApiKey = process.env.BUILT_IN_FORGE_API_KEY || "";
+  const params = `center=${data.latitude},${data.longitude}&zoom=15&size=640x320&maptype=roadmap&markers=color:green%7Clabel:EV%7C${data.latitude},${data.longitude}`;
+  return forgeApiUrl && forgeApiKey
+    ? `${forgeApiUrl}/v1/maps/proxy/maps/api/staticmap?${params}&key=${forgeApiKey}`
+    : `https://maps.googleapis.com/maps/api/staticmap?${params}`;
+}
+
 function drawIncomeProjectionPage(
   doc: InstanceType<typeof jsPDF>,
   data: AllySpacePdfData,
@@ -569,6 +588,78 @@ function addProfilePage(doc: InstanceType<typeof jsPDF>, data: AllySpacePdfData,
   drawRows(doc, content.operatingRows, margin, y, contentWidth, 54);
 }
 
+function addLocationPage(
+  doc: InstanceType<typeof jsPDF>,
+  data: AllySpacePdfData,
+  logo: { data: string; format: string } | null,
+  mapImage: { data: string; format: string } | null,
+  width: number,
+  height: number,
+  margin: number,
+) {
+  addHeader(doc, data, logo, width, margin);
+  const contentWidth = width - margin * 2;
+  let y = 25;
+  y = drawSectionTitle(doc, "UBICACIÓN GEOGRÁFICA DEL PUNTO", margin, y, contentWidth);
+
+  setColor(doc, COLORS.gray700);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.8);
+  const intro = doc.splitTextToSize(
+    "Referencia geográfica del espacio postulado. El marcador corresponde a las coordenadas registradas en EVGreen y debe confirmarse durante la visita técnica antes de definir la ubicación final de la estación.",
+    contentWidth,
+  );
+  doc.text(intro, margin, y);
+  y += intro.length * 4.5 + 8;
+
+  const locationRows: Array<[string, string]> = [
+    ["Dirección registrada", `${data.address}, ${data.city}${data.department ? `, ${data.department}` : ""}`],
+    ["Coordenadas GPS", data.latitude !== null && data.latitude !== undefined && data.longitude !== null && data.longitude !== undefined
+      ? `${Number(data.latitude).toFixed(6)}, ${Number(data.longitude).toFixed(6)}`
+      : "No registradas"],
+    ["Fuente de referencia", "Google Maps · ubicación por coordenadas o dirección"],
+  ];
+  y = drawRows(doc, locationRows, margin, y, contentWidth, 53) + 8;
+
+  const mapHeight = 88;
+  if (mapImage) {
+    doc.addImage(mapImage.data, mapImage.format, margin, y, contentWidth, mapHeight, undefined, "FAST");
+    setColor(doc, COLORS.gray200, "draw");
+    doc.setLineWidth(0.35);
+    doc.rect(margin, y, contentWidth, mapHeight);
+  } else {
+    setColor(doc, COLORS.gray100, "fill");
+    doc.roundedRect(margin, y, contentWidth, mapHeight, 3, 3, "F");
+    setColor(doc, COLORS.gray700);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.text("Mapa estático no disponible", margin + contentWidth / 2, y + 31, { align: "center" });
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.8);
+    doc.text("La dirección y el enlace de Google Maps permanecen disponibles para consulta.", margin + contentWidth / 2, y + 40, { align: "center" });
+  }
+  y += mapHeight + 9;
+
+  setColor(doc, COLORS.greenLight, "fill");
+  doc.roundedRect(margin, y, contentWidth, 29, 3, 3, "F");
+  setColor(doc, COLORS.greenDark);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8.7);
+  doc.text("ABRIR UBICACIÓN EN GOOGLE MAPS", margin + 6, y + 9);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.2);
+  const mapsUrl = buildGoogleMapsSearchUrl(data);
+  const linkLabel = data.latitude !== null && data.latitude !== undefined && data.longitude !== null && data.longitude !== undefined
+    ? "Ver el marcador GPS en Google Maps"
+    : "Buscar la dirección registrada en Google Maps";
+  doc.text(linkLabel, margin + 6, y + 18);
+  doc.link(margin + 4, y + 4, contentWidth - 8, 21, { url: mapsUrl });
+  setColor(doc, COLORS.gray500);
+  doc.setFontSize(6.2);
+  const urlText = doc.splitTextToSize(mapsUrl, contentWidth - 12);
+  doc.text(urlText.slice(0, 1), margin + 6, y + 25);
+}
+
 function addResponsibilitiesPage(doc: InstanceType<typeof jsPDF>, data: AllySpacePdfData, content: AllyPdfContent, logo: { data: string; format: string } | null, width: number, height: number, margin: number) {
   addHeader(doc, data, logo, width, margin);
   const contentWidth = width - margin * 2;
@@ -680,11 +771,15 @@ export async function generateAllySpacePdf(data: AllySpacePdfData): Promise<Buff
     downloadImageAsBase64(COVER_BG_URL),
     ...data.photos.map((photo) => downloadImageAsBase64(photo.url)),
   ]);
+  const staticMapUrl = buildStaticMapUrl(data);
+  const mapImage = staticMapUrl ? await downloadImageAsBase64(staticMapUrl) : null;
   const coverImage = fallbackIndex >= 0 ? photoImages[fallbackIndex] || defaultCover : defaultCover;
 
   addCover(doc, data, content, logo, coverImage, coverPhoto, width, height, margin);
   doc.addPage();
   addProfilePage(doc, data, content, logo, width, height, margin);
+  doc.addPage();
+  addLocationPage(doc, data, logo, mapImage, width, height, margin);
   doc.addPage();
   addResponsibilitiesPage(doc, data, content, logo, width, height, margin);
   doc.addPage();

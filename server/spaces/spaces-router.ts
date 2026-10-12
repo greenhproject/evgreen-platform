@@ -112,6 +112,8 @@ async function generateAllySpacePdfForSubmission(submissionId: number) {
     city: submission.city,
     department: submission.department,
     country: submission.country,
+    latitude: submission.latitude === null ? null : Number(submission.latitude),
+    longitude: submission.longitude === null ? null : Number(submission.longitude),
     status: submission.spaceStatus,
     submitterName: submission.submitterName,
     submitterCompany: submission.submitterCompany,

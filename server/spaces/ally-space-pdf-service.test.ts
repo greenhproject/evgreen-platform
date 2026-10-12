@@ -9,6 +9,8 @@ const sampleData: AllySpacePdfData = {
   city: "Bogotá",
   department: "Cundinamarca",
   country: "Colombia",
+  latitude: 4.686947,
+  longitude: -74.126475,
   status: "letter_accepted",
   submitterName: "María Aliada",
   submitterCompany: "EDS Aliada S.A.S.",
