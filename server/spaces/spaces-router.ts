@@ -560,6 +560,9 @@ export const spacesRouter = router({
       solarSelfConsumptionPercent: optionalFormNumber().refine((value) => value === undefined || (value >= 0 && value <= 100), "El autoconsumo debe estar entre 0 % y 100 %"),
       solarExportPercent: optionalFormNumber().refine((value) => value === undefined || (value >= 0 && value <= 100), "La exportación solar debe estar entre 0 % y 100 %"),
       solarGridTariffCopPerKwh: optionalFormInteger().refine((value) => value === undefined || value >= 0, "La tarifa de red no puede ser negativa"),
+      openSolarProjectId: z.string().trim().max(80).optional(),
+      openSolarProjectTitle: z.string().trim().max(255).optional(),
+      openSolarAnnualConsumptionKwh: optionalFormNumber().refine((value) => value === undefined || value >= 0, "El consumo anual OpenSolar no puede ser negativo"),
       electricalDistance: optionalFormInteger(),
       hasInternet: z.boolean().optional(),
       operatingHoursStart: z.string().optional(),
@@ -663,6 +666,10 @@ export const spacesRouter = router({
             solarSelfConsumptionPercent: solarAssumptions?.selfConsumptionPercent ?? null,
             solarExportPercent: solarAssumptions?.exportPercent ?? null,
             solarGridTariffCopPerKwh: solarAssumptions?.gridTariffCopPerKwh ?? null,
+            openSolarProjectId: input.openSolarProjectId?.trim() || null,
+            openSolarProjectTitle: input.openSolarProjectTitle?.trim() || null,
+            openSolarAnnualConsumptionKwh: input.openSolarAnnualConsumptionKwh ?? null,
+            openSolarProjectImportedAt: input.openSolarProjectId?.trim() ? toSqlTimestamp() : null,
             electricalDistance: input.electricalDistance || null,
             hasInternet: input.hasInternet ? 1 : 0,
             operatingHoursStart: input.operatingHoursStart || "06:00",
@@ -1244,6 +1251,45 @@ export const spacesRouter = router({
           .where(eq(spaceSolarScopeHistory.submissionId, input.id))
           .orderBy(desc(spaceSolarScopeHistory.createdAt))
           .limit(6);
+      }),
+
+    // ========================================================================
+    // ADMIN: Consultar un proyecto OpenSolar sin persistir ni sincronizar
+    // ========================================================================
+    lookupOpenSolarProject: adminProcedure
+      .input(z.object({
+        projectId: z.string().trim().min(1, "Ingresa el ID del proyecto OpenSolar").max(80),
+      }))
+      .mutation(async ({ input }) => {
+        const settings = await getPlatformSettings();
+        if (settings?.openSolarEnabled !== 1 || !settings.openSolarOrgId || !settings.openSolarApiKeyEncrypted) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "Configura, autentica y habilita OpenSolar primero en Administración → Configuración.",
+          });
+        }
+
+        let bearerToken: string;
+        try {
+          const { decryptOpenSolarSecret } = await import("../opensolar/opensolar-secrets");
+          bearerToken = decryptOpenSolarSecret(settings.openSolarApiKeyEncrypted);
+        } catch {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "No fue posible preparar la credencial cifrada de OpenSolar. Vuelve a autenticar la integración.",
+          });
+        }
+
+        const { getOpenSolarProjectPrefill } = await import("../opensolar/opensolar-client");
+        const result = await getOpenSolarProjectPrefill({
+          bearerToken,
+          orgId: settings.openSolarOrgId,
+          projectId: input.projectId,
+        });
+        if (!result.success) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: result.message });
+        }
+        return result;
       }),
 
     // ========================================================================
@@ -1856,6 +1902,9 @@ export const spacesRouter = router({
         solarSelfConsumptionPercent: optionalFormNumber().refine((value) => value === undefined || (value >= 0 && value <= 100), "El autoconsumo debe estar entre 0 % y 100 %"),
         solarExportPercent: optionalFormNumber().refine((value) => value === undefined || (value >= 0 && value <= 100), "La exportación solar debe estar entre 0 % y 100 %"),
         solarGridTariffCopPerKwh: optionalFormInteger().refine((value) => value === undefined || value >= 0, "La tarifa de red no puede ser negativa"),
+        openSolarProjectId: z.string().trim().max(80).optional(),
+        openSolarProjectTitle: z.string().trim().max(255).optional(),
+        openSolarAnnualConsumptionKwh: optionalFormNumber().refine((value) => value === undefined || value >= 0, "El consumo anual OpenSolar no puede ser negativo"),
         electricalDistance: optionalFormInteger(),
         electricalDistanceM: optionalFormInteger(),
         hasInternet: z.boolean().optional(),
@@ -1945,6 +1994,12 @@ export const spacesRouter = router({
         }
         if (cleanFields.hasSolarPanels !== undefined) {
           cleanFields.hasSolarPanels = cleanFields.hasSolarPanels ? 1 : 0;
+        }
+        if (cleanFields.openSolarProjectId !== undefined) {
+          const openSolarProjectId = String(cleanFields.openSolarProjectId).trim();
+          cleanFields.openSolarProjectId = openSolarProjectId || null;
+          cleanFields.openSolarProjectImportedAt = openSolarProjectId ? toSqlTimestamp() : null;
+          if (!openSolarProjectId) cleanFields.openSolarProjectTitle = null;
         }
         const solarProgramFields = [
           "solarProgramEnabled", "solarProgramCurrentBillCop", "solarProgramSavingsCoveragePercent",

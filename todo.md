@@ -117,3 +117,13 @@
 - [x] Cubrir el intercambio de credenciales, el MFA opcional, la ausencia de credenciales y la verificación posterior de organización mediante pruebas unitarias sin usar credenciales reales.
 - [x] Validar TypeScript, 245 archivos / 2.355 pruebas aprobadas y build productivo. El bundle compilado contiene los controles de usuario, contraseña y MFA; la captura automatizada del área autenticada quedó bloqueada por sesión, sin afectar la compilación ni los contratos probados.
 - [ ] Guardar checkpoint WebDev y ejecutar publicación segura de la corrección de autenticación.
+
+## OpenSolar — consulta y precarga por proyecto (2026-10-12)
+
+- [x] Validar en la documentación oficial que la lectura segura usa `GET /api/orgs/{orgId}/projects/{projectId}/` y `GET /systems/details/`, con el Bearer token del servidor y validación del `org_id` devuelto.
+- [x] Añadir a Espacios un campo de ID de proyecto OpenSolar y un botón **Consultar OpenSolar** que precargue potencia solar, ubicación y datos de consumo/factura sólo cuando la API los devuelva explícitamente.
+- [x] Persistir la referencia externa, título, consumo anual y fecha de importación de forma auditable; no almacenar respuestas completas, contactos, token ni contraseña. Migración aditiva 0060 aplicada y auditada con 0 espacios enlazados.
+- [x] Mostrar claramente los campos sin disponibilidad en el plan API y mantener cobertura, autoconsumo, costo solar, CAPEX y ahorro sujetos a validación humana/documental.
+- [x] Cubrir acceso, pertenencia de organización, mapeo, ausencia de datos y errores; TypeScript y 23 pruebas focales aprobadas sin usar credenciales reales.
+- [x] Validación integral: 245 archivos / 2.359 pruebas aprobadas; 5 suites de integración y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo y bundle con el control **Consultar OpenSolar** aprobados.
+- [ ] Guardar checkpoint WebDev, ejecutar publicación segura y verificar el despliegue.

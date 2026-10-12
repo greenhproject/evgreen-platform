@@ -1681,6 +1681,11 @@ export const spaceSubmissions = mysqlTable("space_submissions", {
 		solarSelfConsumptionPercent: decimal("solar_self_consumption_percent", { precision: 5, scale: 2 }),
 		solarExportPercent: decimal("solar_export_percent", { precision: 5, scale: 2 }),
 		solarGridTariffCopPerKwh: int("solar_grid_tariff_cop_per_kwh"),
+		// Referencia externa mínima; nunca persiste la respuesta, token o credenciales de OpenSolar.
+		openSolarProjectId: varchar("opensolar_project_id", { length: 80 }),
+		openSolarProjectTitle: varchar("opensolar_project_title", { length: 255 }),
+		openSolarAnnualConsumptionKwh: decimal("opensolar_annual_consumption_kwh", { precision: 14, scale: 2 }),
+		openSolarProjectImportedAt: timestamp("opensolar_project_imported_at", { mode: 'string' }),
 		solarOfferPdfUrl: text("solar_offer_pdf_url"),
 		solarOfferPdfKey: varchar("solar_offer_pdf_key", { length: 500 }),
 		solarOfferPdfName: varchar("solar_offer_pdf_name", { length: 255 }),
