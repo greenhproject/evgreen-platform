@@ -49,6 +49,7 @@ export type AllyIncomeProjectionScenario = {
   grossMarginMonthly: number;
   allySharePercent: number;
   allyIncomeMonthly: number;
+  allyIncomeAnnual: number;
 };
 
 export type AllyIncomeProjectionSnapshot = {
@@ -170,6 +171,7 @@ export function buildAllyIncomeProjection(input: AllyIncomeProjectionInput): All
     const grossRevenueMonthly = energyKwhPerMonth * salePricePerKwh;
     const energyCostMonthly = energyKwhPerMonth * solarEnergy.effectiveEnergyCostPerKwh;
     const grossMarginMonthly = Math.max(0, grossRevenueMonthly - energyCostMonthly);
+    const allyIncomeMonthly = round(grossMarginMonthly * (allySharePercent / 100));
     const result: AllyIncomeProjectionScenario = {
       key: scenario.key,
       label: scenario.label,
@@ -193,7 +195,8 @@ export function buildAllyIncomeProjection(input: AllyIncomeProjectionInput): All
       energyCostMonthly: round(energyCostMonthly),
       grossMarginMonthly: round(grossMarginMonthly),
       allySharePercent: round(allySharePercent),
-      allyIncomeMonthly: round(grossMarginMonthly * (allySharePercent / 100)),
+      allyIncomeMonthly,
+      allyIncomeAnnual: round(allyIncomeMonthly * 12),
     };
     return [scenario.key, result];
   })) as Record<SpaceTrafficProjectionScenario, AllyIncomeProjectionScenario>;

@@ -54,6 +54,7 @@ describe("buildAllySpacePdfContent", () => {
     expect(content.incomeProjection?.scenarios.OPTIMISTIC.scenarioEvPercent).toBe(15);
     expect(content.incomeProjection?.scenarios.REALISTIC.grossRevenueMonthly).toBeGreaterThan(0);
     expect(content.incomeProjection?.scenarios.REALISTIC.allyIncomeMonthly).toBeGreaterThan(0);
+    expect(content.incomeProjection?.scenarios.REALISTIC.allyIncomeAnnual).toBe(content.incomeProjection?.scenarios.REALISTIC.allyIncomeMonthly! * 12);
     expect(buildAllyProjectionDisclosure(content.incomeProjection!.assumptions).toLowerCase()).not.toContain("margen bruto");
     expect(buildAllyProjectionDisclosure(content.incomeProjection!.assumptions).toLowerCase()).not.toContain("ingreso bruto");
     expect(content.allyResponsibilities.length).toBeGreaterThanOrEqual(4);

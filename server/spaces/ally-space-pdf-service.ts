@@ -15,7 +15,8 @@ import { buildAllyIncomeProjection, type AllyIncomeProjectionSnapshot } from "..
 const jsPDF = ((jsPDFModule as any).jsPDF ?? (jsPDFModule as any).default?.jsPDF ?? (jsPDFModule as any).default ?? jsPDFModule) as typeof import("jspdf").jsPDF;
 
 const LOGO_URL = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/FYcGXNchDiULWNfV.png";
-const COVER_BG_URL = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/WYwUkpexDtndNYrd.jpg";
+const COVER_BG_URL = "https://evgreen.manus.space/manus-storage/evgreen-ally-premium-hero_104767ce.png";
+const COMMERCIAL_ECOSYSTEM_URL = "https://evgreen.manus.space/manus-storage/evgreen-ally-commercial-ecosystem_cb877395.png";
 
 export interface AllySpacePdfData {
   code: string;
@@ -464,6 +465,200 @@ function drawIncomeProjectionPage(
   doc.text(note.slice(0, 4), margin + 6, y + 16);
 }
 
+function formatCompactCop(value: number): string {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "—";
+  if (Math.abs(numeric) >= 1_000_000) return `$${(numeric / 1_000_000).toLocaleString("es-CO", { maximumFractionDigits: 1 })} M`;
+  if (Math.abs(numeric) >= 1_000) return `$${(numeric / 1_000).toLocaleString("es-CO", { maximumFractionDigits: 0 })} mil`;
+  return formatCop(numeric);
+}
+
+function drawAnnualAllyValuePage(
+  doc: InstanceType<typeof jsPDF>,
+  data: AllySpacePdfData,
+  content: AllyPdfContent,
+  logo: { data: string; format: string } | null,
+  width: number,
+  height: number,
+  margin: number,
+) {
+  addHeader(doc, data, logo, width, margin);
+  const contentWidth = width - margin * 2;
+  let y = 25;
+  y = drawSectionTitle(doc, "VALOR MENSUAL Y ANUALIZADO PARA EL ALIADO", margin, y, contentWidth);
+
+  setColor(doc, COLORS.gray700);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.8);
+  const intro = doc.splitTextToSize(
+    "Una lectura anual para dimensionar el potencial del espacio. El valor anualizado corresponde a la estimación mensual para el aliado multiplicada por 12 meses y se presenta como referencia preliminar, no como garantía de resultado.",
+    contentWidth,
+  );
+  doc.text(intro, margin, y);
+  y += intro.length * 4.5 + 9;
+
+  if (!content.incomeProjection) {
+    setColor(doc, [255, 251, 235], "fill");
+    doc.roundedRect(margin, y, contentWidth, 34, 3, 3, "F");
+    setColor(doc, [146, 64, 14]);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.5);
+    doc.text("DATOS INSUFICIENTES PARA ANUALIZAR", margin + 6, y + 11);
+    return;
+  }
+
+  const projection = content.incomeProjection;
+  const scenarioOrder: Array<keyof AllyIncomeProjectionSnapshot["scenarios"]> = ["PESSIMISTIC", "REALISTIC", "OPTIMISTIC"];
+  const scenarioValues = scenarioOrder.map((key) => projection.scenarios[key]);
+  const scenarioLabels = ["Pesimista", "Realista", "Optimista"];
+  const cardGap = 5;
+  const cardWidth = (contentWidth - cardGap * 2) / 3;
+  const cardHeight = 40;
+
+  scenarioValues.forEach((scenario, index) => {
+    const x = margin + index * (cardWidth + cardGap);
+    const isRealistic = index === 1;
+    setColor(doc, isRealistic ? COLORS.greenLight : COLORS.gray100, "fill");
+    doc.roundedRect(x, y, cardWidth, cardHeight, 3, 3, "F");
+    setColor(doc, isRealistic ? COLORS.greenDark : COLORS.gray700);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.2);
+    doc.text(scenarioLabels[index], x + 6, y + 9);
+    setColor(doc, COLORS.gray500);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(6.7);
+    doc.text("Mensual", x + 6, y + 18);
+    doc.text("Anualizado", x + 6, y + 30);
+    setColor(doc, isRealistic ? COLORS.greenDark : COLORS.gray900);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.1);
+    doc.text(formatCop(scenario.allyIncomeMonthly), x + cardWidth - 6, y + 18, { align: "right" });
+    doc.text(formatCop(scenario.allyIncomeAnnual), x + cardWidth - 6, y + 30, { align: "right" });
+  });
+  y += cardHeight + 14;
+
+  y = drawSectionTitle(doc, "VALOR ANUALIZADO POR ESCENARIO", margin, y, contentWidth);
+  const chartX = margin + 12;
+  const chartWidth = contentWidth - 24;
+  const baselineY = y + 71;
+  const chartHeight = 51;
+  const maxAnnual = Math.max(...scenarioValues.map((scenario) => scenario.allyIncomeAnnual), 1);
+  const barWidth = 34;
+  const barGap = (chartWidth - barWidth * scenarioValues.length) / (scenarioValues.length + 1);
+
+  setColor(doc, COLORS.gray200, "draw");
+  doc.setLineWidth(0.35);
+  doc.line(chartX, baselineY, chartX + chartWidth, baselineY);
+  doc.line(chartX, baselineY - chartHeight, chartX, baselineY);
+  setColor(doc, COLORS.gray500);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(6.2);
+  doc.text(formatCompactCop(maxAnnual), chartX - 3, baselineY - chartHeight + 2, { align: "right" });
+  doc.text("$0", chartX - 3, baselineY + 2, { align: "right" });
+
+  scenarioValues.forEach((scenario, index) => {
+    const barX = chartX + barGap + index * (barWidth + barGap);
+    const barHeight = Math.max(3, (scenario.allyIncomeAnnual / maxAnnual) * chartHeight);
+    setColor(doc, index === 1 ? COLORS.green : [148, 163, 184], "fill");
+    doc.roundedRect(barX, baselineY - barHeight, barWidth, barHeight, 2, 2, "F");
+    setColor(doc, index === 1 ? COLORS.greenDark : COLORS.gray700);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7);
+    doc.text(formatCompactCop(scenario.allyIncomeAnnual), barX + barWidth / 2, baselineY - barHeight - 4, { align: "center" });
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.2);
+    doc.text(scenarioLabels[index], barX + barWidth / 2, baselineY + 9, { align: "center" });
+  });
+
+  setColor(doc, COLORS.greenLight, "fill");
+  doc.roundedRect(margin, baselineY + 23, contentWidth, 33, 3, 3, "F");
+  setColor(doc, COLORS.greenDark);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.text("LECTURA CLAVE", margin + 6, baselineY + 32);
+  setColor(doc, COLORS.gray700);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.4);
+  const note = doc.splitTextToSize(
+    `El escenario realista representa ${formatCop(projection.scenarios.REALISTIC.allyIncomeAnnual)} anualizados para el aliado bajo los supuestos operativos registrados. El resultado puede variar según demanda efectiva, disponibilidad del punto, operación y condiciones contractuales.`,
+    contentWidth - 12,
+  );
+  doc.text(note.slice(0, 3), margin + 6, baselineY + 40);
+}
+
+function drawCommercialEcosystemPage(
+  doc: InstanceType<typeof jsPDF>,
+  data: AllySpacePdfData,
+  logo: { data: string; format: string } | null,
+  ecosystemImage: { data: string; format: string; aspect: number } | null,
+  width: number,
+  height: number,
+  margin: number,
+) {
+  addHeader(doc, data, logo, width, margin);
+  const contentWidth = width - margin * 2;
+  let y = 25;
+  y = drawSectionTitle(doc, "EL EFECTO DEL PUNTO EN SU ECOSISTEMA", margin, y, contentWidth);
+
+  setColor(doc, COLORS.gray700);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.8);
+  const intro = doc.splitTextToSize(
+    "Una estación de carga puede ampliar la permanencia de los usuarios y crear nuevas oportunidades de colaboración con los comercios que rodean el punto.",
+    contentWidth,
+  );
+  doc.text(intro, margin, y);
+  y += intro.length * 4.5 + 7;
+
+  drawFitImage(doc, ecosystemImage, margin, y, contentWidth, 83, COLORS.navy);
+  setColor(doc, COLORS.gray500);
+  doc.setFont("helvetica", "italic");
+  doc.setFontSize(6.6);
+  doc.text("Visual conceptual de referencia generado con Nano Banana Pro; no representa un diseño definitivo ni confirma comercios participantes.", margin, y + 88);
+  y += 99;
+
+  const gap = 6;
+  const colWidth = (contentWidth - gap) / 2;
+  const cards = [
+    ["Mayor permanencia", "Durante la sesión de carga, el usuario puede permanecer en el entorno y descubrir servicios, restaurantes, cafés o comercios cercanos."],
+    ["Consumo cruzado potencial", "El punto puede habilitar campañas, descuentos y códigos QR para dirigir tráfico hacia negocios aliados del sector."],
+    ["Alianzas locales", "La estación puede convertirse en una plataforma para acuerdos de visibilidad, fidelización y beneficios para conductores EV."],
+    ["Valor para el espacio", "Además de la estimación para el aliado, el sitio gana posicionamiento como nodo de movilidad y actividad comercial."],
+  ] as const;
+  cards.forEach(([title, text], index) => {
+    const col = index % 2;
+    const row = Math.floor(index / 2);
+    const x = margin + col * (colWidth + gap);
+    const cardY = y + row * 40;
+    setColor(doc, index % 2 === 0 ? COLORS.greenLight : [239, 246, 255], "fill");
+    doc.roundedRect(x, cardY, colWidth, 34, 3, 3, "F");
+    setColor(doc, index % 2 === 0 ? COLORS.greenDark : COLORS.blue);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.2);
+    doc.text(title, x + 6, cardY + 9);
+    setColor(doc, COLORS.gray700);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.1);
+    const lines = doc.splitTextToSize(text, colWidth - 12);
+    doc.text(lines.slice(0, 3), x + 6, cardY + 17);
+  });
+
+  setColor(doc, [255, 251, 235], "fill");
+  doc.roundedRect(margin, y + 80, contentWidth, 29, 3, 3, "F");
+  setColor(doc, [146, 64, 14]);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.text("OPORTUNIDAD, NO PROMESA", margin + 6, y + 89);
+  setColor(doc, COLORS.gray700);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.3);
+  const note = doc.splitTextToSize(
+    "El consumo en comercios aledaños es una oportunidad comercial potencial que puede desarrollarse mediante convenios y campañas específicas. No constituye un ingreso garantizado ni reemplaza las condiciones económicas que se formalicen en el contrato del aliado.",
+    contentWidth - 12,
+  );
+  doc.text(note.slice(0, 3), margin + 6, y + 97);
+}
+
 function drawBulletList(doc: InstanceType<typeof jsPDF>, items: string[], x: number, y: number, width: number, color: [number, number, number]): number {
   setColor(doc, color);
   doc.setFont("helvetica", "normal");
@@ -776,9 +971,10 @@ export async function generateAllySpacePdf(data: AllySpacePdfData): Promise<Buff
   const coverIndex = data.photos.findIndex((photo) => Boolean(photo.isCover));
   const fallbackIndex = coverIndex >= 0 ? coverIndex : (data.photos.length > 0 ? 0 : -1);
   const coverPhoto = fallbackIndex >= 0 ? data.photos[fallbackIndex] : null;
-  const [logo, defaultCover, ...photoImages] = await Promise.all([
+  const [logo, defaultCover, ecosystemImage, ...photoImages] = await Promise.all([
     downloadImageAsBase64(LOGO_URL),
     downloadImageAsBase64(COVER_BG_URL),
+    downloadImageAsBase64(COMMERCIAL_ECOSYSTEM_URL),
     ...data.photos.map((photo) => downloadImageAsBase64(photo.url)),
   ]);
   const staticMapUrl = buildStaticMapUrl(data);
@@ -794,6 +990,10 @@ export async function generateAllySpacePdf(data: AllySpacePdfData): Promise<Buff
   addResponsibilitiesPage(doc, data, content, logo, width, height, margin);
   doc.addPage();
   drawIncomeProjectionPage(doc, data, content, logo, width, height, margin);
+  doc.addPage();
+  drawAnnualAllyValuePage(doc, data, content, logo, width, height, margin);
+  doc.addPage();
+  drawCommercialEcosystemPage(doc, data, logo, ecosystemImage, width, height, margin);
 
   const galleryPhotos = data.photos
     .map((photo, index) => ({ photo, image: photoImages[index] || null }))

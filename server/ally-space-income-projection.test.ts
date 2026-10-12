@@ -48,6 +48,7 @@ describe("ally space income projection", () => {
     expect(realistic.energyCostMonthly).toBe(86700000);
     expect(realistic.grossMarginMonthly).toBe(96900000);
     expect(realistic.allyIncomeMonthly).toBe(9690000);
+    expect(realistic.allyIncomeAnnual).toBe(116280000);
     expect(JSON.stringify(snapshot).toLowerCase()).not.toContain("inversionista");
     expect(JSON.stringify(snapshot).toLowerCase()).not.toContain("waterfall");
   });
