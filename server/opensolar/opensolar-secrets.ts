@@ -10,7 +10,7 @@ function getKey(): Buffer {
   return crypto.createHash("sha256").update(ENV.cookieSecret).digest();
 }
 
-/** Cifra el token API de OpenSolar antes de persistirlo. */
+/** Cifra el Bearer token de OpenSolar antes de persistirlo. */
 export function encryptOpenSolarSecret(value: string): string {
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv(ALGORITHM, getKey(), iv);
@@ -18,7 +18,7 @@ export function encryptOpenSolarSecret(value: string): string {
   return Buffer.concat([iv, cipher.getAuthTag(), encrypted]).toString("base64url");
 }
 
-/** Descifra un token sólo dentro de una operación server-side autorizada. */
+/** Descifra un Bearer token sólo dentro de una operación server-side autorizada. */
 export function decryptOpenSolarSecret(value: string): string {
   const raw = Buffer.from(value, "base64url");
   const iv = raw.subarray(0, 12);

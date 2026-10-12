@@ -1652,18 +1652,18 @@ function ReconcileButton() {
 
 function OpenSolarSettingsCard() {
   const { data, isLoading, refetch } = trpc.settings.getOpenSolarConfig.useQuery();
-  const [showApiKey, setShowApiKey] = useState(false);
-  const [form, setForm] = useState({ enabled: false, orgId: "", apiKey: "" });
+  const [showPassword, setShowPassword] = useState(false);
+  const [form, setForm] = useState({ enabled: false, orgId: "", username: "", password: "", mfaToken: "" });
 
   useEffect(() => {
     if (!data) return;
-    setForm({ enabled: data.enabled, orgId: data.orgId || "", apiKey: "" });
+    setForm({ enabled: data.enabled, orgId: data.orgId || "", username: "", password: "", mfaToken: "" });
   }, [data]);
 
   const save = trpc.settings.saveOpenSolarConfig.useMutation({
     onSuccess: (result) => {
       toast.success(result.message);
-      setForm(current => ({ ...current, apiKey: "" }));
+      setForm(current => ({ ...current, password: "", mfaToken: "" }));
       refetch();
     },
     onError: error => toast.error(error.message),
@@ -1676,7 +1676,7 @@ function OpenSolarSettingsCard() {
     onError: error => toast.error(error.message),
   });
 
-  const isConfigured = Boolean(data?.hasApiKey && form.orgId.trim());
+  const isConfigured = Boolean(data?.hasBearerToken && form.orgId.trim());
   const lastTestTone = data?.lastTestStatus === "SUCCESS"
     ? "border-green-500/30 bg-green-500/5 text-green-700 dark:text-green-300"
     : data?.lastTestStatus === "FAILED"
@@ -1709,7 +1709,7 @@ function OpenSolarSettingsCard() {
           <div className="flex items-center justify-between gap-4 rounded-lg border border-border p-4">
             <div>
               <Label htmlFor="opensolar-enabled" className="font-medium">Habilitar integración OpenSolar</Label>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">Exige un API key Bearer y el ID exacto de la organización antes de activar el uso futuro de datos solares.</p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">Exige el ID exacto de la organización y un token generado desde sus credenciales antes de activar el uso futuro de datos solares.</p>
             </div>
             <Switch id="opensolar-enabled" checked={form.enabled} onCheckedChange={enabled => setForm(current => ({ ...current, enabled }))} />
           </div>
@@ -1721,18 +1721,35 @@ function OpenSolarSettingsCard() {
           </div>
 
           <div className="space-y-2">
-            <div className="flex items-center justify-between gap-3"><Label htmlFor="opensolar-api-key">API key Bearer</Label>{data?.hasApiKey ? <span className="inline-flex items-center gap-1 text-xs font-medium text-green-600 dark:text-green-400"><CheckCircle className="h-3.5 w-3.5" />Guardada y cifrada</span> : null}</div>
+            <div className="flex items-center justify-between gap-3"><Label htmlFor="opensolar-username">Usuario OpenSolar</Label>{data?.hasBearerToken ? <span className="inline-flex items-center gap-1 text-xs font-medium text-green-600 dark:text-green-400"><CheckCircle className="h-3.5 w-3.5" />Token guardado y cifrado</span> : null}</div>
+            <Input id="opensolar-username" type="email" value={form.username} onChange={event => setForm(current => ({ ...current, username: event.target.value }))} placeholder="correo@empresa.com" autoComplete="username" />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="opensolar-password">Contraseña OpenSolar</Label>
             <div className="relative">
-              <Input id="opensolar-api-key" type={showApiKey ? "text" : "password"} value={form.apiKey} onChange={event => setForm(current => ({ ...current, apiKey: event.target.value }))} placeholder={data?.hasApiKey ? "Dejar vacío para conservar; escribir sólo para rotar" : "Pegue aquí el token generado en OpenSolar"} autoComplete="new-password" className="pr-11" />
-              <button type="button" aria-label={showApiKey ? "Ocultar API key de OpenSolar" : "Mostrar API key de OpenSolar"} className="absolute right-2 top-2.5 text-muted-foreground hover:text-foreground" onClick={() => setShowApiKey(current => !current)}>{showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
+              <Input id="opensolar-password" type={showPassword ? "text" : "password"} value={form.password} onChange={event => setForm(current => ({ ...current, password: event.target.value }))} placeholder={data?.hasBearerToken ? "Dejar vacío para conservar; escribir usuario y contraseña para renovar" : "Contraseña de OpenSolar"} autoComplete="new-password" className="pr-11" />
+              <button type="button" aria-label={showPassword ? "Ocultar contraseña de OpenSolar" : "Mostrar contraseña de OpenSolar"} className="absolute right-2 top-2.5 text-muted-foreground hover:text-foreground" onClick={() => setShowPassword(current => !current)}>{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
             </div>
-            <p className="text-xs leading-5 text-muted-foreground">No se usan ni almacenan usuario/contraseña. La clave se cifra en el servidor y nunca vuelve al navegador.</p>
+            <p className="text-xs leading-5 text-muted-foreground">Al guardar, el servidor intercambia estas credenciales por un Bearer token. La contraseña no se guarda, no se registra y nunca vuelve al navegador.</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="opensolar-mfa-token">Código MFA (si aplica)</Label>
+            <Input id="opensolar-mfa-token" inputMode="numeric" value={form.mfaToken} onChange={event => setForm(current => ({ ...current, mfaToken: event.target.value }))} placeholder="Código temporal de autenticación" autoComplete="one-time-code" />
+            <p className="text-xs leading-5 text-muted-foreground">OpenSolar requiere este código sólo para cuentas con MFA. Para evitar rotaciones semanales del token, configure un usuario de máquina en OpenSolar.</p>
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <Button onClick={() => save.mutate(form)} disabled={save.isPending || isLoading} className="w-full sm:w-auto">
+            <Button onClick={() => save.mutate({
+              enabled: form.enabled,
+              orgId: form.orgId.trim() || undefined,
+              username: form.username.trim() || undefined,
+              password: form.password || undefined,
+              mfaToken: form.mfaToken.trim() || undefined,
+            })} disabled={save.isPending || isLoading} className="w-full sm:w-auto">
               {save.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Key className="mr-2 h-4 w-4" />}
-              Guardar OpenSolar
+              Generar y guardar acceso
             </Button>
             <a href="https://developers.opensolar.com/api/" target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center justify-center rounded-md px-3 text-sm font-medium text-emerald-700 hover:bg-emerald-500/10 hover:text-emerald-800 dark:text-emerald-300 dark:hover:text-emerald-200">Documentación oficial <ExternalLink className="ml-1.5 h-3.5 w-3.5" /></a>
           </div>
@@ -1749,7 +1766,7 @@ function OpenSolarSettingsCard() {
             {test.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
             {test.isPending ? "Verificando..." : "Probar conexión"}
           </Button>
-          {!isConfigured ? <p className="text-xs leading-5 text-muted-foreground">Guarde el ID de organización y el API key para habilitar la prueba. Si la clave ya existe, puede dejar el campo vacío al guardar cambios de estado.</p> : null}
+          {!isConfigured ? <p className="text-xs leading-5 text-muted-foreground">Guarde el ID de organización y genere el token con usuario y contraseña para habilitar la prueba. Si el token ya existe, puede dejar las credenciales vacías al guardar cambios de estado.</p> : null}
         </aside>
       </div>
     </Card>

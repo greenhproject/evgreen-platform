@@ -106,9 +106,14 @@
 
 ## OpenSolar — configuración administrativa segura (2026-10-12)
 
-- [x] Añadir en Administración → Configuración → Integraciones un panel OpenSolar con activación explícita, ID de organización, API key Bearer enmascarado y enlace a la documentación oficial.
+- [x] Añadir en Administración → Configuración → Integraciones un panel OpenSolar con activación explícita, ID de organización y enlace a la documentación oficial.
 - [x] Guardar el token únicamente cifrado en servidor; nunca usar, devolver ni almacenar usuario/contraseña en frontend, código cliente, logs o respuestas tRPC.
 - [x] Añadir una prueba de conexión de solo lectura con `GET /api/orgs/{orgId}/`, timeout y validación de coincidencia de la organización configurada; no crear, actualizar ni sincronizar proyectos en esta fase.
 - [x] Aplicar y auditar la migración aditiva 0059: las seis columnas OpenSolar existen con valores seguros por defecto y no se insertó configuración ni se alteró ningún proyecto solar.
 - [x] Validar TypeScript, 245 archivos / 2.354 pruebas aprobadas y build productivo. Las capturas automatizadas del área autenticada no pudieron iniciar sesión, pero la interfaz compiló y el contrato tRPC fue validado.
-- [ ] Guardar checkpoint WebDev, ejecutar publicación segura y verificar el despliegue.
+- [x] Guardar checkpoint `0a582196`, publicar de forma segura en GitHub y verificar Railway exitoso para `evgreen.lat`. El endpoint administrativo responde 401 sin sesión, sin exponer campos de token.
+- [ ] Corregir y reverificar la divergencia del dominio directo `app.evgreen.lat`, que aún responde HTML de fallback para el bundle dinámico OpenSolar mientras `evgreen.lat` ya sirve el asset publicado.
+- [x] Corregir el método de acceso conforme a la documentación oficial: usuario/contraseña (y MFA opcional) se envían una sola vez a `POST /api-token-auth/`; sólo el Bearer token resultante se cifra y persiste para las lecturas posteriores.
+- [x] Cubrir el intercambio de credenciales, el MFA opcional, la ausencia de credenciales y la verificación posterior de organización mediante pruebas unitarias sin usar credenciales reales.
+- [x] Validar TypeScript, 245 archivos / 2.355 pruebas aprobadas y build productivo. El bundle compilado contiene los controles de usuario, contraseña y MFA; la captura automatizada del área autenticada quedó bloqueada por sesión, sin afectar la compilación ni los contratos probados.
+- [ ] Guardar checkpoint WebDev y ejecutar publicación segura de la corrección de autenticación.

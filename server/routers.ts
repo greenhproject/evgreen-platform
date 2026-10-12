@@ -4418,7 +4418,7 @@ const settingsRouter = router({
     return {
       enabled: settings?.openSolarEnabled === 1,
       orgId: settings?.openSolarOrgId || "",
-      hasApiKey: !!settings?.openSolarApiKeyEncrypted,
+      hasBearerToken: !!settings?.openSolarApiKeyEncrypted,
       lastTestAt: settings?.openSolarLastTestAt || null,
       lastTestStatus: settings?.openSolarLastTestStatus || "NEVER",
       lastTestMessage: settings?.openSolarLastTestMessage || "",
@@ -4428,17 +4428,26 @@ const settingsRouter = router({
     .input(z.object({
       enabled: z.boolean(),
       orgId: z.string().trim().max(80).optional(),
-      apiKey: z.string().trim().min(8).max(2000).optional(),
+      username: z.string().trim().email().max(320).optional(),
+      password: z.string().min(1).max(1000).optional(),
+      mfaToken: z.string().trim().min(4).max(32).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const current = await db.getPlatformSettings();
       const orgId = input.orgId?.trim() || "";
-      const hasStoredApiKey = !!current?.openSolarApiKeyEncrypted;
-      const hasNewApiKey = !!input.apiKey?.trim();
-      if (input.enabled && (!orgId || (!hasStoredApiKey && !hasNewApiKey))) {
+      const hasStoredBearerToken = !!current?.openSolarApiKeyEncrypted;
+      const hasUsername = !!input.username?.trim();
+      const hasPassword = !!input.password;
+      if (hasUsername !== hasPassword) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "Para activar OpenSolar configure el ID de organización y un API key Bearer.",
+          message: "Ingrese usuario y contraseña juntos para generar el token de OpenSolar.",
+        });
+      }
+      if (input.enabled && (!orgId || (!hasStoredBearerToken && !hasUsername))) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Para activar OpenSolar configure el ID de organización y genere un token con usuario y contraseña.",
         });
       }
 
@@ -4447,17 +4456,34 @@ const settingsRouter = router({
         openSolarOrgId: orgId || null,
         updatedBy: ctx.user.id,
       };
-      if (hasNewApiKey) {
+      if (hasUsername && hasPassword) {
+        const { getOpenSolarBearerToken } = await import("./opensolar/opensolar-client");
+        const tokenResult = await getOpenSolarBearerToken({
+          username: input.username!.trim(),
+          password: input.password!,
+          mfaToken: input.mfaToken,
+        });
+        if (!tokenResult.success || !tokenResult.bearerToken) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: tokenResult.message });
+        }
         const { encryptOpenSolarSecret } = await import("./opensolar/opensolar-secrets");
-        data.openSolarApiKeyEncrypted = encryptOpenSolarSecret(input.apiKey!.trim());
+        data.openSolarApiKeyEncrypted = encryptOpenSolarSecret(tokenResult.bearerToken);
+        data.openSolarLastTestAt = null;
+        data.openSolarLastTestStatus = "NEVER";
+        data.openSolarLastTestMessage = "Token generado con credenciales y guardado cifrado. Configure el ID de organización y ejecute la prueba de lectura.";
       }
       await db.upsertPlatformSettings(data as any);
-      return { success: true, message: "Configuración OpenSolar guardada. La clave permanece cifrada." };
+      return {
+        success: true,
+        message: hasUsername
+          ? "Token de OpenSolar generado y guardado cifrado. La contraseña no se almacenó."
+          : "Configuración OpenSolar guardada. El token existente permanece cifrado.",
+      };
     }),
   testOpenSolarConnection: adminProcedure.mutation(async ({ ctx }) => {
     const settings = await db.getPlatformSettings();
     if (!settings?.openSolarOrgId || !settings.openSolarApiKeyEncrypted) {
-      const message = "Guarde primero el ID de organización y el API key Bearer de OpenSolar.";
+      const message = "Guarde primero el ID de organización y genere el token de OpenSolar con usuario y contraseña.";
       await db.upsertPlatformSettings({
         openSolarLastTestAt: new Date().toISOString(),
         openSolarLastTestStatus: "FAILED",
@@ -4472,7 +4498,7 @@ const settingsRouter = router({
     let result;
     try {
       result = await verifyOpenSolarOrganization({
-        apiKey: decryptOpenSolarSecret(settings.openSolarApiKeyEncrypted),
+        bearerToken: decryptOpenSolarSecret(settings.openSolarApiKeyEncrypted),
         orgId: settings.openSolarOrgId,
       });
     } catch {
