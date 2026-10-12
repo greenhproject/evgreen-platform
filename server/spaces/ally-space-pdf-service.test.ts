@@ -113,4 +113,23 @@ describe("buildAllySpacePdfContent", () => {
     expect(disclosure).not.toContain("del margen");
     expect(disclosure).toContain("estimación mensual del aliado");
   });
+
+  it("identifica el proyecto OpenSolar de la electrolinera sin confundirlo con el programa del aliado", () => {
+    const content = buildAllySpacePdfContent({
+      ...sampleData,
+      hasSolarPanels: true,
+      chargingSolarOpenSolarProjectId: "CARGA-101",
+      chargingSolarOpenSolarProjectTitle: "Solar electrolinera EDS NQS",
+      chargingSolarSystemPowerKwp: 120,
+      chargingSolarAnnualGenerationKwh: 180_000,
+      allySolarOpenSolarProjectId: "ALIADO-202",
+      allySolarOpenSolarProjectTitle: "Solar cubierta EDS NQS",
+      allySolarOpenSolarAnnualConsumptionKwh: 96_000,
+    });
+
+    expect(content.technicalRows).toContainEqual(["Proyecto OpenSolar de carga", "Solar electrolinera EDS NQS · #CARGA-101"]);
+    expect(content.technicalRows).toContainEqual(["Potencia solar de carga", "120 kWp"]);
+    expect(content.technicalRows).toContainEqual(["Generación solar de carga", "180.000 kWh/año"]);
+    expect(content.solarProgram?.assumptions.systemPowerKwp).toBe(112);
+  });
 });

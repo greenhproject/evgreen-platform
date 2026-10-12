@@ -201,6 +201,74 @@ describe("precarga de proyecto OpenSolar", () => {
     });
   });
 
+  it("mapea de forma integral cada campo permitido cuando la API y el diseño los exponen", async () => {
+    const { gzipSync } = await import("node:zlib");
+    const compressedDesign = gzipSync(Buffer.from(JSON.stringify({
+      systems: [
+        { kw_stc: 12, output: { annual_generation_kwh: 21_600 }, consumption: { self_consumption_percent: 75, export_percent: 25 } },
+        { kw_stc: 8, output: { annual_generation_kwh: 14_400 } },
+      ],
+    }))).toString("base64");
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        id: 505,
+        org_id: "org-evgreen",
+        title: "Proyecto solar EDS Centro",
+        address: "Av. 68 # 40-10",
+        locality: "Bogotá",
+        state: "Cundinamarca",
+        lat: 4.64567891,
+        lon: -74.08765432,
+        country_iso2: "CO",
+        modified_date: "2026-10-12T20:00:00Z",
+        usage: { usage_data_source: "bill_monthly", values: [1_200_000, 1_200_000, 1_200_000, 1_200_000, 1_200_000, 1_200_000, 1_200_000, 1_200_000, 1_200_000, 1_200_000, 1_200_000, 1_200_000] },
+        usage_annual_or_guess: 36_000,
+        design: compressedDesign,
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ systems: [{ kw_stc: 12 }, { kw_stc: 8 }] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await getOpenSolarProjectPrefill({ bearerToken: "token-prueba", orgId: "org-evgreen", projectId: "505" });
+
+    expect(result).toEqual({
+      success: true,
+      status: 200,
+      message: "Proyecto OpenSolar consultado. Revisa los datos precargados antes de guardar el espacio.",
+      project: {
+        id: "505",
+        title: "Proyecto solar EDS Centro",
+        address: "Av. 68 # 40-10",
+        locality: "Bogotá",
+        state: "Cundinamarca",
+        latitude: 4.64567891,
+        longitude: -74.08765432,
+        annualConsumptionKwh: 36_000,
+        currentMonthlyBill: 1_200_000,
+        systemPowerKwp: 20,
+        annualGenerationKwh: 36_000,
+        selfConsumptionPercent: 75,
+        exportPercent: 25,
+        solarSavingsCoveragePercent: 75,
+        gridTariffCopPerKwh: 400,
+        canActivateAllySolarProgram: true,
+        systemsCount: 2,
+        modifiedAt: "2026-10-12T20:00:00Z",
+        fieldSources: {
+          annualConsumptionKwh: "OpenSolar",
+          currentMonthlyBill: "OpenSolar",
+          systemPowerKwp: "OpenSolar",
+          annualGenerationKwh: "OpenSolar",
+          selfConsumptionPercent: "OpenSolar",
+          exportPercent: "OpenSolar",
+          solarSavingsCoveragePercent: "Calculado desde datos OpenSolar",
+          gridTariffCopPerKwh: "Calculado desde datos OpenSolar",
+        },
+      },
+      unavailableFields: [],
+      warnings: [],
+    });
+  });
+
   it("no consulta sistemas si el proyecto no pertenece a la organización configurada", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 101, org_id: "otra-org" }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);

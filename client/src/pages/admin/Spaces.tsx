@@ -1472,7 +1472,13 @@ function SpaceDetailDialog({
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [editForm, setEditForm] = useState<Record<string, any>>({});
-  const [openSolarLookup, setOpenSolarLookup] = useState<{
+  const [chargingSolarLookup, setChargingSolarLookup] = useState<{
+    projectTitle: string | null;
+    unavailableFields: string[];
+    warnings: string[];
+    mappedFields: string[];
+  } | null>(null);
+  const [allySolarLookup, setAllySolarLookup] = useState<{
     projectTitle: string | null;
     unavailableFields: string[];
     warnings: string[];
@@ -1585,10 +1591,14 @@ function SpaceDetailDialog({
     setShowProspectoDialog(true);
   };
 
-  const handleLookupOpenSolarProject = async () => {
-    const projectId = String(editForm.openSolarProjectId ?? "").trim();
+  const handleLookupOpenSolarProject = async (scope: "charging" | "ally") => {
+    const projectId = String(
+      scope === "charging"
+        ? editForm.chargingSolarOpenSolarProjectId ?? editForm.openSolarProjectId ?? ""
+        : editForm.allySolarOpenSolarProjectId ?? "",
+    ).trim();
     if (!projectId) {
-      toast.error("Ingresa el ID del proyecto OpenSolar antes de consultar.");
+      toast.error(`Ingresa el ID del proyecto OpenSolar de ${scope === "charging" ? "la electrolinera" : "la EDS o comercio aliado"} antes de consultar.`);
       return;
     }
     try {
@@ -1597,26 +1607,34 @@ function SpaceDetailDialog({
       if (!project) throw new Error("OpenSolar no devolvió datos para el proyecto solicitado.");
       setEditForm((previous) => ({
         ...previous,
-        openSolarProjectId: project.id,
-        openSolarProjectTitle: project.title ?? previous.openSolarProjectTitle ?? "",
-        openSolarAnnualConsumptionKwh: project.annualConsumptionKwh ?? previous.openSolarAnnualConsumptionKwh ?? "",
-        address: project.address ?? previous.address,
-        city: project.locality ?? previous.city,
-        department: project.state ?? previous.department,
-        latitude: project.latitude ?? previous.latitude,
-        longitude: project.longitude ?? previous.longitude,
-        hasSolarPanels: previous.hasSolarPanels || project.systemPowerKwp !== null || project.annualGenerationKwh !== null,
-        // Sólo se activa el programa cuando OpenSolar entregó factura, consumo
-        // y cobertura derivados de generación/autoconsumo. Los demás datos
-        // técnicos sí se precargan, pero siguen pendientes de validación.
-        solarProgramEnabled: previous.solarProgramEnabled || project.canActivateAllySolarProgram,
-        solarProgramCurrentBillCop: project.currentMonthlyBill ?? previous.solarProgramCurrentBillCop ?? "",
-        solarProgramSavingsCoveragePercent: project.solarSavingsCoveragePercent ?? previous.solarProgramSavingsCoveragePercent ?? "",
-        solarSystemPowerKwp: project.systemPowerKwp ?? previous.solarSystemPowerKwp ?? "",
-        solarAnnualGenerationKwh: project.annualGenerationKwh ?? previous.solarAnnualGenerationKwh ?? "",
-        solarSelfConsumptionPercent: project.selfConsumptionPercent ?? previous.solarSelfConsumptionPercent ?? "",
-        solarExportPercent: project.exportPercent ?? previous.solarExportPercent ?? "",
-        solarGridTariffCopPerKwh: project.gridTariffCopPerKwh ?? previous.solarGridTariffCopPerKwh ?? "",
+        ...(scope === "charging" ? {
+          chargingSolarOpenSolarProjectId: project.id,
+          chargingSolarOpenSolarProjectTitle: project.title ?? previous.chargingSolarOpenSolarProjectTitle ?? "",
+          chargingSolarOpenSolarAnnualConsumptionKwh: project.annualConsumptionKwh ?? previous.chargingSolarOpenSolarAnnualConsumptionKwh ?? "",
+          chargingSolarSystemPowerKwp: project.systemPowerKwp ?? previous.chargingSolarSystemPowerKwp ?? "",
+          chargingSolarAnnualGenerationKwh: project.annualGenerationKwh ?? previous.chargingSolarAnnualGenerationKwh ?? "",
+          chargingSolarSelfConsumptionPercent: project.selfConsumptionPercent ?? previous.chargingSolarSelfConsumptionPercent ?? "",
+          chargingSolarExportPercent: project.exportPercent ?? previous.chargingSolarExportPercent ?? "",
+          hasSolarPanels: previous.hasSolarPanels || project.systemPowerKwp !== null || project.annualGenerationKwh !== null,
+          solarCoveragePercent: project.solarSavingsCoveragePercent ?? previous.solarCoveragePercent ?? "",
+        } : {
+          allySolarOpenSolarProjectId: project.id,
+          allySolarOpenSolarProjectTitle: project.title ?? previous.allySolarOpenSolarProjectTitle ?? "",
+          allySolarOpenSolarAnnualConsumptionKwh: project.annualConsumptionKwh ?? previous.allySolarOpenSolarAnnualConsumptionKwh ?? "",
+          address: project.address ?? previous.address,
+          city: project.locality ?? previous.city,
+          department: project.state ?? previous.department,
+          latitude: project.latitude ?? previous.latitude,
+          longitude: project.longitude ?? previous.longitude,
+          solarProgramEnabled: previous.solarProgramEnabled || project.canActivateAllySolarProgram,
+          solarProgramCurrentBillCop: project.currentMonthlyBill ?? previous.solarProgramCurrentBillCop ?? "",
+          solarProgramSavingsCoveragePercent: project.solarSavingsCoveragePercent ?? previous.solarProgramSavingsCoveragePercent ?? "",
+          solarSystemPowerKwp: project.systemPowerKwp ?? previous.solarSystemPowerKwp ?? "",
+          solarAnnualGenerationKwh: project.annualGenerationKwh ?? previous.solarAnnualGenerationKwh ?? "",
+          solarSelfConsumptionPercent: project.selfConsumptionPercent ?? previous.solarSelfConsumptionPercent ?? "",
+          solarExportPercent: project.exportPercent ?? previous.solarExportPercent ?? "",
+          solarGridTariffCopPerKwh: project.gridTariffCopPerKwh ?? previous.solarGridTariffCopPerKwh ?? "",
+        }),
       }));
       const mappedFieldLabels: Record<string, string> = {
         annualConsumptionKwh: "consumo anual",
@@ -1628,13 +1646,15 @@ function SpaceDetailDialog({
         solarSavingsCoveragePercent: "cobertura de ahorro",
         gridTariffCopPerKwh: "tarifa de red",
       };
-      setOpenSolarLookup({
+      const lookupSummary = {
         projectTitle: project.title,
         unavailableFields: result.unavailableFields ?? [],
         warnings: result.warnings ?? [],
         mappedFields: Object.keys(project.fieldSources ?? {}).map((field) => mappedFieldLabels[field] ?? field),
-      });
-      toast.success("Datos de OpenSolar precargados. Revisa el formulario y guarda para confirmarlos.");
+      };
+      if (scope === "charging") setChargingSolarLookup(lookupSummary);
+      else setAllySolarLookup(lookupSummary);
+      toast.success(`Datos de OpenSolar de ${scope === "charging" ? "la electrolinera" : "la EDS/comercio aliado"} precargados. Revisa y guarda para confirmarlos.`);
     } catch (error: any) {
       toast.error(error.message || "No fue posible consultar el proyecto OpenSolar.");
     }
@@ -1969,6 +1989,16 @@ function SpaceDetailDialog({
 	                      openSolarProjectId: (space as any).openSolarProjectId ?? "",
 	                      openSolarProjectTitle: (space as any).openSolarProjectTitle ?? "",
 	                      openSolarAnnualConsumptionKwh: (space as any).openSolarAnnualConsumptionKwh ?? "",
+	                      chargingSolarOpenSolarProjectId: (space as any).chargingSolarOpenSolarProjectId ?? (space as any).openSolarProjectId ?? "",
+	                      chargingSolarOpenSolarProjectTitle: (space as any).chargingSolarOpenSolarProjectTitle ?? (space as any).openSolarProjectTitle ?? "",
+	                      chargingSolarOpenSolarAnnualConsumptionKwh: (space as any).chargingSolarOpenSolarAnnualConsumptionKwh ?? (space as any).openSolarAnnualConsumptionKwh ?? "",
+	                      chargingSolarSystemPowerKwp: (space as any).chargingSolarSystemPowerKwp ?? "",
+	                      chargingSolarAnnualGenerationKwh: (space as any).chargingSolarAnnualGenerationKwh ?? "",
+	                      chargingSolarSelfConsumptionPercent: (space as any).chargingSolarSelfConsumptionPercent ?? "",
+	                      chargingSolarExportPercent: (space as any).chargingSolarExportPercent ?? "",
+	                      allySolarOpenSolarProjectId: (space as any).allySolarOpenSolarProjectId ?? "",
+	                      allySolarOpenSolarProjectTitle: (space as any).allySolarOpenSolarProjectTitle ?? "",
+	                      allySolarOpenSolarAnnualConsumptionKwh: (space as any).allySolarOpenSolarAnnualConsumptionKwh ?? "",
 	                      hasInternet: !!space.hasInternet,
                       is24Hours: !!(space as any).is24Hours,
                       electricalViability: (space as any).electricalViability || "",
@@ -1981,7 +2011,8 @@ function SpaceDetailDialog({
                       aiEstimatedPowerKw: ai.estimatedPowerKw || "",
                       aiInvestmentAppeal: ai.investmentAppeal || "",
 	                    });
-	                    setOpenSolarLookup(null);
+	                    setChargingSolarLookup(null);
+	                    setAllySolarLookup(null);
 	                    setEditSolarOfferPdf(null);
                     setShowEditDialog(true);
                   }} className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10 text-xs w-full">
@@ -2044,10 +2075,11 @@ function SpaceDetailDialog({
 	                  {space.transformerCapacityKva && <DetailRow label="Trafo" value={`${space.transformerCapacityKva} kVA`} />}
 	                  <DetailRow label="Tablero" value={space.hasElectricalPanel ? "Sí" : "No"} />
 	                  <DetailRow label="Sistema solar" value={(space as any).hasSolarPanels ? "Incluido en el alcance" : "No incluido"} />
-	                  {(space as any).openSolarProjectId && <DetailRow label="Proyecto OpenSolar" value={`${(space as any).openSolarProjectTitle || "Proyecto"} · #${(space as any).openSolarProjectId}`} />}
-	                  {(space as any).openSolarAnnualConsumptionKwh && <DetailRow label="Consumo OpenSolar" value={`${Number((space as any).openSolarAnnualConsumptionKwh).toLocaleString("es-CO")} kWh/año`} />}
-                  {(space as any).hasSolarPanels && <DetailRow label="Costo solar" value={Number((space as any).solarCoveragePercent ?? 0) > 0 && (space as any).solarEnergyCostPerKwh !== null && (space as any).solarEnergyCostPerKwh !== undefined ? `${Number((space as any).solarCoveragePercent).toLocaleString("es-CO")}% a ${formatCOP(Number((space as any).solarEnergyCostPerKwh))}/kWh` : "Pendiente de cobertura y costo validados"} />}
-                  {(space as any).solarProgramEnabled && <DetailRow label="Programa solar aliado" value={`${Number((space as any).solarProgramSavingsCoveragePercent ?? 0).toLocaleString("es-CO")}% de ahorro · ${Number((space as any).solarProgramAgreementYears ?? 6)} años`} />}
+	                  {(space as any).chargingSolarOpenSolarProjectId && <DetailRow label="Proyecto OpenSolar · electrolinera" value={`${(space as any).chargingSolarOpenSolarProjectTitle || "Proyecto"} · #${(space as any).chargingSolarOpenSolarProjectId}`} />}
+	                  {(space as any).chargingSolarOpenSolarAnnualConsumptionKwh && <DetailRow label="Consumo solar · electrolinera" value={`${Number((space as any).chargingSolarOpenSolarAnnualConsumptionKwh).toLocaleString("es-CO")} kWh/año`} />}
+	                  {(space as any).hasSolarPanels && <DetailRow label="Costo solar" value={Number((space as any).solarCoveragePercent ?? 0) > 0 && (space as any).solarEnergyCostPerKwh !== null && (space as any).solarEnergyCostPerKwh !== undefined ? `${Number((space as any).solarCoveragePercent).toLocaleString("es-CO")}% a ${formatCOP(Number((space as any).solarEnergyCostPerKwh))}/kWh` : "Pendiente de cobertura y costo validados"} />}
+	                  {(space as any).solarProgramEnabled && <DetailRow label="Programa solar aliado" value={`${Number((space as any).solarProgramSavingsCoveragePercent ?? 0).toLocaleString("es-CO")}% de ahorro · ${Number((space as any).solarProgramAgreementYears ?? 6)} años`} />}
+	                  {(space as any).allySolarOpenSolarProjectId && <DetailRow label="Proyecto OpenSolar · aliado" value={`${(space as any).allySolarOpenSolarProjectTitle || "Proyecto"} · #${(space as any).allySolarOpenSolarProjectId}`} />}
                   {(space as any).solarOfferPdfUrl && <a href={(space as any).solarOfferPdfUrl} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-xs text-emerald-300 hover:underline"><FileText className="h-3.5 w-3.5" /> Ver oferta solar adjunta</a>}
                   {space.electricalDistance && <DetailRow label="Dist. tablero" value={`${space.electricalDistance} m`} />}
                   <DetailRow label="Internet" value={space.hasInternet ? "Sí" : "No"} />
@@ -2511,16 +2543,17 @@ function SpaceDetailDialog({
 	              {editForm.hasSolarPanels && (
 	                <div className="mb-3 grid grid-cols-1 gap-2 rounded-lg border border-amber-400/20 bg-amber-400/5 p-2.5 sm:grid-cols-2">
 	                  <div className="sm:col-span-2 rounded-md border border-sky-400/25 bg-sky-400/5 p-2">
+	                    <p className="mb-1 text-xs font-semibold text-sky-100">A. Sistema solar de la electrolinera</p>
 	                    <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
 	                      <div className="min-w-0 flex-1">
-	                        <Label className="mb-1 block text-xs text-sky-100">ID de proyecto OpenSolar</Label>
+	                        <Label className="mb-1 block text-xs text-sky-100">ID de proyecto OpenSolar de la electrolinera</Label>
 	                        <Input
 	                          inputMode="numeric"
 	                          placeholder="Ej.: 123456"
-	                          value={editForm.openSolarProjectId ?? ""}
+	                          value={editForm.chargingSolarOpenSolarProjectId ?? ""}
 	                          onChange={(event) => {
-	                            setEditForm((previous) => ({ ...previous, openSolarProjectId: event.target.value }));
-	                            setOpenSolarLookup(null);
+	                            setEditForm((previous) => ({ ...previous, chargingSolarOpenSolarProjectId: event.target.value }));
+	                            setChargingSolarLookup(null);
 	                          }}
 	                          className="border-[#374151] bg-[#111827] text-sm text-white"
 	                        />
@@ -2528,25 +2561,27 @@ function SpaceDetailDialog({
 	                      <Button
 	                        type="button"
 	                        size="sm"
-	                        onClick={handleLookupOpenSolarProject}
+	                        onClick={() => handleLookupOpenSolarProject("charging")}
 	                        disabled={lookupOpenSolarProjectMutation.isPending}
 	                        className="shrink-0 bg-sky-600 text-white hover:bg-sky-500"
 	                      >
 	                        {lookupOpenSolarProjectMutation.isPending
 	                          ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
 	                          : <RefreshCw className="mr-1 h-3.5 w-3.5" />}
-	                        Consultar OpenSolar
+	                        Consultar electrolinera
 	                      </Button>
-                    </div>
-	                    <p className="mt-1.5 text-[11px] leading-4 text-sky-100/75">Lee únicamente el proyecto y sus sistemas dentro de la organización configurada. Precarga ubicación, consumo, factura, potencia, generación y autoconsumo cuando OpenSolar los expone; no guarda nada hasta confirmar <strong>Guardar espacio</strong>.</p>
-	                    {openSolarLookup && (
+	                    </div>
+	                    <p className="mt-1.5 text-[11px] leading-4 text-sky-100/75">Este proyecto corresponde al sistema que abastece la carga EV. Sus datos técnicos alimentan únicamente la revisión de costo energético, CAPEX y proyección del proyecto de carga; no activa el programa solar del aliado.</p>
+	                    {chargingSolarLookup && (
 	                      <div className="mt-2 space-y-1 border-t border-sky-400/15 pt-2 text-[11px] leading-4">
-	                        <p className="text-sky-100">Proyecto consultado{openSolarLookup.projectTitle ? `: ${openSolarLookup.projectTitle}` : ""}. Sólo se llenan valores expuestos por OpenSolar o cálculos trazables a esos valores.</p>
-	                        {openSolarLookup.mappedFields.length > 0 && <p className="text-emerald-100/90">Precargado: {openSolarLookup.mappedFields.join(", ")}.</p>}
-	                        {editForm.openSolarAnnualConsumptionKwh !== "" && editForm.openSolarAnnualConsumptionKwh !== undefined && <p className="text-sky-100/85">Consumo anual importado: {Number(editForm.openSolarAnnualConsumptionKwh).toLocaleString("es-CO")} kWh.</p>}
-	                        {openSolarLookup.unavailableFields.length > 0 && <p className="text-amber-100/90">Pendiente de validar: {openSolarLookup.unavailableFields.join(", ")}.</p>}
-	                        {openSolarLookup.warnings.map((warning) => <p key={warning} className="text-amber-100/90">Aviso: {warning}</p>)}
+	                        <p className="text-sky-100">Proyecto de electrolinera consultado{chargingSolarLookup.projectTitle ? `: ${chargingSolarLookup.projectTitle}` : ""}.</p>
+	                        {chargingSolarLookup.mappedFields.length > 0 && <p className="text-emerald-100/90">Precargado: {chargingSolarLookup.mappedFields.join(", ")}.</p>}
+	                        {chargingSolarLookup.unavailableFields.length > 0 && <p className="text-amber-100/90">Pendiente de validar: {chargingSolarLookup.unavailableFields.join(", ")}.</p>}
+	                        {chargingSolarLookup.warnings.map((warning) => <p key={warning} className="text-amber-100/90">Aviso: {warning}</p>)}
 	                      </div>
+	                    )}
+	                    {(editForm.chargingSolarSystemPowerKwp !== "" || editForm.chargingSolarAnnualGenerationKwh !== "") && (
+	                      <p className="mt-2 text-[11px] text-sky-100/85">Diseño importado: {editForm.chargingSolarSystemPowerKwp !== "" ? `${Number(editForm.chargingSolarSystemPowerKwp).toLocaleString("es-CO")} kWp` : "potencia pendiente"} · {editForm.chargingSolarAnnualGenerationKwh !== "" ? `${Number(editForm.chargingSolarAnnualGenerationKwh).toLocaleString("es-CO")} kWh/año` : "generación pendiente"}.</p>
 	                    )}
 	                  </div>
 	                  <div>
@@ -2557,7 +2592,7 @@ function SpaceDetailDialog({
                     <Label className="mb-1 block text-xs text-amber-100">Costo solar validado (COP/kWh)</Label>
                     <Input inputMode="numeric" min="0" placeholder="Ej.: 180" value={editForm.solarEnergyCostPerKwh ?? ""} onChange={e => setEditForm(p => ({ ...p, solarEnergyCostPerKwh: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" />
                   </div>
-	                  <p className="sm:col-span-2 text-[11px] leading-4 text-amber-100/75">El descuento se aplica únicamente cuando la cobertura y el costo solar fueron validados con factura, consumo y diseño del sitio. OpenSolar puede precargar la cobertura técnica; el costo solar/LCOE, CAPEX y los ahorros comerciales no se inventan y siguen requiriendo validación. De lo contrario el modelo conserva el costo de red.</p>
+	                  <p className="sm:col-span-2 text-[11px] leading-4 text-amber-100/75">El descuento de energía de la electrolinera se aplica únicamente cuando cobertura y costo solar fueron validados con factura, consumo y diseño de la carga EV. OpenSolar puede precargar la cobertura técnica; el costo solar/LCOE y CAPEX no se inventan. De lo contrario el modelo conserva el costo de red.</p>
                 </div>
               )}
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -2615,8 +2650,46 @@ function SpaceDetailDialog({
               <div className="mt-3 rounded-lg border border-emerald-400/30 bg-emerald-400/5 p-2.5">
                 <label className="flex cursor-pointer items-start gap-2 text-xs text-emerald-50">
                   <input type="checkbox" checked={!!editForm.solarProgramEnabled} onChange={e => setEditForm(p => ({ ...p, solarProgramEnabled: e.target.checked }))} className="mt-0.5 h-4 w-4 accent-emerald-400" />
-                  <span><strong className="block text-emerald-200">Activar programa solar de ahorro para el aliado</strong><span className="mt-0.5 block leading-4 text-emerald-100/75">Registra la factura, el ahorro cubierto, el plazo y la oferta solar de referencia para incluirlos en la ficha del aliado.</span></span>
+                  <span><strong className="block text-emerald-200">B. Programa solar de ahorro para la EDS o comercio aliado</strong><span className="mt-0.5 block leading-4 text-emerald-100/75">Es un proyecto independiente del sistema de la electrolinera. Registra la factura, el ahorro cubierto, el plazo y la oferta para la ficha comercial del aliado.</span></span>
                 </label>
+                <div className="mt-2 rounded-md border border-emerald-400/25 bg-emerald-400/5 p-2">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                    <div className="min-w-0 flex-1">
+                      <Label className="mb-1 block text-xs text-emerald-100">ID de proyecto OpenSolar de la EDS o comercio</Label>
+                      <Input
+                        inputMode="numeric"
+                        placeholder="Ej.: 654321"
+                        value={editForm.allySolarOpenSolarProjectId ?? ""}
+                        onChange={(event) => {
+                          setEditForm((previous) => ({ ...previous, allySolarOpenSolarProjectId: event.target.value }));
+                          setAllySolarLookup(null);
+                        }}
+                        className="border-[#374151] bg-[#111827] text-sm text-white"
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => handleLookupOpenSolarProject("ally")}
+                      disabled={lookupOpenSolarProjectMutation.isPending}
+                      className="shrink-0 bg-emerald-600 text-white hover:bg-emerald-500"
+                    >
+                      {lookupOpenSolarProjectMutation.isPending
+                        ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                        : <RefreshCw className="mr-1 h-3.5 w-3.5" />}
+                      Consultar aliado
+                    </Button>
+                  </div>
+                  <p className="mt-1.5 text-[11px] leading-4 text-emerald-100/75">Puede consultar antes de activar el programa. La factura y el consumo validan el beneficio comercial; no modifican el costo de la electrolinera.</p>
+                  {allySolarLookup && (
+                    <div className="mt-2 space-y-1 border-t border-emerald-400/15 pt-2 text-[11px] leading-4">
+                      <p className="text-emerald-100">Proyecto del aliado consultado{allySolarLookup.projectTitle ? `: ${allySolarLookup.projectTitle}` : ""}.</p>
+                      {allySolarLookup.mappedFields.length > 0 && <p className="text-emerald-100/90">Precargado: {allySolarLookup.mappedFields.join(", ")}.</p>}
+                      {allySolarLookup.unavailableFields.length > 0 && <p className="text-amber-100/90">Pendiente de validar: {allySolarLookup.unavailableFields.join(", ")}.</p>}
+                      {allySolarLookup.warnings.map((warning) => <p key={warning} className="text-amber-100/90">Aviso: {warning}</p>)}
+                    </div>
+                  )}
+                </div>
                 {!!editForm.solarProgramEnabled && (
                   <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
                     <div><Label className="mb-1 block text-xs text-emerald-100">Factura mensual promedio (COP) *</Label><Input inputMode="decimal" value={editForm.solarProgramCurrentBillCop ?? ""} onChange={e => setEditForm(p => ({ ...p, solarProgramCurrentBillCop: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /></div>
@@ -2990,7 +3063,10 @@ function SpaceDetailDialog({
                   numericInputError("Autoconsumo solar", editForm.solarSelfConsumptionPercent),
 	                  numericInputError("Exportación solar", editForm.solarExportPercent),
 	                  numericInputError("Tarifa de red solar", editForm.solarGridTariffCopPerKwh, true),
-	                  numericInputError("Consumo anual OpenSolar", editForm.openSolarAnnualConsumptionKwh),
+	                  numericInputError("Consumo anual OpenSolar de la electrolinera", editForm.chargingSolarOpenSolarAnnualConsumptionKwh),
+	                  numericInputError("Potencia solar de la electrolinera", editForm.chargingSolarSystemPowerKwp),
+	                  numericInputError("Generación solar de la electrolinera", editForm.chargingSolarAnnualGenerationKwh),
+	                  numericInputError("Consumo anual OpenSolar del aliado", editForm.allySolarOpenSolarAnnualConsumptionKwh),
                 ].find(Boolean);
                 if (numericError) throw new Error(numericError);
                 const evPercent = toOptionalInteger(editForm.estimatedEvPercent);
@@ -3051,10 +3127,18 @@ function SpaceDetailDialog({
                 payload.solarSelfConsumptionPercent = toOptionalNumber(editForm.solarSelfConsumptionPercent);
 	                payload.solarExportPercent = toOptionalNumber(editForm.solarExportPercent);
 	                payload.solarGridTariffCopPerKwh = toOptionalInteger(editForm.solarGridTariffCopPerKwh);
-	                if (editForm.openSolarProjectId !== undefined) payload.openSolarProjectId = String(editForm.openSolarProjectId).trim();
-	                if (editForm.openSolarProjectTitle !== undefined) payload.openSolarProjectTitle = String(editForm.openSolarProjectTitle).trim();
-	                const openSolarAnnualConsumptionKwh = toOptionalNumber(editForm.openSolarAnnualConsumptionKwh);
-	                if (openSolarAnnualConsumptionKwh !== undefined) payload.openSolarAnnualConsumptionKwh = openSolarAnnualConsumptionKwh;
+	                if (editForm.chargingSolarOpenSolarProjectId !== undefined) payload.chargingSolarOpenSolarProjectId = String(editForm.chargingSolarOpenSolarProjectId).trim();
+	                if (editForm.chargingSolarOpenSolarProjectTitle !== undefined) payload.chargingSolarOpenSolarProjectTitle = String(editForm.chargingSolarOpenSolarProjectTitle).trim();
+	                const chargingSolarOpenSolarAnnualConsumptionKwh = toOptionalNumber(editForm.chargingSolarOpenSolarAnnualConsumptionKwh);
+	                if (chargingSolarOpenSolarAnnualConsumptionKwh !== undefined) payload.chargingSolarOpenSolarAnnualConsumptionKwh = chargingSolarOpenSolarAnnualConsumptionKwh;
+	                payload.chargingSolarSystemPowerKwp = toOptionalNumber(editForm.chargingSolarSystemPowerKwp);
+	                payload.chargingSolarAnnualGenerationKwh = toOptionalNumber(editForm.chargingSolarAnnualGenerationKwh);
+	                payload.chargingSolarSelfConsumptionPercent = toOptionalNumber(editForm.chargingSolarSelfConsumptionPercent);
+	                payload.chargingSolarExportPercent = toOptionalNumber(editForm.chargingSolarExportPercent);
+	                if (editForm.allySolarOpenSolarProjectId !== undefined) payload.allySolarOpenSolarProjectId = String(editForm.allySolarOpenSolarProjectId).trim();
+	                if (editForm.allySolarOpenSolarProjectTitle !== undefined) payload.allySolarOpenSolarProjectTitle = String(editForm.allySolarOpenSolarProjectTitle).trim();
+	                const allySolarOpenSolarAnnualConsumptionKwh = toOptionalNumber(editForm.allySolarOpenSolarAnnualConsumptionKwh);
+	                if (allySolarOpenSolarAnnualConsumptionKwh !== undefined) payload.allySolarOpenSolarAnnualConsumptionKwh = allySolarOpenSolarAnnualConsumptionKwh;
 	                if (editForm.hasInternet !== undefined) payload.hasInternet = editForm.hasInternet;
                 if (editForm.is24Hours !== undefined) payload.is24Hours = editForm.is24Hours;
                 if (editForm.electricalViability) payload.electricalViability = editForm.electricalViability;

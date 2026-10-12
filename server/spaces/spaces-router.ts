@@ -147,6 +147,13 @@ async function generateAllySpacePdfForSubmission(submissionId: number) {
     allySharePercent: Number((platformSettings as any)?.hostSharePercent ?? 10),
     solarCoveragePercent: submission.solarCoveragePercent === null ? null : Number(submission.solarCoveragePercent),
     solarEnergyCostPerKwh: submission.solarEnergyCostPerKwh === null ? null : Number(submission.solarEnergyCostPerKwh),
+    chargingSolarOpenSolarProjectId: submission.chargingSolarOpenSolarProjectId,
+    chargingSolarOpenSolarProjectTitle: submission.chargingSolarOpenSolarProjectTitle,
+    chargingSolarOpenSolarAnnualConsumptionKwh: submission.chargingSolarOpenSolarAnnualConsumptionKwh === null ? null : Number(submission.chargingSolarOpenSolarAnnualConsumptionKwh),
+    chargingSolarSystemPowerKwp: submission.chargingSolarSystemPowerKwp === null ? null : Number(submission.chargingSolarSystemPowerKwp),
+    chargingSolarAnnualGenerationKwh: submission.chargingSolarAnnualGenerationKwh === null ? null : Number(submission.chargingSolarAnnualGenerationKwh),
+    chargingSolarSelfConsumptionPercent: submission.chargingSolarSelfConsumptionPercent === null ? null : Number(submission.chargingSolarSelfConsumptionPercent),
+    chargingSolarExportPercent: submission.chargingSolarExportPercent === null ? null : Number(submission.chargingSolarExportPercent),
     solarProgramEnabled: Number(submission.solarProgramEnabled) === 1,
     solarProgramCurrentBillCop: submission.solarProgramCurrentBillCop === null ? null : Number(submission.solarProgramCurrentBillCop),
     solarProgramSavingsCoveragePercent: submission.solarProgramSavingsCoveragePercent === null ? null : Number(submission.solarProgramSavingsCoveragePercent),
@@ -158,6 +165,9 @@ async function generateAllySpacePdfForSubmission(submissionId: number) {
     solarSelfConsumptionPercent: submission.solarSelfConsumptionPercent === null ? null : Number(submission.solarSelfConsumptionPercent),
     solarExportPercent: submission.solarExportPercent === null ? null : Number(submission.solarExportPercent),
     solarGridTariffCopPerKwh: submission.solarGridTariffCopPerKwh,
+    allySolarOpenSolarProjectId: submission.allySolarOpenSolarProjectId,
+    allySolarOpenSolarProjectTitle: submission.allySolarOpenSolarProjectTitle,
+    allySolarOpenSolarAnnualConsumptionKwh: submission.allySolarOpenSolarAnnualConsumptionKwh === null ? null : Number(submission.allySolarOpenSolarAnnualConsumptionKwh),
     solarOfferPdfUrl: submission.solarOfferPdfUrl,
     solarOfferPdfName: submission.solarOfferPdfName,
     photos: photos.map(photo => ({
@@ -563,6 +573,16 @@ export const spacesRouter = router({
       openSolarProjectId: z.string().trim().max(80).optional(),
       openSolarProjectTitle: z.string().trim().max(255).optional(),
       openSolarAnnualConsumptionKwh: optionalFormNumber().refine((value) => value === undefined || value >= 0, "El consumo anual OpenSolar no puede ser negativo"),
+      chargingSolarOpenSolarProjectId: z.string().trim().max(80).optional(),
+      chargingSolarOpenSolarProjectTitle: z.string().trim().max(255).optional(),
+      chargingSolarOpenSolarAnnualConsumptionKwh: optionalFormNumber().refine((value) => value === undefined || value >= 0, "El consumo anual solar de la electrolinera no puede ser negativo"),
+      chargingSolarSystemPowerKwp: optionalFormNumber().refine((value) => value === undefined || value >= 0, "La potencia solar de la electrolinera no puede ser negativa"),
+      chargingSolarAnnualGenerationKwh: optionalFormNumber().refine((value) => value === undefined || value >= 0, "La generación solar de la electrolinera no puede ser negativa"),
+      chargingSolarSelfConsumptionPercent: optionalFormNumber().refine((value) => value === undefined || (value >= 0 && value <= 100), "El autoconsumo solar de la electrolinera debe estar entre 0 % y 100 %"),
+      chargingSolarExportPercent: optionalFormNumber().refine((value) => value === undefined || (value >= 0 && value <= 100), "La exportación solar de la electrolinera debe estar entre 0 % y 100 %"),
+      allySolarOpenSolarProjectId: z.string().trim().max(80).optional(),
+      allySolarOpenSolarProjectTitle: z.string().trim().max(255).optional(),
+      allySolarOpenSolarAnnualConsumptionKwh: optionalFormNumber().refine((value) => value === undefined || value >= 0, "El consumo anual solar del aliado no puede ser negativo"),
       electricalDistance: optionalFormInteger(),
       hasInternet: z.boolean().optional(),
       operatingHoursStart: z.string().optional(),
@@ -673,6 +693,18 @@ export const spacesRouter = router({
             openSolarProjectTitle: input.openSolarProjectTitle?.trim() || null,
             openSolarAnnualConsumptionKwh: input.openSolarAnnualConsumptionKwh ?? null,
             openSolarProjectImportedAt: input.openSolarProjectId?.trim() ? toSqlTimestamp() : null,
+            chargingSolarOpenSolarProjectId: input.chargingSolarOpenSolarProjectId?.trim() || null,
+            chargingSolarOpenSolarProjectTitle: input.chargingSolarOpenSolarProjectTitle?.trim() || null,
+            chargingSolarOpenSolarAnnualConsumptionKwh: input.chargingSolarOpenSolarAnnualConsumptionKwh ?? null,
+            chargingSolarOpenSolarProjectImportedAt: input.chargingSolarOpenSolarProjectId?.trim() ? toSqlTimestamp() : null,
+            chargingSolarSystemPowerKwp: input.chargingSolarSystemPowerKwp ?? null,
+            chargingSolarAnnualGenerationKwh: input.chargingSolarAnnualGenerationKwh ?? null,
+            chargingSolarSelfConsumptionPercent: input.chargingSolarSelfConsumptionPercent ?? null,
+            chargingSolarExportPercent: input.chargingSolarExportPercent ?? null,
+            allySolarOpenSolarProjectId: input.allySolarOpenSolarProjectId?.trim() || null,
+            allySolarOpenSolarProjectTitle: input.allySolarOpenSolarProjectTitle?.trim() || null,
+            allySolarOpenSolarAnnualConsumptionKwh: input.allySolarOpenSolarAnnualConsumptionKwh ?? null,
+            allySolarOpenSolarProjectImportedAt: input.allySolarOpenSolarProjectId?.trim() ? toSqlTimestamp() : null,
             electricalDistance: input.electricalDistance || null,
             hasInternet: input.hasInternet ? 1 : 0,
             operatingHoursStart: input.operatingHoursStart || "06:00",
@@ -1908,6 +1940,16 @@ export const spacesRouter = router({
         openSolarProjectId: z.string().trim().max(80).optional(),
         openSolarProjectTitle: z.string().trim().max(255).optional(),
         openSolarAnnualConsumptionKwh: optionalFormNumber().refine((value) => value === undefined || value >= 0, "El consumo anual OpenSolar no puede ser negativo"),
+        chargingSolarOpenSolarProjectId: z.string().trim().max(80).optional(),
+        chargingSolarOpenSolarProjectTitle: z.string().trim().max(255).optional(),
+        chargingSolarOpenSolarAnnualConsumptionKwh: optionalFormNumber().refine((value) => value === undefined || value >= 0, "El consumo anual solar de la electrolinera no puede ser negativo"),
+        chargingSolarSystemPowerKwp: optionalFormNumber().refine((value) => value === undefined || value >= 0, "La potencia solar de la electrolinera no puede ser negativa"),
+        chargingSolarAnnualGenerationKwh: optionalFormNumber().refine((value) => value === undefined || value >= 0, "La generación solar de la electrolinera no puede ser negativa"),
+        chargingSolarSelfConsumptionPercent: optionalFormNumber().refine((value) => value === undefined || (value >= 0 && value <= 100), "El autoconsumo solar de la electrolinera debe estar entre 0 % y 100 %"),
+        chargingSolarExportPercent: optionalFormNumber().refine((value) => value === undefined || (value >= 0 && value <= 100), "La exportación solar de la electrolinera debe estar entre 0 % y 100 %"),
+        allySolarOpenSolarProjectId: z.string().trim().max(80).optional(),
+        allySolarOpenSolarProjectTitle: z.string().trim().max(255).optional(),
+        allySolarOpenSolarAnnualConsumptionKwh: optionalFormNumber().refine((value) => value === undefined || value >= 0, "El consumo anual solar del aliado no puede ser negativo"),
         electricalDistance: optionalFormInteger(),
         electricalDistanceM: optionalFormInteger(),
         hasInternet: z.boolean().optional(),
@@ -2003,6 +2045,17 @@ export const spacesRouter = router({
           cleanFields.openSolarProjectId = openSolarProjectId || null;
           cleanFields.openSolarProjectImportedAt = openSolarProjectId ? toSqlTimestamp() : null;
           if (!openSolarProjectId) cleanFields.openSolarProjectTitle = null;
+        }
+        for (const projectScope of ["chargingSolar", "allySolar"] as const) {
+          const idField = `${projectScope}OpenSolarProjectId`;
+          const titleField = `${projectScope}OpenSolarProjectTitle`;
+          const importedAtField = `${projectScope}OpenSolarProjectImportedAt`;
+          if (cleanFields[idField] !== undefined) {
+            const projectId = String(cleanFields[idField]).trim();
+            cleanFields[idField] = projectId || null;
+            cleanFields[importedAtField] = projectId ? toSqlTimestamp() : null;
+            if (!projectId) cleanFields[titleField] = null;
+          }
         }
         const solarProgramFields = [
           "solarProgramEnabled", "solarProgramCurrentBillCop", "solarProgramSavingsCoveragePercent",
@@ -2700,6 +2753,13 @@ export const spacesRouter = router({
         hasSolarPanels: Number(submission.hasSolarPanels) === 1,
         solarCoveragePercent: Number(submission.solarCoveragePercent ?? 0),
         solarEnergyCostPerKwh: submission.solarEnergyCostPerKwh === null ? null : Number(submission.solarEnergyCostPerKwh),
+        chargingSolarOpenSolarProjectId: submission.chargingSolarOpenSolarProjectId,
+        chargingSolarOpenSolarProjectTitle: submission.chargingSolarOpenSolarProjectTitle,
+        chargingSolarOpenSolarAnnualConsumptionKwh: submission.chargingSolarOpenSolarAnnualConsumptionKwh === null ? null : Number(submission.chargingSolarOpenSolarAnnualConsumptionKwh),
+        chargingSolarSystemPowerKwp: submission.chargingSolarSystemPowerKwp === null ? null : Number(submission.chargingSolarSystemPowerKwp),
+        chargingSolarAnnualGenerationKwh: submission.chargingSolarAnnualGenerationKwh === null ? null : Number(submission.chargingSolarAnnualGenerationKwh),
+        chargingSolarSelfConsumptionPercent: submission.chargingSolarSelfConsumptionPercent === null ? null : Number(submission.chargingSolarSelfConsumptionPercent),
+        chargingSolarExportPercent: submission.chargingSolarExportPercent === null ? null : Number(submission.chargingSolarExportPercent),
         allySharePercent: input.allySharePercent,
 	        investorSharePercent: revenueDistribution.investorSharePercent,
 	        platformSharePercent: revenueDistribution.evgreenSharePercent,

@@ -64,6 +64,13 @@ export interface ProspectoPdfData {
   hasSolarPanels?: boolean | null;
   solarCoveragePercent?: number | null;
   solarEnergyCostPerKwh?: number | null;
+  chargingSolarOpenSolarProjectId?: string | null;
+  chargingSolarOpenSolarProjectTitle?: string | null;
+  chargingSolarOpenSolarAnnualConsumptionKwh?: number | null;
+  chargingSolarSystemPowerKwp?: number | null;
+  chargingSolarAnnualGenerationKwh?: number | null;
+  chargingSolarSelfConsumptionPercent?: number | null;
+  chargingSolarExportPercent?: number | null;
   // Configuración dinámica del prospecto
   allySharePercent: number;
   investorSharePercent: number;
@@ -730,9 +737,12 @@ function addProyeccionFinanciera(
   const energyCostLabel = solarEnergy.solarCostApplied
     ? `energía efectiva (${formatCOP(solarEnergy.effectiveEnergyCostPerKwh)}/kWh; solar ${solarEnergy.solarCoveragePercent}% a ${formatCOP(solarEnergy.solarEnergyCostPerKwh ?? 0)}/kWh, red ${formatCOP(energyCostPerKwh)}/kWh)`
     : `energía (${formatCOP(energyCostPerKwh)}/kWh)`;
+  const chargingSolarSource = data.chargingSolarOpenSolarProjectId
+    ? ` Fuente técnica OpenSolar de la electrolinera: ${data.chargingSolarOpenSolarProjectTitle || "Proyecto"} (#${data.chargingSolarOpenSolarProjectId})${data.chargingSolarSystemPowerKwp !== null && data.chargingSolarSystemPowerKwp !== undefined ? ` · ${Number(data.chargingSolarSystemPowerKwp).toLocaleString("es-CO")} kWp` : ""}${data.chargingSolarAnnualGenerationKwh !== null && data.chargingSolarAnnualGenerationKwh !== undefined ? ` · ${Number(data.chargingSolarAnnualGenerationKwh).toLocaleString("es-CO")} kWh/año` : ""}.`
+    : "";
   const operatingCostCopy = fixedMonthlyExpenses > 0
-    ? `Ingreso bruto − ${energyCostLabel} − gastos fijos (${formatCompactCOP(fixedMonthlyExpenses)}/mes) = margen base de reparto`
-    : `Ingreso bruto − ${energyCostLabel} = margen base de reparto`;
+    ? `Ingreso bruto − ${energyCostLabel} − gastos fijos (${formatCompactCOP(fixedMonthlyExpenses)}/mes) = margen base de reparto.${chargingSolarSource}`
+    : `Ingreso bruto − ${energyCostLabel} = margen base de reparto.${chargingSolarSource}`;
   doc.setFontSize(7.2); doc.setFont("helvetica", "normal");
   const operatingCostLines = doc.splitTextToSize(operatingCostCopy, CW - 8);
   const waterfallH = Math.max(32, 29 + operatingCostLines.length * 3.4);

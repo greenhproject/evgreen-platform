@@ -128,3 +128,15 @@
 - [x] Cubrir acceso, pertenencia de organización, mapeo, ausencia de datos y errores; TypeScript y 23 pruebas focales aprobadas sin usar credenciales reales.
 - [x] Validación integral: 245 archivos / 2.361 pruebas aprobadas; 5 suites de integración y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo aprobado. El simulador OCPP que ralentizó un primer intento pasó aislado y en el reintento completo.
 - [ ] Realizar QA visual autenticado, guardar checkpoint, publicar de forma segura y verificar el despliegue.
+
+## OpenSolar — dos proyectos independientes por Espacio (2026-10-12)
+
+- [x] Separar la fuente OpenSolar del **sistema solar de la electrolinera** de la fuente del **programa solar de la EDS/comercio aliado**; cada una conserva ID, título, consumo y fecha de importación sin respuestas crudas ni credenciales.
+- [x] Agregar métricas técnicas propias de la electrolinera (kWp, generación anual, autoconsumo y exportación) sin activar ni alterar el programa comercial del aliado.
+- [x] Crear la migración aditiva 0061 y preservar referencias OpenSolar históricas exclusivamente como origen de la electrolinera; la auditoría posterior confirmó las 12 columnas y cero referencias activas modificadas.
+- [x] Mostrar ambos controles de consulta de manera diferenciada en el editor y en los PDF: prospecto/inversión para la electrolinera, y ficha del aliado para la EDS/comercio.
+- [x] Probar el mapeo integral documentado de OpenSolar: ubicación, coordenadas, consumo, factura, potencia, generación, autoconsumo, exportación, cobertura, tarifa calculada, fuentes y campos no disponibles; 25 pruebas focales aprobadas sin credenciales reales.
+- [x] Corregir la paridad física detectada en el QA autenticado: la columna aplicada es `ally_solar_annual_consumption_kwh`; el esquema Drizzle ya usa ese nombre y el listado de Espacios vuelve a leer las 26 postulaciones sin error 500.
+- [x] QA visual autenticado: el editor muestra una casilla de alcance solar y los dos controles independientes “ID de proyecto OpenSolar de la electrolinera” y “ID de proyecto OpenSolar de la EDS o comercio”, en escritorio y móvil, sin guardar ni alterar datos.
+- [x] Validación integral: 245 archivos / 2.363 pruebas aprobadas; 5 suites de integración y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo aprobado.
+- [ ] Guardar checkpoint WebDev, ejecutar publicación segura y verificar el despliegue.

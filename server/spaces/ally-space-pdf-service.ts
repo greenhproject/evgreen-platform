@@ -59,6 +59,13 @@ export interface AllySpacePdfData {
   allySharePercent?: number | null;
   solarCoveragePercent?: number | null;
   solarEnergyCostPerKwh?: number | null;
+  chargingSolarOpenSolarProjectId?: string | null;
+  chargingSolarOpenSolarProjectTitle?: string | null;
+  chargingSolarOpenSolarAnnualConsumptionKwh?: number | null;
+  chargingSolarSystemPowerKwp?: number | null;
+  chargingSolarAnnualGenerationKwh?: number | null;
+  chargingSolarSelfConsumptionPercent?: number | null;
+  chargingSolarExportPercent?: number | null;
   solarProgramEnabled?: boolean | number | null;
   solarProgramCurrentBillCop?: number | null;
   solarProgramSavingsCoveragePercent?: number | null;
@@ -70,6 +77,9 @@ export interface AllySpacePdfData {
   solarSelfConsumptionPercent?: number | null;
   solarExportPercent?: number | null;
   solarGridTariffCopPerKwh?: number | null;
+  allySolarOpenSolarProjectId?: string | null;
+  allySolarOpenSolarProjectTitle?: string | null;
+  allySolarOpenSolarAnnualConsumptionKwh?: number | null;
   solarOfferPdfUrl?: string | null;
   solarOfferPdfName?: string | null;
   technicalCondition?: string | null;
@@ -270,7 +280,10 @@ export function buildAllySpacePdfContent(data: AllySpacePdfData): AllyPdfContent
       ["Distancia al tablero", data.electricalDistance ? formatNumber(data.electricalDistance, " m") : "Por confirmar"],
       ["Internet en el punto", formatBoolean(data.hasInternet)],
       ["Mangueras preliminares", data.estimatedChargerCount ? formatNumber(Number(data.estimatedChargerCount) * 2) : "Por confirmar"],
-      ["Alcance solar", data.hasSolarPanels ? "Considerado en la información registrada" : "No informado / fuera del alcance actual"],
+      ["Solar de la electrolinera", data.hasSolarPanels ? "Considerado para la infraestructura de carga" : "No informado / fuera del alcance actual"],
+      ...(data.chargingSolarOpenSolarProjectId ? [["Proyecto OpenSolar de carga", `${data.chargingSolarOpenSolarProjectTitle || "Proyecto"} · #${data.chargingSolarOpenSolarProjectId}`] as [string, string]] : []),
+      ...(data.chargingSolarSystemPowerKwp !== null && data.chargingSolarSystemPowerKwp !== undefined ? [["Potencia solar de carga", formatNumber(data.chargingSolarSystemPowerKwp, " kWp")] as [string, string]] : []),
+      ...(data.chargingSolarAnnualGenerationKwh !== null && data.chargingSolarAnnualGenerationKwh !== undefined ? [["Generación solar de carga", formatNumber(data.chargingSolarAnnualGenerationKwh, " kWh/año")] as [string, string]] : []),
       ["Programa solar para el aliado", data.solarProgramEnabled ? "Beneficio energético en evaluación" : "No activado"],
     ],
     operatingRows: [
@@ -703,6 +716,8 @@ function drawSolarProgramPage(
   y += 39;
 
   const detailRows: Array<[string, string]> = [
+    ...(data.allySolarOpenSolarProjectId ? [["Proyecto OpenSolar del aliado", `${data.allySolarOpenSolarProjectTitle || "Proyecto"} · #${data.allySolarOpenSolarProjectId}`] as [string, string]] : []),
+    ...(data.allySolarOpenSolarAnnualConsumptionKwh !== null && data.allySolarOpenSolarAnnualConsumptionKwh !== undefined ? [["Consumo anual del aliado importado", formatNumber(data.allySolarOpenSolarAnnualConsumptionKwh, " kWh/año")] as [string, string]] : []),
     ["Factura mensual promedio registrada", formatCop(assumptions.currentMonthlyBillCop)],
     ["Cobertura de ahorro estimada", `${formatDecimal(assumptions.savingsCoveragePercent, 1)}% del gasto actual`],
     ["Plazo inicial de sustitución", `${formatNumber(assumptions.agreementYears)} años`],
