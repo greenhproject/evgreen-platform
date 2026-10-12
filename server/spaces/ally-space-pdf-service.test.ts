@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildAllySpacePdfContent, type AllySpacePdfData } from "./ally-space-pdf-service";
+import { buildAllyProjectionDisclosure, buildAllySpacePdfContent, type AllySpacePdfData } from "./ally-space-pdf-service";
 
 const sampleData: AllySpacePdfData = {
   code: "SPE-TEST-0001",
@@ -54,6 +54,8 @@ describe("buildAllySpacePdfContent", () => {
     expect(content.incomeProjection?.scenarios.OPTIMISTIC.scenarioEvPercent).toBe(15);
     expect(content.incomeProjection?.scenarios.REALISTIC.grossRevenueMonthly).toBeGreaterThan(0);
     expect(content.incomeProjection?.scenarios.REALISTIC.allyIncomeMonthly).toBeGreaterThan(0);
+    expect(buildAllyProjectionDisclosure(content.incomeProjection!.assumptions).toLowerCase()).not.toContain("margen bruto");
+    expect(buildAllyProjectionDisclosure(content.incomeProjection!.assumptions).toLowerCase()).not.toContain("ingreso bruto");
     expect(content.allyResponsibilities.length).toBeGreaterThanOrEqual(4);
     expect(content.evgreenResponsibilities.length).toBeGreaterThanOrEqual(4);
     expect(content.nextSteps.length).toBeGreaterThanOrEqual(4);
@@ -82,5 +84,14 @@ describe("buildAllySpacePdfContent", () => {
     for (const term of forbiddenTerms) {
       expect(allText).not.toContain(term);
     }
+  });
+
+  it("mantiene la presentación del aliado aislada de los valores upstream", () => {
+    const content = buildAllySpacePdfContent(sampleData);
+    const disclosure = buildAllyProjectionDisclosure(content.incomeProjection!.assumptions).toLowerCase();
+    expect(disclosure).not.toContain("precio de venta");
+    expect(disclosure).not.toContain("costo energético");
+    expect(disclosure).not.toContain("del margen");
+    expect(disclosure).toContain("estimación mensual del aliado");
   });
 });

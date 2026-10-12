@@ -339,6 +339,20 @@ function buildStaticMapUrl(data: AllySpacePdfData): string | null {
     : `https://maps.googleapis.com/maps/api/staticmap?${params}`;
 }
 
+const ALLY_PROJECTION_VISIBLE_LABELS = {
+  adoption: "Adopción EV",
+  evVehicles: "Vehículos EV/día",
+  sessions: "Sesiones atendidas/día",
+  connectors: "Mangueras requeridas*",
+  chargers: "Cargadores duales*",
+  energy: "Energía/mes",
+  allyEstimate: "Valor estimado para el aliado/mes",
+} as const;
+
+export function buildAllyProjectionDisclosure(assumptions: AllyIncomeProjectionSnapshot["assumptions"]): string {
+  return `* Las mangueras y cargadores marcados con asterisco son equivalentes teóricos para atender la demanda potencial; la configuración registrada es ${formatNumber(assumptions.chargerCount)} cargadores / ${formatNumber(assumptions.configuredConnectors)} mangueras. La estimación mensual del aliado se deriva de la demanda atendible, la energía por sesión y los supuestos operativos vigentes. La configuración definitiva, la operación real y las condiciones económicas aplicables se validan mediante ingeniería y contrato separado.`;
+}
+
 function drawIncomeProjectionPage(
   doc: InstanceType<typeof jsPDF>,
   data: AllySpacePdfData,
@@ -357,7 +371,7 @@ function drawIncomeProjectionPage(
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.5);
   const intro = doc.splitTextToSize(
-    "Estimación orientativa de demanda e ingresos brutos del punto. Los escenarios parten del flujo vehicular registrado y escalan la adopción EV base al 50 %, 100 % y 150 %; la configuración definitiva depende de ingeniería, tarifa vigente, operación y validación en sitio.",
+    "Estimación orientativa de la retribución mensual del aliado. Los escenarios parten del flujo vehicular registrado y escalan la adopción EV base al 50 %, 100 % y 150 %; la configuración definitiva depende de ingeniería, operación y validación en sitio.",
     contentWidth,
   );
   doc.text(intro, margin, y);
@@ -382,13 +396,11 @@ function drawIncomeProjectionPage(
     ["Base de demanda", `${formatNumber(assumptions.estimatedDailyVehicles)} vehículos/día × ${formatDecimal(assumptions.estimatedEvPercent, 1)}% EV`],
     ["Configuración registrada", `${formatNumber(assumptions.chargerCount)} cargadores duales / ${formatNumber(assumptions.configuredConnectors)} mangueras`],
     ["Energía por sesión", `${formatDecimal(assumptions.benchmarkKwhPerSession, 0)} kWh`],
-    ["Precio de venta modelado", `${formatCop(assumptions.salePricePerKwh)}/kWh`],
-    ["Costo energético modelado", `${formatCop(assumptions.effectiveEnergyCostPerKwh)}/kWh`],
-    ["Supuesto del aliado", `${formatDecimal(assumptions.allySharePercent, 1)}% del margen bruto`],
+    ["Escenarios mostrados", "Pesimista · realista · optimista"],
   ];
   y = drawRows(doc, assumptionRows, margin, y, contentWidth, 57) + 9;
 
-  y = drawSectionTitle(doc, "ESCENARIOS DE DEMANDA E INGRESOS", margin, y, contentWidth);
+  y = drawSectionTitle(doc, "ESCENARIOS DE DEMANDA Y RETRIBUCIÓN DEL ALIADO", margin, y, contentWidth);
   const columns = [
     { label: "Indicador", width: 43 },
     { label: "Pesimista", width: 38 },
@@ -397,15 +409,13 @@ function drawIncomeProjectionPage(
   ];
   const xPositions = [margin, margin + columns[0].width, margin + columns[0].width + columns[1].width, margin + columns[0].width + columns[1].width + columns[2].width];
   const tableRows: Array<[string, (scenario: AllyIncomeProjectionSnapshot["scenarios"]["REALISTIC"]) => string]> = [
-    ["Adopción EV", scenario => `${formatDecimal(scenario.scenarioEvPercent, 1)}%`],
-    ["Vehículos EV/día", scenario => formatDecimal(scenario.eligibleEvVehiclesPerDay, 1)],
-    ["Sesiones atendidas/día", scenario => formatDecimal(scenario.sessionsPerDay, 1)],
-    ["Mangueras requeridas*", scenario => formatNumber(scenario.requiredConnectorsForDemand)],
-    ["Cargadores duales*", scenario => formatNumber(scenario.requiredChargersForDemand)],
-    ["Energía/mes", scenario => `${formatDecimal(scenario.energyKwhPerMonth, 0)} kWh`],
-    ["Ingreso bruto/mes", scenario => formatCop(scenario.grossRevenueMonthly)],
-    ["Margen bruto/mes", scenario => formatCop(scenario.grossMarginMonthly)],
-    ["Equivalente aliado/mes", scenario => formatCop(scenario.allyIncomeMonthly)],
+    [ALLY_PROJECTION_VISIBLE_LABELS.adoption, scenario => `${formatDecimal(scenario.scenarioEvPercent, 1)}%`],
+    [ALLY_PROJECTION_VISIBLE_LABELS.evVehicles, scenario => formatDecimal(scenario.eligibleEvVehiclesPerDay, 1)],
+    [ALLY_PROJECTION_VISIBLE_LABELS.sessions, scenario => formatDecimal(scenario.sessionsPerDay, 1)],
+    [ALLY_PROJECTION_VISIBLE_LABELS.connectors, scenario => formatNumber(scenario.requiredConnectorsForDemand)],
+    [ALLY_PROJECTION_VISIBLE_LABELS.chargers, scenario => formatNumber(scenario.requiredChargersForDemand)],
+    [ALLY_PROJECTION_VISIBLE_LABELS.energy, scenario => `${formatDecimal(scenario.energyKwhPerMonth, 0)} kWh`],
+    [ALLY_PROJECTION_VISIBLE_LABELS.allyEstimate, scenario => formatCop(scenario.allyIncomeMonthly)],
   ];
   const scenarioOrder: Array<keyof AllyIncomeProjectionSnapshot["scenarios"]> = ["PESSIMISTIC", "REALISTIC", "OPTIMISTIC"];
   const scenarioValues = scenarioOrder.map(key => projection.scenarios[key]);
@@ -448,7 +458,7 @@ function drawIncomeProjectionPage(
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.4);
   const note = doc.splitTextToSize(
-    `* Las mangueras y cargadores marcados con asterisco son equivalentes teóricos para atender toda la demanda potencial; la configuración registrada es ${formatNumber(assumptions.chargerCount)} cargadores / ${formatNumber(assumptions.configuredConnectors)} mangueras. El ingreso bruto se calcula como sesiones atendidas × ${formatDecimal(assumptions.benchmarkKwhPerSession, 0)} kWh × ${formatCop(assumptions.salePricePerKwh)}/kWh. El margen bruto descuenta únicamente el costo energético modelado de ${formatCop(assumptions.effectiveEnergyCostPerKwh)}/kWh y no incluye gastos fijos no informados.`,
+    buildAllyProjectionDisclosure(assumptions),
     contentWidth - 12,
   );
   doc.text(note.slice(0, 4), margin + 6, y + 16);
