@@ -149,4 +149,4 @@
 - [x] Añadir regresión sin credenciales reales para la forma de `systems/details`, incluidos todos los campos requeridos, sus fuentes de cálculo y el autoconsumo ponderado cuando hay varios sistemas.
 - [x] Validación integral: 245 archivos / 2.365 pruebas aprobadas; 5 suites de integración y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo aprobado.
 - [x] QA visual autenticado, sin guardar: consultar el ID `11062957` en el formulario del aliado precargó los siete campos esperados con los valores validados contra la respuesta real.
-- [ ] Guardar checkpoint WebDev, ejecutar publicación segura y verificar el despliegue.
+- [x] Guardar checkpoint `977f22d3`, publicar de forma segura en GitHub y verificar Railway exitoso en staging y producción; `evgreen.lat` y `app.evgreen.lat` responden 200.
