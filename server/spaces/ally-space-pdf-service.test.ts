@@ -36,6 +36,17 @@ const sampleData: AllySpacePdfData = {
   energyCostPerKwh: 850,
   efficiencyPercent: 92,
   allySharePercent: 10,
+  solarProgramEnabled: true,
+  solarProgramCurrentBillCop: 15_000_000,
+  solarProgramSavingsCoveragePercent: 40,
+  solarProgramAgreementYears: 6,
+  solarProgramAnnualCpiPercent: 3,
+  solarProgramUsefulLifeYears: 30,
+  solarSystemPowerKwp: 112,
+  solarAnnualGenerationKwh: 140870,
+  solarSelfConsumptionPercent: 40,
+  solarExportPercent: 60,
+  solarGridTariffCopPerKwh: 910,
   photos: [],
   generatedAt: new Date("2026-10-11T20:00:00.000Z"),
 };
@@ -55,6 +66,9 @@ describe("buildAllySpacePdfContent", () => {
     expect(content.incomeProjection?.scenarios.REALISTIC.grossRevenueMonthly).toBeGreaterThan(0);
     expect(content.incomeProjection?.scenarios.REALISTIC.allyIncomeMonthly).toBeGreaterThan(0);
     expect(content.incomeProjection?.scenarios.REALISTIC.allyIncomeAnnual).toBe(content.incomeProjection?.scenarios.REALISTIC.allyIncomeMonthly! * 12);
+    expect(content.solarProgram?.initialMonthlySavingsCop).toBe(6_000_000);
+    expect(content.solarProgram?.initialAnnualSavingsCop).toBe(72_000_000);
+    expect(content.combinedBenefit?.combinedAnnualCop).toBeGreaterThan(72_000_000);
     expect(buildAllyProjectionDisclosure(content.incomeProjection!.assumptions).toLowerCase()).not.toContain("margen bruto");
     expect(buildAllyProjectionDisclosure(content.incomeProjection!.assumptions).toLowerCase()).not.toContain("ingreso bruto");
     expect(content.allyResponsibilities.length).toBeGreaterThanOrEqual(4);
@@ -63,6 +77,7 @@ describe("buildAllySpacePdfContent", () => {
     expect(allText).toContain("contrato");
     expect(allText).toContain("Carta aceptada");
     expect(allText.toLowerCase()).not.toContain("nano banana");
+    expect(allText).toContain("140870");
   });
 
   it("no expone conceptos reservados del prospecto de inversión", () => {
@@ -81,6 +96,8 @@ describe("buildAllySpacePdfContent", () => {
       "meta de inversión",
       "capital total",
       "participación del inversionista",
+      "ingreso bruto",
+      "margen bruto",
     ];
 
     for (const term of forbiddenTerms) {

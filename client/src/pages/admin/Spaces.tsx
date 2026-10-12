@@ -190,6 +190,18 @@ async function compressImageFile(file: File, maxDim: number, quality: number): P
   });
 }
 
+async function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || "");
+      resolve(result.includes(",") ? result.split(",")[1] : result);
+    };
+    reader.onerror = () => reject(new Error("No fue posible leer el archivo seleccionado."));
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function AdminSpaces() {
   const { user } = useAuth();
   const canManageAdministrativeActions = user?.role === "admin" || user?.role === "staff";
@@ -216,6 +228,10 @@ export default function AdminSpaces() {
     estimatedInvestmentCop: "", estimatedPowerKw: "120", estimatedChargerCount: "1",
     hasSolarPanels: false,
     solarCoveragePercent: "", solarEnergyCostPerKwh: "",
+    solarProgramEnabled: false,
+    solarProgramCurrentBillCop: "", solarProgramSavingsCoveragePercent: "",
+    solarProgramAgreementYears: "6", solarProgramAnnualCpiPercent: "3", solarProgramUsefulLifeYears: "30",
+    solarSystemPowerKwp: "", solarAnnualGenerationKwh: "", solarSelfConsumptionPercent: "", solarExportPercent: "", solarGridTariffCopPerKwh: "",
     electricalDistance: "",
     hasElectricalPanel: false,
     hasInternet: false,
@@ -230,6 +246,7 @@ export default function AdminSpaces() {
     nearbyAttractions: "",
   });
   const [createPhotos, setCreatePhotos] = useState<Array<{ file: File; preview: string; photoType: string; isCover?: boolean; isConceptual?: boolean }>>([]);
+  const [createSolarOfferPdf, setCreateSolarOfferPdf] = useState<File | null>(null);
   const [dateTo, setDateTo] = useState("");
   const [scoreFilter, setScoreFilter] = useState<"all" | "scored" | "unscored">("all");
 
@@ -298,6 +315,10 @@ export default function AdminSpaces() {
         estimatedInvestmentCop: "", estimatedPowerKw: "120", estimatedChargerCount: "1",
         hasSolarPanels: false,
         solarCoveragePercent: "", solarEnergyCostPerKwh: "",
+        solarProgramEnabled: false,
+        solarProgramCurrentBillCop: "", solarProgramSavingsCoveragePercent: "",
+        solarProgramAgreementYears: "6", solarProgramAnnualCpiPercent: "3", solarProgramUsefulLifeYears: "30",
+        solarSystemPowerKwp: "", solarAnnualGenerationKwh: "", solarSelfConsumptionPercent: "", solarExportPercent: "", solarGridTariffCopPerKwh: "",
         electricalDistance: "",
         hasElectricalPanel: false,
         hasInternet: false,
@@ -313,6 +334,7 @@ export default function AdminSpaces() {
       });
       createPhotos.forEach(p => URL.revokeObjectURL(p.preview));
       setCreatePhotos([]);
+      setCreateSolarOfferPdf(null);
       refetch();
     },
     onError: (err) => toast.error(humanizeSpaceError(err.message, "crear")),
@@ -1046,6 +1068,28 @@ export default function AdminSpaces() {
                   <p className="sm:col-span-2 text-[11px] leading-4 text-amber-100/75">Solo con ambos datos el modelo pondera el costo efectivo: cobertura solar × costo solar + saldo × costo de red. Sin factura, diseño y generación validados, déjalos vacíos: no se reduce la energía de red.</p>
                 </div>
               )}
+              <div className="mt-3 rounded-lg border border-emerald-400/30 bg-emerald-400/5 p-2.5">
+                <label className="flex cursor-pointer items-start gap-2 text-xs text-emerald-50">
+                  <input type="checkbox" checked={createForm.solarProgramEnabled} onChange={e => setCreateForm(p => ({ ...p, solarProgramEnabled: e.target.checked }))} className="mt-0.5 h-4 w-4 accent-emerald-400" />
+                  <span><strong className="block text-emerald-200">Activar programa solar de ahorro para el aliado</strong><span className="mt-0.5 block leading-4 text-emerald-100/75">Modela una sustitución de gasto energético por un plazo configurable, con ajuste anual de referencia. No es ingreso garantizado ni reemplaza el contrato.</span></span>
+                </label>
+                {createForm.solarProgramEnabled && (
+                  <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    <div><Label className="mb-1 block text-xs text-emerald-100">Factura mensual promedio (COP) *</Label><Input inputMode="decimal" placeholder="Ej.: 15.000.000" value={createForm.solarProgramCurrentBillCop} onChange={e => setCreateForm(p => ({ ...p, solarProgramCurrentBillCop: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /></div>
+                    <div><Label className="mb-1 block text-xs text-emerald-100">Ahorro cubierto (%) *</Label><Input inputMode="decimal" min="0" max="100" placeholder="Ej.: 40" value={createForm.solarProgramSavingsCoveragePercent} onChange={e => setCreateForm(p => ({ ...p, solarProgramSavingsCoveragePercent: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /></div>
+                    <div><Label className="mb-1 block text-xs text-emerald-100">Plazo del acuerdo (años)</Label><Input inputMode="numeric" min="1" max="30" value={createForm.solarProgramAgreementYears} onChange={e => setCreateForm(p => ({ ...p, solarProgramAgreementYears: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /></div>
+                    <div><Label className="mb-1 block text-xs text-emerald-100">IPC anual de referencia (%)</Label><Input inputMode="decimal" min="0" max="30" value={createForm.solarProgramAnnualCpiPercent} onChange={e => setCreateForm(p => ({ ...p, solarProgramAnnualCpiPercent: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /></div>
+                    <div><Label className="mb-1 block text-xs text-emerald-100">Vida útil de referencia (años)</Label><Input inputMode="numeric" min="1" max="50" value={createForm.solarProgramUsefulLifeYears} onChange={e => setCreateForm(p => ({ ...p, solarProgramUsefulLifeYears: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /></div>
+                    <div><Label className="mb-1 block text-xs text-emerald-100">Potencia solar (kWp)</Label><Input inputMode="decimal" placeholder="Ej.: 112" value={createForm.solarSystemPowerKwp} onChange={e => setCreateForm(p => ({ ...p, solarSystemPowerKwp: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /></div>
+                    <div><Label className="mb-1 block text-xs text-emerald-100">Generación anual (kWh)</Label><Input inputMode="decimal" placeholder="Ej.: 140.870" value={createForm.solarAnnualGenerationKwh} onChange={e => setCreateForm(p => ({ ...p, solarAnnualGenerationKwh: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /></div>
+                    <div><Label className="mb-1 block text-xs text-emerald-100">Autoconsumo (%)</Label><Input inputMode="decimal" min="0" max="100" placeholder="Ej.: 40" value={createForm.solarSelfConsumptionPercent} onChange={e => setCreateForm(p => ({ ...p, solarSelfConsumptionPercent: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /></div>
+                    <div><Label className="mb-1 block text-xs text-emerald-100">Exportación (%)</Label><Input inputMode="decimal" min="0" max="100" placeholder="Ej.: 60" value={createForm.solarExportPercent} onChange={e => setCreateForm(p => ({ ...p, solarExportPercent: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /></div>
+                    <div><Label className="mb-1 block text-xs text-emerald-100">Tarifa de red (COP/kWh)</Label><Input inputMode="numeric" placeholder="Ej.: 910" value={createForm.solarGridTariffCopPerKwh} onChange={e => setCreateForm(p => ({ ...p, solarGridTariffCopPerKwh: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /></div>
+                    <div className="sm:col-span-2"><Label className="mb-1 block text-xs text-emerald-100">Oferta solar de referencia (PDF, opcional)</Label><Input type="file" accept="application/pdf,.pdf" onChange={e => setCreateSolarOfferPdf(e.target.files?.[0] || null)} className="border-[#374151] bg-[#111827] text-xs text-white file:mr-2 file:rounded file:border-0 file:bg-emerald-600 file:px-2 file:py-1 file:text-xs file:text-white" />{createSolarOfferPdf && <p className="mt-1 truncate text-[11px] text-emerald-200">{createSolarOfferPdf.name}</p>}</div>
+                    <p className="sm:col-span-3 text-[11px] leading-4 text-emerald-100/75">La oferta adjunta se conservará como anexo del PDF del aliado. Los datos visibles del resumen deben provenir de factura, propuesta o estudio verificable.</p>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Infraestructura Eléctrica y Viabilidad */}
@@ -1263,6 +1307,16 @@ export default function AdminSpaces() {
                   numericInputError("Inversión estimada", createForm.estimatedInvestmentCop),
                   numericInputError("Potencia DC", createForm.estimatedPowerKw, true),
                   numericInputError("Cargadores", createForm.estimatedChargerCount, true),
+                  numericInputError("Factura solar mensual", createForm.solarProgramCurrentBillCop),
+                  numericInputError("Cobertura de ahorro solar", createForm.solarProgramSavingsCoveragePercent),
+                  numericInputError("Plazo solar", createForm.solarProgramAgreementYears, true),
+                  numericInputError("IPC solar", createForm.solarProgramAnnualCpiPercent),
+                  numericInputError("Vida útil solar", createForm.solarProgramUsefulLifeYears, true),
+                  numericInputError("Potencia solar", createForm.solarSystemPowerKwp),
+                  numericInputError("Generación solar anual", createForm.solarAnnualGenerationKwh),
+                  numericInputError("Autoconsumo solar", createForm.solarSelfConsumptionPercent),
+                  numericInputError("Exportación solar", createForm.solarExportPercent),
+                  numericInputError("Tarifa de red solar", createForm.solarGridTariffCopPerKwh, true),
                 ].find(Boolean);
                 if (numericError) {
                   toast.error(numericError);
@@ -1289,6 +1343,13 @@ export default function AdminSpaces() {
                       };
                     })
                   );
+                  const solarOfferPdf = createSolarOfferPdf
+                    ? {
+                        base64: await readFileAsBase64(createSolarOfferPdf),
+                        fileName: createSolarOfferPdf.name,
+                        contentType: "application/pdf",
+                      }
+                    : undefined;
                   createSpaceMutation.mutate({
                     spaceName: createForm.spaceName,
                     spaceType: createForm.spaceType as any,
@@ -1313,6 +1374,17 @@ export default function AdminSpaces() {
                     hasSolarPanels: createForm.hasSolarPanels,
                     solarCoveragePercent: toOptionalNumber(createForm.solarCoveragePercent),
                     solarEnergyCostPerKwh: toOptionalInteger(createForm.solarEnergyCostPerKwh),
+                    solarProgramEnabled: createForm.solarProgramEnabled,
+                    solarProgramCurrentBillCop: toOptionalNumber(createForm.solarProgramCurrentBillCop),
+                    solarProgramSavingsCoveragePercent: toOptionalNumber(createForm.solarProgramSavingsCoveragePercent),
+                    solarProgramAgreementYears: toOptionalInteger(createForm.solarProgramAgreementYears),
+                    solarProgramAnnualCpiPercent: toOptionalNumber(createForm.solarProgramAnnualCpiPercent),
+                    solarProgramUsefulLifeYears: toOptionalInteger(createForm.solarProgramUsefulLifeYears),
+                    solarSystemPowerKwp: toOptionalNumber(createForm.solarSystemPowerKwp),
+                    solarAnnualGenerationKwh: toOptionalNumber(createForm.solarAnnualGenerationKwh),
+                    solarSelfConsumptionPercent: toOptionalNumber(createForm.solarSelfConsumptionPercent),
+                    solarExportPercent: toOptionalNumber(createForm.solarExportPercent),
+                    solarGridTariffCopPerKwh: toOptionalInteger(createForm.solarGridTariffCopPerKwh),
                     electricalDistance: toOptionalInteger(createForm.electricalDistance),
                     hasElectricalPanel: createForm.hasElectricalPanel,
                     hasInternet: createForm.hasInternet,
@@ -1326,6 +1398,7 @@ export default function AdminSpaces() {
                     nearbyAttractions: createForm.nearbyAttractions.trim() || undefined,
                     additionalNotes: createForm.additionalNotes.trim() || undefined,
                     photos: photosData.length > 0 ? photosData : undefined,
+                    solarOfferPdf,
                   });
                 };
                 convertPhotos();
@@ -1399,6 +1472,7 @@ function SpaceDetailDialog({
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [editForm, setEditForm] = useState<Record<string, any>>({});
   const [editPhotos, setEditPhotos] = useState<Array<{ file: File; preview: string; photoType: string; isCover?: boolean; isConceptual?: boolean }>>([]);
+  const [editSolarOfferPdf, setEditSolarOfferPdf] = useState<File | null>(null);
   const [showGestorDialog, setShowGestorDialog] = useState(false);
   const [letterShareLink, setLetterShareLink] = useState<string | null>(null);
   const addPhotosMutation = trpc.spaces.admin.addPhotos.useMutation();
@@ -1817,8 +1891,19 @@ function SpaceDetailDialog({
 	                      operatingHoursEnd: (space as any).operatingHoursEnd || "22:00",
 	                      hasElectricalPanel: !!space.hasElectricalPanel,
 	                      hasSolarPanels: !!(space as any).hasSolarPanels,
-	                      solarCoveragePercent: (space as any).solarCoveragePercent ?? "",
-	                      solarEnergyCostPerKwh: (space as any).solarEnergyCostPerKwh ?? "",
+                      solarCoveragePercent: (space as any).solarCoveragePercent ?? "",
+                      solarEnergyCostPerKwh: (space as any).solarEnergyCostPerKwh ?? "",
+                      solarProgramEnabled: Number((space as any).solarProgramEnabled) === 1,
+                      solarProgramCurrentBillCop: (space as any).solarProgramCurrentBillCop ?? "",
+                      solarProgramSavingsCoveragePercent: (space as any).solarProgramSavingsCoveragePercent ?? "",
+                      solarProgramAgreementYears: (space as any).solarProgramAgreementYears ?? "6",
+                      solarProgramAnnualCpiPercent: (space as any).solarProgramAnnualCpiPercent ?? "3",
+                      solarProgramUsefulLifeYears: (space as any).solarProgramUsefulLifeYears ?? "30",
+                      solarSystemPowerKwp: (space as any).solarSystemPowerKwp ?? "",
+                      solarAnnualGenerationKwh: (space as any).solarAnnualGenerationKwh ?? "",
+                      solarSelfConsumptionPercent: (space as any).solarSelfConsumptionPercent ?? "",
+                      solarExportPercent: (space as any).solarExportPercent ?? "",
+                      solarGridTariffCopPerKwh: (space as any).solarGridTariffCopPerKwh ?? "",
 	                      hasInternet: !!space.hasInternet,
                       is24Hours: !!(space as any).is24Hours,
                       electricalViability: (space as any).electricalViability || "",
@@ -1831,6 +1916,7 @@ function SpaceDetailDialog({
                       aiEstimatedPowerKw: ai.estimatedPowerKw || "",
                       aiInvestmentAppeal: ai.investmentAppeal || "",
                     });
+                    setEditSolarOfferPdf(null);
                     setShowEditDialog(true);
                   }} className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10 text-xs w-full">
                   <Pencil className="w-3.5 h-3.5 mr-1" /> Editar
@@ -1893,6 +1979,8 @@ function SpaceDetailDialog({
                   <DetailRow label="Tablero" value={space.hasElectricalPanel ? "Sí" : "No"} />
                   <DetailRow label="Sistema solar" value={(space as any).hasSolarPanels ? "Incluido en el alcance" : "No incluido"} />
                   {(space as any).hasSolarPanels && <DetailRow label="Costo solar" value={Number((space as any).solarCoveragePercent ?? 0) > 0 && (space as any).solarEnergyCostPerKwh !== null && (space as any).solarEnergyCostPerKwh !== undefined ? `${Number((space as any).solarCoveragePercent).toLocaleString("es-CO")}% a ${formatCOP(Number((space as any).solarEnergyCostPerKwh))}/kWh` : "Pendiente de cobertura y costo validados"} />}
+                  {(space as any).solarProgramEnabled && <DetailRow label="Programa solar aliado" value={`${Number((space as any).solarProgramSavingsCoveragePercent ?? 0).toLocaleString("es-CO")}% de ahorro · ${Number((space as any).solarProgramAgreementYears ?? 6)} años`} />}
+                  {(space as any).solarOfferPdfUrl && <a href={(space as any).solarOfferPdfUrl} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-xs text-emerald-300 hover:underline"><FileText className="h-3.5 w-3.5" /> Ver oferta solar adjunta</a>}
                   {space.electricalDistance && <DetailRow label="Dist. tablero" value={`${space.electricalDistance} m`} />}
                   <DetailRow label="Internet" value={space.hasInternet ? "Sí" : "No"} />
                   <DetailRow label="Horario" value={space.is24Hours ? "24h" : `${space.operatingHoursStart || "—"} - ${space.operatingHoursEnd || "—"}`} />
@@ -2417,6 +2505,27 @@ function SpaceDetailDialog({
                   Operación 24 horas
                 </label>
               </div>
+              <div className="mt-3 rounded-lg border border-emerald-400/30 bg-emerald-400/5 p-2.5">
+                <label className="flex cursor-pointer items-start gap-2 text-xs text-emerald-50">
+                  <input type="checkbox" checked={!!editForm.solarProgramEnabled} onChange={e => setEditForm(p => ({ ...p, solarProgramEnabled: e.target.checked }))} className="mt-0.5 h-4 w-4 accent-emerald-400" />
+                  <span><strong className="block text-emerald-200">Activar programa solar de ahorro para el aliado</strong><span className="mt-0.5 block leading-4 text-emerald-100/75">Registra la factura, el ahorro cubierto, el plazo y la oferta solar de referencia para incluirlos en la ficha del aliado.</span></span>
+                </label>
+                {!!editForm.solarProgramEnabled && (
+                  <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    <div><Label className="mb-1 block text-xs text-emerald-100">Factura mensual promedio (COP) *</Label><Input inputMode="decimal" value={editForm.solarProgramCurrentBillCop ?? ""} onChange={e => setEditForm(p => ({ ...p, solarProgramCurrentBillCop: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /></div>
+                    <div><Label className="mb-1 block text-xs text-emerald-100">Ahorro cubierto (%) *</Label><Input inputMode="decimal" min="0" max="100" value={editForm.solarProgramSavingsCoveragePercent ?? ""} onChange={e => setEditForm(p => ({ ...p, solarProgramSavingsCoveragePercent: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /></div>
+                    <div><Label className="mb-1 block text-xs text-emerald-100">Plazo del acuerdo (años)</Label><Input inputMode="numeric" min="1" max="30" value={editForm.solarProgramAgreementYears ?? "6"} onChange={e => setEditForm(p => ({ ...p, solarProgramAgreementYears: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /></div>
+                    <div><Label className="mb-1 block text-xs text-emerald-100">IPC anual de referencia (%)</Label><Input inputMode="decimal" min="0" max="30" value={editForm.solarProgramAnnualCpiPercent ?? "3"} onChange={e => setEditForm(p => ({ ...p, solarProgramAnnualCpiPercent: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /></div>
+                    <div><Label className="mb-1 block text-xs text-emerald-100">Vida útil de referencia (años)</Label><Input inputMode="numeric" min="1" max="50" value={editForm.solarProgramUsefulLifeYears ?? "30"} onChange={e => setEditForm(p => ({ ...p, solarProgramUsefulLifeYears: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /></div>
+                    <div><Label className="mb-1 block text-xs text-emerald-100">Potencia solar (kWp)</Label><Input inputMode="decimal" value={editForm.solarSystemPowerKwp ?? ""} onChange={e => setEditForm(p => ({ ...p, solarSystemPowerKwp: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /></div>
+                    <div><Label className="mb-1 block text-xs text-emerald-100">Generación anual (kWh)</Label><Input inputMode="decimal" value={editForm.solarAnnualGenerationKwh ?? ""} onChange={e => setEditForm(p => ({ ...p, solarAnnualGenerationKwh: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /></div>
+                    <div><Label className="mb-1 block text-xs text-emerald-100">Autoconsumo (%)</Label><Input inputMode="decimal" min="0" max="100" value={editForm.solarSelfConsumptionPercent ?? ""} onChange={e => setEditForm(p => ({ ...p, solarSelfConsumptionPercent: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /></div>
+                    <div><Label className="mb-1 block text-xs text-emerald-100">Exportación (%)</Label><Input inputMode="decimal" min="0" max="100" value={editForm.solarExportPercent ?? ""} onChange={e => setEditForm(p => ({ ...p, solarExportPercent: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /></div>
+                    <div><Label className="mb-1 block text-xs text-emerald-100">Tarifa de red (COP/kWh)</Label><Input inputMode="numeric" value={editForm.solarGridTariffCopPerKwh ?? ""} onChange={e => setEditForm(p => ({ ...p, solarGridTariffCopPerKwh: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /></div>
+                    <div className="sm:col-span-2"><Label className="mb-1 block text-xs text-emerald-100">Reemplazar oferta solar PDF (opcional)</Label><Input type="file" accept="application/pdf,.pdf" onChange={e => setEditSolarOfferPdf(e.target.files?.[0] || null)} className="border-[#374151] bg-[#111827] text-xs text-white file:mr-2 file:rounded file:border-0 file:bg-emerald-600 file:px-2 file:py-1 file:text-xs file:text-white" />{editSolarOfferPdf && <p className="mt-1 truncate text-[11px] text-emerald-200">{editSolarOfferPdf.name}</p>}</div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* SECCIÓN: Transformador nuevo */}
@@ -2764,6 +2873,16 @@ function SpaceDetailDialog({
                   numericInputError("Payback", editForm.estimatedPaybackMonths, true),
                   numericInputError("Potencia", editForm.estimatedPowerKw, true),
                   numericInputError("Cargadores", editForm.estimatedChargerCount, true),
+                  numericInputError("Factura solar mensual", editForm.solarProgramCurrentBillCop),
+                  numericInputError("Cobertura de ahorro solar", editForm.solarProgramSavingsCoveragePercent),
+                  numericInputError("Plazo solar", editForm.solarProgramAgreementYears, true),
+                  numericInputError("IPC solar", editForm.solarProgramAnnualCpiPercent),
+                  numericInputError("Vida útil solar", editForm.solarProgramUsefulLifeYears, true),
+                  numericInputError("Potencia solar", editForm.solarSystemPowerKwp),
+                  numericInputError("Generación solar anual", editForm.solarAnnualGenerationKwh),
+                  numericInputError("Autoconsumo solar", editForm.solarSelfConsumptionPercent),
+                  numericInputError("Exportación solar", editForm.solarExportPercent),
+                  numericInputError("Tarifa de red solar", editForm.solarGridTariffCopPerKwh, true),
                 ].find(Boolean);
                 if (numericError) throw new Error(numericError);
                 const evPercent = toOptionalInteger(editForm.estimatedEvPercent);
@@ -2813,6 +2932,17 @@ function SpaceDetailDialog({
                 const solarEnergyCostPerKwh = toOptionalInteger(editForm.solarEnergyCostPerKwh);
                 if (solarCoveragePercent !== undefined) payload.solarCoveragePercent = solarCoveragePercent;
                 if (solarEnergyCostPerKwh !== undefined) payload.solarEnergyCostPerKwh = solarEnergyCostPerKwh;
+                payload.solarProgramEnabled = Boolean(editForm.solarProgramEnabled);
+                payload.solarProgramCurrentBillCop = toOptionalNumber(editForm.solarProgramCurrentBillCop);
+                payload.solarProgramSavingsCoveragePercent = toOptionalNumber(editForm.solarProgramSavingsCoveragePercent);
+                payload.solarProgramAgreementYears = toOptionalInteger(editForm.solarProgramAgreementYears);
+                payload.solarProgramAnnualCpiPercent = toOptionalNumber(editForm.solarProgramAnnualCpiPercent);
+                payload.solarProgramUsefulLifeYears = toOptionalInteger(editForm.solarProgramUsefulLifeYears);
+                payload.solarSystemPowerKwp = toOptionalNumber(editForm.solarSystemPowerKwp);
+                payload.solarAnnualGenerationKwh = toOptionalNumber(editForm.solarAnnualGenerationKwh);
+                payload.solarSelfConsumptionPercent = toOptionalNumber(editForm.solarSelfConsumptionPercent);
+                payload.solarExportPercent = toOptionalNumber(editForm.solarExportPercent);
+                payload.solarGridTariffCopPerKwh = toOptionalInteger(editForm.solarGridTariffCopPerKwh);
                 if (editForm.hasInternet !== undefined) payload.hasInternet = editForm.hasInternet;
                 if (editForm.is24Hours !== undefined) payload.is24Hours = editForm.is24Hours;
                 if (editForm.electricalViability) payload.electricalViability = editForm.electricalViability;
@@ -2852,6 +2982,14 @@ function SpaceDetailDialog({
                   };
                   payload.aiAnalysis = JSON.stringify(updatedAi);
                 }
+                if (editSolarOfferPdf) {
+                  if (editSolarOfferPdf.size > 20 * 1024 * 1024) throw new Error("La oferta solar PDF no puede superar 20 MB.");
+                  payload.solarOfferPdf = {
+                    base64: await readFileAsBase64(editSolarOfferPdf),
+                    fileName: editSolarOfferPdf.name,
+                    contentType: "application/pdf",
+                  };
+                }
                 await updateSpaceMutation.mutateAsync(payload as any);
                 // Upload new photos if any
                 if (editPhotos.length > 0) {
@@ -2879,6 +3017,7 @@ function SpaceDetailDialog({
                 setShowEditDialog(false);
                 editPhotos.forEach(p => URL.revokeObjectURL(p.preview));
                 setEditPhotos([]);
+                setEditSolarOfferPdf(null);
                 refetch();
                 onRefresh();
               } catch (err: any) {

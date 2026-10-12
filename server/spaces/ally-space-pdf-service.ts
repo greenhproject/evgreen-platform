@@ -8,8 +8,10 @@
  */
 import jsPDFModule from "jspdf";
 import axios from "axios";
+import { PDFDocument } from "pdf-lib";
 import { getPhotoMarkerLabel, getPhotoTypeLabel } from "../../shared/photo-type-labels";
 import { buildAllyIncomeProjection, type AllyIncomeProjectionSnapshot } from "../../shared/ally-space-income-projection";
+import { buildAllySolarProgram, type AllySolarProgramSnapshot } from "../../shared/ally-solar-program";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const jsPDF = ((jsPDFModule as any).jsPDF ?? (jsPDFModule as any).default?.jsPDF ?? (jsPDFModule as any).default ?? jsPDFModule) as typeof import("jspdf").jsPDF;
@@ -57,6 +59,19 @@ export interface AllySpacePdfData {
   allySharePercent?: number | null;
   solarCoveragePercent?: number | null;
   solarEnergyCostPerKwh?: number | null;
+  solarProgramEnabled?: boolean | number | null;
+  solarProgramCurrentBillCop?: number | null;
+  solarProgramSavingsCoveragePercent?: number | null;
+  solarProgramAgreementYears?: number | null;
+  solarProgramAnnualCpiPercent?: number | null;
+  solarProgramUsefulLifeYears?: number | null;
+  solarSystemPowerKwp?: number | null;
+  solarAnnualGenerationKwh?: number | null;
+  solarSelfConsumptionPercent?: number | null;
+  solarExportPercent?: number | null;
+  solarGridTariffCopPerKwh?: number | null;
+  solarOfferPdfUrl?: string | null;
+  solarOfferPdfName?: string | null;
   technicalCondition?: string | null;
   photos: Array<{
     url: string;
@@ -75,6 +90,14 @@ export interface AllyPdfContent {
   technicalRows: Array<[string, string]>;
   operatingRows: Array<[string, string]>;
   incomeProjection: AllyIncomeProjectionSnapshot | null;
+  solarProgram: AllySolarProgramSnapshot | null;
+  combinedBenefit: {
+    chargerMonthlyCop: number;
+    solarMonthlySavingsCop: number;
+    combinedMonthlyCop: number;
+    combinedAnnualCop: number;
+    agreementCombinedBenefitCop: number;
+  } | null;
   allyResponsibilities: string[];
   evgreenResponsibilities: string[];
   nextSteps: string[];
@@ -190,6 +213,38 @@ export function buildAllySpacePdfContent(data: AllySpacePdfData): AllyPdfContent
       return null;
     }
   })();
+  const solarProgram = (() => {
+    try {
+      return buildAllySolarProgram({
+        enabled: data.solarProgramEnabled,
+        currentMonthlyBillCop: data.solarProgramCurrentBillCop,
+        savingsCoveragePercent: data.solarProgramSavingsCoveragePercent,
+        agreementYears: data.solarProgramAgreementYears,
+        annualCpiPercent: data.solarProgramAnnualCpiPercent,
+        usefulLifeYears: data.solarProgramUsefulLifeYears,
+        systemPowerKwp: data.solarSystemPowerKwp,
+        annualGenerationKwh: data.solarAnnualGenerationKwh,
+        selfConsumptionPercent: data.solarSelfConsumptionPercent,
+        exportPercent: data.solarExportPercent,
+        gridTariffCopPerKwh: data.solarGridTariffCopPerKwh,
+      });
+    } catch {
+      return null;
+    }
+  })();
+  const combinedBenefit = solarProgram
+    ? (() => {
+        const chargerMonthlyCop = incomeProjection?.scenarios.REALISTIC.allyIncomeMonthly ?? 0;
+        const solarMonthlySavingsCop = solarProgram.initialMonthlySavingsCop;
+        return {
+          chargerMonthlyCop,
+          solarMonthlySavingsCop,
+          combinedMonthlyCop: chargerMonthlyCop + solarMonthlySavingsCop,
+          combinedAnnualCop: (chargerMonthlyCop * 12) + solarProgram.initialAnnualSavingsCop,
+          agreementCombinedBenefitCop: (chargerMonthlyCop * 12 * solarProgram.assumptions.agreementYears) + solarProgram.agreementSavingsCop,
+        };
+      })()
+    : null;
 
   return {
     coverSubtitle: `Documento técnico y comercial para el aliado que aporta el espacio. ${spaceTypeDescription(data)}`,
@@ -216,6 +271,7 @@ export function buildAllySpacePdfContent(data: AllySpacePdfData): AllyPdfContent
       ["Internet en el punto", formatBoolean(data.hasInternet)],
       ["Mangueras preliminares", data.estimatedChargerCount ? formatNumber(Number(data.estimatedChargerCount) * 2) : "Por confirmar"],
       ["Alcance solar", data.hasSolarPanels ? "Considerado en la información registrada" : "No informado / fuera del alcance actual"],
+      ["Programa solar para el aliado", data.solarProgramEnabled ? "Beneficio energético en evaluación" : "No activado"],
     ],
     operatingRows: [
       ["Horario", data.is24Hours ? "24 horas / 7 días" : `${data.operatingHoursStart || "Por confirmar"} a ${data.operatingHoursEnd || "Por confirmar"}`],
@@ -225,6 +281,8 @@ export function buildAllySpacePdfContent(data: AllySpacePdfData): AllyPdfContent
       ["Estado de la oportunidad", statusLabel(data.status)],
     ],
     incomeProjection,
+    solarProgram,
+    combinedBenefit,
     allyResponsibilities: [
       "Acreditar la autorización para disponer del espacio y mantener actualizada la información suministrada.",
       "Facilitar el acceso para visitas técnicas, levantamientos, instalación y actividades de mantenimiento.",
@@ -584,6 +642,114 @@ function drawAnnualAllyValuePage(
     contentWidth - 12,
   );
   doc.text(note.slice(0, 3), margin + 6, baselineY + 40);
+}
+
+function drawSolarProgramPage(
+  doc: InstanceType<typeof jsPDF>,
+  data: AllySpacePdfData,
+  content: AllyPdfContent,
+  logo: { data: string; format: string } | null,
+  width: number,
+  height: number,
+  margin: number,
+) {
+  addHeader(doc, data, logo, width, margin);
+  const contentWidth = width - margin * 2;
+  let y = 25;
+  y = drawSectionTitle(doc, "PROGRAMA SOLAR PARA EL ALIADO", margin, y, contentWidth);
+  setColor(doc, COLORS.gray700);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.6);
+  const intro = doc.splitTextToSize(
+    "Además de la retribución estimada por el punto de carga, el espacio puede acceder a un programa solar de sustitución de gasto energético. Esta lectura usa la factura promedio y la cobertura registrada; no reemplaza el estudio solar ni el contrato de compraventa de energía.",
+    contentWidth,
+  );
+  doc.text(intro, margin, y);
+  y += intro.length * 4.5 + 8;
+
+  const solar = content.solarProgram;
+  if (!solar) {
+    setColor(doc, [255, 251, 235], "fill");
+    doc.roundedRect(margin, y, contentWidth, 34, 3, 3, "F");
+    setColor(doc, [146, 64, 14]);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.5);
+    doc.text("PROGRAMA SOLAR NO ACTIVADO", margin + 6, y + 11);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.7);
+    doc.text("Puede activarse desde la administración después de contar con factura, cobertura y estudio preliminar.", margin + 6, y + 20);
+    return;
+  }
+
+  const assumptions = solar.assumptions;
+  const cards = [
+    ["Ahorro mensual inicial", formatCop(solar.initialMonthlySavingsCop), COLORS.greenLight, COLORS.greenDark],
+    ["Ahorro anual inicial", formatCop(solar.initialAnnualSavingsCop), [239, 246, 255], COLORS.blue],
+    ["Cuota estimada año 1", formatCop(solar.initialMonthlyReplacementQuotaCop), [255, 251, 235], [146, 64, 14]],
+  ] as const;
+  const gap = 5;
+  const cardWidth = (contentWidth - gap * 2) / 3;
+  cards.forEach(([label, value, fill, textColor], index) => {
+    const x = margin + index * (cardWidth + gap);
+    setColor(doc, fill as [number, number, number], "fill");
+    doc.roundedRect(x, y, cardWidth, 29, 3, 3, "F");
+    setColor(doc, textColor as [number, number, number]);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7.3);
+    doc.text(label, x + 5, y + 9);
+    doc.setFontSize(11.5);
+    doc.text(value, x + 5, y + 20);
+  });
+  y += 39;
+
+  const detailRows: Array<[string, string]> = [
+    ["Factura mensual promedio registrada", formatCop(assumptions.currentMonthlyBillCop)],
+    ["Cobertura de ahorro estimada", `${formatDecimal(assumptions.savingsCoveragePercent, 1)}% del gasto actual`],
+    ["Plazo inicial de sustitución", `${formatNumber(assumptions.agreementYears)} años`],
+    ["Actualización anual de la cuota", `${formatDecimal(assumptions.annualCpiPercent, 1)}% de referencia IPC`],
+    ["Vida útil de referencia", `${formatNumber(assumptions.usefulLifeYears)} años`],
+    ...(assumptions.systemPowerKwp !== null ? [["Potencia solar de referencia", formatNumber(assumptions.systemPowerKwp, " kWp")] as [string, string]] : []),
+    ...(assumptions.annualGenerationKwh !== null ? [["Generación solar anual estimada", formatNumber(assumptions.annualGenerationKwh, " kWh/año")] as [string, string]] : []),
+    ...(assumptions.selfConsumptionPercent !== null ? [["Autoconsumo de referencia", `${formatDecimal(assumptions.selfConsumptionPercent, 1)}%`] as [string, string]] : []),
+    ...(assumptions.exportPercent !== null ? [["Exportación de referencia", `${formatDecimal(assumptions.exportPercent, 1)}%`] as [string, string]] : []),
+  ];
+  y = drawRows(doc, detailRows, margin, y, contentWidth, 65) + 9;
+
+  if (content.combinedBenefit) {
+    setColor(doc, COLORS.green, "fill");
+    doc.roundedRect(margin, y, contentWidth, 43, 3, 3, "F");
+    setColor(doc, COLORS.white);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.5);
+    doc.text("BENEFICIO COMBINADO REFERENCIAL · AÑO 1", margin + 7, y + 10);
+    doc.setFontSize(14);
+    doc.text(formatCop(content.combinedBenefit.combinedMonthlyCop), margin + 7, y + 24);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.4);
+    doc.text("Retribución estimada del punto + ahorro energético mensual", margin + 7, y + 32);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.5);
+    doc.text(formatCop(content.combinedBenefit.combinedAnnualCop), margin + contentWidth - 7, y + 24, { align: "right" });
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.4);
+    doc.text("Referencia anual", margin + contentWidth - 7, y + 32, { align: "right" });
+    y += 52;
+  }
+
+  setColor(doc, [236, 253, 245], "fill");
+  doc.roundedRect(margin, y, contentWidth, 36, 3, 3, "F");
+  setColor(doc, COLORS.greenDark);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.text("LECTURA DEL ACUERDO", margin + 6, y + 9);
+  setColor(doc, COLORS.gray700);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.3);
+  const note = doc.splitTextToSize(
+    `Durante ${formatNumber(assumptions.agreementYears)} años se modela una cuota mensual similar a la factura actual, ajustada anualmente por el ${formatDecimal(assumptions.annualCpiPercent, 1)}% de referencia. Al finalizar el plazo, la eventual cesión de equipos y el beneficio de energía posterior estarán sujetos a contrato, desempeño real, mantenimiento y vida útil.`,
+    contentWidth - 12,
+  );
+  doc.text(note.slice(0, 4), margin + 6, y + 17);
 }
 
 function drawCommercialEcosystemPage(
@@ -962,6 +1128,28 @@ function addGalleryPages(doc: InstanceType<typeof jsPDF>, data: AllySpacePdfData
   });
 }
 
+/** Adjunta el PDF solar original sin modificarlo ni exponerlo como texto financiero upstream. */
+export async function appendSolarOfferPdf(basePdf: Buffer, solarOfferPdfUrl?: string | null): Promise<Buffer> {
+  if (!solarOfferPdfUrl) return basePdf;
+  try {
+    const response = await axios.get(solarOfferPdfUrl, {
+      responseType: "arraybuffer",
+      timeout: 15000,
+      maxContentLength: 20 * 1024 * 1024,
+      headers: { "User-Agent": "EVGreen-Ally-PDF-Generator/1.0" },
+    });
+    const appendix = Buffer.from(response.data);
+    if (appendix.length < 5 || appendix.subarray(0, 5).toString() !== "%PDF-") return basePdf;
+    const merged = await PDFDocument.load(basePdf);
+    const source = await PDFDocument.load(appendix);
+    const copiedPages = await merged.copyPages(source, source.getPageIndices());
+    copiedPages.forEach((page) => merged.addPage(page));
+    return Buffer.from(await merged.save());
+  } catch {
+    return basePdf;
+  }
+}
+
 export async function generateAllySpacePdf(data: AllySpacePdfData): Promise<Buffer> {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "letter" });
   const width = doc.internal.pageSize.getWidth();
@@ -992,6 +1180,10 @@ export async function generateAllySpacePdf(data: AllySpacePdfData): Promise<Buff
   drawIncomeProjectionPage(doc, data, content, logo, width, height, margin);
   doc.addPage();
   drawAnnualAllyValuePage(doc, data, content, logo, width, height, margin);
+  if (content.solarProgram) {
+    doc.addPage();
+    drawSolarProgramPage(doc, data, content, logo, width, height, margin);
+  }
   doc.addPage();
   drawCommercialEcosystemPage(doc, data, logo, ecosystemImage, width, height, margin);
 
@@ -1006,5 +1198,6 @@ export async function generateAllySpacePdf(data: AllySpacePdfData): Promise<Buff
     drawFooter(doc, data.code, page, totalPages, width, height, margin);
   }
 
-  return Buffer.from(doc.output("arraybuffer"));
+  const basePdf = Buffer.from(doc.output("arraybuffer"));
+  return appendSolarOfferPdf(basePdf, data.solarOfferPdfUrl);
 }

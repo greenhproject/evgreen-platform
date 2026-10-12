@@ -42,6 +42,7 @@ import {
 } from "../../shared/prospecto-financial-scenario";
 import { buildProspectoGridUpgradeNote } from "./prospecto-grid-upgrade-note";
 import { getRevenueDistributionForSpaceType } from "../../shared/space-investment-scoring-policy";
+import { buildAllySolarProgram } from "../../shared/ally-solar-program";
 
 // ============================================================================
 // ROLE GUARDS
@@ -146,6 +147,19 @@ async function generateAllySpacePdfForSubmission(submissionId: number) {
     allySharePercent: Number((platformSettings as any)?.hostSharePercent ?? 10),
     solarCoveragePercent: submission.solarCoveragePercent === null ? null : Number(submission.solarCoveragePercent),
     solarEnergyCostPerKwh: submission.solarEnergyCostPerKwh === null ? null : Number(submission.solarEnergyCostPerKwh),
+    solarProgramEnabled: Number(submission.solarProgramEnabled) === 1,
+    solarProgramCurrentBillCop: submission.solarProgramCurrentBillCop === null ? null : Number(submission.solarProgramCurrentBillCop),
+    solarProgramSavingsCoveragePercent: submission.solarProgramSavingsCoveragePercent === null ? null : Number(submission.solarProgramSavingsCoveragePercent),
+    solarProgramAgreementYears: submission.solarProgramAgreementYears,
+    solarProgramAnnualCpiPercent: submission.solarProgramAnnualCpiPercent === null ? null : Number(submission.solarProgramAnnualCpiPercent),
+    solarProgramUsefulLifeYears: submission.solarProgramUsefulLifeYears,
+    solarSystemPowerKwp: submission.solarSystemPowerKwp === null ? null : Number(submission.solarSystemPowerKwp),
+    solarAnnualGenerationKwh: submission.solarAnnualGenerationKwh === null ? null : Number(submission.solarAnnualGenerationKwh),
+    solarSelfConsumptionPercent: submission.solarSelfConsumptionPercent === null ? null : Number(submission.solarSelfConsumptionPercent),
+    solarExportPercent: submission.solarExportPercent === null ? null : Number(submission.solarExportPercent),
+    solarGridTariffCopPerKwh: submission.solarGridTariffCopPerKwh,
+    solarOfferPdfUrl: submission.solarOfferPdfUrl,
+    solarOfferPdfName: submission.solarOfferPdfName,
     photos: photos.map(photo => ({
       url: photo.photoUrl,
       type: photo.photoType,
@@ -535,6 +549,17 @@ export const spacesRouter = router({
       hasSolarPanels: z.boolean().optional(),
       solarCoveragePercent: optionalFormNumber().refine((value) => value === undefined || (value >= 0 && value <= 100), "La cobertura solar debe estar entre 0 % y 100 %"),
       solarEnergyCostPerKwh: optionalFormInteger().refine((value) => value === undefined || value >= 0, "El costo solar por kWh no puede ser negativo"),
+      solarProgramEnabled: z.boolean().optional(),
+      solarProgramCurrentBillCop: optionalFormNumber().refine((value) => value === undefined || value > 0, "La factura mensual debe ser mayor que cero"),
+      solarProgramSavingsCoveragePercent: optionalFormNumber().refine((value) => value === undefined || (value >= 0 && value <= 100), "La cobertura de ahorro solar debe estar entre 0 % y 100 %"),
+      solarProgramAgreementYears: optionalFormInteger().refine((value) => value === undefined || (value >= 1 && value <= 30), "El acuerdo solar debe estar entre 1 y 30 años"),
+      solarProgramAnnualCpiPercent: optionalFormNumber().refine((value) => value === undefined || (value >= 0 && value <= 30), "El IPC anual debe estar entre 0 % y 30 %"),
+      solarProgramUsefulLifeYears: optionalFormInteger().refine((value) => value === undefined || (value >= 1 && value <= 50), "La vida útil solar debe estar entre 1 y 50 años"),
+      solarSystemPowerKwp: optionalFormNumber(),
+      solarAnnualGenerationKwh: optionalFormNumber(),
+      solarSelfConsumptionPercent: optionalFormNumber().refine((value) => value === undefined || (value >= 0 && value <= 100), "El autoconsumo debe estar entre 0 % y 100 %"),
+      solarExportPercent: optionalFormNumber().refine((value) => value === undefined || (value >= 0 && value <= 100), "La exportación solar debe estar entre 0 % y 100 %"),
+      solarGridTariffCopPerKwh: optionalFormInteger().refine((value) => value === undefined || value >= 0, "La tarifa de red no puede ser negativa"),
       electricalDistance: optionalFormInteger(),
       hasInternet: z.boolean().optional(),
       operatingHoursStart: z.string().optional(),
@@ -569,9 +594,33 @@ export const spacesRouter = router({
         isCover: z.boolean().optional(),
         isConceptual: z.boolean().optional(),
       })).optional(),
+      solarOfferPdf: z.object({
+        base64: z.string().min(1).max(25_000_000),
+        fileName: z.string().trim().min(1).max(255),
+        contentType: z.string().optional(),
+      }).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDatabase();
+      let solarProgram: ReturnType<typeof buildAllySolarProgram> = null;
+      try {
+        solarProgram = buildAllySolarProgram({
+          enabled: input.solarProgramEnabled,
+          currentMonthlyBillCop: input.solarProgramCurrentBillCop,
+          savingsCoveragePercent: input.solarProgramSavingsCoveragePercent,
+          agreementYears: input.solarProgramAgreementYears,
+          annualCpiPercent: input.solarProgramAnnualCpiPercent,
+          usefulLifeYears: input.solarProgramUsefulLifeYears,
+          systemPowerKwp: input.solarSystemPowerKwp,
+          annualGenerationKwh: input.solarAnnualGenerationKwh,
+          selfConsumptionPercent: input.solarSelfConsumptionPercent,
+          exportPercent: input.solarExportPercent,
+          gridTariffCopPerKwh: input.solarGridTariffCopPerKwh,
+        });
+      } catch (error) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Revisa los datos del programa solar." });
+      }
+      const solarAssumptions = solarProgram?.assumptions;
       const { code, result } = await db.transaction(async (tx: any) => {
         let technicalNotesJson: string | null = null;
         if (input.requiresNewTransformer !== undefined || input.proposedTransformerKva !== undefined) {
@@ -603,6 +652,17 @@ export const spacesRouter = router({
             hasSolarPanels: input.hasSolarPanels ? 1 : 0,
             solarCoveragePercent: input.solarCoveragePercent ?? 0,
             solarEnergyCostPerKwh: input.solarEnergyCostPerKwh ?? null,
+            solarProgramEnabled: solarProgram ? 1 : 0,
+            solarProgramCurrentBillCop: solarAssumptions?.currentMonthlyBillCop ?? null,
+            solarProgramSavingsCoveragePercent: solarAssumptions?.savingsCoveragePercent ?? null,
+            solarProgramAgreementYears: solarAssumptions?.agreementYears ?? null,
+            solarProgramAnnualCpiPercent: solarAssumptions?.annualCpiPercent ?? null,
+            solarProgramUsefulLifeYears: solarAssumptions?.usefulLifeYears ?? null,
+            solarSystemPowerKwp: solarAssumptions?.systemPowerKwp ?? null,
+            solarAnnualGenerationKwh: solarAssumptions?.annualGenerationKwh ?? null,
+            solarSelfConsumptionPercent: solarAssumptions?.selfConsumptionPercent ?? null,
+            solarExportPercent: solarAssumptions?.exportPercent ?? null,
+            solarGridTariffCopPerKwh: solarAssumptions?.gridTariffCopPerKwh ?? null,
             electricalDistance: input.electricalDistance || null,
             hasInternet: input.hasInternet ? 1 : 0,
             operatingHoursStart: input.operatingHoursStart || "06:00",
@@ -692,6 +752,25 @@ export const spacesRouter = router({
           } catch (err) {
             console.error(`[Spaces] Error uploading photo ${i}:`, err);
           }
+        }
+      }
+
+      if (input.solarOfferPdf) {
+        try {
+          const pdfBuffer = Buffer.from(input.solarOfferPdf.base64.replace(/^data:application\/pdf;base64,/, ""), "base64");
+          if (pdfBuffer.length === 0 || pdfBuffer.length > 20 * 1024 * 1024 || pdfBuffer.subarray(0, 5).toString() !== "%PDF-") {
+            throw new Error("El archivo no parece ser un PDF válido o supera 20 MB.");
+          }
+          const fileKey = `spaces/${code}/solar-offer/${Date.now()}-${safePdfSegment(input.solarOfferPdf.fileName)}.pdf`;
+          const uploaded = await storagePut(fileKey, pdfBuffer, "application/pdf");
+          await db.update(spaceSubmissions).set({
+            solarOfferPdfUrl: uploaded.url,
+            solarOfferPdfKey: fileKey,
+            solarOfferPdfName: input.solarOfferPdf.fileName,
+          }).where(eq(spaceSubmissions.id, submissionId));
+        } catch (error) {
+          console.error("[Spaces] Error uploading solar offer PDF:", error);
+          throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "No fue posible guardar la oferta solar PDF." });
         }
       }
 
@@ -1766,6 +1845,17 @@ export const spacesRouter = router({
         hasSolarPanels: z.boolean().optional(),
         solarCoveragePercent: optionalFormNumber().refine((value) => value === undefined || (value >= 0 && value <= 100), "La cobertura solar debe estar entre 0 % y 100 %"),
         solarEnergyCostPerKwh: optionalFormInteger().refine((value) => value === undefined || value >= 0, "El costo solar por kWh no puede ser negativo"),
+        solarProgramEnabled: z.boolean().optional(),
+        solarProgramCurrentBillCop: optionalFormNumber().refine((value) => value === undefined || value > 0, "La factura mensual debe ser mayor que cero"),
+        solarProgramSavingsCoveragePercent: optionalFormNumber().refine((value) => value === undefined || (value >= 0 && value <= 100), "La cobertura de ahorro solar debe estar entre 0 % y 100 %"),
+        solarProgramAgreementYears: optionalFormInteger().refine((value) => value === undefined || (value >= 1 && value <= 30), "El acuerdo solar debe estar entre 1 y 30 años"),
+        solarProgramAnnualCpiPercent: optionalFormNumber().refine((value) => value === undefined || (value >= 0 && value <= 30), "El IPC anual debe estar entre 0 % y 30 %"),
+        solarProgramUsefulLifeYears: optionalFormInteger().refine((value) => value === undefined || (value >= 1 && value <= 50), "La vida útil solar debe estar entre 1 y 50 años"),
+        solarSystemPowerKwp: optionalFormNumber(),
+        solarAnnualGenerationKwh: optionalFormNumber(),
+        solarSelfConsumptionPercent: optionalFormNumber().refine((value) => value === undefined || (value >= 0 && value <= 100), "El autoconsumo debe estar entre 0 % y 100 %"),
+        solarExportPercent: optionalFormNumber().refine((value) => value === undefined || (value >= 0 && value <= 100), "La exportación solar debe estar entre 0 % y 100 %"),
+        solarGridTariffCopPerKwh: optionalFormInteger().refine((value) => value === undefined || value >= 0, "La tarifa de red no puede ser negativa"),
         electricalDistance: optionalFormInteger(),
         electricalDistanceM: optionalFormInteger(),
         hasInternet: z.boolean().optional(),
@@ -1801,10 +1891,15 @@ export const spacesRouter = router({
         // Transformador nuevo
         requiresNewTransformer: z.boolean().optional(), // Se guarda en technicalNotes como JSON
         proposedTransformerKva: optionalFormNumber(), // kVA del transformador propuesto
+        solarOfferPdf: z.object({
+          base64: z.string().min(1).max(25_000_000),
+          fileName: z.string().trim().min(1).max(255),
+          contentType: z.string().optional(),
+        }).optional(),
       }))
       .mutation(async ({ input, ctx }) => {
         const db = await getDatabase();
-        const { id, requiresNewTransformer, proposedTransformerKva, electricalDistanceM, ...updateFields } = input;
+        const { id, requiresNewTransformer, proposedTransformerKva, electricalDistanceM, solarOfferPdf, ...updateFields } = input;
 
         const [previousSubmission] = await db
           .select({
@@ -1820,6 +1915,17 @@ export const spacesRouter = router({
             hasSolarPanels: spaceSubmissions.hasSolarPanels,
             solarCoveragePercent: spaceSubmissions.solarCoveragePercent,
             solarEnergyCostPerKwh: spaceSubmissions.solarEnergyCostPerKwh,
+            solarProgramEnabled: spaceSubmissions.solarProgramEnabled,
+            solarProgramCurrentBillCop: spaceSubmissions.solarProgramCurrentBillCop,
+            solarProgramSavingsCoveragePercent: spaceSubmissions.solarProgramSavingsCoveragePercent,
+            solarProgramAgreementYears: spaceSubmissions.solarProgramAgreementYears,
+            solarProgramAnnualCpiPercent: spaceSubmissions.solarProgramAnnualCpiPercent,
+            solarProgramUsefulLifeYears: spaceSubmissions.solarProgramUsefulLifeYears,
+            solarSystemPowerKwp: spaceSubmissions.solarSystemPowerKwp,
+            solarAnnualGenerationKwh: spaceSubmissions.solarAnnualGenerationKwh,
+            solarSelfConsumptionPercent: spaceSubmissions.solarSelfConsumptionPercent,
+            solarExportPercent: spaceSubmissions.solarExportPercent,
+            solarGridTariffCopPerKwh: spaceSubmissions.solarGridTariffCopPerKwh,
           })
           .from(spaceSubmissions)
           .where(eq(spaceSubmissions.id, id))
@@ -1839,6 +1945,52 @@ export const spacesRouter = router({
         }
         if (cleanFields.hasSolarPanels !== undefined) {
           cleanFields.hasSolarPanels = cleanFields.hasSolarPanels ? 1 : 0;
+        }
+        const solarProgramFields = [
+          "solarProgramEnabled", "solarProgramCurrentBillCop", "solarProgramSavingsCoveragePercent",
+          "solarProgramAgreementYears", "solarProgramAnnualCpiPercent", "solarProgramUsefulLifeYears",
+          "solarSystemPowerKwp", "solarAnnualGenerationKwh", "solarSelfConsumptionPercent",
+          "solarExportPercent", "solarGridTariffCopPerKwh",
+        ];
+        const solarProgramChanged = solarProgramFields.some((field) => cleanFields[field] !== undefined);
+        if (solarProgramChanged) {
+          const nextEnabled = cleanFields.solarProgramEnabled === undefined
+            ? Number(previousSubmission.solarProgramEnabled) === 1
+            : Boolean(cleanFields.solarProgramEnabled);
+          let solarProgram: ReturnType<typeof buildAllySolarProgram> = null;
+          try {
+            solarProgram = buildAllySolarProgram({
+              enabled: nextEnabled,
+              currentMonthlyBillCop: cleanFields.solarProgramCurrentBillCop ?? previousSubmission.solarProgramCurrentBillCop,
+              savingsCoveragePercent: cleanFields.solarProgramSavingsCoveragePercent ?? previousSubmission.solarProgramSavingsCoveragePercent,
+              agreementYears: cleanFields.solarProgramAgreementYears ?? previousSubmission.solarProgramAgreementYears,
+              annualCpiPercent: cleanFields.solarProgramAnnualCpiPercent ?? previousSubmission.solarProgramAnnualCpiPercent,
+              usefulLifeYears: cleanFields.solarProgramUsefulLifeYears ?? previousSubmission.solarProgramUsefulLifeYears,
+              systemPowerKwp: cleanFields.solarSystemPowerKwp ?? previousSubmission.solarSystemPowerKwp,
+              annualGenerationKwh: cleanFields.solarAnnualGenerationKwh ?? previousSubmission.solarAnnualGenerationKwh,
+              selfConsumptionPercent: cleanFields.solarSelfConsumptionPercent ?? previousSubmission.solarSelfConsumptionPercent,
+              exportPercent: cleanFields.solarExportPercent ?? previousSubmission.solarExportPercent,
+              gridTariffCopPerKwh: cleanFields.solarGridTariffCopPerKwh ?? previousSubmission.solarGridTariffCopPerKwh,
+            });
+          } catch (error) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Revisa los datos del programa solar." });
+          }
+          if (!solarProgram) {
+            cleanFields.solarProgramEnabled = 0;
+            solarProgramFields.slice(1).forEach((field) => { cleanFields[field] = null; });
+          } else {
+            cleanFields.solarProgramEnabled = 1;
+            cleanFields.solarProgramCurrentBillCop = solarProgram.assumptions.currentMonthlyBillCop;
+            cleanFields.solarProgramSavingsCoveragePercent = solarProgram.assumptions.savingsCoveragePercent;
+            cleanFields.solarProgramAgreementYears = solarProgram.assumptions.agreementYears;
+            cleanFields.solarProgramAnnualCpiPercent = solarProgram.assumptions.annualCpiPercent;
+            cleanFields.solarProgramUsefulLifeYears = solarProgram.assumptions.usefulLifeYears;
+            cleanFields.solarSystemPowerKwp = solarProgram.assumptions.systemPowerKwp;
+            cleanFields.solarAnnualGenerationKwh = solarProgram.assumptions.annualGenerationKwh;
+            cleanFields.solarSelfConsumptionPercent = solarProgram.assumptions.selfConsumptionPercent;
+            cleanFields.solarExportPercent = solarProgram.assumptions.exportPercent;
+            cleanFields.solarGridTariffCopPerKwh = solarProgram.assumptions.gridTariffCopPerKwh;
+          }
         }
         if (cleanFields.estimatedPowerKw !== undefined && cleanFields.estimatedPowerKw < 120) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "EVGreen solo instala cargadores rápidos DC desde 120 kW." });
@@ -1911,6 +2063,27 @@ export const spacesRouter = router({
             } as any);
           }
         });
+
+        if (solarOfferPdf) {
+          try {
+            const pdfBuffer = Buffer.from(solarOfferPdf.base64.replace(/^data:application\/pdf;base64,/, ""), "base64");
+            if (pdfBuffer.length === 0 || pdfBuffer.length > 20 * 1024 * 1024 || pdfBuffer.subarray(0, 5).toString() !== "%PDF-") {
+              throw new Error("El archivo no parece ser un PDF válido o supera 20 MB.");
+            }
+            const [spaceForOffer] = await db.select({ code: spaceSubmissions.code })
+              .from(spaceSubmissions).where(eq(spaceSubmissions.id, id)).limit(1);
+            const fileKey = `spaces/${spaceForOffer?.code || id}/solar-offer/${Date.now()}-${safePdfSegment(solarOfferPdf.fileName)}.pdf`;
+            const uploaded = await storagePut(fileKey, pdfBuffer, "application/pdf");
+            await db.update(spaceSubmissions).set({
+              solarOfferPdfUrl: uploaded.url,
+              solarOfferPdfKey: fileKey,
+              solarOfferPdfName: solarOfferPdf.fileName,
+            }).where(eq(spaceSubmissions.id, id));
+          } catch (error) {
+            console.error("[Spaces] Error uploading solar offer PDF in update:", error);
+            throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "No fue posible guardar la oferta solar PDF." });
+          }
+        }
 
         let updatedSubmission: any;
         if (projectionInputChanged) {
