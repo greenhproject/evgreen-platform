@@ -112,11 +112,11 @@
 - [x] Aplicar y auditar la migración aditiva 0059: las seis columnas OpenSolar existen con valores seguros por defecto y no se insertó configuración ni se alteró ningún proyecto solar.
 - [x] Validar TypeScript, 245 archivos / 2.354 pruebas aprobadas y build productivo. Las capturas automatizadas del área autenticada no pudieron iniciar sesión, pero la interfaz compiló y el contrato tRPC fue validado.
 - [x] Guardar checkpoint `0a582196`, publicar de forma segura en GitHub y verificar Railway exitoso para `evgreen.lat`. El endpoint administrativo responde 401 sin sesión, sin exponer campos de token.
-- [ ] Corregir y reverificar la divergencia del dominio directo `app.evgreen.lat`, que aún responde HTML de fallback para el bundle dinámico OpenSolar mientras `evgreen.lat` ya sirve el asset publicado.
+- [x] Reverificar el runtime tras el redeploy: la ruta activa `/admin/spaces` carga `Spaces-B4aABxqQ.js` en `evgreen.lat` y `Spaces-DT4KBSBs.js` en `app.evgreen.lat`; ambos contienen los controles independientes de electrolinera y aliado. `app.evgreen.lat` responde desde Railway, no desde HTML de fallback.
 - [x] Corregir el método de acceso conforme a la documentación oficial: usuario/contraseña (y MFA opcional) se envían una sola vez a `POST /api-token-auth/`; sólo el Bearer token resultante se cifra y persiste para las lecturas posteriores.
 - [x] Cubrir el intercambio de credenciales, el MFA opcional, la ausencia de credenciales y la verificación posterior de organización mediante pruebas unitarias sin usar credenciales reales.
 - [x] Validar TypeScript, 245 archivos / 2.355 pruebas aprobadas y build productivo. El bundle compilado contiene los controles de usuario, contraseña y MFA; la captura automatizada del área autenticada quedó bloqueada por sesión, sin afectar la compilación ni los contratos probados.
-- [ ] Guardar checkpoint WebDev y ejecutar publicación segura de la corrección de autenticación.
+- [x] Incluir la corrección de autenticación en checkpoints posteriores y publicarla de forma segura en GitHub con el commit `2e0d71f3`.
 
 ## OpenSolar — consulta y precarga por proyecto (2026-10-12)
 
@@ -127,7 +127,7 @@
 - [x] Preservar los datos de diseño importados aun cuando el programa comercial de ahorro aún no se active; la activación automática requiere factura, consumo y cobertura válidos. Costo solar/LCOE, CAPEX y ahorros no se inventan.
 - [x] Cubrir acceso, pertenencia de organización, mapeo, ausencia de datos y errores; TypeScript y 23 pruebas focales aprobadas sin usar credenciales reales.
 - [x] Validación integral: 245 archivos / 2.361 pruebas aprobadas; 5 suites de integración y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo aprobado. El simulador OCPP que ralentizó un primer intento pasó aislado y en el reintento completo.
-- [ ] Realizar QA visual autenticado, guardar checkpoint, publicar de forma segura y verificar el despliegue.
+- [x] Realizar QA autenticado, guardar checkpoints y publicar de forma segura; el despliegue Railway del commit `2e0d71f3` quedó exitoso en staging y producción.
 
 ## OpenSolar — dos proyectos independientes por Espacio (2026-10-12)
 
@@ -139,4 +139,4 @@
 - [x] Corregir la paridad física detectada en el QA autenticado: la columna aplicada es `ally_solar_annual_consumption_kwh`; el esquema Drizzle ya usa ese nombre y el listado de Espacios vuelve a leer las 26 postulaciones sin error 500.
 - [x] QA visual autenticado: el editor muestra una casilla de alcance solar y los dos controles independientes “ID de proyecto OpenSolar de la electrolinera” y “ID de proyecto OpenSolar de la EDS o comercio”, en escritorio y móvil, sin guardar ni alterar datos.
 - [x] Validación integral: 245 archivos / 2.363 pruebas aprobadas; 5 suites de integración y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo aprobado.
-- [ ] Guardar checkpoint WebDev, ejecutar publicación segura y verificar el despliegue.
+- [x] Guardar checkpoint `2e0d71f3`, publicar de forma segura y verificar Railway exitoso en staging y producción para la separación de fuentes solares.
