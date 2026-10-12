@@ -59,6 +59,14 @@ const SPACE_PHOTO_TYPE_OPTIONS = [
   "general", "electrical_panel", "transformer", "parking_area", "access_road", "surroundings", "other",
 ] as const;
 
+function coverPhotoActionLabel(isCover: boolean): string {
+  return isCover ? "✓ Actual" : "Hacer portada";
+}
+
+function conceptualPhotoActionLabel(isConceptual: boolean): string {
+  return isConceptual ? "Quitar render" : "Marcar render";
+}
+
 const COMMERCIAL_NEXT_STEPS: Partial<Record<string, { status: "funded" | "in_construction" | "operational"; label: string; description: string }>> = {
   published: { status: "funded", label: "Confirmar fondeo", description: "La meta de inversión fue completada para esta oferta." },
   funded: { status: "in_construction", label: "Iniciar construcción", description: "La oferta pasa de fondeada a ejecución de obra." },
@@ -1180,9 +1188,11 @@ export default function AdminSpaces() {
                             onClick={() => {
                               setCreatePhotos(prev => prev.map((p, i) => ({ ...p, isCover: i === idx })));
                             }}
-                            className={`text-[9px] px-1.5 py-0.5 rounded font-medium transition-colors ${photo.isCover ? "bg-amber-400 text-slate-950 font-bold" : "bg-white/10 text-gray-300 hover:bg-white/20"}`}
+                            disabled={photo.isCover}
+                            title={photo.isCover ? "Esta foto ya es la portada seleccionada" : "Usar esta foto como portada"}
+                            className={`text-[9px] px-1.5 py-0.5 rounded font-medium transition-colors ${photo.isCover ? "cursor-default bg-amber-400/80 text-slate-950 font-bold" : "bg-white/10 text-gray-300 hover:bg-white/20"}`}
                           >
-                            {photo.isCover ? "★ Portada" : "Portada"}
+                            {coverPhotoActionLabel(Boolean(photo.isCover))}
                           </button>
                           <button
                             type="button"
@@ -1192,7 +1202,7 @@ export default function AdminSpaces() {
                             className={`text-[9px] px-1.5 py-0.5 rounded font-medium transition-colors ${photo.isConceptual ? "bg-purple-500 text-white font-bold" : "bg-white/10 text-gray-300 hover:bg-white/20"}`}
                             title="Marcar como render o maqueta conceptual 3D"
                           >
-                            {photo.isConceptual ? "Render" : "Real"}
+                            {conceptualPhotoActionLabel(Boolean(photo.isConceptual))}
                           </button>
                         </div>
                         <select
@@ -2073,18 +2083,20 @@ function SpaceDetailDialog({
                             <button
                               type="button"
                               onClick={() => setCoverPhotoMutation.mutate({ submissionId: id, photoId: photo.id })}
-                              disabled={setCoverPhotoMutation.isPending || !photo.id}
-                              className={`rounded px-1.5 py-0.5 text-[9px] font-semibold transition-colors ${photo.isCover ? "bg-amber-400 text-slate-950" : "bg-white/10 text-gray-300 hover:bg-white/20"}`}
+                              disabled={setCoverPhotoMutation.isPending || !photo.id || Boolean(photo.isCover)}
+                              title={photo.isCover ? "Esta foto ya es la portada seleccionada" : "Usar esta foto como portada"}
+                              className={`rounded px-1.5 py-0.5 text-[9px] font-semibold transition-colors ${photo.isCover ? "cursor-default bg-amber-400/80 text-slate-950" : "bg-white/10 text-gray-300 hover:bg-white/20"}`}
                             >
-                              {photo.isCover ? "★ Portada" : "Hacer portada"}
+                              {coverPhotoActionLabel(Boolean(photo.isCover))}
                             </button>
                             <button
                               type="button"
                               onClick={() => toggleConceptualPhotoMutation.mutate({ submissionId: id, photoId: photo.id, isConceptual: !Boolean(photo.isConceptual) })}
                               disabled={toggleConceptualPhotoMutation.isPending || !photo.id}
+                              title={photo.isConceptual ? "Quitar la clasificación de render conceptual" : "Marcar como render o maqueta conceptual 3D"}
                               className={`rounded px-1.5 py-0.5 text-[9px] font-semibold transition-colors ${photo.isConceptual ? "bg-purple-500 text-white" : "bg-white/10 text-gray-300 hover:bg-white/20"}`}
                             >
-                              {photo.isConceptual ? "Render conceptual" : "Marcar render"}
+                              {conceptualPhotoActionLabel(Boolean(photo.isConceptual))}
                             </button>
                             <select
                               value={photo.photoType || "general"}
@@ -2612,18 +2624,20 @@ function SpaceDetailDialog({
                             <button
                               type="button"
                               onClick={() => setCoverPhotoMutation.mutate({ submissionId: id, photoId: photo.id })}
-                              disabled={setCoverPhotoMutation.isPending || !photo.id}
-                              className={`rounded px-1 py-0.5 text-[8px] font-semibold ${photo.isCover ? "bg-amber-400 text-slate-950" : "bg-white/10 text-gray-300 hover:bg-white/20"}`}
+                              disabled={setCoverPhotoMutation.isPending || !photo.id || Boolean(photo.isCover)}
+                              title={photo.isCover ? "Esta foto ya es la portada seleccionada" : "Usar esta foto como portada"}
+                              className={`rounded px-1 py-0.5 text-[8px] font-semibold ${photo.isCover ? "cursor-default bg-amber-400/80 text-slate-950" : "bg-white/10 text-gray-300 hover:bg-white/20"}`}
                             >
-                              {photo.isCover ? "★ Portada" : "Portada"}
+                              {coverPhotoActionLabel(Boolean(photo.isCover))}
                             </button>
                             <button
                               type="button"
                               onClick={() => toggleConceptualPhotoMutation.mutate({ submissionId: id, photoId: photo.id, isConceptual: !Boolean(photo.isConceptual) })}
                               disabled={toggleConceptualPhotoMutation.isPending || !photo.id}
+                              title={photo.isConceptual ? "Quitar la clasificación de render conceptual" : "Marcar como render o maqueta conceptual 3D"}
                               className={`rounded px-1 py-0.5 text-[8px] font-semibold ${photo.isConceptual ? "bg-purple-500 text-white" : "bg-white/10 text-gray-300 hover:bg-white/20"}`}
                             >
-                              {photo.isConceptual ? "Render" : "Real"}
+                              {conceptualPhotoActionLabel(Boolean(photo.isConceptual))}
                             </button>
                             <select
                               value={photo.photoType || "general"}
@@ -2678,16 +2692,19 @@ function SpaceDetailDialog({
                           <button
                             type="button"
                             onClick={() => setEditPhotos(prev => prev.map((p, i) => ({ ...p, isCover: i === idx })))}
-                            className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${photo.isCover ? "bg-amber-400 text-slate-950 font-bold" : "bg-white/10 text-gray-300 hover:bg-white/20"}`}
+                            disabled={photo.isCover}
+                            title={photo.isCover ? "Esta foto ya es la portada seleccionada" : "Usar esta foto como portada"}
+                            className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${photo.isCover ? "cursor-default bg-amber-400/80 text-slate-950 font-bold" : "bg-white/10 text-gray-300 hover:bg-white/20"}`}
                           >
-                            {photo.isCover ? "★ Portada" : "Portada"}
+                            {coverPhotoActionLabel(Boolean(photo.isCover))}
                           </button>
                           <button
                             type="button"
                             onClick={() => setEditPhotos(prev => prev.map((p, i) => i === idx ? { ...p, isConceptual: !p.isConceptual } : p))}
                             className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${photo.isConceptual ? "bg-purple-500 text-white font-bold" : "bg-white/10 text-gray-300 hover:bg-white/20"}`}
+                            title={photo.isConceptual ? "Quitar la clasificación de render conceptual" : "Marcar como render o maqueta conceptual 3D"}
                           >
-                            {photo.isConceptual ? "Render" : "Real"}
+                            {conceptualPhotoActionLabel(Boolean(photo.isConceptual))}
                           </button>
                         </div>
                         <select
