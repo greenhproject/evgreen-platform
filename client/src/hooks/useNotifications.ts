@@ -9,7 +9,7 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { isPushSupported } from "@/lib/firebase";
 import { isCapacitorNative } from "@/const";
-import { initNativePush, unregisterNativePush, clearAppBadge } from "@/lib/native-push";
+import { initNativePush, unregisterNativePush, syncAppBadge } from "@/lib/native-push";
 import {
   requestNotificationPermission,
   onForegroundMessage,
@@ -172,16 +172,30 @@ export function useNotifications() {
     runNativeAutoInit();
   }, [preferencesQuery.data?.pushEnabled, runNativeAutoInit]);
 
-  // Limpia el badge del ícono al abrir o reanudar la app — independiente de
-  // si el push está activado, porque refleja notificaciones ya vistas en la
-  // app, no el estado del permiso de push.
+  // Sincroniza el badge del ícono con el conteo REAL de no leídas al abrir o
+  // reanudar la app — independiente de si el push está activado, porque
+  // refleja notificaciones ya vistas en la app, no el estado del permiso de
+  // push. Antes esto limpiaba a 0 sin más: si quedaban 4 sin leer el badge
+  // igual se iba a 0 solo por abrir la app. Ahora consulta cuántas quedan de
+  // verdad sin leer y deja el número exacto.
+  const utils = trpc.useUtils();
+  const syncBadgeFromServer = useCallback(async () => {
+    if (!isAuthenticated) return;
+    try {
+      const { count } = await utils.notifications.unreadCount.fetch();
+      await syncAppBadge(count);
+    } catch (error) {
+      console.warn("[Notifications] No se pudo sincronizar el badge:", error);
+    }
+  }, [isAuthenticated, utils]);
+
   useEffect(() => {
     if (!isCapacitorNative()) return;
-    clearAppBadge();
+    syncBadgeFromServer();
     let handle: { remove: () => Promise<void> } | null = null;
     import("@capacitor/app").then(({ App: CapApp }) => {
       CapApp.addListener("appStateChange", (state) => {
-        if (state.isActive) clearAppBadge();
+        if (state.isActive) syncBadgeFromServer();
       }).then((h) => { handle = h; });
     });
     return () => { handle?.remove(); };
@@ -389,6 +403,7 @@ export function useNotifications() {
     disableNotifications,
     updatePreferences,
     sendTestNotification,
+    syncBadgeFromServer,
   };
 }
 

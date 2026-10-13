@@ -153,19 +153,31 @@ export async function initNativePush(options: InitNativePushOptions): Promise<Na
 }
 
 /**
- * Limpia el badge numérico del ícono de la app (solo iOS lo muestra de forma
- * nativa vía APNs; en Android el plugin lo simula si el launcher lo soporta).
- * Se llama al abrir/reanudar la app y al marcar notificaciones como leídas,
- * para que el número no quede "pegado" después de que el usuario ya las vio.
+ * Sincroniza el badge numérico del ícono de la app con un conteo real de no
+ * leídas (solo iOS lo muestra de forma nativa vía APNs; en Android el plugin
+ * lo simula si el launcher lo soporta — en Huawei sin GMS no se limpia solo
+ * al abrir la app, hay que llamarlo explícitamente, que es justo lo que esta
+ * función hace en cada punto relevante).
+ *
+ * Antes esta función solo limpiaba a 0 sin importar cuántas notificaciones
+ * seguían sin leer — si el usuario tenía 5 sin leer y abría la app habiendo
+ * visto solo 1, el badge se iba a 0 igual, aunque técnicamente 4 seguían
+ * pendientes. Ahora refleja el conteo real que se le pase, para que el
+ * número siempre represente lo que de verdad falta por leer.
  */
-export async function clearAppBadge(): Promise<void> {
+export async function syncAppBadge(count: number): Promise<void> {
   if (!isCapacitorNative()) return;
   try {
     const { Badge } = await import("@capawesome/capacitor-badge");
-    await Badge.clear();
+    await Badge.set({ count: Math.max(0, count) });
   } catch (error) {
-    console.warn("[NativePush] No se pudo limpiar el badge del ícono:", error);
+    console.warn("[NativePush] No se pudo sincronizar el badge del ícono:", error);
   }
+}
+
+/** @deprecated usar syncAppBadge(0) — se mantiene por compatibilidad temporal. */
+export async function clearAppBadge(): Promise<void> {
+  return syncAppBadge(0);
 }
 
 export async function unregisterNativePush(): Promise<void> {
