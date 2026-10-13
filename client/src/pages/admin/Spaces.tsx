@@ -22,6 +22,7 @@ import { getSpacePipelineAction } from "@shared/space-pipeline-actions";
 import { getRevenueDistributionForSpaceType, resolveDcInfrastructureRequirement } from "@shared/space-investment-scoring-policy";
 import { buildSpaceTrafficProjection } from "@shared/space-traffic-financial-projection";
 import { getPhotoTypeLabel } from "@shared/photo-type-labels";
+import { removePendingSpacePhoto, setPendingSpacePhotoCover } from "./space-photo-selection";
 import {
   MapPin, Search, Filter, Eye, Zap, Star, Send, Globe, Brain,
   CheckCircle2, XCircle, Clock, FileText, Loader2, ChevronLeft,
@@ -389,6 +390,28 @@ export default function AdminSpaces() {
   }
 
   const isCreatingManualSpace = createPreparation.stage !== "idle" || createSpaceMutation.isPending;
+
+  function discardCreatePhotos() {
+    createPhotos.forEach((photo) => URL.revokeObjectURL(photo.preview));
+    setCreatePhotos([]);
+  }
+
+  function handleCreateDialogOpenChange(open: boolean) {
+    if (!open && isCreatingManualSpace) return;
+    if (!open) {
+      discardCreatePhotos();
+      setCreateSubmitError(null);
+    }
+    setShowCreateDialog(open);
+  }
+
+  function removeCreatePhoto(index: number) {
+    setCreatePhotos((previous) => {
+      const result = removePendingSpacePhoto(previous, index, { ensureCover: true });
+      if (result.removed) URL.revokeObjectURL(result.removed.preview);
+      return result.photos;
+    });
+  }
 
   async function handleCreateManualSpace() {
     setCreateSubmitError(null);
@@ -1083,10 +1106,7 @@ export default function AdminSpaces() {
       </Dialog>
 
       {/* ===== DIALOG CREAR ESPACIO MANUAL ===== */}
-      <Dialog open={showCreateDialog} onOpenChange={(open) => {
-        if (!open && isCreatingManualSpace) return;
-        setShowCreateDialog(open);
-      }}>
+      <Dialog open={showCreateDialog} onOpenChange={handleCreateDialogOpenChange}>
         <DialogContent className="bg-[#111827] border-[#1f2937] text-white max-w-[95vw] sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-white">
@@ -1379,7 +1399,7 @@ export default function AdminSpaces() {
                           <button
                             type="button"
                             onClick={() => {
-                              setCreatePhotos(prev => prev.map((p, i) => ({ ...p, isCover: i === idx })));
+                              setCreatePhotos(prev => setPendingSpacePhotoCover(prev, idx));
                             }}
                             disabled={photo.isCover}
                             title={photo.isCover ? "Esta foto ya es la portada seleccionada" : "Usar esta foto como portada"}
@@ -1416,13 +1436,12 @@ export default function AdminSpaces() {
                         </select>
                         <button
                           type="button"
-                          onClick={() => {
-                            URL.revokeObjectURL(photo.preview);
-                            setCreatePhotos(prev => prev.filter((_, i) => i !== idx));
-                          }}
-                          className="absolute -top-1 -right-1 bg-red-600 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px] opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => removeCreatePhoto(idx)}
+                          title={`Quitar foto ${idx + 1} antes de crear el espacio`}
+                          aria-label={`Quitar foto ${idx + 1} antes de crear el espacio`}
+                          className="absolute -top-2 -right-2 flex h-6 w-6 items-center justify-center rounded-full border border-red-200/60 bg-red-600 text-white shadow-md transition-colors hover:bg-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-200"
                         >
-                          ×
+                          <X className="h-3.5 w-3.5" aria-hidden="true" />
                         </button>
                       </div>
                     ))}
@@ -1445,7 +1464,7 @@ export default function AdminSpaces() {
             </div>
           )}
           <DialogFooter className="flex-col sm:flex-row gap-2">
-            <Button type="button" variant="outline" disabled={isCreatingManualSpace} onClick={() => setShowCreateDialog(false)} className="border-[#374151] text-gray-300 w-full sm:w-auto">
+            <Button type="button" variant="outline" disabled={isCreatingManualSpace} onClick={() => handleCreateDialogOpenChange(false)} className="border-[#374151] text-gray-300 w-full sm:w-auto">
               Cancelar
             </Button>
             <Button
@@ -1517,6 +1536,11 @@ function SpaceDetailDialog({
   const [rejectionReason, setRejectionReason] = useState("");
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [activePhotoIndex, setActivePhotoIndex] = useState<number | null>(null);
+  const [photoPendingDeletion, setPhotoPendingDeletion] = useState<{
+    id: number;
+    label: string;
+    url: string;
+  } | null>(null);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [editForm, setEditForm] = useState<Record<string, any>>({});
@@ -1549,12 +1573,49 @@ function SpaceDetailDialog({
     onSuccess: () => { toast.success("Tipo de foto actualizado"); refetch(); },
     onError: (e) => toast.error(e.message),
   });
+  const deletePhotoMutation = trpc.spaces.admin.deletePhoto.useMutation({
+    onSuccess: (result) => {
+      if (activePhotoIndex !== null) {
+        if (result.remainingPhotoCount === 0) {
+          setActivePhotoIndex(null);
+        } else {
+          setActivePhotoIndex((current) => current === null ? null : Math.min(current, result.remainingPhotoCount - 1));
+        }
+      }
+      setPhotoPendingDeletion(null);
+      toast.success(result.remainingPhotoCount === 0
+        ? "Foto retirada. El Espacio quedó sin fotografías."
+        : "Foto retirada del expediente y de la galería de inversión.");
+      refetch();
+      onRefresh();
+    },
+    onError: (error) => toast.error(error.message || "No fue posible retirar la foto."),
+  });
   const [gestorForm, setGestorForm] = useState({ gestorId: "", commissionPercent: "3.75" });
   const { data: gestoresData } = trpc.gestor.listarGestores.useQuery();
   const asignarGestorMutation = trpc.gestor.asignarGestorAEspacio.useMutation({
     onSuccess: () => { toast.success("Gestor vinculado correctamente"); setShowGestorDialog(false); refetch(); },
     onError: (e) => toast.error(e.message),
   });
+
+  function discardEditPhotos() {
+    editPhotos.forEach((photo) => URL.revokeObjectURL(photo.preview));
+    setEditPhotos([]);
+  }
+
+  function handleEditDialogOpenChange(open: boolean) {
+    if (!open) discardEditPhotos();
+    setShowEditDialog(open);
+  }
+
+  function removeEditPhoto(index: number) {
+    setEditPhotos((previous) => {
+      const hasPersistedCover = Boolean(space?.photos?.some((photo: any) => photo.isCover));
+      const result = removePendingSpacePhoto(previous, index, { ensureCover: !hasPersistedCover });
+      if (result.removed) URL.revokeObjectURL(result.removed.preview);
+      return result.photos;
+    });
+  }
 
   if (isLoading || !space) {
     return (
@@ -2365,6 +2426,20 @@ function SpaceDetailDialog({
                             >
                               {SPACE_PHOTO_TYPE_OPTIONS.map((type) => <option key={type} value={type}>{getPhotoTypeLabel(type)}</option>)}
                             </select>
+                            <button
+                              type="button"
+                              onClick={() => setPhotoPendingDeletion({
+                                id: photo.id,
+                                label: photo.caption || `${getPhotoTypeLabel(photo.photoType)} · foto ${i + 1}`,
+                                url: photo.photoUrl,
+                              })}
+                              disabled={deletePhotoMutation.isPending || !photo.id}
+                              title="Quitar esta foto del expediente y la galería de inversión"
+                              aria-label={`Quitar ${photo.caption || `foto ${i + 1}`}`}
+                              className="rounded bg-red-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-red-200 transition-colors hover:bg-red-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Quitar
+                            </button>
                           </div>
                         </div>
                       ))}
@@ -2481,6 +2556,61 @@ function SpaceDetailDialog({
         onActiveIndexChange={setActivePhotoIndex}
       />
 
+      {/* Confirmación de retiro de una fotografía ya persistida */}
+      <Dialog
+        open={Boolean(photoPendingDeletion)}
+        onOpenChange={(open) => {
+          if (!open && !deletePhotoMutation.isPending) setPhotoPendingDeletion(null);
+        }}
+      >
+        <DialogContent className="z-[110] max-w-[calc(100vw-2rem)] border-red-500/30 bg-[#111827] text-white sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-200">
+              <Trash2 className="h-5 w-5" aria-hidden="true" />
+              ¿Quitar esta foto?
+            </DialogTitle>
+          </DialogHeader>
+          {photoPendingDeletion && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 rounded-lg border border-[#374151] bg-black/20 p-2.5">
+                <img
+                  src={photoPendingDeletion.url}
+                  alt="Vista previa de la foto a retirar"
+                  className="h-16 w-20 rounded-md object-cover"
+                />
+                <p className="min-w-0 break-words text-sm text-gray-200">{photoPendingDeletion.label}</p>
+              </div>
+              <p className="text-sm leading-5 text-gray-300">
+                La foto se retirará del expediente de este Espacio y, si existe un proyecto asociado, de su galería de inversión. Si era la portada, se seleccionará otra foto automáticamente.
+              </p>
+              <p className="text-xs leading-4 text-gray-500">
+                Esta acción no se puede deshacer desde el historial; podrás cargar una foto corregida después.
+              </p>
+            </div>
+          )}
+          <DialogFooter className="flex-col gap-2 sm:flex-row">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={deletePhotoMutation.isPending}
+              onClick={() => setPhotoPendingDeletion(null)}
+              className="w-full border-[#374151] text-gray-300 sm:w-auto"
+            >
+              Conservar foto
+            </Button>
+            <Button
+              type="button"
+              disabled={!photoPendingDeletion || deletePhotoMutation.isPending}
+              onClick={() => photoPendingDeletion && deletePhotoMutation.mutate({ submissionId: id, photoId: photoPendingDeletion.id })}
+              className="w-full bg-red-600 text-white hover:bg-red-700 sm:w-auto"
+            >
+              {deletePhotoMutation.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Trash2 className="mr-1.5 h-4 w-4" />}
+              Quitar foto
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Reject Dialog */}
       <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
         <DialogContent className="bg-[#111827] border-[#1f2937] text-white max-w-[95vw] sm:max-w-md">
@@ -2553,7 +2683,7 @@ function SpaceDetailDialog({
       </Dialog>
 
       {/* Edit Dialog — EXPANDIDO */}
-      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+      <Dialog open={showEditDialog} onOpenChange={handleEditDialogOpenChange}>
         <DialogContent className="bg-[#111827] border-[#1f2937] text-white max-w-[95vw] sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><Pencil className="w-4 h-4 text-blue-400" /> Editar espacio — {space.code}</DialogTitle>
@@ -3013,6 +3143,20 @@ function SpaceDetailDialog({
                             >
                               {SPACE_PHOTO_TYPE_OPTIONS.map((type) => <option key={type} value={type}>{getPhotoTypeLabel(type)}</option>)}
                             </select>
+                            <button
+                              type="button"
+                              onClick={() => setPhotoPendingDeletion({
+                                id: photo.id,
+                                label: photo.caption || `${getPhotoTypeLabel(photo.photoType)} · foto ${i + 1}`,
+                                url: photo.photoUrl,
+                              })}
+                              disabled={deletePhotoMutation.isPending || !photo.id}
+                              title="Quitar esta foto del expediente y la galería de inversión"
+                              aria-label={`Quitar ${photo.caption || `foto ${i + 1}`}`}
+                              className="mt-1 w-full rounded bg-red-500/15 px-1 py-0.5 text-[8px] font-semibold text-red-200 transition-colors hover:bg-red-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Quitar foto
+                            </button>
                           </div>
                         </div>
                       ))}
@@ -3056,7 +3200,7 @@ function SpaceDetailDialog({
                         <div className="mt-1 flex items-center justify-between gap-1">
                           <button
                             type="button"
-                            onClick={() => setEditPhotos(prev => prev.map((p, i) => ({ ...p, isCover: i === idx })))}
+                            onClick={() => setEditPhotos(prev => setPendingSpacePhotoCover(prev, idx))}
                             disabled={photo.isCover}
                             title={photo.isCover ? "Esta foto ya es la portada seleccionada" : "Usar esta foto como portada"}
                             className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${photo.isCover ? "cursor-default bg-amber-400/80 text-slate-950 font-bold" : "bg-white/10 text-gray-300 hover:bg-white/20"}`}
@@ -3090,13 +3234,12 @@ function SpaceDetailDialog({
                         </select>
                         <button
                           type="button"
-                          onClick={() => {
-                            URL.revokeObjectURL(photo.preview);
-                            setEditPhotos(prev => prev.filter((_, i) => i !== idx));
-                          }}
-                          className="absolute -top-1 -right-1 bg-red-600 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px] opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => removeEditPhoto(idx)}
+                          title={`Quitar foto nueva ${idx + 1}`}
+                          aria-label={`Quitar foto nueva ${idx + 1}`}
+                          className="absolute -top-2 -right-2 flex h-6 w-6 items-center justify-center rounded-full border border-red-200/60 bg-red-600 text-white shadow-md transition-colors hover:bg-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-200"
                         >
-                          ×
+                          <X className="h-3.5 w-3.5" aria-hidden="true" />
                         </button>
                       </div>
                     ))}
@@ -3107,7 +3250,7 @@ function SpaceDetailDialog({
           </div>
 
           <DialogFooter className="flex-col sm:flex-row gap-2 mt-2">
-            <Button variant="outline" onClick={() => setShowEditDialog(false)} className="border-[#374151] text-gray-300 w-full sm:w-auto">
+            <Button variant="outline" onClick={() => handleEditDialogOpenChange(false)} className="border-[#374151] text-gray-300 w-full sm:w-auto">
               Cancelar
             </Button>
             <Button onClick={async () => {

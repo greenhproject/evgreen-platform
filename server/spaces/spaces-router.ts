@@ -18,6 +18,7 @@ import {
   letterEmailEvents,
   spaceStatusHistory,
   spaceSolarScopeHistory,
+  spacePhotoHistory,
 } from "../../drizzle/schema";
 import { eq, desc, and, sql, like, or, inArray, count, gte, lte, isNull, isNotNull } from "drizzle-orm";
 import { randomBytes } from "crypto";
@@ -71,6 +72,39 @@ async function getDatabase() {
   const db = (await getDb())!;
   if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Base de datos no disponible" });
   return db;
+}
+
+/** Lee la galería fuente del Espacio conservando el orden que verá inversión. */
+async function getInheritedPhotosForSubmission(db: any, submissionId: number) {
+  return db.select({
+    submissionId: spacePhotos.submissionId,
+    url: spacePhotos.photoUrl,
+    type: spacePhotos.photoType,
+    caption: spacePhotos.caption,
+    sortOrder: spacePhotos.sortOrder,
+    isCover: spacePhotos.isCover,
+    isConceptual: spacePhotos.isConceptual,
+  }).from(spacePhotos)
+    .where(eq(spacePhotos.submissionId, submissionId))
+    .orderBy(desc(spacePhotos.isCover), spacePhotos.sortOrder, spacePhotos.id);
+}
+
+/**
+ * El snapshot del proyecto de inversión conserva la galería heredada para que
+ * la página pública no dependa de una copia visual obsoleta. Esta función se
+ * ejecuta dentro de la misma transacción que altera la fotografía fuente.
+ */
+async function synchronizeCrowdfundingPhotoSnapshot(db: any, submissionId: number) {
+  const [submission] = await db.select().from(spaceSubmissions)
+    .where(eq(spaceSubmissions.id, submissionId))
+    .limit(1);
+  if (!submission?.crowdfundingProjectId) return;
+
+  const photos = await getInheritedPhotosForSubmission(db, submissionId);
+  const inherited = getCrowdfundingInheritanceSnapshot(submission, photos);
+  await db.update(crowdfundingProjects)
+    .set({ spaceInheritanceSnapshot: inherited } as any)
+    .where(eq(crowdfundingProjects.id, submission.crowdfundingProjectId));
 }
 
 function safePdfSegment(value: string): string {
@@ -2322,6 +2356,7 @@ export const spacesRouter = router({
 					const inheritedPhotos = await db.select({
 						submissionId: spacePhotos.submissionId, url: spacePhotos.photoUrl, type: spacePhotos.photoType,
 						caption: spacePhotos.caption, sortOrder: spacePhotos.sortOrder,
+						isCover: spacePhotos.isCover, isConceptual: spacePhotos.isConceptual,
 					}).from(spacePhotos).where(eq(spacePhotos.submissionId, id)).orderBy(spacePhotos.sortOrder);
 	            const projectUpdate = buildCrowdfundingProjectInheritanceUpdate(updatedSubmission, inheritedPhotos);
 
@@ -2362,7 +2397,7 @@ export const spacesRouter = router({
     // ========================================================================
     // ADMIN: Agregar fotos a un espacio existente
     // ========================================================================
-    addPhotos: adminProcedure
+	    addPhotos: adminProcedure
       .input(z.object({
         id: z.number(),
 	        photos: z.array(z.object({
@@ -2412,7 +2447,76 @@ export const spacesRouter = router({
             console.error(`[Spaces] Error uploading photo ${i}:`, err);
           }
         }
+	        if (uploadedCount > 0) {
+	          await synchronizeCrowdfundingPhotoSnapshot(db, input.id);
+	        }
 	        return { success: true, uploadedCount };
+	      }),
+
+	    // ========================================================================
+	    // ADMIN: Retirar una foto persistida del expediente y la galería heredada
+	    // ========================================================================
+	    deletePhoto: adminProcedure
+	      .input(z.object({
+	        submissionId: z.number().int().positive(),
+	        photoId: z.number().int().positive(),
+	      }))
+	      .mutation(async ({ input, ctx }) => {
+	        const db = await getDatabase();
+	        return db.transaction(async (tx: any) => {
+	          const [photo] = await tx.select().from(spacePhotos)
+	            .where(and(eq(spacePhotos.id, input.photoId), eq(spacePhotos.submissionId, input.submissionId)))
+	            .limit(1);
+	          if (!photo) {
+	            throw new TRPCError({ code: "NOT_FOUND", message: "La foto no existe o no pertenece a este Espacio." });
+	          }
+
+	          await tx.delete(spacePhotos)
+	            .where(and(eq(spacePhotos.id, input.photoId), eq(spacePhotos.submissionId, input.submissionId)));
+
+	          // Si la galería todavía tiene fotos, conserva exactamente una portada.
+	          // Al retirar la portada se promueve, de forma determinista, la portada
+	          // restante existente o la primera foto por orden del expediente.
+	          const [nextCover] = await tx.select({ id: spacePhotos.id })
+	            .from(spacePhotos)
+	            .where(eq(spacePhotos.submissionId, input.submissionId))
+	            .orderBy(desc(spacePhotos.isCover), spacePhotos.sortOrder, spacePhotos.id)
+	            .limit(1);
+	          if (nextCover) {
+	            await tx.update(spacePhotos)
+	              .set({ isCover: 0 })
+	              .where(eq(spacePhotos.submissionId, input.submissionId));
+	            await tx.update(spacePhotos)
+	              .set({ isCover: 1 })
+	              .where(eq(spacePhotos.id, nextCover.id));
+	          }
+
+	          await tx.insert(spacePhotoHistory).values({
+	            submissionId: input.submissionId,
+	            photoId: photo.id,
+	            action: "REMOVED",
+	            photoType: photo.photoType,
+	            wasCover: photo.isCover,
+	            wasConceptual: photo.isConceptual,
+	            changedById: ctx.user.id,
+	            changedByRole: ctx.user.role,
+	            createdAt: toSqlTimestamp(),
+	          } as any);
+
+	          // El storage no ofrece borrado físico. Al quitar esta fila y
+	          // actualizar el snapshot, la URL deja de estar referenciada tanto en
+	          // Espacios como en Crowdfunding y no queda visible al público.
+	          await synchronizeCrowdfundingPhotoSnapshot(tx, input.submissionId);
+
+	          const remaining = await tx.select({ id: spacePhotos.id })
+	            .from(spacePhotos)
+	            .where(eq(spacePhotos.submissionId, input.submissionId));
+	          return {
+	            success: true as const,
+	            remainingPhotoCount: remaining.length,
+	            coverPhotoId: nextCover?.id ?? null,
+	          };
+	        });
 	      }),
 
 	    // ========================================================================
@@ -2425,13 +2529,21 @@ export const spacesRouter = router({
 	      }))
 	      .mutation(async ({ input }) => {
 	        const db = await getDatabase();
-	        await db.update(spacePhotos)
-	          .set({ isCover: 0 })
-	          .where(eq(spacePhotos.submissionId, input.submissionId));
-	        await db.update(spacePhotos)
-	          .set({ isCover: 1 })
-	          .where(and(eq(spacePhotos.id, input.photoId), eq(spacePhotos.submissionId, input.submissionId)));
-	        return { success: true };
+	        return db.transaction(async (tx: any) => {
+	          const [photo] = await tx.select({ id: spacePhotos.id })
+	            .from(spacePhotos)
+	            .where(and(eq(spacePhotos.id, input.photoId), eq(spacePhotos.submissionId, input.submissionId)))
+	            .limit(1);
+	          if (!photo) throw new TRPCError({ code: "NOT_FOUND", message: "La foto no existe o no pertenece a este Espacio." });
+          await tx.update(spacePhotos)
+	            .set({ isCover: 0 })
+	            .where(eq(spacePhotos.submissionId, input.submissionId));
+	          await tx.update(spacePhotos)
+	            .set({ isCover: 1 })
+	            .where(eq(spacePhotos.id, photo.id));
+	          await synchronizeCrowdfundingPhotoSnapshot(tx, input.submissionId);
+	          return { success: true };
+	        });
 	      }),
 
 	    // ========================================================================
@@ -2445,10 +2557,18 @@ export const spacesRouter = router({
 	      }))
 	      .mutation(async ({ input }) => {
 	        const db = await getDatabase();
-	        await db.update(spacePhotos)
-	          .set({ isConceptual: input.isConceptual ? 1 : 0 })
-	          .where(and(eq(spacePhotos.id, input.photoId), eq(spacePhotos.submissionId, input.submissionId)));
-	        return { success: true };
+	        return db.transaction(async (tx: any) => {
+	          const [photo] = await tx.select({ id: spacePhotos.id })
+	            .from(spacePhotos)
+	            .where(and(eq(spacePhotos.id, input.photoId), eq(spacePhotos.submissionId, input.submissionId)))
+	            .limit(1);
+	          if (!photo) throw new TRPCError({ code: "NOT_FOUND", message: "La foto no existe o no pertenece a este Espacio." });
+	          await tx.update(spacePhotos)
+	            .set({ isConceptual: input.isConceptual ? 1 : 0 })
+	            .where(eq(spacePhotos.id, photo.id));
+	          await synchronizeCrowdfundingPhotoSnapshot(tx, input.submissionId);
+	          return { success: true };
+	        });
 	      }),
 
 	    // ========================================================================
@@ -2462,10 +2582,18 @@ export const spacesRouter = router({
 	      }))
 	      .mutation(async ({ input }) => {
 	        const db = await getDatabase();
-	        await db.update(spacePhotos)
-	          .set({ photoType: input.photoType })
-	          .where(and(eq(spacePhotos.id, input.photoId), eq(spacePhotos.submissionId, input.submissionId)));
-	        return { success: true };
+	        return db.transaction(async (tx: any) => {
+	          const [photo] = await tx.select({ id: spacePhotos.id })
+	            .from(spacePhotos)
+	            .where(and(eq(spacePhotos.id, input.photoId), eq(spacePhotos.submissionId, input.submissionId)))
+	            .limit(1);
+	          if (!photo) throw new TRPCError({ code: "NOT_FOUND", message: "La foto no existe o no pertenece a este Espacio." });
+	          await tx.update(spacePhotos)
+	            .set({ photoType: input.photoType })
+	            .where(eq(spacePhotos.id, photo.id));
+	          await synchronizeCrowdfundingPhotoSnapshot(tx, input.submissionId);
+	          return { success: true };
+	        });
 	      }),
 
 	    // ========================================================================

@@ -1646,6 +1646,27 @@ export const spacePhotos = mysqlTable("space_photos", {
 	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
 });
 
+/**
+ * Bitácora administrativa de fotografías retiradas de una postulación.
+ * No persiste URL ni llave de storage: solo conserva el contexto necesario
+ * para auditar la acción sin mantener una referencia accesible al archivo.
+ */
+export const spacePhotoHistory = mysqlTable("space_photo_history", {
+	id: int().autoincrement().notNull().primaryKey(),
+	submissionId: int("submission_id").notNull(),
+	photoId: int("photo_id").notNull(),
+	action: varchar({ length: 32 }).notNull(),
+	photoType: varchar("photo_type", { length: 32 }).notNull(),
+	wasCover: tinyint("was_cover").default(0).notNull(),
+	wasConceptual: tinyint("was_conceptual").default(0).notNull(),
+	changedById: int("changed_by_id"),
+	changedByRole: varchar("changed_by_role", { length: 32 }),
+	createdAt: timestamp("created_at", { mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
+}, (table) => [
+	index("idx_space_photo_history_submission_created").on(table.submissionId, table.createdAt),
+	index("idx_space_photo_history_photo").on(table.photoId),
+]);
+
 export const spaceSubmissions = mysqlTable("space_submissions", {
 	id: int().autoincrement().notNull(),
 	code: varchar({ length: 20 }).notNull(),

@@ -6,7 +6,7 @@ import { expect, it, vi, beforeAll, afterAll } from "vitest";
 import { appRouter } from "../routers";
 import type { TrpcContext } from "../_core/context";
 import { getDb } from "../db";
-import { crowdfundingProjects, spacePhotos, spaceSubmissions } from "../../drizzle/schema";
+import { crowdfundingProjects, spacePhotoHistory, spacePhotos, spaceSubmissions } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
 import { cleanupSpaceQaFixtures } from "./test-space-fixture-cleanup";
 import { describeDatabaseIntegration } from "../testing/database-mutation-guard";
@@ -25,6 +25,7 @@ const SPACE_TEST_FIXTURE_EMAILS = [
   "nodup@example.com",
   "permiso-manual@example.com",
   "proyeccion-automatica@example.com",
+	"retiro-foto@example.com",
   "rotacion-enlace@example.com",
   "status.test@example.com",
   "update@example.com",
@@ -726,6 +727,55 @@ describe("spaces → crowdfunding integration", () => {
 	      { url: "https://cdn.example.test/site-overview.jpg", type: "general", caption: "Vista general", isConceptual: true },
 	    ]);
 	    expect(linked.spaceInheritanceSnapshot.photos).toEqual(linked.inheritedPhotos);
+	  });
+
+	  it("retira una foto, promueve portada y sincroniza la galería heredada sin conservar la URL", async () => {
+	    const publicCaller = appRouter.createCaller(createPublicContext());
+	    const adminCaller = appRouter.createCaller(createAdminContext());
+	    const { submissionId } = await publicCaller.spaces.submit({
+	      submitterName: "Retiro de foto Test",
+	      submitterEmail: "retiro-foto@example.com",
+	      submitterPhone: "3001234567",
+	      spaceName: "Espacio retiro de foto Test",
+	      spaceType: "parking",
+	      address: "Calle 100 # 15-20",
+	      city: "Bogotá",
+	    });
+	    const db = await getDb();
+	    await db!.insert(spacePhotos).values([
+	      { submissionId, photoUrl: "https://cdn.example.test/remove-cover.jpg", photoKey: `tests/${submissionId}/remove-cover.jpg`, photoType: "general", sortOrder: 0, isCover: 1 },
+	      { submissionId, photoUrl: "https://cdn.example.test/keep-parking.jpg", photoKey: `tests/${submissionId}/keep-parking.jpg`, photoType: "parking_area", sortOrder: 1 },
+	    ]);
+
+	    await adminCaller.spaces.admin.updateStatus({ id: submissionId, status: "approved" });
+	    const beforeDelete = await adminCaller.spaces.admin.getById({ id: submissionId });
+	    const deletedPhoto = beforeDelete.photos.find((photo: any) => photo.photoUrl === "https://cdn.example.test/remove-cover.jpg")!;
+
+	    const result = await adminCaller.spaces.admin.deletePhoto({
+	      submissionId,
+	      photoId: deletedPhoto.id,
+	    });
+	    expect(result).toEqual({ success: true, remainingPhotoCount: 1, coverPhotoId: expect.any(Number) });
+
+	    const afterDelete = await adminCaller.spaces.admin.getById({ id: submissionId });
+	    expect(afterDelete.photos).toEqual([
+	      expect.objectContaining({ photoUrl: "https://cdn.example.test/keep-parking.jpg", isCover: 1 }),
+	    ]);
+	    const linked = (await adminCaller.crowdfunding.getAllProjects()).find((project: any) => project.id === afterDelete.crowdfundingProjectId) as any;
+	    expect(linked.inheritedPhotos).toEqual([
+	      { url: "https://cdn.example.test/keep-parking.jpg", type: "parking_area", caption: null, isCover: true },
+	    ]);
+	    expect(JSON.stringify(linked.spaceInheritanceSnapshot.photos)).not.toContain("remove-cover.jpg");
+
+	    const history = await db!.select().from(spacePhotoHistory).where(eq(spacePhotoHistory.submissionId, submissionId));
+	    expect(history).toEqual([
+	      expect.objectContaining({ photoId: deletedPhoto.id, action: "REMOVED", photoType: "general", wasCover: 1, changedById: 1 }),
+	    ]);
+	  });
+
+	  it("impide retirar una foto a un usuario sin administración de Espacios", async () => {
+	    const userCaller = appRouter.createCaller(createUserContext());
+	    await expect(userCaller.spaces.admin.deletePhoto({ submissionId: 1, photoId: 1 })).rejects.toThrow();
 	  });
 
 	  it("getAllProjects incluye DRAFT para admin (includePrivate)", async () => {

@@ -5,6 +5,7 @@ import {
   investorLeads,
   letterEmailEvents,
   siteContracts,
+  spacePhotoHistory,
   spacePhotos,
   spaceStatusHistory,
   spaceSubmissions,
@@ -89,6 +90,7 @@ export async function cleanupSpaceQaFixtures({
       await tx.delete(crowdfundingProjects).where(inArray(crowdfundingProjects.id, linkedProjectIds));
     }
     await tx.delete(letterEmailEvents).where(inArray(letterEmailEvents.submissionId, targetIds));
+    await tx.delete(spacePhotoHistory).where(inArray(spacePhotoHistory.submissionId, targetIds));
     await tx.delete(spaceStatusHistory).where(inArray(spaceStatusHistory.submissionId, targetIds));
     await tx.delete(investorLeads).where(inArray(investorLeads.spaceId, targetIds));
     await tx.delete(spacePhotos).where(inArray(spacePhotos.submissionId, targetIds));
