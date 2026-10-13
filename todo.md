@@ -17,4 +17,4 @@
 - [x] Verificar visualmente una muestra con los datos reportados: el perfil técnico termina antes del pie y la operación queda íntegra dentro de sus márgenes.
 - [x] Añadir regresiones para corte seguro y para perfiles con holgura.
 - [x] Ejecutar validación integral: 246 archivos / 2.373 pruebas aprobadas, 5 suites y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build, TypeScript, revisión visual de la muestra y servicio local HTTP 200 correctos.
-- [ ] Guardar checkpoint, publicar de forma segura y verificar Railway.
+- [x] Guardar checkpoint `880b78d7`, publicar de forma segura en GitHub (`880b78d79`) y verificar Railway: staging #7032827147 y producción #7032827116 finalizaron `success`; `evgreen.lat` y `app.evgreen.lat` respondieron HTTP 200.
