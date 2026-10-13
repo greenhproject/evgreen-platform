@@ -179,27 +179,60 @@ export function useNotifications() {
   // igual se iba a 0 solo por abrir la app. Ahora consulta cuántas quedan de
   // verdad sin leer y deja el número exacto.
   const utils = trpc.useUtils();
+  // Dos llamadas a syncBadgeFromServer casi seguidas (ej. marcar dos
+  // notificaciones como leídas una justo después de la otra) no garantizan
+  // que sus respuestas de red lleguen en el mismo orden en que se dispararon
+  // — probado de verdad en simulador: marcar 2 de 3 como leídas en sucesión
+  // rápida dejó el ícono en "2" en vez del real "1", porque la respuesta de
+  // la primera llamada (que traía "2") llegó después que la de la segunda
+  // (que ya traía el "1" correcto) y la sobreescribió. Este contador de
+  // secuencia descarta cualquier respuesta que no sea la de la llamada más
+  // reciente, sin importar en qué orden respondan.
+  const syncBadgeSeq = useRef(0);
   const syncBadgeFromServer = useCallback(async () => {
     if (!isAuthenticated) return;
+    const seq = ++syncBadgeSeq.current;
     try {
       const { count } = await utils.notifications.unreadCount.fetch();
+      if (seq !== syncBadgeSeq.current) return; // una llamada más nueva ya está en vuelo o ya resolvió
       await syncAppBadge(count);
     } catch (error) {
       console.warn("[Notifications] No se pudo sincronizar el badge:", error);
     }
   }, [isAuthenticated, utils]);
 
+  // Siempre apunta a la versión más reciente de syncBadgeFromServer sin que
+  // el efecto de abajo tenga que depender de ella directamente. syncBadgeFromServer
+  // se recrea en cada render donde cambie `utils` (la identidad de trpc.useUtils()
+  // no está garantizada estable) — usarla como dependencia del efecto lo
+  // reejecutaba en cada uno de esos renders, lo que nunca le daba tiempo a la
+  // promesa de registro del listener nativo (`CapApp.addListener(...).then(...)`)
+  // a resolver antes de que el siguiente ciclo ya estuviera limpiando/reinscribiendo
+  // todo de nuevo — en la práctica, el listener nunca quedaba registrado y el
+  // ícono no se sincronizaba nunca (confirmado con instrumentación real: cero
+  // invocaciones de syncBadgeFromServer en todo un ciclo de arranque+reanudación).
+  const syncBadgeFromServerRef = useRef(syncBadgeFromServer);
+  useEffect(() => {
+    syncBadgeFromServerRef.current = syncBadgeFromServer;
+  }, [syncBadgeFromServer]);
+
   useEffect(() => {
     if (!isCapacitorNative()) return;
-    syncBadgeFromServer();
+    // Depende solo de isAuthenticated (booleano primitivo, estable) — no de
+    // syncBadgeFromServer. En un arranque en frío la sesión tarda en
+    // resolverse, así que el primer montaje casi siempre ocurre con
+    // isAuthenticated=false; re-ejecutar este efecto cuando pasa a true
+    // sincroniza de inmediato con la versión ya actualizada de la función
+    // (vía el ref de arriba), sin reinscribir el listener en cada render.
+    syncBadgeFromServerRef.current();
     let handle: { remove: () => Promise<void> } | null = null;
     import("@capacitor/app").then(({ App: CapApp }) => {
       CapApp.addListener("appStateChange", (state) => {
-        if (state.isActive) syncBadgeFromServer();
+        if (state.isActive) syncBadgeFromServerRef.current();
       }).then((h) => { handle = h; });
     });
     return () => { handle?.remove(); };
-  }, []);
+  }, [isAuthenticated]);
 
   // Escuchar notificaciones en primer plano
   useEffect(() => {
