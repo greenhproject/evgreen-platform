@@ -69,6 +69,9 @@ export interface AllySpacePdfData {
   solarProgramEnabled?: boolean | number | null;
   solarProgramCurrentBillCop?: number | null;
   solarProgramSavingsCoveragePercent?: number | null;
+  solarProgramMonthlyFinancingPaymentCop?: number | null;
+  solarProgramInitialMonthlySolarBillCop?: number | null;
+  solarProgramPostAgreementMonthlySolarBillCop?: number | null;
   solarProgramAgreementYears?: number | null;
   solarProgramAnnualCpiPercent?: number | null;
   solarProgramUsefulLifeYears?: number | null;
@@ -103,7 +106,7 @@ export interface AllyPdfContent {
   solarProgram: AllySolarProgramSnapshot | null;
   combinedBenefit: {
     chargerMonthlyCop: number;
-    solarMonthlySavingsCop: number;
+    solarMonthlyNetCashflowCop: number;
     combinedMonthlyCop: number;
     combinedAnnualCop: number;
     agreementCombinedBenefitCop: number;
@@ -229,6 +232,9 @@ export function buildAllySpacePdfContent(data: AllySpacePdfData): AllyPdfContent
         enabled: data.solarProgramEnabled,
         currentMonthlyBillCop: data.solarProgramCurrentBillCop,
         savingsCoveragePercent: data.solarProgramSavingsCoveragePercent,
+        monthlyFinancingPaymentCop: data.solarProgramMonthlyFinancingPaymentCop,
+        initialMonthlySolarBillCop: data.solarProgramInitialMonthlySolarBillCop,
+        postAgreementMonthlySolarBillCop: data.solarProgramPostAgreementMonthlySolarBillCop,
         agreementYears: data.solarProgramAgreementYears,
         annualCpiPercent: data.solarProgramAnnualCpiPercent,
         usefulLifeYears: data.solarProgramUsefulLifeYears,
@@ -243,14 +249,14 @@ export function buildAllySpacePdfContent(data: AllySpacePdfData): AllyPdfContent
     }
   })();
   const combinedBenefit = solarProgram
-    ? (() => {
+      ? (() => {
         const chargerMonthlyCop = incomeProjection?.scenarios.REALISTIC.allyIncomeMonthly ?? 0;
-        const solarMonthlySavingsCop = solarProgram.initialMonthlySavingsCop;
+        const solarMonthlyNetCashflowCop = solarProgram.initialMonthlyNetCashflowCop;
         return {
           chargerMonthlyCop,
-          solarMonthlySavingsCop,
-          combinedMonthlyCop: chargerMonthlyCop + solarMonthlySavingsCop,
-          combinedAnnualCop: (chargerMonthlyCop * 12) + solarProgram.initialAnnualSavingsCop,
+          solarMonthlyNetCashflowCop,
+          combinedMonthlyCop: chargerMonthlyCop + solarMonthlyNetCashflowCop,
+          combinedAnnualCop: (chargerMonthlyCop * 12) + (solarMonthlyNetCashflowCop * 12),
           agreementCombinedBenefitCop: (chargerMonthlyCop * 12 * solarProgram.assumptions.agreementYears) + solarProgram.agreementSavingsCop,
         };
       })()
@@ -674,7 +680,7 @@ function drawSolarProgramPage(
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.6);
   const intro = doc.splitTextToSize(
-    "Además de la retribución estimada por el punto de carga, el espacio puede acceder a un programa solar de sustitución de gasto energético. Esta lectura usa la factura promedio y la cobertura registrada; no reemplaza el estudio solar ni el contrato de compraventa de energía.",
+    "Además de la retribución estimada por el punto de carga, el espacio puede acceder a un programa solar de sustitución de gasto energético. La lectura separa factura de red, factura solar residual y cuota de financiación; no reemplaza el estudio solar ni el contrato de compraventa de energía.",
     contentWidth,
   );
   doc.text(intro, margin, y);
@@ -696,9 +702,9 @@ function drawSolarProgramPage(
 
   const assumptions = solar.assumptions;
   const cards = [
-    ["Ahorro mensual inicial", formatCop(solar.initialMonthlySavingsCop), COLORS.greenLight, COLORS.greenDark],
-    ["Ahorro anual inicial", formatCop(solar.initialAnnualSavingsCop), [239, 246, 255], COLORS.blue],
-    ["Cuota estimada año 1", formatCop(solar.initialMonthlyReplacementQuotaCop), [255, 251, 235], [146, 64, 14]],
+    ["Ahorro energético año 1", formatCop(solar.initialMonthlySavingsCop), COLORS.greenLight, COLORS.greenDark],
+    ["Cuota mensual OpenSolar", solar.initialMonthlyFinancingPaymentCop === null ? "Por confirmar" : formatCop(solar.initialMonthlyFinancingPaymentCop), [255, 251, 235], [146, 64, 14]],
+    ["Flujo neto mensual año 1", formatCop(solar.initialMonthlyNetCashflowCop), [239, 246, 255], COLORS.blue],
   ] as const;
   const gap = 5;
   const cardWidth = (contentWidth - gap * 2) / 3;
@@ -721,7 +727,12 @@ function drawSolarProgramPage(
     ["Factura mensual promedio registrada", formatCop(assumptions.currentMonthlyBillCop)],
     ["Cobertura de ahorro estimada", `${formatDecimal(assumptions.savingsCoveragePercent, 1)}% del gasto actual`],
     ["Plazo inicial de sustitución", `${formatNumber(assumptions.agreementYears)} años`],
-    ["Actualización anual de la cuota", `${formatDecimal(assumptions.annualCpiPercent, 1)}% de referencia IPC`],
+    ["Factura solar residual año 1", formatCop(solar.initialMonthlyReplacementQuotaCop)],
+    ["Cuota mensual de financiación", solar.initialMonthlyFinancingPaymentCop === null ? "Por confirmar" : formatCop(solar.initialMonthlyFinancingPaymentCop)],
+    ["Factura de red al inicio del año 7", formatCop(solar.postAgreementMonthlyGridBillCop)],
+    ["Factura solar al inicio del año 7", formatCop(solar.postAgreementMonthlySolarBillCop)],
+    ["Ahorro neto mensual desde año 7", formatCop(solar.postAgreementMonthlyNetSavingsCop)],
+    ["Inflación anual de energía", `${formatDecimal(assumptions.annualCpiPercent, 1)}% de referencia`],
     ["Vida útil de referencia", `${formatNumber(assumptions.usefulLifeYears)} años`],
     ...(assumptions.systemPowerKwp !== null ? [["Potencia solar de referencia", formatNumber(assumptions.systemPowerKwp, " kWp")] as [string, string]] : []),
     ...(assumptions.annualGenerationKwh !== null ? [["Generación solar anual estimada", formatNumber(assumptions.annualGenerationKwh, " kWh/año")] as [string, string]] : []),
@@ -736,12 +747,12 @@ function drawSolarProgramPage(
     setColor(doc, COLORS.white);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9.5);
-    doc.text("BENEFICIO COMBINADO REFERENCIAL · AÑO 1", margin + 7, y + 10);
+    doc.text("FLUJO COMBINADO REFERENCIAL · AÑO 1", margin + 7, y + 10);
     doc.setFontSize(14);
     doc.text(formatCop(content.combinedBenefit.combinedMonthlyCop), margin + 7, y + 24);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.4);
-    doc.text("Retribución estimada del punto + ahorro energético mensual", margin + 7, y + 32);
+    doc.text("Retribución del punto + flujo solar neto (factura evitada − residual − cuota)", margin + 7, y + 32);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9.5);
     doc.text(formatCop(content.combinedBenefit.combinedAnnualCop), margin + contentWidth - 7, y + 24, { align: "right" });
@@ -760,8 +771,11 @@ function drawSolarProgramPage(
   setColor(doc, COLORS.gray700);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.3);
+  const financingText = solar.initialMonthlyFinancingPaymentCop === null
+    ? "La cuota mensual de financiación no fue expuesta por OpenSolar y debe confirmarse en la propuesta comercial."
+    : `Durante ${formatNumber(assumptions.agreementYears)} años, la cuota contractual OpenSolar es ${formatCop(solar.initialMonthlyFinancingPaymentCop)} mensuales; se muestra separada de la factura solar residual.`;
   const note = doc.splitTextToSize(
-    `Durante ${formatNumber(assumptions.agreementYears)} años se modela una cuota mensual similar a la factura actual, ajustada anualmente por el ${formatDecimal(assumptions.annualCpiPercent, 1)}% de referencia. Al finalizar el plazo, la eventual cesión de equipos y el beneficio de energía posterior estarán sujetos a contrato, desempeño real, mantenimiento y vida útil.`,
+    `${financingText} Desde el año ${formatNumber(assumptions.agreementYears + 1)}, la factura de red se proyecta con ${formatDecimal(assumptions.annualCpiPercent, 1)}% anual (${formatCop(solar.postAgreementMonthlyGridBillCop)} al inicio) y se descuenta la factura solar residual reportada (${formatCop(solar.postAgreementMonthlySolarBillCop)}), para un ahorro neto de referencia de ${formatCop(solar.postAgreementMonthlyNetSavingsCop)} al mes. Está sujeto a contrato, desempeño, mantenimiento, tarifa y vida útil reales.`,
     contentWidth - 12,
   );
   doc.text(note.slice(0, 4), margin + 6, y + 17);

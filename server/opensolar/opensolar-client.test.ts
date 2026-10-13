@@ -208,6 +208,12 @@ describe("precarga de proyecto OpenSolar", () => {
         { kw_stc: 12, output: { annual_generation_kwh: 21_600 }, consumption: { self_consumption_percent: 75, export_percent: 25 } },
         { kw_stc: 8, output: { annual_generation_kwh: 14_400 } },
       ],
+      payment_options: [{
+        regular_payment: 2_162_043,
+        term: 72,
+        term_years: 6,
+        utility_bill_yearly_proposed: [1_708_730.57, 2_133_456.01, 2_693_061.42, 3_112_000, 3_456_000, 4_032_000, 5_086_020],
+      }],
     }))).toString("base64");
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({
@@ -250,6 +256,10 @@ describe("precarga de proyecto OpenSolar", () => {
         exportPercent: 25,
         solarSavingsCoveragePercent: 75,
         gridTariffCopPerKwh: 400,
+        monthlyFinancingPaymentCop: 2_162_043,
+        initialMonthlySolarBillCop: 142_394.21,
+        postAgreementMonthlySolarBillCop: 423_835,
+        financingAgreementYears: 6,
         canActivateAllySolarProgram: true,
         systemsCount: 2,
         modifiedAt: "2026-10-12T20:00:00Z",
@@ -262,6 +272,9 @@ describe("precarga de proyecto OpenSolar", () => {
           exportPercent: "OpenSolar",
           solarSavingsCoveragePercent: "Calculado desde datos OpenSolar",
           gridTariffCopPerKwh: "Calculado desde datos OpenSolar",
+          monthlyFinancingPaymentCop: "OpenSolar",
+          initialMonthlySolarBillCop: "OpenSolar",
+          postAgreementMonthlySolarBillCop: "OpenSolar",
         },
       },
       unavailableFields: [],
@@ -325,7 +338,11 @@ describe("precarga de proyecto OpenSolar", () => {
         gridTariffCopPerKwh: "Calculado desde datos OpenSolar",
       },
     });
-    expect(result.unavailableFields).toEqual([]);
+    expect(result.unavailableFields).toEqual(expect.arrayContaining([
+      "cuota mensual de financiación",
+      "factura solar residual año 1",
+      "factura solar residual posterior al plazo",
+    ]));
     expect(result.warnings).toEqual([]);
   });
 

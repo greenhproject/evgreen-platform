@@ -132,4 +132,21 @@ describe("buildAllySpacePdfContent", () => {
     expect(content.technicalRows).toContainEqual(["Generación solar de carga", "180.000 kWh/año"]);
     expect(content.solarProgram?.assumptions.systemPowerKwp).toBe(112);
   });
+
+  it("refleja la cuota OpenSolar y el ahorro neto posterior sin confundirlos con la factura solar", () => {
+    const content = buildAllySpacePdfContent({
+      ...sampleData,
+      solarProgramCurrentBillCop: 2_184_000,
+      solarProgramSavingsCoveragePercent: 39.54,
+      solarProgramMonthlyFinancingPaymentCop: 2_162_043,
+      solarProgramInitialMonthlySolarBillCop: 142_394,
+      solarProgramPostAgreementMonthlySolarBillCop: 423_835,
+    });
+
+    expect(content.solarProgram?.initialMonthlySavingsCop).toBe(2_041_606);
+    expect(content.solarProgram?.initialMonthlyFinancingPaymentCop).toBe(2_162_043);
+    expect(content.solarProgram?.initialMonthlyNetCashflowCop).toBe(-120_437);
+    expect(content.solarProgram?.postAgreementMonthlyNetSavingsCop).toBe(2_183_975);
+    expect(content.combinedBenefit?.solarMonthlyNetCashflowCop).toBe(-120_437);
+  });
 });

@@ -157,6 +157,9 @@ async function generateAllySpacePdfForSubmission(submissionId: number) {
     solarProgramEnabled: Number(submission.solarProgramEnabled) === 1,
     solarProgramCurrentBillCop: submission.solarProgramCurrentBillCop === null ? null : Number(submission.solarProgramCurrentBillCop),
     solarProgramSavingsCoveragePercent: submission.solarProgramSavingsCoveragePercent === null ? null : Number(submission.solarProgramSavingsCoveragePercent),
+    solarProgramMonthlyFinancingPaymentCop: submission.solarProgramMonthlyFinancingPaymentCop === null ? null : Number(submission.solarProgramMonthlyFinancingPaymentCop),
+    solarProgramInitialMonthlySolarBillCop: submission.solarProgramInitialMonthlySolarBillCop === null ? null : Number(submission.solarProgramInitialMonthlySolarBillCop),
+    solarProgramPostAgreementMonthlySolarBillCop: submission.solarProgramPostAgreementMonthlySolarBillCop === null ? null : Number(submission.solarProgramPostAgreementMonthlySolarBillCop),
     solarProgramAgreementYears: submission.solarProgramAgreementYears,
     solarProgramAnnualCpiPercent: submission.solarProgramAnnualCpiPercent === null ? null : Number(submission.solarProgramAnnualCpiPercent),
     solarProgramUsefulLifeYears: submission.solarProgramUsefulLifeYears,
@@ -562,6 +565,9 @@ export const spacesRouter = router({
       solarProgramEnabled: z.boolean().optional(),
       solarProgramCurrentBillCop: optionalFormNumber().refine((value) => value === undefined || value > 0, "La factura mensual debe ser mayor que cero"),
       solarProgramSavingsCoveragePercent: optionalFormNumber().refine((value) => value === undefined || (value >= 0 && value <= 100), "La cobertura de ahorro solar debe estar entre 0 % y 100 %"),
+      solarProgramMonthlyFinancingPaymentCop: optionalFormNumber().refine((value) => value === undefined || value >= 0, "La cuota solar mensual no puede ser negativa"),
+      solarProgramInitialMonthlySolarBillCop: optionalFormNumber().refine((value) => value === undefined || value >= 0, "La factura solar residual inicial no puede ser negativa"),
+      solarProgramPostAgreementMonthlySolarBillCop: optionalFormNumber().refine((value) => value === undefined || value >= 0, "La factura solar posterior al plazo no puede ser negativa"),
       solarProgramAgreementYears: optionalFormInteger().refine((value) => value === undefined || (value >= 1 && value <= 30), "El acuerdo solar debe estar entre 1 y 30 años"),
       solarProgramAnnualCpiPercent: optionalFormNumber().refine((value) => value === undefined || (value >= 0 && value <= 30), "El IPC anual debe estar entre 0 % y 30 %"),
       solarProgramUsefulLifeYears: optionalFormInteger().refine((value) => value === undefined || (value >= 1 && value <= 50), "La vida útil solar debe estar entre 1 y 50 años"),
@@ -631,6 +637,9 @@ export const spacesRouter = router({
           enabled: input.solarProgramEnabled,
           currentMonthlyBillCop: input.solarProgramCurrentBillCop,
           savingsCoveragePercent: input.solarProgramSavingsCoveragePercent,
+          monthlyFinancingPaymentCop: input.solarProgramMonthlyFinancingPaymentCop,
+          initialMonthlySolarBillCop: input.solarProgramInitialMonthlySolarBillCop,
+          postAgreementMonthlySolarBillCop: input.solarProgramPostAgreementMonthlySolarBillCop,
           agreementYears: input.solarProgramAgreementYears,
           annualCpiPercent: input.solarProgramAnnualCpiPercent,
           usefulLifeYears: input.solarProgramUsefulLifeYears,
@@ -681,6 +690,9 @@ export const spacesRouter = router({
             // requiere la validación comercial posterior, no borra el diseño.
             solarProgramCurrentBillCop: solarAssumptions?.currentMonthlyBillCop ?? input.solarProgramCurrentBillCop ?? null,
             solarProgramSavingsCoveragePercent: solarAssumptions?.savingsCoveragePercent ?? input.solarProgramSavingsCoveragePercent ?? null,
+            solarProgramMonthlyFinancingPaymentCop: solarAssumptions?.monthlyFinancingPaymentCop ?? input.solarProgramMonthlyFinancingPaymentCop ?? null,
+            solarProgramInitialMonthlySolarBillCop: solarAssumptions?.initialMonthlySolarBillCop ?? input.solarProgramInitialMonthlySolarBillCop ?? null,
+            solarProgramPostAgreementMonthlySolarBillCop: solarAssumptions?.postAgreementMonthlySolarBillCop ?? input.solarProgramPostAgreementMonthlySolarBillCop ?? null,
             solarProgramAgreementYears: solarAssumptions?.agreementYears ?? input.solarProgramAgreementYears ?? null,
             solarProgramAnnualCpiPercent: solarAssumptions?.annualCpiPercent ?? input.solarProgramAnnualCpiPercent ?? null,
             solarProgramUsefulLifeYears: solarAssumptions?.usefulLifeYears ?? input.solarProgramUsefulLifeYears ?? null,
@@ -1929,6 +1941,9 @@ export const spacesRouter = router({
         solarProgramEnabled: z.boolean().optional(),
         solarProgramCurrentBillCop: optionalFormNumber().refine((value) => value === undefined || value > 0, "La factura mensual debe ser mayor que cero"),
         solarProgramSavingsCoveragePercent: optionalFormNumber().refine((value) => value === undefined || (value >= 0 && value <= 100), "La cobertura de ahorro solar debe estar entre 0 % y 100 %"),
+        solarProgramMonthlyFinancingPaymentCop: optionalFormNumber().refine((value) => value === undefined || value >= 0, "La cuota solar mensual no puede ser negativa"),
+        solarProgramInitialMonthlySolarBillCop: optionalFormNumber().refine((value) => value === undefined || value >= 0, "La factura solar residual inicial no puede ser negativa"),
+        solarProgramPostAgreementMonthlySolarBillCop: optionalFormNumber().refine((value) => value === undefined || value >= 0, "La factura solar posterior al plazo no puede ser negativa"),
         solarProgramAgreementYears: optionalFormInteger().refine((value) => value === undefined || (value >= 1 && value <= 30), "El acuerdo solar debe estar entre 1 y 30 años"),
         solarProgramAnnualCpiPercent: optionalFormNumber().refine((value) => value === undefined || (value >= 0 && value <= 30), "El IPC anual debe estar entre 0 % y 30 %"),
         solarProgramUsefulLifeYears: optionalFormInteger().refine((value) => value === undefined || (value >= 1 && value <= 50), "La vida útil solar debe estar entre 1 y 50 años"),
@@ -2012,6 +2027,9 @@ export const spacesRouter = router({
             solarProgramEnabled: spaceSubmissions.solarProgramEnabled,
             solarProgramCurrentBillCop: spaceSubmissions.solarProgramCurrentBillCop,
             solarProgramSavingsCoveragePercent: spaceSubmissions.solarProgramSavingsCoveragePercent,
+            solarProgramMonthlyFinancingPaymentCop: spaceSubmissions.solarProgramMonthlyFinancingPaymentCop,
+            solarProgramInitialMonthlySolarBillCop: spaceSubmissions.solarProgramInitialMonthlySolarBillCop,
+            solarProgramPostAgreementMonthlySolarBillCop: spaceSubmissions.solarProgramPostAgreementMonthlySolarBillCop,
             solarProgramAgreementYears: spaceSubmissions.solarProgramAgreementYears,
             solarProgramAnnualCpiPercent: spaceSubmissions.solarProgramAnnualCpiPercent,
             solarProgramUsefulLifeYears: spaceSubmissions.solarProgramUsefulLifeYears,
@@ -2059,6 +2077,7 @@ export const spacesRouter = router({
         }
         const solarProgramFields = [
           "solarProgramEnabled", "solarProgramCurrentBillCop", "solarProgramSavingsCoveragePercent",
+          "solarProgramMonthlyFinancingPaymentCop", "solarProgramInitialMonthlySolarBillCop", "solarProgramPostAgreementMonthlySolarBillCop",
           "solarProgramAgreementYears", "solarProgramAnnualCpiPercent", "solarProgramUsefulLifeYears",
           "solarSystemPowerKwp", "solarAnnualGenerationKwh", "solarSelfConsumptionPercent",
           "solarExportPercent", "solarGridTariffCopPerKwh",
@@ -2074,6 +2093,9 @@ export const spacesRouter = router({
               enabled: nextEnabled,
               currentMonthlyBillCop: cleanFields.solarProgramCurrentBillCop ?? previousSubmission.solarProgramCurrentBillCop,
               savingsCoveragePercent: cleanFields.solarProgramSavingsCoveragePercent ?? previousSubmission.solarProgramSavingsCoveragePercent,
+              monthlyFinancingPaymentCop: cleanFields.solarProgramMonthlyFinancingPaymentCop ?? previousSubmission.solarProgramMonthlyFinancingPaymentCop,
+              initialMonthlySolarBillCop: cleanFields.solarProgramInitialMonthlySolarBillCop ?? previousSubmission.solarProgramInitialMonthlySolarBillCop,
+              postAgreementMonthlySolarBillCop: cleanFields.solarProgramPostAgreementMonthlySolarBillCop ?? previousSubmission.solarProgramPostAgreementMonthlySolarBillCop,
               agreementYears: cleanFields.solarProgramAgreementYears ?? previousSubmission.solarProgramAgreementYears,
               annualCpiPercent: cleanFields.solarProgramAnnualCpiPercent ?? previousSubmission.solarProgramAnnualCpiPercent,
               usefulLifeYears: cleanFields.solarProgramUsefulLifeYears ?? previousSubmission.solarProgramUsefulLifeYears,
@@ -2095,6 +2117,9 @@ export const spacesRouter = router({
             cleanFields.solarProgramEnabled = 1;
             cleanFields.solarProgramCurrentBillCop = solarProgram.assumptions.currentMonthlyBillCop;
             cleanFields.solarProgramSavingsCoveragePercent = solarProgram.assumptions.savingsCoveragePercent;
+            cleanFields.solarProgramMonthlyFinancingPaymentCop = solarProgram.assumptions.monthlyFinancingPaymentCop;
+            cleanFields.solarProgramInitialMonthlySolarBillCop = solarProgram.assumptions.initialMonthlySolarBillCop;
+            cleanFields.solarProgramPostAgreementMonthlySolarBillCop = solarProgram.assumptions.postAgreementMonthlySolarBillCop;
             cleanFields.solarProgramAgreementYears = solarProgram.assumptions.agreementYears;
             cleanFields.solarProgramAnnualCpiPercent = solarProgram.assumptions.annualCpiPercent;
             cleanFields.solarProgramUsefulLifeYears = solarProgram.assumptions.usefulLifeYears;

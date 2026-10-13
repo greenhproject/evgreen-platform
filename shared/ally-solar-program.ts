@@ -10,11 +10,17 @@ export type AllySolarProgramInput = {
   selfConsumptionPercent?: number | null;
   exportPercent?: number | null;
   gridTariffCopPerKwh?: number | null;
+  /** Cuota periódica explícita de la propuesta OpenSolar, si existe. */
+  monthlyFinancingPaymentCop?: number | null;
+  /** Factura solar propuesta del año base; no es la cuota de financiación. */
+  initialMonthlySolarBillCop?: number | null;
+  /** Factura solar residual indicada para el inicio del periodo posterior al acuerdo. */
+  postAgreementMonthlySolarBillCop?: number | null;
 };
 
 export type AllySolarProgramSnapshot = {
-  version: 1;
-  basis: "EVGREEN_ALLY_SOLAR_SAVINGS_AND_COMBINED_BENEFIT";
+  version: 2;
+  basis: "EVGREEN_ALLY_SOLAR_CASHFLOW_AND_POST_AGREEMENT_SAVINGS";
   enabled: true;
   assumptions: {
     currentMonthlyBillCop: number;
@@ -27,11 +33,23 @@ export type AllySolarProgramSnapshot = {
     selfConsumptionPercent: number | null;
     exportPercent: number | null;
     gridTariffCopPerKwh: number | null;
+    monthlyFinancingPaymentCop: number | null;
+    initialMonthlySolarBillCop: number | null;
+    postAgreementMonthlySolarBillCop: number | null;
+    financingPaymentSource: "OpenSolar" | "Derivada de cobertura" | "No disponible";
+    solarBillSource: "OpenSolar" | "Derivada de cobertura" | "No disponible";
   };
+  /** Ahorro energético bruto: factura de red menos factura solar residual, antes de cuota. */
   initialMonthlySavingsCop: number;
   initialAnnualSavingsCop: number;
+  /** Alias conservado para compatibilidad; representa factura solar residual del año 1, no una cuota. */
   initialMonthlyReplacementQuotaCop: number;
+  initialMonthlyFinancingPaymentCop: number | null;
+  initialMonthlyNetCashflowCop: number;
   agreementSavingsCop: number;
+  postAgreementMonthlyGridBillCop: number;
+  postAgreementMonthlySolarBillCop: number;
+  postAgreementMonthlyNetSavingsCop: number;
   postAgreementAnnualSavingsCop: number;
   postAgreementCumulativeSavingsCop: number;
   totalReferenceSavingsCop: number;
@@ -60,14 +78,19 @@ function bounded(value: unknown, fallback: number, min: number, max: number, fie
   return numeric;
 }
 
+function positiveOrNull(value: unknown, field: string): number | null {
+  const numeric = optionalFinite(value);
+  if (numeric === null) return null;
+  if (numeric < 0) throw new Error(`${field} no puede ser negativo`);
+  return numeric;
+}
+
 /**
- * Modela únicamente reducción de gasto energético del aliado. No es una
- * proyección de ventas solares ni una garantía contractual.
- *
- * La cuota mensual de sustitución se deriva como factura actual menos el
- * ahorro cubierto. El ahorro aumenta con el IPC durante el plazo indicado;
- * después del plazo se presenta como beneficio operativo referencial sujeto a
- * generación, consumo, degradación, mantenimiento y contrato de cesión.
+ * Modela el flujo de caja del programa solar del aliado sin confundir tres
+ * conceptos distintos: factura de red evitada, factura solar residual y cuota
+ * de financiación. Si OpenSolar expone estos valores, se usan literalmente;
+ * sólo para registros históricos sin propuesta se conserva la aproximación por
+ * cobertura y se etiqueta como derivada.
  */
 export function buildAllySolarProgram(input: AllySolarProgramInput): AllySolarProgramSnapshot | null {
   const enabled = input.enabled === true || Number(input.enabled) === 1;
@@ -84,6 +107,10 @@ export function buildAllySolarProgram(input: AllySolarProgramInput): AllySolarPr
   const selfConsumptionPercent = optionalFinite(input.selfConsumptionPercent);
   const exportPercent = optionalFinite(input.exportPercent);
   const gridTariffCopPerKwh = optionalFinite(input.gridTariffCopPerKwh);
+  const monthlyFinancingPaymentCop = positiveOrNull(input.monthlyFinancingPaymentCop, "La cuota mensual de financiación");
+  const providedInitialSolarBillCop = positiveOrNull(input.initialMonthlySolarBillCop, "La factura solar residual inicial");
+  const providedPostAgreementSolarBillCop = positiveOrNull(input.postAgreementMonthlySolarBillCop, "La factura solar residual posterior al acuerdo");
+
   for (const [field, value] of [
     ["El autoconsumo solar", selfConsumptionPercent],
     ["La exportación solar", exportPercent],
@@ -94,26 +121,45 @@ export function buildAllySolarProgram(input: AllySolarProgramInput): AllySolarPr
   if (annualGenerationKwh !== null && annualGenerationKwh <= 0) throw new Error("La generación solar anual debe ser mayor que cero");
   if (gridTariffCopPerKwh !== null && gridTariffCopPerKwh < 0) throw new Error("La tarifa de red no puede ser negativa");
 
-  const initialMonthlySavingsCop = round(currentMonthlyBillCop * (savingsCoveragePercent / 100));
+  const derivedInitialSolarBillCop = round(currentMonthlyBillCop * (1 - savingsCoveragePercent / 100));
+  const initialMonthlySolarBillCop = providedInitialSolarBillCop ?? derivedInitialSolarBillCop;
+  const initialMonthlySavingsCop = round(Math.max(0, currentMonthlyBillCop - initialMonthlySolarBillCop));
   const initialAnnualSavingsCop = round(initialMonthlySavingsCop * 12);
-  const initialMonthlyReplacementQuotaCop = round(currentMonthlyBillCop - initialMonthlySavingsCop);
+  const initialMonthlyNetCashflowCop = round(initialMonthlySavingsCop - (monthlyFinancingPaymentCop ?? 0));
+  const annualRate = annualCpiPercent / 100;
 
   let agreementSavingsCop = 0;
   for (let year = 0; year < agreementYears; year += 1) {
-    agreementSavingsCop += initialAnnualSavingsCop * ((1 + annualCpiPercent / 100) ** year);
+    const currentMonthlyGridBill = currentMonthlyBillCop * ((1 + annualRate) ** year);
+    // La cuota OpenSolar explícita es una cuota contractual mensual; no se le
+    // aplica IPC salvo que OpenSolar exponga una cuota distinta por periodo.
+    const yearlyFinancingPayment = (monthlyFinancingPaymentCop ?? 0) * 12;
+    const projectedSolarBill = providedInitialSolarBillCop === null
+      ? currentMonthlyGridBill * (1 - savingsCoveragePercent / 100)
+      : initialMonthlySolarBillCop * ((1 + annualRate) ** year);
+    agreementSavingsCop += ((currentMonthlyGridBill - projectedSolarBill) * 12) - yearlyFinancingPayment;
   }
+
   const postAgreementYears = usefulLifeYears - agreementYears;
+  const postAgreementMonthlyGridBillCop = round(currentMonthlyBillCop * ((1 + annualRate) ** agreementYears));
+  const postAgreementMonthlySolarBillCop = round(
+    providedPostAgreementSolarBillCop
+      ?? initialMonthlySolarBillCop * ((1 + annualRate) ** agreementYears),
+  );
+  const postAgreementMonthlyNetSavingsCop = round(Math.max(0, postAgreementMonthlyGridBillCop - postAgreementMonthlySolarBillCop));
+  const postAgreementAnnualSavingsCop = postAgreementYears > 0 ? round(postAgreementMonthlyNetSavingsCop * 12) : 0;
   let postAgreementCumulativeSavingsCop = 0;
   for (let year = agreementYears; year < usefulLifeYears; year += 1) {
-    postAgreementCumulativeSavingsCop += initialAnnualSavingsCop * ((1 + annualCpiPercent / 100) ** year);
+    const gridBill = currentMonthlyBillCop * ((1 + annualRate) ** year);
+    const solarBill = providedPostAgreementSolarBillCop !== null
+      ? providedPostAgreementSolarBillCop * ((1 + annualRate) ** (year - agreementYears))
+      : initialMonthlySolarBillCop * ((1 + annualRate) ** year);
+    postAgreementCumulativeSavingsCop += Math.max(0, gridBill - solarBill) * 12;
   }
-  const postAgreementAnnualSavingsCop = postAgreementYears > 0
-    ? initialAnnualSavingsCop * ((1 + annualCpiPercent / 100) ** agreementYears)
-    : 0;
 
   return {
-    version: 1,
-    basis: "EVGREEN_ALLY_SOLAR_SAVINGS_AND_COMBINED_BENEFIT",
+    version: 2,
+    basis: "EVGREEN_ALLY_SOLAR_CASHFLOW_AND_POST_AGREEMENT_SAVINGS",
     enabled: true,
     assumptions: {
       currentMonthlyBillCop: round(currentMonthlyBillCop),
@@ -126,12 +172,22 @@ export function buildAllySolarProgram(input: AllySolarProgramInput): AllySolarPr
       selfConsumptionPercent: selfConsumptionPercent === null ? null : round(selfConsumptionPercent, 2),
       exportPercent: exportPercent === null ? null : round(exportPercent, 2),
       gridTariffCopPerKwh: gridTariffCopPerKwh === null ? null : round(gridTariffCopPerKwh),
+      monthlyFinancingPaymentCop: monthlyFinancingPaymentCop === null ? null : round(monthlyFinancingPaymentCop),
+      initialMonthlySolarBillCop: round(initialMonthlySolarBillCop),
+      postAgreementMonthlySolarBillCop: providedPostAgreementSolarBillCop === null ? null : round(providedPostAgreementSolarBillCop),
+      financingPaymentSource: monthlyFinancingPaymentCop === null ? "No disponible" : "OpenSolar",
+      solarBillSource: providedInitialSolarBillCop === null ? "Derivada de cobertura" : "OpenSolar",
     },
     initialMonthlySavingsCop,
     initialAnnualSavingsCop,
-    initialMonthlyReplacementQuotaCop,
+    initialMonthlyReplacementQuotaCop: round(initialMonthlySolarBillCop),
+    initialMonthlyFinancingPaymentCop: monthlyFinancingPaymentCop === null ? null : round(monthlyFinancingPaymentCop),
+    initialMonthlyNetCashflowCop,
     agreementSavingsCop: round(agreementSavingsCop),
-    postAgreementAnnualSavingsCop: round(postAgreementAnnualSavingsCop),
+    postAgreementMonthlyGridBillCop,
+    postAgreementMonthlySolarBillCop,
+    postAgreementMonthlyNetSavingsCop,
+    postAgreementAnnualSavingsCop,
     postAgreementCumulativeSavingsCop: round(postAgreementCumulativeSavingsCop),
     totalReferenceSavingsCop: round(agreementSavingsCop + postAgreementCumulativeSavingsCop),
   };

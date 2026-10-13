@@ -71,6 +71,17 @@ type OpenSolarSolarMetrics = {
   sources: Partial<Record<"annualGenerationKwh" | "selfConsumptionPercent" | "exportPercent", FieldSource>>;
 };
 
+type OpenSolarFinancialTerms = {
+  monthlyFinancingPaymentCop: number | null;
+  initialMonthlySolarBillCop: number | null;
+  postAgreementMonthlySolarBillCop: number | null;
+  agreementYears: number | null;
+  sources: Partial<Record<
+    "monthlyFinancingPaymentCop" | "initialMonthlySolarBillCop" | "postAgreementMonthlySolarBillCop",
+    FieldSource
+  >>;
+};
+
 export type OpenSolarProjectPrefill = {
   success: boolean;
   status: number;
@@ -91,11 +102,15 @@ export type OpenSolarProjectPrefill = {
     exportPercent: number | null;
     solarSavingsCoveragePercent: number | null;
     gridTariffCopPerKwh: number | null;
+    monthlyFinancingPaymentCop: number | null;
+    initialMonthlySolarBillCop: number | null;
+    postAgreementMonthlySolarBillCop: number | null;
+    financingAgreementYears: number | null;
     canActivateAllySolarProgram: boolean;
     systemsCount: number;
     modifiedAt: string | null;
     fieldSources: Partial<Record<
-      "annualConsumptionKwh" | "currentMonthlyBill" | "systemPowerKwp" | "annualGenerationKwh" | "selfConsumptionPercent" | "exportPercent" | "solarSavingsCoveragePercent" | "gridTariffCopPerKwh",
+      "annualConsumptionKwh" | "currentMonthlyBill" | "systemPowerKwp" | "annualGenerationKwh" | "selfConsumptionPercent" | "exportPercent" | "solarSavingsCoveragePercent" | "gridTariffCopPerKwh" | "monthlyFinancingPaymentCop" | "initialMonthlySolarBillCop" | "postAgreementMonthlySolarBillCop",
       FieldSource
     >>;
   };
@@ -316,6 +331,88 @@ function getCurrentMonthlyBillFromSystems(systems: OpenSolarSystemDetail[]): num
     }
   }
   return null;
+}
+
+/**
+ * La propuesta OpenSolar conserva los términos comerciales dentro de los
+ * payment_options del diseño. Se toman sólo valores explícitos del primer plan
+ * mensual con cuota positiva: la cuota `regular_payment`, la factura solar del
+ * año base y la factura solar del inicio del año posterior al plazo.
+ *
+ * No se calcula una cuota a partir del CAPEX, tasa o cobertura: el contrato
+ * financiero debe respetar exactamente lo que OpenSolar propuso.
+ */
+function resolveOpenSolarFinancialTerms(rawDesign: Record<string, unknown> | null): OpenSolarFinancialTerms {
+  if (!rawDesign) {
+    return {
+      monthlyFinancingPaymentCop: null,
+      initialMonthlySolarBillCop: null,
+      postAgreementMonthlySolarBillCop: null,
+      agreementYears: null,
+      sources: {},
+    };
+  }
+
+  const candidateOptions: Record<string, unknown>[] = [];
+  const visited = new Set<object>();
+  let remainingNodes = 2_000;
+  const visit = (node: unknown, depth: number) => {
+    if (depth > 16 || remainingNodes-- <= 0 || node === null || node === undefined) return;
+    if (Array.isArray(node)) {
+      for (const entry of node) visit(entry, depth + 1);
+      return;
+    }
+    const record = asRecord(node);
+    if (!record || visited.has(record)) return;
+    visited.add(record);
+    if (Array.isArray(record.payment_options)) {
+      for (const option of record.payment_options) {
+        const optionRecord = asRecord(option);
+        if (optionRecord) candidateOptions.push(optionRecord);
+      }
+    }
+    for (const value of Object.values(record)) visit(value, depth + 1);
+  };
+  visit(rawDesign, 0);
+
+  for (const option of candidateOptions) {
+    const monthlyFinancingPaymentCop = optionalFinite(option.regular_payment);
+    const termMonths = optionalFinite(option.term);
+    const termYears = optionalFinite(option.term_years)
+      ?? (termMonths !== null && termMonths > 0 ? termMonths / 12 : null);
+    const proposedYearly = Array.isArray(option.utility_bill_yearly_proposed)
+      ? option.utility_bill_yearly_proposed.map(optionalFinite).filter((value): value is number => value !== null && value >= 0)
+      : [];
+    const initialMonthlySolarBillCop = proposedYearly.length > 0
+      ? proposedYearly[0] / 12
+      : null;
+    const firstPostAgreementIndex = termYears === null ? -1 : Math.max(0, Math.round(termYears));
+    const postAgreementMonthlySolarBillCop = firstPostAgreementIndex >= 0 && proposedYearly[firstPostAgreementIndex] !== undefined
+      ? proposedYearly[firstPostAgreementIndex] / 12
+      : null;
+
+    if (monthlyFinancingPaymentCop !== null || initialMonthlySolarBillCop !== null || postAgreementMonthlySolarBillCop !== null) {
+      return {
+        monthlyFinancingPaymentCop: rounded(monthlyFinancingPaymentCop),
+        initialMonthlySolarBillCop: rounded(initialMonthlySolarBillCop),
+        postAgreementMonthlySolarBillCop: rounded(postAgreementMonthlySolarBillCop),
+        agreementYears: termYears === null ? null : Math.round(termYears),
+        sources: {
+          ...(monthlyFinancingPaymentCop !== null ? { monthlyFinancingPaymentCop: "OpenSolar" as const } : {}),
+          ...(initialMonthlySolarBillCop !== null ? { initialMonthlySolarBillCop: "OpenSolar" as const } : {}),
+          ...(postAgreementMonthlySolarBillCop !== null ? { postAgreementMonthlySolarBillCop: "OpenSolar" as const } : {}),
+        },
+      };
+    }
+  }
+
+  return {
+    monthlyFinancingPaymentCop: null,
+    initialMonthlySolarBillCop: null,
+    postAgreementMonthlySolarBillCop: null,
+    agreementYears: null,
+    sources: {},
+  };
 }
 
 function resolveSolarMetrics(input: {
@@ -655,6 +752,7 @@ export async function getOpenSolarProjectPrefill(config: OpenSolarProjectLookupI
   }
 
   const solarMetrics = resolveSolarMetrics({ apiSystems, rawDesign });
+  const financialTerms = resolveOpenSolarFinancialTerms(rawDesign);
   const solarSavingsCoveragePercent = solarMetrics.annualGenerationKwh !== null
     && solarMetrics.selfConsumptionPercent !== null
     && usage.annualConsumptionKwh !== null
@@ -676,6 +774,9 @@ export async function getOpenSolarProjectPrefill(config: OpenSolarProjectLookupI
   if (solarMetrics.exportPercent === null) unavailableFields.push("exportación (%)");
   if (solarSavingsCoveragePercent === null) unavailableFields.push("cobertura de ahorro solar (%)");
   if (gridTariffCopPerKwh === null) unavailableFields.push("tarifa de red COP/kWh");
+  if (financialTerms.monthlyFinancingPaymentCop === null) unavailableFields.push("cuota mensual de financiación");
+  if (financialTerms.initialMonthlySolarBillCop === null) unavailableFields.push("factura solar residual año 1");
+  if (financialTerms.postAgreementMonthlySolarBillCop === null) unavailableFields.push("factura solar residual posterior al plazo");
   if (!rawDesign && solarMetrics.annualGenerationKwh === null) {
     warnings.push("OpenSolar no expuso resultados de generación en este proyecto o plan API; se requiere Raw Data API o una propuesta/factura validada para completar esos campos.");
   }
@@ -689,6 +790,7 @@ export async function getOpenSolarProjectPrefill(config: OpenSolarProjectLookupI
       ...solarMetrics.sources,
       ...(solarSavingsCoveragePercent !== null ? { solarSavingsCoveragePercent: "Calculado desde datos OpenSolar" as const } : {}),
       ...(gridTariffCopPerKwh !== null ? { gridTariffCopPerKwh: "Calculado desde datos OpenSolar" as const } : {}),
+      ...financialTerms.sources,
     };
 
   return {
@@ -711,6 +813,10 @@ export async function getOpenSolarProjectPrefill(config: OpenSolarProjectLookupI
       exportPercent: solarMetrics.exportPercent,
       solarSavingsCoveragePercent,
       gridTariffCopPerKwh,
+      monthlyFinancingPaymentCop: financialTerms.monthlyFinancingPaymentCop,
+      initialMonthlySolarBillCop: financialTerms.initialMonthlySolarBillCop,
+      postAgreementMonthlySolarBillCop: financialTerms.postAgreementMonthlySolarBillCop,
+      financingAgreementYears: financialTerms.agreementYears,
       canActivateAllySolarProgram: currentMonthlyBill !== null && solarSavingsCoveragePercent !== null && solarSavingsCoveragePercent > 0,
       systemsCount,
       modifiedAt: optionalText(project.modified_date),

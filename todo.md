@@ -150,3 +150,14 @@
 - [x] Validación integral: 245 archivos / 2.365 pruebas aprobadas; 5 suites de integración y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo aprobado.
 - [x] QA visual autenticado, sin guardar: consultar el ID `11062957` en el formulario del aliado precargó los siete campos esperados con los valores validados contra la respuesta real.
 - [x] Guardar checkpoint `977f22d3`, publicar de forma segura en GitHub y verificar Railway exitoso en staging y producción; `evgreen.lat` y `app.evgreen.lat` responden 200.
+
+## OpenSolar — cuota, factura residual y ahorro posterior (2026-10-12)
+
+- [x] Auditar el proyecto autorizado `11062957` en modo solo lectura: la propuesta contiene `regular_payment` COP 2.162.043/mes por 72 meses, factura de red actual COP 2.184.000/mes, factura solar propuesta COP 142.394/mes en el año base y COP 423.835/mes al inicio del año 7; inflación de energía 3%.
+- [x] Confirmar que la cuota real está en `payment_options[].regular_payment` de la propuesta/diseño y no se debe sustituir por factura actual menos cobertura. La opción #1022158 expone préstamo Rocasol, plazo 6 años, 26,255% y periodicidad mensual.
+- [x] Persistir los tres datos financieros auditables del programa del aliado: cuota mensual, factura solar residual año 1 y factura solar residual al terminar el plazo. Migración aditiva 0062 aplicada; las tres columnas son `bigint` nullable y no modificaron el Espacio vinculado.
+- [x] Corregir el modelo/PDF: durante la financiación separa factura evitada, factura solar residual y cuota; desde el año 7 refleja la factura de red inflada menos la factura solar residual proyectada. La cuota OpenSolar no se infla ni se calcula desde el CAPEX.
+- [x] Extender el mapeo OpenSolar, UI y pruebas de API/cálculos/PDF. Para `11062957`, lectura de solo lectura verifica factura COP 2.184.000, cuota COP 2.162.043, factura solar inicial COP 142.394,21 y posterior COP 423.834,86; el formulario conserva la revisión y guardado humano.
+- [x] Validar TypeScript, 22 pruebas focales y 245 archivos / 2.367 pruebas integrales aprobadas; 5 suites de integración y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo aprobado.
+- [x] Verificar el contrato visual compilado: la ficha contiene cuota, factura residual año 1 y factura solar desde año 7; el mapeo del formulario asigna los tres valores de OpenSolar y exige guardar explícito. El QA automatizado del clic se vio afectado por la latencia del proxy local, pero la lectura directa autenticada y los contratos UI/tRPC se validaron sin mutar el Espacio.
+- [ ] Guardar checkpoint WebDev, ejecutar publicación segura y verificar el despliegue.
