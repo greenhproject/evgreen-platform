@@ -160,4 +160,4 @@
 - [x] Extender el mapeo OpenSolar, UI y pruebas de API/cálculos/PDF. Para `11062957`, lectura de solo lectura verifica factura COP 2.184.000, cuota COP 2.162.043, factura solar inicial COP 142.394,21 y posterior COP 423.834,86; el formulario conserva la revisión y guardado humano.
 - [x] Validar TypeScript, 22 pruebas focales y 245 archivos / 2.367 pruebas integrales aprobadas; 5 suites de integración y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo aprobado.
 - [x] Verificar el contrato visual compilado: la ficha contiene cuota, factura residual año 1 y factura solar desde año 7; el mapeo del formulario asigna los tres valores de OpenSolar y exige guardar explícito. El QA automatizado del clic se vio afectado por la latencia del proxy local, pero la lectura directa autenticada y los contratos UI/tRPC se validaron sin mutar el Espacio.
-- [ ] Guardar checkpoint WebDev, ejecutar publicación segura y verificar el despliegue.
+- [x] Guardar checkpoint `7404d711`, publicar de forma segura en GitHub y verificar Railway exitoso: producción #7027234029 y staging #7027234053.
