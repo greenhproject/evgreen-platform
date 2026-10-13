@@ -249,6 +249,8 @@ export default function AdminSpaces() {
   });
   const [createPhotos, setCreatePhotos] = useState<Array<{ file: File; preview: string; photoType: string; isCover?: boolean; isConceptual?: boolean }>>([]);
   const [createSolarOfferPdf, setCreateSolarOfferPdf] = useState<File | null>(null);
+  const [createPreparation, setCreatePreparation] = useState<{ stage: "idle" | "preparing" | "submitting"; completed: number; total: number }>({ stage: "idle", completed: 0, total: 0 });
+  const [createSubmitError, setCreateSubmitError] = useState<string | null>(null);
   const [dateTo, setDateTo] = useState("");
   const [scoreFilter, setScoreFilter] = useState<"all" | "scored" | "unscored">("all");
 
@@ -307,6 +309,7 @@ export default function AdminSpaces() {
   const createSpaceMutation = trpc.spaces.submit.useMutation({
     onSuccess: (res) => {
       toast.success(`Espacio creado: ${res.code}`);
+      setCreateSubmitError(null);
       setShowCreateDialog(false);
       setCreateForm({
         spaceName: "", spaceType: "parking", address: "", city: "", department: "",
@@ -341,7 +344,11 @@ export default function AdminSpaces() {
       setCreateSolarOfferPdf(null);
       refetch();
     },
-    onError: (err) => toast.error(humanizeSpaceError(err.message, "crear")),
+    onError: (err) => {
+      const message = humanizeSpaceError(err.message, "crear");
+      setCreateSubmitError(message);
+      toast.error(message);
+    },
   });
 
   const submissions = data?.submissions || [];
@@ -379,6 +386,135 @@ export default function AdminSpaces() {
     setDateTo("");
     setScoreFilter("all");
     setOffset(0);
+  }
+
+  const isCreatingManualSpace = createPreparation.stage !== "idle" || createSpaceMutation.isPending;
+
+  async function handleCreateManualSpace() {
+    setCreateSubmitError(null);
+    if (!createForm.spaceName || !createForm.address || !createForm.city || !createForm.submitterName || !createForm.submitterEmail || !createForm.submitterPhone) {
+      const message = "Completa los campos obligatorios (*) antes de crear el espacio.";
+      setCreateSubmitError(message);
+      toast.error(message);
+      return;
+    }
+    const numericError = [
+      numericInputError("Transformador", createForm.transformerCapacityKva),
+      numericInputError("Área", createForm.availableAreaM2),
+      numericInputError("Parqueos", createForm.parkingSpots, true),
+      numericInputError("Vehículos/día", createForm.estimatedDailyVehicles, true),
+      numericInputError("% de vehículos EV", createForm.estimatedEvPercent, true),
+      numericInputError("Estrato", createForm.socioeconomicStratum, true),
+      numericInputError("Latitud", createForm.latitude),
+      numericInputError("Longitud", createForm.longitude),
+      numericInputError("Distancia al transformador", createForm.electricalDistance, true),
+      numericInputError("Transformador propuesto", createForm.proposedTransformerKva),
+      numericInputError("Inversión estimada", createForm.estimatedInvestmentCop),
+      numericInputError("Potencia DC", createForm.estimatedPowerKw, true),
+      numericInputError("Cargadores", createForm.estimatedChargerCount, true),
+      numericInputError("Factura solar mensual", createForm.solarProgramCurrentBillCop),
+      numericInputError("Energía frente al consumo", createForm.solarProgramEnergyOffsetPercent),
+      numericInputError("Cobertura de ahorro solar", createForm.solarProgramSavingsCoveragePercent),
+      numericInputError("Cuota solar mensual", createForm.solarProgramMonthlyFinancingPaymentCop),
+      numericInputError("Factura solar residual año 1", createForm.solarProgramInitialMonthlySolarBillCop),
+      numericInputError("Factura solar residual posterior", createForm.solarProgramPostAgreementMonthlySolarBillCop),
+      numericInputError("Ahorro total de energía", createForm.solarProgramTotalEnergySavingsCop),
+      numericInputError("Rendimiento anual solar", createForm.solarProgramAnnualReturnPercent),
+      numericInputError("Plazo solar", createForm.solarProgramAgreementYears, true),
+      numericInputError("IPC solar", createForm.solarProgramAnnualCpiPercent),
+      numericInputError("Vida útil solar", createForm.solarProgramUsefulLifeYears, true),
+      numericInputError("Potencia solar", createForm.solarSystemPowerKwp),
+      numericInputError("Generación solar anual", createForm.solarAnnualGenerationKwh),
+      numericInputError("Autoconsumo solar", createForm.solarSelfConsumptionPercent),
+      numericInputError("Exportación solar", createForm.solarExportPercent),
+      numericInputError("Tarifa de red solar", createForm.solarGridTariffCopPerKwh, true),
+    ].find(Boolean);
+    if (numericError) {
+      setCreateSubmitError(numericError);
+      toast.error(numericError);
+      return;
+    }
+
+    const evPercent = toOptionalInteger(createForm.estimatedEvPercent);
+    if (evPercent !== undefined && (evPercent < 0 || evPercent > 100)) {
+      const message = "El porcentaje de vehículos EV debe estar entre 0 y 100.";
+      setCreateSubmitError(message);
+      toast.error(message);
+      return;
+    }
+    if (createPhotos.some(photo => photo.file.size > 10 * 1024 * 1024)) {
+      const message = "Cada foto debe pesar máximo 10 MB. Retira o comprime la foto más pesada e inténtalo de nuevo.";
+      setCreateSubmitError(message);
+      toast.error(message);
+      return;
+    }
+    if (createSolarOfferPdf && createSolarOfferPdf.size > 15 * 1024 * 1024) {
+      const message = "La oferta solar PDF debe pesar máximo 15 MB para crear el espacio.";
+      setCreateSubmitError(message);
+      toast.error(message);
+      return;
+    }
+
+    let submittedMutation = false;
+    try {
+      setCreatePreparation({ stage: "preparing", completed: 0, total: createPhotos.length });
+      const photosData: Array<{ base64: string; fileName: string; contentType: "image/jpeg"; photoType: any; isCover: boolean; isConceptual: boolean }> = [];
+      for (const [index, photo] of createPhotos.entries()) {
+        const base64 = await compressImageFile(photo.file, 1200, 0.7);
+        photosData.push({
+          base64,
+          fileName: photo.file.name,
+          contentType: "image/jpeg",
+          photoType: photo.photoType as any,
+          isCover: Boolean(photo.isCover),
+          isConceptual: Boolean(photo.isConceptual),
+        });
+        setCreatePreparation({ stage: "preparing", completed: index + 1, total: createPhotos.length });
+      }
+      const solarOfferPdf = createSolarOfferPdf
+        ? { base64: await readFileAsBase64(createSolarOfferPdf), fileName: createSolarOfferPdf.name, contentType: "application/pdf" as const }
+        : undefined;
+      const attachmentBase64Bytes = photosData.reduce((total, photo) => total + photo.base64.length, 0) + (solarOfferPdf?.base64.length ?? 0);
+      if (attachmentBase64Bytes > 36 * 1024 * 1024) {
+        throw new Error("Los adjuntos comprimidos superan el límite seguro de 36 MB. Reduce la cantidad de fotos o adjunta una oferta PDF más liviana.");
+      }
+
+      setCreatePreparation({ stage: "submitting", completed: createPhotos.length, total: createPhotos.length });
+      submittedMutation = true;
+      await createSpaceMutation.mutateAsync({
+        spaceName: createForm.spaceName, spaceType: createForm.spaceType as any, address: createForm.address, city: createForm.city,
+        department: createForm.department || undefined, submitterName: createForm.submitterName, submitterEmail: createForm.submitterEmail,
+        submitterPhone: createForm.submitterPhone, submitterCompany: createForm.submitterCompany || undefined,
+        latitude: toOptionalNumber(createForm.latitude)?.toString(), longitude: toOptionalNumber(createForm.longitude)?.toString(),
+        transformerCapacityKva: toOptionalNumber(createForm.transformerCapacityKva)?.toString(), availableAreaM2: toOptionalNumber(createForm.availableAreaM2)?.toString(),
+        parkingSpots: toOptionalInteger(createForm.parkingSpots), estimatedDailyVehicles: toOptionalInteger(createForm.estimatedDailyVehicles), estimatedEvPercent: evPercent,
+        socioeconomicStratum: toOptionalInteger(createForm.socioeconomicStratum), estimatedInvestmentCop: toOptionalNumber(createForm.estimatedInvestmentCop),
+        estimatedPowerKw: toOptionalInteger(createForm.estimatedPowerKw), estimatedChargerCount: toOptionalInteger(createForm.estimatedChargerCount),
+        hasSolarPanels: createForm.hasSolarPanels, solarCoveragePercent: toOptionalNumber(createForm.solarCoveragePercent), solarEnergyCostPerKwh: toOptionalInteger(createForm.solarEnergyCostPerKwh),
+        solarProgramEnabled: createForm.solarProgramEnabled, solarProgramCurrentBillCop: toOptionalNumber(createForm.solarProgramCurrentBillCop),
+        solarProgramEnergyOffsetPercent: toOptionalNumber(createForm.solarProgramEnergyOffsetPercent), solarProgramSavingsCoveragePercent: toOptionalNumber(createForm.solarProgramSavingsCoveragePercent),
+        solarProgramMonthlyFinancingPaymentCop: toOptionalNumber(createForm.solarProgramMonthlyFinancingPaymentCop), solarProgramInitialMonthlySolarBillCop: toOptionalNumber(createForm.solarProgramInitialMonthlySolarBillCop),
+        solarProgramPostAgreementMonthlySolarBillCop: toOptionalNumber(createForm.solarProgramPostAgreementMonthlySolarBillCop), solarProgramTotalEnergySavingsCop: toOptionalNumber(createForm.solarProgramTotalEnergySavingsCop),
+        solarProgramAnnualReturnPercent: toOptionalNumber(createForm.solarProgramAnnualReturnPercent), solarProgramAgreementYears: toOptionalInteger(createForm.solarProgramAgreementYears),
+        solarProgramAnnualCpiPercent: toOptionalNumber(createForm.solarProgramAnnualCpiPercent), solarProgramUsefulLifeYears: toOptionalInteger(createForm.solarProgramUsefulLifeYears),
+        solarSystemPowerKwp: toOptionalNumber(createForm.solarSystemPowerKwp), solarAnnualGenerationKwh: toOptionalNumber(createForm.solarAnnualGenerationKwh),
+        solarSelfConsumptionPercent: toOptionalNumber(createForm.solarSelfConsumptionPercent), solarExportPercent: toOptionalNumber(createForm.solarExportPercent), solarGridTariffCopPerKwh: toOptionalInteger(createForm.solarGridTariffCopPerKwh),
+        electricalDistance: toOptionalInteger(createForm.electricalDistance), hasElectricalPanel: createForm.hasElectricalPanel, hasInternet: createForm.hasInternet,
+        operatingHoursStart: createForm.operatingHoursStart || undefined, operatingHoursEnd: createForm.operatingHoursEnd || undefined, is24Hours: createForm.is24Hours,
+        requiresNewTransformer: createForm.requiresNewTransformer, proposedTransformerKva: toOptionalNumber(createForm.proposedTransformerKva),
+        electricalViability: (createForm.electricalViability as any) || undefined, investmentType: (createForm.investmentType as any) || "individual",
+        nearbyAttractions: createForm.nearbyAttractions.trim() || undefined, additionalNotes: createForm.additionalNotes.trim() || undefined,
+        photos: photosData.length > 0 ? photosData : undefined, solarOfferPdf,
+      });
+    } catch (error) {
+      if (!submittedMutation) {
+        const message = error instanceof Error ? error.message : "No fue posible preparar los adjuntos para crear el espacio.";
+        setCreateSubmitError(message);
+        toast.error(message);
+      }
+    } finally {
+      setCreatePreparation({ stage: "idle", completed: 0, total: 0 });
+    }
   }
 
   return (
@@ -947,7 +1083,10 @@ export default function AdminSpaces() {
       </Dialog>
 
       {/* ===== DIALOG CREAR ESPACIO MANUAL ===== */}
-      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+      <Dialog open={showCreateDialog} onOpenChange={(open) => {
+        if (!open && isCreatingManualSpace) return;
+        setShowCreateDialog(open);
+      }}>
         <DialogContent className="bg-[#111827] border-[#1f2937] text-white max-w-[95vw] sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-white">
@@ -1293,143 +1432,30 @@ export default function AdminSpaces() {
               </div>
             </div>
           </div>
+          {createSubmitError && (
+            <div role="alert" className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs leading-4 text-red-100">
+              {createSubmitError}
+            </div>
+          )}
+          {createPreparation.stage !== "idle" && (
+            <div aria-live="polite" className="rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-xs leading-4 text-emerald-100">
+              {createPreparation.stage === "preparing"
+                ? `Preparando fotos ${createPreparation.completed}/${createPreparation.total}. No cierres esta ventana.`
+                : "Creando el espacio y cargando sus adjuntos…"}
+            </div>
+          )}
           <DialogFooter className="flex-col sm:flex-row gap-2">
-            <Button variant="outline" onClick={() => setShowCreateDialog(false)} className="border-[#374151] text-gray-300 w-full sm:w-auto">
+            <Button type="button" variant="outline" disabled={isCreatingManualSpace} onClick={() => setShowCreateDialog(false)} className="border-[#374151] text-gray-300 w-full sm:w-auto">
               Cancelar
             </Button>
             <Button
-              onClick={() => {
-                if (!createForm.spaceName || !createForm.address || !createForm.city || !createForm.submitterName || !createForm.submitterEmail || !createForm.submitterPhone) {
-                  toast.error("Completa los campos obligatorios (*)");
-                  return;
-                }
-                const numericError = [
-                  numericInputError("Transformador", createForm.transformerCapacityKva),
-                  numericInputError("Área", createForm.availableAreaM2),
-                  numericInputError("Parqueos", createForm.parkingSpots, true),
-                  numericInputError("Vehículos/día", createForm.estimatedDailyVehicles, true),
-                  numericInputError("% de vehículos EV", createForm.estimatedEvPercent, true),
-                  numericInputError("Estrato", createForm.socioeconomicStratum, true),
-                  numericInputError("Latitud", createForm.latitude),
-                  numericInputError("Longitud", createForm.longitude),
-                  numericInputError("Distancia al transformador", createForm.electricalDistance, true),
-                  numericInputError("Transformador propuesto", createForm.proposedTransformerKva),
-                  numericInputError("Inversión estimada", createForm.estimatedInvestmentCop),
-                  numericInputError("Potencia DC", createForm.estimatedPowerKw, true),
-                  numericInputError("Cargadores", createForm.estimatedChargerCount, true),
-                  numericInputError("Factura solar mensual", createForm.solarProgramCurrentBillCop),
-                  numericInputError("Energía frente al consumo", createForm.solarProgramEnergyOffsetPercent),
-                  numericInputError("Cobertura de ahorro solar", createForm.solarProgramSavingsCoveragePercent),
-                  numericInputError("Cuota solar mensual", createForm.solarProgramMonthlyFinancingPaymentCop),
-                  numericInputError("Factura solar residual año 1", createForm.solarProgramInitialMonthlySolarBillCop),
-                  numericInputError("Factura solar residual posterior", createForm.solarProgramPostAgreementMonthlySolarBillCop),
-                  numericInputError("Ahorro total de energía", createForm.solarProgramTotalEnergySavingsCop),
-                  numericInputError("Rendimiento anual solar", createForm.solarProgramAnnualReturnPercent),
-                  numericInputError("Plazo solar", createForm.solarProgramAgreementYears, true),
-                  numericInputError("IPC solar", createForm.solarProgramAnnualCpiPercent),
-                  numericInputError("Vida útil solar", createForm.solarProgramUsefulLifeYears, true),
-                  numericInputError("Potencia solar", createForm.solarSystemPowerKwp),
-                  numericInputError("Generación solar anual", createForm.solarAnnualGenerationKwh),
-                  numericInputError("Autoconsumo solar", createForm.solarSelfConsumptionPercent),
-                  numericInputError("Exportación solar", createForm.solarExportPercent),
-                  numericInputError("Tarifa de red solar", createForm.solarGridTariffCopPerKwh, true),
-                ].find(Boolean);
-                if (numericError) {
-                  toast.error(numericError);
-                  return;
-                }
-                const evPercent = toOptionalInteger(createForm.estimatedEvPercent);
-                if (evPercent !== undefined && (evPercent < 0 || evPercent > 100)) {
-                  toast.error("El porcentaje de vehículos EV debe estar entre 0 y 100.");
-                  return;
-                }
-                // Convert photos to base64 before sending
-                const convertPhotos = async () => {
-                  const photosData = await Promise.all(
-                    createPhotos.map(async (photo) => {
-                      // Compress image using Canvas before sending
-                      const base64 = await compressImageFile(photo.file, 1200, 0.7);
-                      return {
-                        base64,
-                        fileName: photo.file.name,
-                        contentType: "image/jpeg",
-                        photoType: photo.photoType as any,
-                        isCover: Boolean(photo.isCover),
-                        isConceptual: Boolean(photo.isConceptual),
-                      };
-                    })
-                  );
-                  const solarOfferPdf = createSolarOfferPdf
-                    ? {
-                        base64: await readFileAsBase64(createSolarOfferPdf),
-                        fileName: createSolarOfferPdf.name,
-                        contentType: "application/pdf",
-                      }
-                    : undefined;
-                  createSpaceMutation.mutate({
-                    spaceName: createForm.spaceName,
-                    spaceType: createForm.spaceType as any,
-                    address: createForm.address,
-                    city: createForm.city,
-                    department: createForm.department || undefined,
-                    submitterName: createForm.submitterName,
-                    submitterEmail: createForm.submitterEmail,
-                    submitterPhone: createForm.submitterPhone,
-                    submitterCompany: createForm.submitterCompany || undefined,
-                    latitude: toOptionalNumber(createForm.latitude)?.toString(),
-                    longitude: toOptionalNumber(createForm.longitude)?.toString(),
-                    transformerCapacityKva: toOptionalNumber(createForm.transformerCapacityKva)?.toString(),
-                    availableAreaM2: toOptionalNumber(createForm.availableAreaM2)?.toString(),
-                    parkingSpots: toOptionalInteger(createForm.parkingSpots),
-                    estimatedDailyVehicles: toOptionalInteger(createForm.estimatedDailyVehicles),
-                    estimatedEvPercent: evPercent,
-                    socioeconomicStratum: toOptionalInteger(createForm.socioeconomicStratum),
-                    estimatedInvestmentCop: toOptionalNumber(createForm.estimatedInvestmentCop),
-                    estimatedPowerKw: toOptionalInteger(createForm.estimatedPowerKw),
-                    estimatedChargerCount: toOptionalInteger(createForm.estimatedChargerCount),
-                    hasSolarPanels: createForm.hasSolarPanels,
-                    solarCoveragePercent: toOptionalNumber(createForm.solarCoveragePercent),
-                    solarEnergyCostPerKwh: toOptionalInteger(createForm.solarEnergyCostPerKwh),
-                    solarProgramEnabled: createForm.solarProgramEnabled,
-                    solarProgramCurrentBillCop: toOptionalNumber(createForm.solarProgramCurrentBillCop),
-                    solarProgramEnergyOffsetPercent: toOptionalNumber(createForm.solarProgramEnergyOffsetPercent),
-                    solarProgramSavingsCoveragePercent: toOptionalNumber(createForm.solarProgramSavingsCoveragePercent),
-                    solarProgramMonthlyFinancingPaymentCop: toOptionalNumber(createForm.solarProgramMonthlyFinancingPaymentCop),
-                    solarProgramInitialMonthlySolarBillCop: toOptionalNumber(createForm.solarProgramInitialMonthlySolarBillCop),
-                    solarProgramPostAgreementMonthlySolarBillCop: toOptionalNumber(createForm.solarProgramPostAgreementMonthlySolarBillCop),
-                    solarProgramTotalEnergySavingsCop: toOptionalNumber(createForm.solarProgramTotalEnergySavingsCop),
-                    solarProgramAnnualReturnPercent: toOptionalNumber(createForm.solarProgramAnnualReturnPercent),
-                    solarProgramAgreementYears: toOptionalInteger(createForm.solarProgramAgreementYears),
-                    solarProgramAnnualCpiPercent: toOptionalNumber(createForm.solarProgramAnnualCpiPercent),
-                    solarProgramUsefulLifeYears: toOptionalInteger(createForm.solarProgramUsefulLifeYears),
-                    solarSystemPowerKwp: toOptionalNumber(createForm.solarSystemPowerKwp),
-                    solarAnnualGenerationKwh: toOptionalNumber(createForm.solarAnnualGenerationKwh),
-                    solarSelfConsumptionPercent: toOptionalNumber(createForm.solarSelfConsumptionPercent),
-                    solarExportPercent: toOptionalNumber(createForm.solarExportPercent),
-                    solarGridTariffCopPerKwh: toOptionalInteger(createForm.solarGridTariffCopPerKwh),
-                    electricalDistance: toOptionalInteger(createForm.electricalDistance),
-                    hasElectricalPanel: createForm.hasElectricalPanel,
-                    hasInternet: createForm.hasInternet,
-                    operatingHoursStart: createForm.operatingHoursStart || undefined,
-                    operatingHoursEnd: createForm.operatingHoursEnd || undefined,
-                    is24Hours: createForm.is24Hours,
-                    requiresNewTransformer: createForm.requiresNewTransformer,
-                    proposedTransformerKva: toOptionalNumber(createForm.proposedTransformerKva),
-                    electricalViability: (createForm.electricalViability as any) || undefined,
-                    investmentType: (createForm.investmentType as any) || "individual",
-                    nearbyAttractions: createForm.nearbyAttractions.trim() || undefined,
-                    additionalNotes: createForm.additionalNotes.trim() || undefined,
-                    photos: photosData.length > 0 ? photosData : undefined,
-                    solarOfferPdf,
-                  });
-                };
-                convertPhotos();
-             }}
-              disabled={createSpaceMutation.isPending}
+              type="button"
+              onClick={handleCreateManualSpace}
+              disabled={isCreatingManualSpace}
               className="bg-emerald-600 hover:bg-emerald-700 text-white w-full sm:w-auto"
             >
-              {createSpaceMutation.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Plus className="w-4 h-4 mr-1.5" />}
-              Crear Espacio
+              {isCreatingManualSpace ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Plus className="w-4 h-4 mr-1.5" />}
+              {createPreparation.stage === "preparing" ? `Preparando ${createPreparation.completed}/${createPreparation.total}` : createPreparation.stage === "submitting" || createSpaceMutation.isPending ? "Creando espacio…" : "Crear Espacio"}
             </Button>
           </DialogFooter>
         </DialogContent>

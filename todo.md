@@ -200,3 +200,11 @@
 - [x] Renderizar y revisar la página solar final: jerarquía legible, tarjetas, imagen, panel de utilidad global y pie de lectura sin solapes ni cortes.
 - [x] Validación integral: 245 archivos / 2.367 pruebas aprobadas; 5 suites de integración y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo aprobado.
 - [x] Guardar checkpoint `b15d2477`, publicar de forma segura y verificar Railway exitoso en producción #7031077832 y staging #7031077824.
+
+## Espacios — creación manual con fotos (2026-10-13)
+
+- [x] Diagnosticar que el botón iniciaba una conversión asíncrona de todas las fotos sin estado de avance ni captura de errores; frente a un lote grande parece no responder aunque aún no haya enviado la mutación.
+- [x] Extraer la preparación del payload a un flujo recuperable: progreso por foto, validación de tamaño agregado, botón bloqueado durante la preparación y mensajes de error accionables.
+- [x] Verificar en navegador autenticado que el botón produce el payload `spaces.submit` con fotos, interceptándolo antes de red para no crear ningún Espacio. El payload de 3.976 bytes incluyó datos obligatorios, nombre de imagen y fotos; la solicitud fue abortada antes del servidor.
+- [x] Validación integral: 245 archivos / 2.367 pruebas aprobadas; 5 suites de integración y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo aprobado.
+- [ ] Guardar checkpoint WebDev, ejecutar publicación segura y verificar el despliegue.
