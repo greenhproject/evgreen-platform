@@ -31,6 +31,7 @@ describe("ally solar program", () => {
     const snapshot = buildAllySolarProgram({
       enabled: true,
       currentMonthlyBillCop: 2_184_000,
+      energyVsConsumptionPercent: 104.68,
       savingsCoveragePercent: 39.54,
       agreementYears: 6,
       annualCpiPercent: 3,
@@ -46,6 +47,7 @@ describe("ally solar program", () => {
     expect(snapshot?.postAgreementMonthlyGridBillCop).toBe(2_607_810);
     expect(snapshot?.postAgreementMonthlySolarBillCop).toBe(423_835);
     expect(snapshot?.postAgreementMonthlyNetSavingsCop).toBe(2_183_975);
+    expect(snapshot?.assumptions.energyVsConsumptionPercent).toBe(104.68);
     expect(snapshot?.assumptions.financingPaymentSource).toBe("OpenSolar");
     expect(snapshot?.assumptions.solarBillSource).toBe("OpenSolar");
   });

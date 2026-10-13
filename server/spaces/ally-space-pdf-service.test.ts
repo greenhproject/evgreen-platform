@@ -137,6 +137,7 @@ describe("buildAllySpacePdfContent", () => {
     const content = buildAllySpacePdfContent({
       ...sampleData,
       solarProgramCurrentBillCop: 2_184_000,
+      solarProgramEnergyOffsetPercent: 104.68,
       solarProgramSavingsCoveragePercent: 39.54,
       solarProgramMonthlyFinancingPaymentCop: 2_162_043,
       solarProgramInitialMonthlySolarBillCop: 142_394,
@@ -148,5 +149,7 @@ describe("buildAllySpacePdfContent", () => {
     expect(content.solarProgram?.initialMonthlyNetCashflowCop).toBe(-120_437);
     expect(content.solarProgram?.postAgreementMonthlyNetSavingsCop).toBe(2_183_975);
     expect(content.combinedBenefit?.solarMonthlyNetCashflowCop).toBe(-120_437);
+    expect(content.combinedBenefit?.postAgreementSolarMonthlyNetSavingsCop).toBe(2_183_975);
+    expect(content.combinedBenefit?.postAgreementCombinedMonthlyCop).toBeGreaterThan(content.combinedBenefit?.chargerMonthlyCop ?? 0);
   });
 });

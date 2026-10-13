@@ -229,7 +229,7 @@ export default function AdminSpaces() {
     hasSolarPanels: false,
     solarCoveragePercent: "", solarEnergyCostPerKwh: "",
     solarProgramEnabled: false,
-    solarProgramCurrentBillCop: "", solarProgramSavingsCoveragePercent: "",
+    solarProgramCurrentBillCop: "", solarProgramEnergyOffsetPercent: "", solarProgramSavingsCoveragePercent: "",
     solarProgramMonthlyFinancingPaymentCop: "", solarProgramInitialMonthlySolarBillCop: "", solarProgramPostAgreementMonthlySolarBillCop: "",
     solarProgramAgreementYears: "6", solarProgramAnnualCpiPercent: "3", solarProgramUsefulLifeYears: "30",
     solarSystemPowerKwp: "", solarAnnualGenerationKwh: "", solarSelfConsumptionPercent: "", solarExportPercent: "", solarGridTariffCopPerKwh: "",
@@ -317,7 +317,7 @@ export default function AdminSpaces() {
         hasSolarPanels: false,
         solarCoveragePercent: "", solarEnergyCostPerKwh: "",
         solarProgramEnabled: false,
-        solarProgramCurrentBillCop: "", solarProgramSavingsCoveragePercent: "",
+        solarProgramCurrentBillCop: "", solarProgramEnergyOffsetPercent: "", solarProgramSavingsCoveragePercent: "",
         solarProgramMonthlyFinancingPaymentCop: "", solarProgramInitialMonthlySolarBillCop: "", solarProgramPostAgreementMonthlySolarBillCop: "",
         solarProgramAgreementYears: "6", solarProgramAnnualCpiPercent: "3", solarProgramUsefulLifeYears: "30",
         solarSystemPowerKwp: "", solarAnnualGenerationKwh: "", solarSelfConsumptionPercent: "", solarExportPercent: "", solarGridTariffCopPerKwh: "",
@@ -1078,7 +1078,8 @@ export default function AdminSpaces() {
                 {createForm.solarProgramEnabled && (
                   <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
                     <div><Label className="mb-1 block text-xs text-emerald-100">Factura mensual promedio (COP) *</Label><Input inputMode="decimal" placeholder="Ej.: 15.000.000" value={createForm.solarProgramCurrentBillCop} onChange={e => setCreateForm(p => ({ ...p, solarProgramCurrentBillCop: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /></div>
-                    <div><Label className="mb-1 block text-xs text-emerald-100">Ahorro cubierto (%) *</Label><Input inputMode="decimal" min="0" max="100" placeholder="Ej.: 40" value={createForm.solarProgramSavingsCoveragePercent} onChange={e => setCreateForm(p => ({ ...p, solarProgramSavingsCoveragePercent: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /></div>
+                    <div><Label className="mb-1 block text-xs text-emerald-100">Ahorro sobre factura · año 1 (%) *</Label><Input inputMode="decimal" min="0" max="100" placeholder="Ej.: 93,5" value={createForm.solarProgramSavingsCoveragePercent} onChange={e => setCreateForm(p => ({ ...p, solarProgramSavingsCoveragePercent: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /></div>
+                    <div><Label className="mb-1 block text-xs text-emerald-100">Energía generada vs consumo (%)</Label><Input inputMode="decimal" min="0" max="1000" placeholder="Ej.: 105" value={createForm.solarProgramEnergyOffsetPercent} onChange={e => setCreateForm(p => ({ ...p, solarProgramEnergyOffsetPercent: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /><p className="mt-1 text-[10px] leading-3 text-emerald-100/65">Indicador técnico OpenSolar; puede superar 100% por excedentes y no se suma dos veces al ahorro.</p></div>
                     <div><Label className="mb-1 block text-xs text-emerald-100">Plazo del acuerdo (años)</Label><Input inputMode="numeric" min="1" max="30" value={createForm.solarProgramAgreementYears} onChange={e => setCreateForm(p => ({ ...p, solarProgramAgreementYears: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /></div>
                     <div><Label className="mb-1 block text-xs text-emerald-100">Cuota mensual de financiación (COP)</Label><Input inputMode="decimal" placeholder="Sólo si la propuesta la define" value={createForm.solarProgramMonthlyFinancingPaymentCop} onChange={e => setCreateForm(p => ({ ...p, solarProgramMonthlyFinancingPaymentCop: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /></div>
                     <div><Label className="mb-1 block text-xs text-emerald-100">Factura solar residual año 1 (COP)</Label><Input inputMode="decimal" placeholder="Factura propuesta, no cuota" value={createForm.solarProgramInitialMonthlySolarBillCop} onChange={e => setCreateForm(p => ({ ...p, solarProgramInitialMonthlySolarBillCop: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /></div>
@@ -1313,6 +1314,7 @@ export default function AdminSpaces() {
                   numericInputError("Potencia DC", createForm.estimatedPowerKw, true),
                   numericInputError("Cargadores", createForm.estimatedChargerCount, true),
                   numericInputError("Factura solar mensual", createForm.solarProgramCurrentBillCop),
+                  numericInputError("Energía frente al consumo", createForm.solarProgramEnergyOffsetPercent),
                   numericInputError("Cobertura de ahorro solar", createForm.solarProgramSavingsCoveragePercent),
                   numericInputError("Cuota solar mensual", createForm.solarProgramMonthlyFinancingPaymentCop),
                   numericInputError("Factura solar residual año 1", createForm.solarProgramInitialMonthlySolarBillCop),
@@ -1384,6 +1386,7 @@ export default function AdminSpaces() {
                     solarEnergyCostPerKwh: toOptionalInteger(createForm.solarEnergyCostPerKwh),
                     solarProgramEnabled: createForm.solarProgramEnabled,
                     solarProgramCurrentBillCop: toOptionalNumber(createForm.solarProgramCurrentBillCop),
+                    solarProgramEnergyOffsetPercent: toOptionalNumber(createForm.solarProgramEnergyOffsetPercent),
                     solarProgramSavingsCoveragePercent: toOptionalNumber(createForm.solarProgramSavingsCoveragePercent),
                     solarProgramMonthlyFinancingPaymentCop: toOptionalNumber(createForm.solarProgramMonthlyFinancingPaymentCop),
                     solarProgramInitialMonthlySolarBillCop: toOptionalNumber(createForm.solarProgramInitialMonthlySolarBillCop),
@@ -1639,6 +1642,7 @@ function SpaceDetailDialog({
           longitude: project.longitude ?? previous.longitude,
           solarProgramEnabled: previous.solarProgramEnabled || project.canActivateAllySolarProgram,
           solarProgramCurrentBillCop: project.currentMonthlyBill ?? previous.solarProgramCurrentBillCop ?? "",
+          solarProgramEnergyOffsetPercent: project.energyVsConsumptionPercent ?? previous.solarProgramEnergyOffsetPercent ?? "",
           solarProgramSavingsCoveragePercent: project.solarSavingsCoveragePercent ?? previous.solarProgramSavingsCoveragePercent ?? "",
           solarProgramMonthlyFinancingPaymentCop: project.monthlyFinancingPaymentCop ?? previous.solarProgramMonthlyFinancingPaymentCop ?? "",
           solarProgramInitialMonthlySolarBillCop: project.initialMonthlySolarBillCop ?? previous.solarProgramInitialMonthlySolarBillCop ?? "",
@@ -1995,6 +1999,7 @@ function SpaceDetailDialog({
                       solarEnergyCostPerKwh: (space as any).solarEnergyCostPerKwh ?? "",
                       solarProgramEnabled: Number((space as any).solarProgramEnabled) === 1,
                       solarProgramCurrentBillCop: (space as any).solarProgramCurrentBillCop ?? "",
+                      solarProgramEnergyOffsetPercent: (space as any).solarProgramEnergyOffsetPercent ?? "",
                       solarProgramSavingsCoveragePercent: (space as any).solarProgramSavingsCoveragePercent ?? "",
                       solarProgramMonthlyFinancingPaymentCop: (space as any).solarProgramMonthlyFinancingPaymentCop ?? "",
                       solarProgramInitialMonthlySolarBillCop: (space as any).solarProgramInitialMonthlySolarBillCop ?? "",
@@ -2099,7 +2104,8 @@ function SpaceDetailDialog({
 	                  {(space as any).chargingSolarOpenSolarProjectId && <DetailRow label="Proyecto OpenSolar · electrolinera" value={`${(space as any).chargingSolarOpenSolarProjectTitle || "Proyecto"} · #${(space as any).chargingSolarOpenSolarProjectId}`} />}
 	                  {(space as any).chargingSolarOpenSolarAnnualConsumptionKwh && <DetailRow label="Consumo solar · electrolinera" value={`${Number((space as any).chargingSolarOpenSolarAnnualConsumptionKwh).toLocaleString("es-CO")} kWh/año`} />}
 	                  {(space as any).hasSolarPanels && <DetailRow label="Costo solar" value={Number((space as any).solarCoveragePercent ?? 0) > 0 && (space as any).solarEnergyCostPerKwh !== null && (space as any).solarEnergyCostPerKwh !== undefined ? `${Number((space as any).solarCoveragePercent).toLocaleString("es-CO")}% a ${formatCOP(Number((space as any).solarEnergyCostPerKwh))}/kWh` : "Pendiente de cobertura y costo validados"} />}
-	                  {(space as any).solarProgramEnabled && <DetailRow label="Programa solar aliado" value={`${Number((space as any).solarProgramSavingsCoveragePercent ?? 0).toLocaleString("es-CO")}% de ahorro · ${Number((space as any).solarProgramAgreementYears ?? 6)} años`} />}
+	                  {(space as any).solarProgramEnabled && <DetailRow label="Ahorro solar · año 1" value={`${Number((space as any).solarProgramSavingsCoveragePercent ?? 0).toLocaleString("es-CO")}% de factura · ${Number((space as any).solarProgramAgreementYears ?? 6)} años`} />}
+	                  {(space as any).solarProgramEnergyOffsetPercent !== null && (space as any).solarProgramEnergyOffsetPercent !== undefined && <DetailRow label="Energía vs consumo · OpenSolar" value={`${Number((space as any).solarProgramEnergyOffsetPercent).toLocaleString("es-CO", { maximumFractionDigits: 2 })}% · indicador técnico`} />}
 	                  {(space as any).allySolarOpenSolarProjectId && <DetailRow label="Proyecto OpenSolar · aliado" value={`${(space as any).allySolarOpenSolarProjectTitle || "Proyecto"} · #${(space as any).allySolarOpenSolarProjectId}`} />}
                   {(space as any).solarOfferPdfUrl && <a href={(space as any).solarOfferPdfUrl} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-xs text-emerald-300 hover:underline"><FileText className="h-3.5 w-3.5" /> Ver oferta solar adjunta</a>}
                   {space.electricalDistance && <DetailRow label="Dist. tablero" value={`${space.electricalDistance} m`} />}
@@ -2714,7 +2720,8 @@ function SpaceDetailDialog({
                 {!!editForm.solarProgramEnabled && (
                   <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
                     <div><Label className="mb-1 block text-xs text-emerald-100">Factura mensual promedio (COP) *</Label><Input inputMode="decimal" value={editForm.solarProgramCurrentBillCop ?? ""} onChange={e => setEditForm(p => ({ ...p, solarProgramCurrentBillCop: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /></div>
-                    <div><Label className="mb-1 block text-xs text-emerald-100">Ahorro cubierto (%) *</Label><Input inputMode="decimal" min="0" max="100" value={editForm.solarProgramSavingsCoveragePercent ?? ""} onChange={e => setEditForm(p => ({ ...p, solarProgramSavingsCoveragePercent: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /></div>
+                    <div><Label className="mb-1 block text-xs text-emerald-100">Ahorro sobre factura · año 1 (%) *</Label><Input inputMode="decimal" min="0" max="100" value={editForm.solarProgramSavingsCoveragePercent ?? ""} onChange={e => setEditForm(p => ({ ...p, solarProgramSavingsCoveragePercent: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /></div>
+                    <div><Label className="mb-1 block text-xs text-emerald-100">Energía generada vs consumo (%)</Label><Input inputMode="decimal" min="0" max="1000" value={editForm.solarProgramEnergyOffsetPercent ?? ""} onChange={e => setEditForm(p => ({ ...p, solarProgramEnergyOffsetPercent: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /><p className="mt-1 text-[10px] leading-3 text-emerald-100/65">Métrica técnica OpenSolar. La suma global usa sólo el ahorro neto posterior para evitar doble conteo.</p></div>
                     <div><Label className="mb-1 block text-xs text-emerald-100">Plazo del acuerdo (años)</Label><Input inputMode="numeric" min="1" max="30" value={editForm.solarProgramAgreementYears ?? "6"} onChange={e => setEditForm(p => ({ ...p, solarProgramAgreementYears: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /></div>
                     <div><Label className="mb-1 block text-xs text-emerald-100">Cuota mensual de financiación (COP)</Label><Input inputMode="decimal" placeholder="OpenSolar" value={editForm.solarProgramMonthlyFinancingPaymentCop ?? ""} onChange={e => setEditForm(p => ({ ...p, solarProgramMonthlyFinancingPaymentCop: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /></div>
                     <div><Label className="mb-1 block text-xs text-emerald-100">Factura solar residual año 1 (COP)</Label><Input inputMode="decimal" placeholder="Factura propuesta, no cuota" value={editForm.solarProgramInitialMonthlySolarBillCop ?? ""} onChange={e => setEditForm(p => ({ ...p, solarProgramInitialMonthlySolarBillCop: e.target.value }))} className="border-[#374151] bg-[#111827] text-sm text-white" /></div>
@@ -3078,6 +3085,7 @@ function SpaceDetailDialog({
                   numericInputError("Potencia", editForm.estimatedPowerKw, true),
                   numericInputError("Cargadores", editForm.estimatedChargerCount, true),
                   numericInputError("Factura solar mensual", editForm.solarProgramCurrentBillCop),
+                  numericInputError("Energía frente al consumo", editForm.solarProgramEnergyOffsetPercent),
                   numericInputError("Cobertura de ahorro solar", editForm.solarProgramSavingsCoveragePercent),
                   numericInputError("Cuota solar mensual", editForm.solarProgramMonthlyFinancingPaymentCop),
                   numericInputError("Factura solar residual año 1", editForm.solarProgramInitialMonthlySolarBillCop),
@@ -3145,6 +3153,7 @@ function SpaceDetailDialog({
                 if (solarEnergyCostPerKwh !== undefined) payload.solarEnergyCostPerKwh = solarEnergyCostPerKwh;
                 payload.solarProgramEnabled = Boolean(editForm.solarProgramEnabled);
                 payload.solarProgramCurrentBillCop = toOptionalNumber(editForm.solarProgramCurrentBillCop);
+                payload.solarProgramEnergyOffsetPercent = toOptionalNumber(editForm.solarProgramEnergyOffsetPercent);
                 payload.solarProgramSavingsCoveragePercent = toOptionalNumber(editForm.solarProgramSavingsCoveragePercent);
                 payload.solarProgramMonthlyFinancingPaymentCop = toOptionalNumber(editForm.solarProgramMonthlyFinancingPaymentCop);
                 payload.solarProgramInitialMonthlySolarBillCop = toOptionalNumber(editForm.solarProgramInitialMonthlySolarBillCop);

@@ -1670,9 +1670,12 @@ export const spaceSubmissions = mysqlTable("space_submissions", {
 		hasSolarPanels: tinyint("has_solar_panels").default(0).notNull(),
 		solarCoveragePercent: decimal("solar_coverage_percent", { precision: 5, scale: 2 }).default('0.00').notNull(),
 		solarEnergyCostPerKwh: int("solar_energy_cost_per_kwh"),
-		solarProgramEnabled: tinyint("solar_program_enabled").default(0).notNull(),
-		solarProgramCurrentBillCop: bigint("solar_program_current_bill_cop", { mode: "number" }),
-		solarProgramSavingsCoveragePercent: decimal("solar_program_savings_coverage_percent", { precision: 5, scale: 2 }),
+			solarProgramEnabled: tinyint("solar_program_enabled").default(0).notNull(),
+			solarProgramCurrentBillCop: bigint("solar_program_current_bill_cop", { mode: "number" }),
+			// Generación anual / consumo anual de OpenSolar. Puede superar 100% por
+			// excedentes y se informa separado de la cobertura financiera de factura.
+			solarProgramEnergyOffsetPercent: decimal("solar_program_energy_offset_percent", { precision: 7, scale: 2 }),
+			solarProgramSavingsCoveragePercent: decimal("solar_program_savings_coverage_percent", { precision: 5, scale: 2 }),
 		solarProgramAgreementYears: int("solar_program_agreement_years"),
 			solarProgramAnnualCpiPercent: decimal("solar_program_annual_cpi_percent", { precision: 5, scale: 2 }),
 			solarProgramUsefulLifeYears: int("solar_program_useful_life_years"),

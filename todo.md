@@ -161,3 +161,14 @@
 - [x] Validar TypeScript, 22 pruebas focales y 245 archivos / 2.367 pruebas integrales aprobadas; 5 suites de integración y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo aprobado.
 - [x] Verificar el contrato visual compilado: la ficha contiene cuota, factura residual año 1 y factura solar desde año 7; el mapeo del formulario asigna los tres valores de OpenSolar y exige guardar explícito. El QA automatizado del clic se vio afectado por la latencia del proxy local, pero la lectura directa autenticada y los contratos UI/tRPC se validaron sin mutar el Espacio.
 - [x] Guardar checkpoint `7404d711`, publicar de forma segura en GitHub y verificar Railway exitoso: producción #7027234029 y staging #7027234053.
+
+## OpenSolar — energía 105% y ahorro facturado (2026-10-12)
+
+- [x] Separar indicadores: **Energía generada vs consumo** se conserva como métrica técnica de 104,68% para `11062957` y puede exceder 100% por exportación; no se trata como porcentaje de ahorro en dinero.
+- [x] Mapear **ahorro sobre factura del año 1** directamente desde la factura de red y la factura solar propuesta de OpenSolar: COP 2.184.000 − COP 142.394,21 = **93,48%**. Sólo sin propuesta financiera se usa la aproximación conservadora por autoconsumo.
+- [x] Agregar migración aditiva 0063 para guardar el indicador técnico separado, sin alterar los Espacios existentes.
+- [x] Actualizar la ficha del aliado para separar flujo durante financiación y la utilidad global desde año 7: retribución del punto + ahorro neto de factura inflada menos factura solar residual, con el ahorro incorporado una sola vez.
+- [x] Añadir pruebas de métricas técnicas, ahorro cotizado, flujos de acuerdo y beneficio combinado; no se modificó el Espacio ni se expusieron credenciales durante la comprobación del proyecto autorizado.
+- [x] Validación integral: 245 archivos / 2.367 pruebas aprobadas; 5 suites de integración y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo aprobado. La columna física 0063 fue verificada como `decimal(7,2)` nullable.
+- [x] QA visual autenticado y sin guardar: consultar `11062957` en el formulario del aliado cargó factura 2.184.000, energía/consumo 104,68%, ahorro de factura 93,48%, potencia 23,8 kWp, generación 30.147,11 kWh/año, autoconsumo/exportación, tarifa 910 y los tres términos financieros OpenSolar.
+- [ ] Guardar checkpoint WebDev, ejecutar publicación segura y verificar el despliegue.

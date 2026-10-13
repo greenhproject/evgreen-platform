@@ -156,6 +156,7 @@ async function generateAllySpacePdfForSubmission(submissionId: number) {
     chargingSolarExportPercent: submission.chargingSolarExportPercent === null ? null : Number(submission.chargingSolarExportPercent),
     solarProgramEnabled: Number(submission.solarProgramEnabled) === 1,
     solarProgramCurrentBillCop: submission.solarProgramCurrentBillCop === null ? null : Number(submission.solarProgramCurrentBillCop),
+    solarProgramEnergyOffsetPercent: submission.solarProgramEnergyOffsetPercent === null ? null : Number(submission.solarProgramEnergyOffsetPercent),
     solarProgramSavingsCoveragePercent: submission.solarProgramSavingsCoveragePercent === null ? null : Number(submission.solarProgramSavingsCoveragePercent),
     solarProgramMonthlyFinancingPaymentCop: submission.solarProgramMonthlyFinancingPaymentCop === null ? null : Number(submission.solarProgramMonthlyFinancingPaymentCop),
     solarProgramInitialMonthlySolarBillCop: submission.solarProgramInitialMonthlySolarBillCop === null ? null : Number(submission.solarProgramInitialMonthlySolarBillCop),
@@ -564,6 +565,7 @@ export const spacesRouter = router({
       solarEnergyCostPerKwh: optionalFormInteger().refine((value) => value === undefined || value >= 0, "El costo solar por kWh no puede ser negativo"),
       solarProgramEnabled: z.boolean().optional(),
       solarProgramCurrentBillCop: optionalFormNumber().refine((value) => value === undefined || value > 0, "La factura mensual debe ser mayor que cero"),
+      solarProgramEnergyOffsetPercent: optionalFormNumber().refine((value) => value === undefined || (value >= 0 && value <= 1000), "La energía frente al consumo debe estar entre 0 % y 1000 %"),
       solarProgramSavingsCoveragePercent: optionalFormNumber().refine((value) => value === undefined || (value >= 0 && value <= 100), "La cobertura de ahorro solar debe estar entre 0 % y 100 %"),
       solarProgramMonthlyFinancingPaymentCop: optionalFormNumber().refine((value) => value === undefined || value >= 0, "La cuota solar mensual no puede ser negativa"),
       solarProgramInitialMonthlySolarBillCop: optionalFormNumber().refine((value) => value === undefined || value >= 0, "La factura solar residual inicial no puede ser negativa"),
@@ -636,6 +638,7 @@ export const spacesRouter = router({
         solarProgram = buildAllySolarProgram({
           enabled: input.solarProgramEnabled,
           currentMonthlyBillCop: input.solarProgramCurrentBillCop,
+          energyVsConsumptionPercent: input.solarProgramEnergyOffsetPercent,
           savingsCoveragePercent: input.solarProgramSavingsCoveragePercent,
           monthlyFinancingPaymentCop: input.solarProgramMonthlyFinancingPaymentCop,
           initialMonthlySolarBillCop: input.solarProgramInitialMonthlySolarBillCop,
@@ -689,6 +692,7 @@ export const spacesRouter = router({
             // exista una propuesta de ahorro activada. Activar el programa
             // requiere la validación comercial posterior, no borra el diseño.
             solarProgramCurrentBillCop: solarAssumptions?.currentMonthlyBillCop ?? input.solarProgramCurrentBillCop ?? null,
+            solarProgramEnergyOffsetPercent: solarAssumptions?.energyVsConsumptionPercent ?? input.solarProgramEnergyOffsetPercent ?? null,
             solarProgramSavingsCoveragePercent: solarAssumptions?.savingsCoveragePercent ?? input.solarProgramSavingsCoveragePercent ?? null,
             solarProgramMonthlyFinancingPaymentCop: solarAssumptions?.monthlyFinancingPaymentCop ?? input.solarProgramMonthlyFinancingPaymentCop ?? null,
             solarProgramInitialMonthlySolarBillCop: solarAssumptions?.initialMonthlySolarBillCop ?? input.solarProgramInitialMonthlySolarBillCop ?? null,
@@ -1940,6 +1944,7 @@ export const spacesRouter = router({
         solarEnergyCostPerKwh: optionalFormInteger().refine((value) => value === undefined || value >= 0, "El costo solar por kWh no puede ser negativo"),
         solarProgramEnabled: z.boolean().optional(),
         solarProgramCurrentBillCop: optionalFormNumber().refine((value) => value === undefined || value > 0, "La factura mensual debe ser mayor que cero"),
+        solarProgramEnergyOffsetPercent: optionalFormNumber().refine((value) => value === undefined || (value >= 0 && value <= 1000), "La energía frente al consumo debe estar entre 0 % y 1000 %"),
         solarProgramSavingsCoveragePercent: optionalFormNumber().refine((value) => value === undefined || (value >= 0 && value <= 100), "La cobertura de ahorro solar debe estar entre 0 % y 100 %"),
         solarProgramMonthlyFinancingPaymentCop: optionalFormNumber().refine((value) => value === undefined || value >= 0, "La cuota solar mensual no puede ser negativa"),
         solarProgramInitialMonthlySolarBillCop: optionalFormNumber().refine((value) => value === undefined || value >= 0, "La factura solar residual inicial no puede ser negativa"),
@@ -2026,6 +2031,7 @@ export const spacesRouter = router({
             solarEnergyCostPerKwh: spaceSubmissions.solarEnergyCostPerKwh,
             solarProgramEnabled: spaceSubmissions.solarProgramEnabled,
             solarProgramCurrentBillCop: spaceSubmissions.solarProgramCurrentBillCop,
+            solarProgramEnergyOffsetPercent: spaceSubmissions.solarProgramEnergyOffsetPercent,
             solarProgramSavingsCoveragePercent: spaceSubmissions.solarProgramSavingsCoveragePercent,
             solarProgramMonthlyFinancingPaymentCop: spaceSubmissions.solarProgramMonthlyFinancingPaymentCop,
             solarProgramInitialMonthlySolarBillCop: spaceSubmissions.solarProgramInitialMonthlySolarBillCop,
@@ -2076,7 +2082,7 @@ export const spacesRouter = router({
           }
         }
         const solarProgramFields = [
-          "solarProgramEnabled", "solarProgramCurrentBillCop", "solarProgramSavingsCoveragePercent",
+          "solarProgramEnabled", "solarProgramCurrentBillCop", "solarProgramEnergyOffsetPercent", "solarProgramSavingsCoveragePercent",
           "solarProgramMonthlyFinancingPaymentCop", "solarProgramInitialMonthlySolarBillCop", "solarProgramPostAgreementMonthlySolarBillCop",
           "solarProgramAgreementYears", "solarProgramAnnualCpiPercent", "solarProgramUsefulLifeYears",
           "solarSystemPowerKwp", "solarAnnualGenerationKwh", "solarSelfConsumptionPercent",
@@ -2092,6 +2098,7 @@ export const spacesRouter = router({
             solarProgram = buildAllySolarProgram({
               enabled: nextEnabled,
               currentMonthlyBillCop: cleanFields.solarProgramCurrentBillCop ?? previousSubmission.solarProgramCurrentBillCop,
+              energyVsConsumptionPercent: cleanFields.solarProgramEnergyOffsetPercent ?? previousSubmission.solarProgramEnergyOffsetPercent,
               savingsCoveragePercent: cleanFields.solarProgramSavingsCoveragePercent ?? previousSubmission.solarProgramSavingsCoveragePercent,
               monthlyFinancingPaymentCop: cleanFields.solarProgramMonthlyFinancingPaymentCop ?? previousSubmission.solarProgramMonthlyFinancingPaymentCop,
               initialMonthlySolarBillCop: cleanFields.solarProgramInitialMonthlySolarBillCop ?? previousSubmission.solarProgramInitialMonthlySolarBillCop,
@@ -2116,6 +2123,7 @@ export const spacesRouter = router({
           } else {
             cleanFields.solarProgramEnabled = 1;
             cleanFields.solarProgramCurrentBillCop = solarProgram.assumptions.currentMonthlyBillCop;
+            cleanFields.solarProgramEnergyOffsetPercent = solarProgram.assumptions.energyVsConsumptionPercent;
             cleanFields.solarProgramSavingsCoveragePercent = solarProgram.assumptions.savingsCoveragePercent;
             cleanFields.solarProgramMonthlyFinancingPaymentCop = solarProgram.assumptions.monthlyFinancingPaymentCop;
             cleanFields.solarProgramInitialMonthlySolarBillCop = solarProgram.assumptions.initialMonthlySolarBillCop;

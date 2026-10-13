@@ -1,6 +1,8 @@
 export type AllySolarProgramInput = {
   enabled?: boolean | number | null;
   currentMonthlyBillCop?: number | null;
+  /** Generación anual / consumo anual; indicador técnico, no ahorro de factura. */
+  energyVsConsumptionPercent?: number | null;
   savingsCoveragePercent?: number | null;
   agreementYears?: number | null;
   annualCpiPercent?: number | null;
@@ -24,6 +26,9 @@ export type AllySolarProgramSnapshot = {
   enabled: true;
   assumptions: {
     currentMonthlyBillCop: number;
+    /** Indicador técnico OpenSolar que puede exceder 100% por exportación. */
+    energyVsConsumptionPercent: number | null;
+    /** Ahorro de factura del año 1: cotizado por OpenSolar o derivado sólo si no hay propuesta. */
     savingsCoveragePercent: number;
     agreementYears: number;
     annualCpiPercent: number;
@@ -97,6 +102,7 @@ export function buildAllySolarProgram(input: AllySolarProgramInput): AllySolarPr
   if (!enabled) return null;
 
   const currentMonthlyBillCop = bounded(input.currentMonthlyBillCop, 0, 1, 999_999_999_999, "La factura mensual promedio");
+  const energyVsConsumptionPercent = optionalFinite(input.energyVsConsumptionPercent);
   const savingsCoveragePercent = bounded(input.savingsCoveragePercent, 0, 0, 100, "El porcentaje de ahorro solar");
   const agreementYears = Math.round(bounded(input.agreementYears, DEFAULT_AGREEMENT_YEARS, 1, 30, "El plazo del acuerdo solar"));
   const annualCpiPercent = bounded(input.annualCpiPercent, DEFAULT_ANNUAL_CPI_PERCENT, 0, 30, "El IPC anual del acuerdo solar");
@@ -120,6 +126,9 @@ export function buildAllySolarProgram(input: AllySolarProgramInput): AllySolarPr
   if (systemPowerKwp !== null && systemPowerKwp <= 0) throw new Error("La potencia solar debe ser mayor que cero");
   if (annualGenerationKwh !== null && annualGenerationKwh <= 0) throw new Error("La generación solar anual debe ser mayor que cero");
   if (gridTariffCopPerKwh !== null && gridTariffCopPerKwh < 0) throw new Error("La tarifa de red no puede ser negativa");
+  if (energyVsConsumptionPercent !== null && (energyVsConsumptionPercent < 0 || energyVsConsumptionPercent > 1000)) {
+    throw new Error("La energía frente al consumo debe estar entre 0 y 1000");
+  }
 
   const derivedInitialSolarBillCop = round(currentMonthlyBillCop * (1 - savingsCoveragePercent / 100));
   const initialMonthlySolarBillCop = providedInitialSolarBillCop ?? derivedInitialSolarBillCop;
@@ -163,6 +172,7 @@ export function buildAllySolarProgram(input: AllySolarProgramInput): AllySolarPr
     enabled: true,
     assumptions: {
       currentMonthlyBillCop: round(currentMonthlyBillCop),
+      energyVsConsumptionPercent: energyVsConsumptionPercent === null ? null : round(energyVsConsumptionPercent, 2),
       savingsCoveragePercent: round(savingsCoveragePercent, 2),
       agreementYears,
       annualCpiPercent: round(annualCpiPercent, 2),

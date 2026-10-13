@@ -68,6 +68,7 @@ export interface AllySpacePdfData {
   chargingSolarExportPercent?: number | null;
   solarProgramEnabled?: boolean | number | null;
   solarProgramCurrentBillCop?: number | null;
+  solarProgramEnergyOffsetPercent?: number | null;
   solarProgramSavingsCoveragePercent?: number | null;
   solarProgramMonthlyFinancingPaymentCop?: number | null;
   solarProgramInitialMonthlySolarBillCop?: number | null;
@@ -109,6 +110,9 @@ export interface AllyPdfContent {
     solarMonthlyNetCashflowCop: number;
     combinedMonthlyCop: number;
     combinedAnnualCop: number;
+    postAgreementSolarMonthlyNetSavingsCop: number;
+    postAgreementCombinedMonthlyCop: number;
+    postAgreementCombinedAnnualCop: number;
     agreementCombinedBenefitCop: number;
   } | null;
   allyResponsibilities: string[];
@@ -231,6 +235,7 @@ export function buildAllySpacePdfContent(data: AllySpacePdfData): AllyPdfContent
       return buildAllySolarProgram({
         enabled: data.solarProgramEnabled,
         currentMonthlyBillCop: data.solarProgramCurrentBillCop,
+        energyVsConsumptionPercent: data.solarProgramEnergyOffsetPercent,
         savingsCoveragePercent: data.solarProgramSavingsCoveragePercent,
         monthlyFinancingPaymentCop: data.solarProgramMonthlyFinancingPaymentCop,
         initialMonthlySolarBillCop: data.solarProgramInitialMonthlySolarBillCop,
@@ -257,6 +262,9 @@ export function buildAllySpacePdfContent(data: AllySpacePdfData): AllyPdfContent
           solarMonthlyNetCashflowCop,
           combinedMonthlyCop: chargerMonthlyCop + solarMonthlyNetCashflowCop,
           combinedAnnualCop: (chargerMonthlyCop * 12) + (solarMonthlyNetCashflowCop * 12),
+          postAgreementSolarMonthlyNetSavingsCop: solarProgram.postAgreementMonthlyNetSavingsCop,
+          postAgreementCombinedMonthlyCop: chargerMonthlyCop + solarProgram.postAgreementMonthlyNetSavingsCop,
+          postAgreementCombinedAnnualCop: (chargerMonthlyCop * 12) + solarProgram.postAgreementAnnualSavingsCop,
           agreementCombinedBenefitCop: (chargerMonthlyCop * 12 * solarProgram.assumptions.agreementYears) + solarProgram.agreementSavingsCop,
         };
       })()
@@ -725,7 +733,8 @@ function drawSolarProgramPage(
     ...(data.allySolarOpenSolarProjectId ? [["Proyecto OpenSolar del aliado", `${data.allySolarOpenSolarProjectTitle || "Proyecto"} · #${data.allySolarOpenSolarProjectId}`] as [string, string]] : []),
     ...(data.allySolarOpenSolarAnnualConsumptionKwh !== null && data.allySolarOpenSolarAnnualConsumptionKwh !== undefined ? [["Consumo anual del aliado importado", formatNumber(data.allySolarOpenSolarAnnualConsumptionKwh, " kWh/año")] as [string, string]] : []),
     ["Factura mensual promedio registrada", formatCop(assumptions.currentMonthlyBillCop)],
-    ["Cobertura de ahorro estimada", `${formatDecimal(assumptions.savingsCoveragePercent, 1)}% del gasto actual`],
+    ...(assumptions.energyVsConsumptionPercent !== null ? [["Energía generada vs consumo · OpenSolar", `${formatDecimal(assumptions.energyVsConsumptionPercent, 1)}% (técnico; puede incluir excedentes)`] as [string, string]] : []),
+    ["Ahorro sobre factura · año 1", `${formatDecimal(assumptions.savingsCoveragePercent, 1)}% de la factura actual`],
     ["Plazo inicial de sustitución", `${formatNumber(assumptions.agreementYears)} años`],
     ["Factura solar residual año 1", formatCop(solar.initialMonthlyReplacementQuotaCop)],
     ["Cuota mensual de financiación", solar.initialMonthlyFinancingPaymentCop === null ? "Por confirmar" : formatCop(solar.initialMonthlyFinancingPaymentCop)],
@@ -743,23 +752,35 @@ function drawSolarProgramPage(
 
   if (content.combinedBenefit) {
     setColor(doc, COLORS.green, "fill");
-    doc.roundedRect(margin, y, contentWidth, 43, 3, 3, "F");
+    doc.roundedRect(margin, y, contentWidth, 62, 3, 3, "F");
     setColor(doc, COLORS.white);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9.5);
-    doc.text("FLUJO COMBINADO REFERENCIAL · AÑO 1", margin + 7, y + 10);
+    doc.text("FLUJO COMBINADO REFERENCIAL DEL ALIADO", margin + 7, y + 10);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.2);
+    doc.text("Durante financiación · año 1", margin + 7, y + 17);
     doc.setFontSize(14);
-    doc.text(formatCop(content.combinedBenefit.combinedMonthlyCop), margin + 7, y + 24);
+    doc.setFont("helvetica", "bold");
+    doc.text(formatCop(content.combinedBenefit.combinedMonthlyCop), margin + 7, y + 29);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.4);
-    doc.text("Retribución del punto + flujo solar neto (factura evitada − residual − cuota)", margin + 7, y + 32);
+    doc.text("Punto de carga + flujo solar neto (factura evitada − residual − cuota)", margin + 7, y + 37);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9.5);
-    doc.text(formatCop(content.combinedBenefit.combinedAnnualCop), margin + contentWidth - 7, y + 24, { align: "right" });
+    doc.text(formatCop(content.combinedBenefit.combinedAnnualCop), margin + contentWidth - 7, y + 29, { align: "right" });
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.4);
-    doc.text("Referencia anual", margin + contentWidth - 7, y + 32, { align: "right" });
-    y += 52;
+    doc.text("Referencia anual año 1", margin + contentWidth - 7, y + 37, { align: "right" });
+    doc.setFontSize(7.2);
+    doc.text(`Desde año ${formatNumber(solar.assumptions.agreementYears + 1)} · sin cuota`, margin + 7, y + 47);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11.5);
+    doc.text(formatCop(content.combinedBenefit.postAgreementCombinedMonthlyCop), margin + 7, y + 58);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.2);
+    doc.text("Punto de carga + ahorro neto posterior de factura", margin + 68, y + 57);
+    y += 71;
   }
 
   setColor(doc, [236, 253, 245], "fill");
@@ -775,7 +796,7 @@ function drawSolarProgramPage(
     ? "La cuota mensual de financiación no fue expuesta por OpenSolar y debe confirmarse en la propuesta comercial."
     : `Durante ${formatNumber(assumptions.agreementYears)} años, la cuota contractual OpenSolar es ${formatCop(solar.initialMonthlyFinancingPaymentCop)} mensuales; se muestra separada de la factura solar residual.`;
   const note = doc.splitTextToSize(
-    `${financingText} Desde el año ${formatNumber(assumptions.agreementYears + 1)}, la factura de red se proyecta con ${formatDecimal(assumptions.annualCpiPercent, 1)}% anual (${formatCop(solar.postAgreementMonthlyGridBillCop)} al inicio) y se descuenta la factura solar residual reportada (${formatCop(solar.postAgreementMonthlySolarBillCop)}), para un ahorro neto de referencia de ${formatCop(solar.postAgreementMonthlyNetSavingsCop)} al mes. Está sujeto a contrato, desempeño, mantenimiento, tarifa y vida útil reales.`,
+    `${financingText} OpenSolar reporta una cobertura energética de ${assumptions.energyVsConsumptionPercent === null ? "no disponible" : `${formatDecimal(assumptions.energyVsConsumptionPercent, 1)}%`} frente al consumo; es un indicador técnico que puede incluir excedentes y no se suma por separado al flujo. Desde el año ${formatNumber(assumptions.agreementYears + 1)}, la factura de red se proyecta con ${formatDecimal(assumptions.annualCpiPercent, 1)}% anual (${formatCop(solar.postAgreementMonthlyGridBillCop)} al inicio) y se descuenta la factura solar residual reportada (${formatCop(solar.postAgreementMonthlySolarBillCop)}), para un ahorro neto de referencia de ${formatCop(solar.postAgreementMonthlyNetSavingsCop)} al mes, incorporado una sola vez al flujo combinado. Está sujeto a contrato, desempeño, mantenimiento, tarifa y vida útil reales.`,
     contentWidth - 12,
   );
   doc.text(note.slice(0, 4), margin + 6, y + 17);

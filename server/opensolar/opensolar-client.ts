@@ -100,6 +100,8 @@ export type OpenSolarProjectPrefill = {
     annualGenerationKwh: number | null;
     selfConsumptionPercent: number | null;
     exportPercent: number | null;
+    /** Generación anual / consumo anual. Puede superar 100% y no representa ahorro financiero. */
+    energyVsConsumptionPercent: number | null;
     solarSavingsCoveragePercent: number | null;
     gridTariffCopPerKwh: number | null;
     monthlyFinancingPaymentCop: number | null;
@@ -110,7 +112,7 @@ export type OpenSolarProjectPrefill = {
     systemsCount: number;
     modifiedAt: string | null;
     fieldSources: Partial<Record<
-      "annualConsumptionKwh" | "currentMonthlyBill" | "systemPowerKwp" | "annualGenerationKwh" | "selfConsumptionPercent" | "exportPercent" | "solarSavingsCoveragePercent" | "gridTariffCopPerKwh" | "monthlyFinancingPaymentCop" | "initialMonthlySolarBillCop" | "postAgreementMonthlySolarBillCop",
+      "annualConsumptionKwh" | "currentMonthlyBill" | "systemPowerKwp" | "annualGenerationKwh" | "selfConsumptionPercent" | "exportPercent" | "energyVsConsumptionPercent" | "solarSavingsCoveragePercent" | "gridTariffCopPerKwh" | "monthlyFinancingPaymentCop" | "initialMonthlySolarBillCop" | "postAgreementMonthlySolarBillCop",
       FieldSource
     >>;
   };
@@ -753,12 +755,29 @@ export async function getOpenSolarProjectPrefill(config: OpenSolarProjectLookupI
 
   const solarMetrics = resolveSolarMetrics({ apiSystems, rawDesign });
   const financialTerms = resolveOpenSolarFinancialTerms(rawDesign);
-  const solarSavingsCoveragePercent = solarMetrics.annualGenerationKwh !== null
+  // Este indicador reproduce el “Energía vs consumo” de OpenSolar: generación
+  // total frente a consumo. Puede superar 100% por excedentes exportables, por
+  // lo que no debe reutilizarse como cobertura financiera de factura.
+  const energyVsConsumptionPercent = solarMetrics.annualGenerationKwh !== null
+    && usage.annualConsumptionKwh !== null
+    && usage.annualConsumptionKwh > 0
+    ? rounded((solarMetrics.annualGenerationKwh / usage.annualConsumptionKwh) * 100)
+    : null;
+  // Cuando la propuesta publica una factura solar del año 1, ese es el ahorro
+  // financiero contractual que debe prevalecer. De lo contrario, se conserva
+  // la aproximación conservadora por autoconsumo; los excedentes no se tratan
+  // como ahorro de factura sin la compensación expresamente cotizada.
+  const selfConsumptionCoveragePercent = solarMetrics.annualGenerationKwh !== null
     && solarMetrics.selfConsumptionPercent !== null
     && usage.annualConsumptionKwh !== null
     && usage.annualConsumptionKwh > 0
     ? rounded(Math.min(100, (solarMetrics.annualGenerationKwh * (solarMetrics.selfConsumptionPercent / 100) / usage.annualConsumptionKwh) * 100))
     : null;
+  const solarSavingsCoveragePercent = financialTerms.initialMonthlySolarBillCop !== null
+    && currentMonthlyBill !== null
+    && currentMonthlyBill > 0
+    ? rounded(Math.max(0, Math.min(100, ((currentMonthlyBill - financialTerms.initialMonthlySolarBillCop) / currentMonthlyBill) * 100)))
+    : selfConsumptionCoveragePercent;
   const gridTariffCopPerKwh = resolveCopCurrency(project)
     && currentMonthlyBill !== null
     && usage.annualConsumptionKwh !== null
@@ -772,7 +791,8 @@ export async function getOpenSolarProjectPrefill(config: OpenSolarProjectLookupI
   if (solarMetrics.annualGenerationKwh === null) unavailableFields.push("generación anual (kWh)");
   if (solarMetrics.selfConsumptionPercent === null) unavailableFields.push("autoconsumo (%)");
   if (solarMetrics.exportPercent === null) unavailableFields.push("exportación (%)");
-  if (solarSavingsCoveragePercent === null) unavailableFields.push("cobertura de ahorro solar (%)");
+  if (energyVsConsumptionPercent === null) unavailableFields.push("energía vs consumo (%)");
+  if (solarSavingsCoveragePercent === null) unavailableFields.push("ahorro de factura año 1 (%)");
   if (gridTariffCopPerKwh === null) unavailableFields.push("tarifa de red COP/kWh");
   if (financialTerms.monthlyFinancingPaymentCop === null) unavailableFields.push("cuota mensual de financiación");
   if (financialTerms.initialMonthlySolarBillCop === null) unavailableFields.push("factura solar residual año 1");
@@ -788,7 +808,8 @@ export async function getOpenSolarProjectPrefill(config: OpenSolarProjectLookupI
       ...(currentMonthlyBill !== null ? { currentMonthlyBill: "OpenSolar" as const } : {}),
       ...(systemPowerKwp !== null ? { systemPowerKwp: "OpenSolar" as const } : {}),
       ...solarMetrics.sources,
-      ...(solarSavingsCoveragePercent !== null ? { solarSavingsCoveragePercent: "Calculado desde datos OpenSolar" as const } : {}),
+      ...(energyVsConsumptionPercent !== null ? { energyVsConsumptionPercent: "Calculado desde datos OpenSolar" as const } : {}),
+      ...(solarSavingsCoveragePercent !== null ? { solarSavingsCoveragePercent: financialTerms.initialMonthlySolarBillCop !== null ? "OpenSolar" as const : "Calculado desde datos OpenSolar" as const } : {}),
       ...(gridTariffCopPerKwh !== null ? { gridTariffCopPerKwh: "Calculado desde datos OpenSolar" as const } : {}),
       ...financialTerms.sources,
     };
@@ -811,6 +832,7 @@ export async function getOpenSolarProjectPrefill(config: OpenSolarProjectLookupI
       annualGenerationKwh: solarMetrics.annualGenerationKwh,
       selfConsumptionPercent: solarMetrics.selfConsumptionPercent,
       exportPercent: solarMetrics.exportPercent,
+      energyVsConsumptionPercent,
       solarSavingsCoveragePercent,
       gridTariffCopPerKwh,
       monthlyFinancingPaymentCop: financialTerms.monthlyFinancingPaymentCop,
