@@ -214,6 +214,8 @@ describe("precarga de proyecto OpenSolar", () => {
         term: 72,
         term_years: 6,
         utility_bill_yearly_proposed: [1_708_730.57, 2_133_456.01, 2_693_061.42, 3_112_000, 3_456_000, 4_032_000, 5_086_020],
+        net_profit: 394_162_272.7860472,
+        internal_rate_of_return: 0.15873052770258989,
       }],
     }))).toString("base64");
     const fetchMock = vi.fn()
@@ -261,8 +263,8 @@ describe("precarga de proyecto OpenSolar", () => {
         monthlyFinancingPaymentCop: 2_162_043,
         initialMonthlySolarBillCop: 142_394.21,
         postAgreementMonthlySolarBillCop: 423_835,
-        totalEnergySavingsCop: null,
-        annualInvestmentReturnPercent: null,
+        totalEnergySavingsCop: 394_162_272.79,
+        annualInvestmentReturnPercent: 15.87,
         financingAgreementYears: 6,
         canActivateAllySolarProgram: true,
         systemsCount: 2,
@@ -280,9 +282,11 @@ describe("precarga de proyecto OpenSolar", () => {
           monthlyFinancingPaymentCop: "OpenSolar",
           initialMonthlySolarBillCop: "OpenSolar",
           postAgreementMonthlySolarBillCop: "OpenSolar",
+          totalEnergySavingsCop: "OpenSolar",
+          annualInvestmentReturnPercent: "OpenSolar",
         },
       },
-      unavailableFields: ["ahorro total de energía", "rendimiento anual de la propuesta"],
+      unavailableFields: [],
       warnings: [],
     });
   });

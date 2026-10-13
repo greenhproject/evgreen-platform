@@ -1688,7 +1688,10 @@ function SpaceDetailDialog({
       };
       if (scope === "charging") setChargingSolarLookup(lookupSummary);
       else setAllySolarLookup(lookupSummary);
-      toast.success(`Datos de OpenSolar de ${scope === "charging" ? "la electrolinera" : "la EDS/comercio aliado"} precargados. Revisa y guarda para confirmarlos.`);
+      const commercialSummary = scope === "ally" && project.totalEnergySavingsCop !== null && project.annualInvestmentReturnPercent !== null
+        ? ` Ahorro total ${formatCOP(project.totalEnergySavingsCop)} y rendimiento anual ${project.annualInvestmentReturnPercent.toLocaleString("es-CO", { maximumFractionDigits: 1 })}%.`
+        : "";
+      toast.success(`Datos de OpenSolar de ${scope === "charging" ? "la electrolinera" : "la EDS/comercio aliado"} precargados.${commercialSummary} Revisa y guarda para confirmarlos.`);
     } catch (error: any) {
       toast.error(error.message || "No fue posible consultar el proyecto OpenSolar.");
     }

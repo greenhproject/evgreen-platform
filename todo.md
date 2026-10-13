@@ -182,3 +182,12 @@
 - [x] Renderizar una ficha de QA de nueve páginas y revisar visualmente la página solar: tarjetas y bloques redondeados no se superponen ni se cortan.
 - [x] Validación integral: 245 archivos / 2.367 pruebas aprobadas; 5 suites de integración y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo aprobado.
 - [x] Guardar checkpoint `1e1b7a7c`, publicar de forma segura y verificar Railway exitoso en producción #7030575679 y staging #7030575646; el bundle comercial activo fue confirmado en `evgreen.lat` y `app.evgreen.lat`.
+
+## Ficha del aliado — corrección de métricas comerciales (2026-10-13)
+
+- [x] Verificar en modo solo lectura que la opción comercial de `11062957` expone `net_profit` COP 394.162.272,79 e `internal_rate_of_return` 15,873%; son los campos correctos para ahorro total de vida útil y rendimiento anual.
+- [x] Confirmar que la consulta de precarga actual devuelve COP 394.162.272,79, 15,87% y pago mensual COP 2.162.043. Las cifras se asignan al formulario sólo al presionar **Consultar** y se persisten únicamente al guardar explícitamente.
+- [x] Añadir regresión para los campos de la propuesta y un mensaje de precarga que confirma ahorro total y retorno anual, evitando que queden invisibles tras la consulta.
+- [x] Validar TypeScript, 22 pruebas focales y 245 archivos / 2.367 pruebas integrales aprobadas; 5 suites de integración y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo aprobado.
+- [x] QA de consulta segura: el endpoint de precarga devolvió para `11062957` los valores comerciales correctos, sin guardar ni modificar el Espacio.
+- [ ] Guardar checkpoint WebDev, ejecutar publicación segura y verificar el despliegue.
