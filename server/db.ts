@@ -4935,11 +4935,19 @@ export async function cleanupOrphanedTransactions(maxAgeMinutes: number = 60): P
   const db = (await getDb())!;
   if (!db) return 0;
   
-  const cutoffTime = new Date(Date.now() - maxAgeMinutes * 60 * 1000);
-  
   // Buscar en ambas columnas por compatibilidad histórica. Cada ruta de cierre
   // debe escribir ambas: de otro modo una sesión CANCELLED puede seguir siendo
   // considerada activa por el mapa, precio dinámico u overstay.
+  //
+  // El cutoff se calcula con NOW() del propio servidor de BD, nunca con un
+  // Date de JS. `updatedAt` es CURRENT_TIMESTAMP/ON UPDATE autogenerado por
+  // la BD y su zona horaria depende de la sesión de la BD (@@session.time_zone),
+  // no de este proceso. Comparar un cutoff en JS (siempre UTC vía
+  // toISOString()) contra esa columna solo funciona si la sesión de BD
+  // también está en UTC — en cualquier otra zona (confirmado localmente:
+  // MySQL con time_zone=SYSTEM en una máquina en America/Bogota) el desfase
+  // hace que la condición se cumpla casi de inmediato y cierre+cobre sesiones
+  // que llevan segundos de iniciadas y siguen cargando activamente.
   const orphaned = await db.select()
     .from(transactions)
     .where(
@@ -4949,7 +4957,7 @@ export async function cleanupOrphanedTransactions(maxAgeMinutes: number = 60): P
           eq(transactions.status, "IN_PROGRESS"),
           eq(transactions.transactionStatus, "IN_PROGRESS"),
         ),
-        lte(transactions.updatedAt, cutoffTime.toISOString())
+        sql`${transactions.updatedAt} <= (NOW() - INTERVAL ${maxAgeMinutes} MINUTE)`
       )
     );
   

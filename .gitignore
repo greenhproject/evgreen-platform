@@ -132,3 +132,5 @@ upload_cert.pem
 *.pem
 *.keystore
 .env.production
+
+loadtest/manifests/
