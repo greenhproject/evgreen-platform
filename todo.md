@@ -171,4 +171,4 @@
 - [x] Añadir pruebas de métricas técnicas, ahorro cotizado, flujos de acuerdo y beneficio combinado; no se modificó el Espacio ni se expusieron credenciales durante la comprobación del proyecto autorizado.
 - [x] Validación integral: 245 archivos / 2.367 pruebas aprobadas; 5 suites de integración y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo aprobado. La columna física 0063 fue verificada como `decimal(7,2)` nullable.
 - [x] QA visual autenticado y sin guardar: consultar `11062957` en el formulario del aliado cargó factura 2.184.000, energía/consumo 104,68%, ahorro de factura 93,48%, potencia 23,8 kWp, generación 30.147,11 kWh/año, autoconsumo/exportación, tarifa 910 y los tres términos financieros OpenSolar.
-- [ ] Guardar checkpoint WebDev, ejecutar publicación segura y verificar el despliegue.
+- [x] Guardar checkpoint `03f1dd7f`, publicar de forma segura y verificar Railway exitoso en producción #7030123836 y staging #7030123855; `evgreen.lat` y `app.evgreen.lat` responden 200.
