@@ -199,4 +199,4 @@
 - [x] Suprimir datos técnicos redundantes y mantener sólo notas comerciales de alcance, acuerdo y validación; no se exponen proveedores de modelación en la ficha.
 - [x] Renderizar y revisar la página solar final: jerarquía legible, tarjetas, imagen, panel de utilidad global y pie de lectura sin solapes ni cortes.
 - [x] Validación integral: 245 archivos / 2.367 pruebas aprobadas; 5 suites de integración y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo aprobado.
-- [ ] Guardar checkpoint WebDev, ejecutar publicación segura y verificar el despliegue.
+- [x] Guardar checkpoint `b15d2477`, publicar de forma segura y verificar Railway exitoso en producción #7031077832 y staging #7031077824.
