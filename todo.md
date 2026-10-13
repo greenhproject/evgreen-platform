@@ -181,4 +181,4 @@
 - [x] Reordenar la utilidad global: integra una sola vez la retribución del punto y el ahorro energético neto posterior al acuerdo, con referencias mensual y anual; evita doble conteo.
 - [x] Renderizar una ficha de QA de nueve páginas y revisar visualmente la página solar: tarjetas y bloques redondeados no se superponen ni se cortan.
 - [x] Validación integral: 245 archivos / 2.367 pruebas aprobadas; 5 suites de integración y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo aprobado.
-- [ ] Guardar checkpoint WebDev, ejecutar publicación segura y verificar el despliegue.
+- [x] Guardar checkpoint `1e1b7a7c`, publicar de forma segura y verificar Railway exitoso en producción #7030575679 y staging #7030575646; el bundle comercial activo fue confirmado en `evgreen.lat` y `app.evgreen.lat`.
