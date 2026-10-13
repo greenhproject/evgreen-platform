@@ -10,7 +10,7 @@ import { es } from "date-fns/locale";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useNotifications } from "@/hooks/useNotifications";
 import { onForegroundMessage } from "@/lib/firebase";
-import { clearAppBadge } from "@/lib/native-push";
+import { syncAppBadge } from "@/lib/native-push";
 import { openExternalUrl, isExternalUrl } from "@/lib/openExternal";
 
 interface Notification {
@@ -53,7 +53,7 @@ export function NotificationPanel({ buttonClassName }: NotificationPanelProps = 
   const [open, setOpen] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const { isAuthenticated } = useAuth();
-  const { isEnabled, isSupported, enableNotifications } = useNotifications();
+  const { isEnabled, isSupported, enableNotifications, syncBadgeFromServer } = useNotifications();
   
   // Cargar notificaciones de la base de datos
   const notificationsQuery = trpc.notifications.list.useQuery(
@@ -122,6 +122,10 @@ export function NotificationPanel({ buttonClassName }: NotificationPanelProps = 
     try {
       await markAsReadMutation.mutateAsync({ id });
       await utils.notifications.list.invalidate();
+      // Antes esto no tocaba el badge para nada — si quedaban 4 sin leer y se
+      // marcaba 1, el ícono seguía mostrando el número viejo hasta abrir la
+      // app de nuevo. Ahora baja al conteo real tras marcar cada una.
+      await syncBadgeFromServer();
     } catch (error) {
       console.error("Error marking notification as read:", error);
     }
@@ -131,7 +135,7 @@ export function NotificationPanel({ buttonClassName }: NotificationPanelProps = 
     try {
       await markAllAsReadMutation.mutateAsync();
       await utils.notifications.list.invalidate();
-      await clearAppBadge();
+      await syncAppBadge(0);
     } catch (error) {
       console.error("Error marking all notifications as read:", error);
     }

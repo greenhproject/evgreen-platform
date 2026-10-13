@@ -63,6 +63,7 @@ import { eq } from "drizzle-orm";
 import { getUnreadNotificationCount } from "../db";
 import { sendPushNotificationDetailed, sendPushNotificationToMultiple } from "../firebase/fcm";
 import { sendUserPushDetailed } from "./unified-push";
+import { appRouter } from "../routers";
 
 async function insertNotification(isRead: 0 | 1) {
   const db = (await getDb())!;
@@ -196,5 +197,39 @@ describe("unified-push.ts — sendUserPushDetailed consulta el conteo real antes
     expect(sendMock).toHaveBeenCalledTimes(1);
     const sentMessage = sendMock.mock.calls[0][0];
     expect(sentMessage.apns.payload.aps.badge).toBe(0);
+  });
+});
+
+describe("notifications.unreadCount — el cliente lo usa para sincronizar el badge al marcar una sola notificación como leída", () => {
+  beforeEach(cleanupTestNotifications);
+  afterEach(cleanupTestNotifications);
+
+  function createCallerAsTestUser() {
+    const ctx = {
+      user: { id: TEST_USER_ID } as any,
+      req: { protocol: "https", headers: {} } as any,
+      res: {} as any,
+    };
+    return appRouter.createCaller(ctx);
+  }
+
+  it("devuelve 0 para un usuario sin notificaciones", async () => {
+    const caller = createCallerAsTestUser();
+    expect(await caller.notifications.unreadCount()).toEqual({ count: 0 });
+  });
+
+  it("baja de a uno conforme se marcan notificaciones individuales como leídas — el escenario real que faltaba cubrir en el cliente", async () => {
+    await insertNotification(0);
+    await insertNotification(0);
+    await insertNotification(0);
+    const caller = createCallerAsTestUser();
+
+    expect(await caller.notifications.unreadCount()).toEqual({ count: 3 });
+
+    const db = (await getDb())!;
+    const [first] = await db.select().from(notifications).where(eq(notifications.userId, TEST_USER_ID)).limit(1);
+    await caller.notifications.markAsRead({ id: first!.id });
+
+    expect(await caller.notifications.unreadCount()).toEqual({ count: 2 });
   });
 });

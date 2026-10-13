@@ -3634,6 +3634,13 @@ const notificationsRouter = router({
       return db.getNotificationsByUserId(ctx.user.id, input?.unreadOnly || false);
     }),
   
+  // Conteo real de no leídas — para mantener el badge del ícono sincronizado
+  // sin tener que traer la lista completa (ver el mismo conteo usado para el
+  // badge de push en server/db.ts#getUnreadNotificationCount).
+  unreadCount: protectedProcedure.query(async ({ ctx }) => {
+    return { count: await db.getUnreadNotificationCount(ctx.user.id) };
+  }),
+
   markAsRead: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
