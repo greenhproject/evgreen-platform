@@ -172,3 +172,13 @@
 - [x] Validación integral: 245 archivos / 2.367 pruebas aprobadas; 5 suites de integración y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo aprobado. La columna física 0063 fue verificada como `decimal(7,2)` nullable.
 - [x] QA visual autenticado y sin guardar: consultar `11062957` en el formulario del aliado cargó factura 2.184.000, energía/consumo 104,68%, ahorro de factura 93,48%, potencia 23,8 kWp, generación 30.147,11 kWh/año, autoconsumo/exportación, tarifa 910 y los tres términos financieros OpenSolar.
 - [x] Guardar checkpoint `03f1dd7f`, publicar de forma segura y verificar Railway exitoso en producción #7030123836 y staging #7030123855; `evgreen.lat` y `app.evgreen.lat` responden 200.
+
+## Ficha del aliado — resumen solar comercial (2026-10-13)
+
+- [x] Sustituir los tres cuadros técnicos por cuatro indicadores comerciales: cobertura energética del área disponible, pago estable de energía con acuerdo solar, ahorro total de dinero por energía y tasa de rendimiento anual de la inversión.
+- [x] Mapear y persistir ahorro total y tasa anual de la propuesta comercial; el ejemplo `11062957` conserva COP 394.162.273 y 15,9%, revisables antes de guardar.
+- [x] Eliminar el nombre de OpenSolar del PDF comercial, el identificador de proyecto y el desglose de facturas técnicas; mantener la plataforma sólo como herramienta interna de administración.
+- [x] Reordenar la utilidad global: integra una sola vez la retribución del punto y el ahorro energético neto posterior al acuerdo, con referencias mensual y anual; evita doble conteo.
+- [x] Renderizar una ficha de QA de nueve páginas y revisar visualmente la página solar: tarjetas y bloques redondeados no se superponen ni se cortan.
+- [x] Validación integral: 245 archivos / 2.367 pruebas aprobadas; 5 suites de integración y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo aprobado.
+- [ ] Guardar checkpoint WebDev, ejecutar publicación segura y verificar el despliegue.

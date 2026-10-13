@@ -114,7 +114,7 @@ describe("buildAllySpacePdfContent", () => {
     expect(disclosure).toContain("estimación mensual del aliado");
   });
 
-  it("identifica el proyecto OpenSolar de la electrolinera sin confundirlo con el programa del aliado", () => {
+  it("identifica el proyecto solar de la electrolinera sin confundirlo con el programa del aliado", () => {
     const content = buildAllySpacePdfContent({
       ...sampleData,
       hasSolarPanels: true,
@@ -127,13 +127,14 @@ describe("buildAllySpacePdfContent", () => {
       allySolarOpenSolarAnnualConsumptionKwh: 96_000,
     });
 
-    expect(content.technicalRows).toContainEqual(["Proyecto OpenSolar de carga", "Solar electrolinera EDS NQS · #CARGA-101"]);
+    expect(content.technicalRows).toContainEqual(["Proyecto solar de carga", "Solar electrolinera EDS NQS"]);
     expect(content.technicalRows).toContainEqual(["Potencia solar de carga", "120 kWp"]);
     expect(content.technicalRows).toContainEqual(["Generación solar de carga", "180.000 kWh/año"]);
+    expect(content.technicalRows.flat().join(" ").toLowerCase()).not.toContain("opensolar");
     expect(content.solarProgram?.assumptions.systemPowerKwp).toBe(112);
   });
 
-  it("refleja la cuota OpenSolar y el ahorro neto posterior sin confundirlos con la factura solar", () => {
+  it("refleja el pago estable y el ahorro neto posterior sin confundirlos con la factura solar", () => {
     const content = buildAllySpacePdfContent({
       ...sampleData,
       solarProgramCurrentBillCop: 2_184_000,
@@ -142,6 +143,8 @@ describe("buildAllySpacePdfContent", () => {
       solarProgramMonthlyFinancingPaymentCop: 2_162_043,
       solarProgramInitialMonthlySolarBillCop: 142_394,
       solarProgramPostAgreementMonthlySolarBillCop: 423_835,
+      solarProgramTotalEnergySavingsCop: 394_162_273,
+      solarProgramAnnualReturnPercent: 15.9,
     });
 
     expect(content.solarProgram?.initialMonthlySavingsCop).toBe(2_041_606);
@@ -151,5 +154,7 @@ describe("buildAllySpacePdfContent", () => {
     expect(content.combinedBenefit?.solarMonthlyNetCashflowCop).toBe(-120_437);
     expect(content.combinedBenefit?.postAgreementSolarMonthlyNetSavingsCop).toBe(2_183_975);
     expect(content.combinedBenefit?.postAgreementCombinedMonthlyCop).toBeGreaterThan(content.combinedBenefit?.chargerMonthlyCop ?? 0);
+    expect(content.solarProgram?.totalEnergySavingsCop).toBe(394_162_273);
+    expect(content.solarProgram?.annualInvestmentReturnPercent).toBe(15.9);
   });
 });

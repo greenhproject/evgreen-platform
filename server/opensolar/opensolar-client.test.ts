@@ -261,6 +261,8 @@ describe("precarga de proyecto OpenSolar", () => {
         monthlyFinancingPaymentCop: 2_162_043,
         initialMonthlySolarBillCop: 142_394.21,
         postAgreementMonthlySolarBillCop: 423_835,
+        totalEnergySavingsCop: null,
+        annualInvestmentReturnPercent: null,
         financingAgreementYears: 6,
         canActivateAllySolarProgram: true,
         systemsCount: 2,
@@ -280,7 +282,7 @@ describe("precarga de proyecto OpenSolar", () => {
           postAgreementMonthlySolarBillCop: "OpenSolar",
         },
       },
-      unavailableFields: [],
+      unavailableFields: ["ahorro total de energía", "rendimiento anual de la propuesta"],
       warnings: [],
     });
   });

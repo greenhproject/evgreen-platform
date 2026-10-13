@@ -73,6 +73,8 @@ export interface AllySpacePdfData {
   solarProgramMonthlyFinancingPaymentCop?: number | null;
   solarProgramInitialMonthlySolarBillCop?: number | null;
   solarProgramPostAgreementMonthlySolarBillCop?: number | null;
+  solarProgramTotalEnergySavingsCop?: number | null;
+  solarProgramAnnualReturnPercent?: number | null;
   solarProgramAgreementYears?: number | null;
   solarProgramAnnualCpiPercent?: number | null;
   solarProgramUsefulLifeYears?: number | null;
@@ -240,6 +242,8 @@ export function buildAllySpacePdfContent(data: AllySpacePdfData): AllyPdfContent
         monthlyFinancingPaymentCop: data.solarProgramMonthlyFinancingPaymentCop,
         initialMonthlySolarBillCop: data.solarProgramInitialMonthlySolarBillCop,
         postAgreementMonthlySolarBillCop: data.solarProgramPostAgreementMonthlySolarBillCop,
+        totalEnergySavingsCop: data.solarProgramTotalEnergySavingsCop,
+        annualInvestmentReturnPercent: data.solarProgramAnnualReturnPercent,
         agreementYears: data.solarProgramAgreementYears,
         annualCpiPercent: data.solarProgramAnnualCpiPercent,
         usefulLifeYears: data.solarProgramUsefulLifeYears,
@@ -295,7 +299,7 @@ export function buildAllySpacePdfContent(data: AllySpacePdfData): AllyPdfContent
       ["Internet en el punto", formatBoolean(data.hasInternet)],
       ["Mangueras preliminares", data.estimatedChargerCount ? formatNumber(Number(data.estimatedChargerCount) * 2) : "Por confirmar"],
       ["Solar de la electrolinera", data.hasSolarPanels ? "Considerado para la infraestructura de carga" : "No informado / fuera del alcance actual"],
-      ...(data.chargingSolarOpenSolarProjectId ? [["Proyecto OpenSolar de carga", `${data.chargingSolarOpenSolarProjectTitle || "Proyecto"} · #${data.chargingSolarOpenSolarProjectId}`] as [string, string]] : []),
+      ...(data.chargingSolarOpenSolarProjectId ? [["Proyecto solar de carga", data.chargingSolarOpenSolarProjectTitle || "Proyecto solar registrado"] as [string, string]] : []),
       ...(data.chargingSolarSystemPowerKwp !== null && data.chargingSolarSystemPowerKwp !== undefined ? [["Potencia solar de carga", formatNumber(data.chargingSolarSystemPowerKwp, " kWp")] as [string, string]] : []),
       ...(data.chargingSolarAnnualGenerationKwh !== null && data.chargingSolarAnnualGenerationKwh !== undefined ? [["Generación solar de carga", formatNumber(data.chargingSolarAnnualGenerationKwh, " kWh/año")] as [string, string]] : []),
       ["Programa solar para el aliado", data.solarProgramEnabled ? "Beneficio energético en evaluación" : "No activado"],
@@ -688,7 +692,7 @@ function drawSolarProgramPage(
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.6);
   const intro = doc.splitTextToSize(
-    "Además de la retribución estimada por el punto de carga, el espacio puede acceder a un programa solar de sustitución de gasto energético. La lectura separa factura de red, factura solar residual y cuota de financiación; no reemplaza el estudio solar ni el contrato de compraventa de energía.",
+    "Además de la retribución estimada por el punto de carga, el espacio puede acceder a un programa de optimización energética. El resumen presenta beneficios comerciales validados y no reemplaza el estudio solar ni el acuerdo energético definitivo.",
     contentWidth,
   );
   doc.text(intro, margin, y);
@@ -709,54 +713,39 @@ function drawSolarProgramPage(
   }
 
   const assumptions = solar.assumptions;
+  const totalEnergySavingsCop = solar.totalEnergySavingsCop ?? solar.totalReferenceSavingsCop;
   const cards = [
-    ["Ahorro energético año 1", formatCop(solar.initialMonthlySavingsCop), COLORS.greenLight, COLORS.greenDark],
-    ["Cuota mensual OpenSolar", solar.initialMonthlyFinancingPaymentCop === null ? "Por confirmar" : formatCop(solar.initialMonthlyFinancingPaymentCop), [255, 251, 235], [146, 64, 14]],
-    ["Flujo neto mensual año 1", formatCop(solar.initialMonthlyNetCashflowCop), [239, 246, 255], COLORS.blue],
+    ["Cobertura energética del área disponible", assumptions.energyVsConsumptionPercent === null ? "Por confirmar" : `${formatDecimal(assumptions.energyVsConsumptionPercent, 1)}%`, COLORS.greenLight, COLORS.greenDark],
+    ["Pago estable de energía con acuerdo solar", solar.initialMonthlyFinancingPaymentCop === null ? "Por confirmar" : formatCop(solar.initialMonthlyFinancingPaymentCop), [255, 251, 235], [146, 64, 14]],
+    ["Ahorro total de dinero por energía", formatCop(totalEnergySavingsCop), [239, 246, 255], COLORS.blue],
+    ["Tasa de rendimiento anual de la inversión", solar.annualInvestmentReturnPercent === null ? "Por confirmar" : `${formatDecimal(solar.annualInvestmentReturnPercent, 1)}%`, [250, 245, 255], [109, 40, 217]],
   ] as const;
   const gap = 5;
-  const cardWidth = (contentWidth - gap * 2) / 3;
+  const cardWidth = (contentWidth - gap) / 2;
+  const cardHeight = 29;
   cards.forEach(([label, value, fill, textColor], index) => {
-    const x = margin + index * (cardWidth + gap);
+    const column = index % 2;
+    const row = Math.floor(index / 2);
+    const x = margin + column * (cardWidth + gap);
+    const cardY = y + row * (cardHeight + gap);
     setColor(doc, fill as [number, number, number], "fill");
-    doc.roundedRect(x, y, cardWidth, 29, 3, 3, "F");
+    doc.roundedRect(x, cardY, cardWidth, cardHeight, 3, 3, "F");
     setColor(doc, textColor as [number, number, number]);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(7.3);
-    doc.text(label, x + 5, y + 9);
-    doc.setFontSize(11.5);
-    doc.text(value, x + 5, y + 20);
+    doc.setFontSize(7.1);
+    doc.text(doc.splitTextToSize(label, cardWidth - 10).slice(0, 2), x + 5, cardY + 8);
+    doc.setFontSize(11.2);
+    doc.text(value, x + 5, cardY + 22);
   });
-  y += 39;
-
-  const detailRows: Array<[string, string]> = [
-    ...(data.allySolarOpenSolarProjectId ? [["Proyecto OpenSolar del aliado", `${data.allySolarOpenSolarProjectTitle || "Proyecto"} · #${data.allySolarOpenSolarProjectId}`] as [string, string]] : []),
-    ...(data.allySolarOpenSolarAnnualConsumptionKwh !== null && data.allySolarOpenSolarAnnualConsumptionKwh !== undefined ? [["Consumo anual del aliado importado", formatNumber(data.allySolarOpenSolarAnnualConsumptionKwh, " kWh/año")] as [string, string]] : []),
-    ["Factura mensual promedio registrada", formatCop(assumptions.currentMonthlyBillCop)],
-    ...(assumptions.energyVsConsumptionPercent !== null ? [["Energía generada vs consumo · OpenSolar", `${formatDecimal(assumptions.energyVsConsumptionPercent, 1)}% (técnico; puede incluir excedentes)`] as [string, string]] : []),
-    ["Ahorro sobre factura · año 1", `${formatDecimal(assumptions.savingsCoveragePercent, 1)}% de la factura actual`],
-    ["Plazo inicial de sustitución", `${formatNumber(assumptions.agreementYears)} años`],
-    ["Factura solar residual año 1", formatCop(solar.initialMonthlyReplacementQuotaCop)],
-    ["Cuota mensual de financiación", solar.initialMonthlyFinancingPaymentCop === null ? "Por confirmar" : formatCop(solar.initialMonthlyFinancingPaymentCop)],
-    ["Factura de red al inicio del año 7", formatCop(solar.postAgreementMonthlyGridBillCop)],
-    ["Factura solar al inicio del año 7", formatCop(solar.postAgreementMonthlySolarBillCop)],
-    ["Ahorro neto mensual desde año 7", formatCop(solar.postAgreementMonthlyNetSavingsCop)],
-    ["Inflación anual de energía", `${formatDecimal(assumptions.annualCpiPercent, 1)}% de referencia`],
-    ["Vida útil de referencia", `${formatNumber(assumptions.usefulLifeYears)} años`],
-    ...(assumptions.systemPowerKwp !== null ? [["Potencia solar de referencia", formatNumber(assumptions.systemPowerKwp, " kWp")] as [string, string]] : []),
-    ...(assumptions.annualGenerationKwh !== null ? [["Generación solar anual estimada", formatNumber(assumptions.annualGenerationKwh, " kWh/año")] as [string, string]] : []),
-    ...(assumptions.selfConsumptionPercent !== null ? [["Autoconsumo de referencia", `${formatDecimal(assumptions.selfConsumptionPercent, 1)}%`] as [string, string]] : []),
-    ...(assumptions.exportPercent !== null ? [["Exportación de referencia", `${formatDecimal(assumptions.exportPercent, 1)}%`] as [string, string]] : []),
-  ];
-  y = drawRows(doc, detailRows, margin, y, contentWidth, 65) + 9;
+  y += cardHeight * 2 + gap + 8;
 
   if (content.combinedBenefit) {
     setColor(doc, COLORS.green, "fill");
-    doc.roundedRect(margin, y, contentWidth, 62, 3, 3, "F");
+    doc.roundedRect(margin, y, contentWidth, 68, 3, 3, "F");
     setColor(doc, COLORS.white);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9.5);
-    doc.text("FLUJO COMBINADO REFERENCIAL DEL ALIADO", margin + 7, y + 10);
+    doc.text("UTILIDAD GLOBAL REFERENCIAL DEL ALIADO", margin + 7, y + 10);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.2);
     doc.text("Durante financiación · año 1", margin + 7, y + 17);
@@ -765,7 +754,7 @@ function drawSolarProgramPage(
     doc.text(formatCop(content.combinedBenefit.combinedMonthlyCop), margin + 7, y + 29);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.4);
-    doc.text("Punto de carga + flujo solar neto (factura evitada − residual − cuota)", margin + 7, y + 37);
+    doc.text("Retribución del punto + flujo energético neto", margin + 7, y + 37);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9.5);
     doc.text(formatCop(content.combinedBenefit.combinedAnnualCop), margin + contentWidth - 7, y + 29, { align: "right" });
@@ -773,18 +762,21 @@ function drawSolarProgramPage(
     doc.setFontSize(7.4);
     doc.text("Referencia anual año 1", margin + contentWidth - 7, y + 37, { align: "right" });
     doc.setFontSize(7.2);
-    doc.text(`Desde año ${formatNumber(solar.assumptions.agreementYears + 1)} · sin cuota`, margin + 7, y + 47);
+    doc.text(`Desde año ${formatNumber(solar.assumptions.agreementYears + 1)} · ahorro de energía incorporado`, margin + 7, y + 46);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11.5);
     doc.text(formatCop(content.combinedBenefit.postAgreementCombinedMonthlyCop), margin + 7, y + 58);
+    doc.setFontSize(9.5);
+    doc.text(formatCop(content.combinedBenefit.postAgreementCombinedAnnualCop), margin + contentWidth - 7, y + 58, { align: "right" });
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.2);
-    doc.text("Punto de carga + ahorro neto posterior de factura", margin + 68, y + 57);
-    y += 71;
+    doc.text("Beneficio mensual global posterior", margin + 7, y + 65);
+    doc.text("Referencia anual posterior", margin + contentWidth - 7, y + 65, { align: "right" });
+    y += 77;
   }
 
   setColor(doc, [236, 253, 245], "fill");
-  doc.roundedRect(margin, y, contentWidth, 36, 3, 3, "F");
+  doc.roundedRect(margin, y, contentWidth, 31, 3, 3, "F");
   setColor(doc, COLORS.greenDark);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
@@ -793,13 +785,13 @@ function drawSolarProgramPage(
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.3);
   const financingText = solar.initialMonthlyFinancingPaymentCop === null
-    ? "La cuota mensual de financiación no fue expuesta por OpenSolar y debe confirmarse en la propuesta comercial."
-    : `Durante ${formatNumber(assumptions.agreementYears)} años, la cuota contractual OpenSolar es ${formatCop(solar.initialMonthlyFinancingPaymentCop)} mensuales; se muestra separada de la factura solar residual.`;
+    ? "El pago estable de energía debe confirmarse en la propuesta comercial."
+    : `Durante ${formatNumber(assumptions.agreementYears)} años, el pago estable de energía es ${formatCop(solar.initialMonthlyFinancingPaymentCop)} mensuales.`;
   const note = doc.splitTextToSize(
-    `${financingText} OpenSolar reporta una cobertura energética de ${assumptions.energyVsConsumptionPercent === null ? "no disponible" : `${formatDecimal(assumptions.energyVsConsumptionPercent, 1)}%`} frente al consumo; es un indicador técnico que puede incluir excedentes y no se suma por separado al flujo. Desde el año ${formatNumber(assumptions.agreementYears + 1)}, la factura de red se proyecta con ${formatDecimal(assumptions.annualCpiPercent, 1)}% anual (${formatCop(solar.postAgreementMonthlyGridBillCop)} al inicio) y se descuenta la factura solar residual reportada (${formatCop(solar.postAgreementMonthlySolarBillCop)}), para un ahorro neto de referencia de ${formatCop(solar.postAgreementMonthlyNetSavingsCop)} al mes, incorporado una sola vez al flujo combinado. Está sujeto a contrato, desempeño, mantenimiento, tarifa y vida útil reales.`,
+    `${financingText} La cobertura de generación representa ${assumptions.energyVsConsumptionPercent === null ? "un valor pendiente de validar" : `${formatDecimal(assumptions.energyVsConsumptionPercent, 1)}% del consumo`} y puede superar 100% por excedentes. El ahorro total y la tasa anual se incorporan una sola vez en la utilidad global. El modelo de acuerdo no requiere desembolso de CAPEX del aliado y está sujeto a contrato, desempeño, mantenimiento, tarifa e inflación de energía reales.`,
     contentWidth - 12,
   );
-  doc.text(note.slice(0, 4), margin + 6, y + 17);
+  doc.text(note.slice(0, 3), margin + 6, y + 16);
 }
 
 function drawCommercialEcosystemPage(

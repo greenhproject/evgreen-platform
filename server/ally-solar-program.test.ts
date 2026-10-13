@@ -27,7 +27,7 @@ describe("ally solar program", () => {
     expect(snapshot?.totalReferenceSavingsCop).toBeGreaterThan(snapshot?.agreementSavingsCop ?? 0);
   });
 
-  it("separa cuota contractual, factura solar residual y ahorro posterior de la propuesta OpenSolar", () => {
+  it("separa pago contractual, factura solar residual y ahorro posterior de la propuesta comercial", () => {
     const snapshot = buildAllySolarProgram({
       enabled: true,
       currentMonthlyBillCop: 2_184_000,
@@ -48,8 +48,8 @@ describe("ally solar program", () => {
     expect(snapshot?.postAgreementMonthlySolarBillCop).toBe(423_835);
     expect(snapshot?.postAgreementMonthlyNetSavingsCop).toBe(2_183_975);
     expect(snapshot?.assumptions.energyVsConsumptionPercent).toBe(104.68);
-    expect(snapshot?.assumptions.financingPaymentSource).toBe("OpenSolar");
-    expect(snapshot?.assumptions.solarBillSource).toBe("OpenSolar");
+    expect(snapshot?.assumptions.financingPaymentSource).toBe("Propuesta comercial");
+    expect(snapshot?.assumptions.solarBillSource).toBe("Propuesta comercial");
   });
 
   it("devuelve null cuando el programa está desactivado", () => {

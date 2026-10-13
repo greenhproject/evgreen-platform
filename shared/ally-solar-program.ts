@@ -18,6 +18,10 @@ export type AllySolarProgramInput = {
   initialMonthlySolarBillCop?: number | null;
   /** Factura solar residual indicada para el inicio del periodo posterior al acuerdo. */
   postAgreementMonthlySolarBillCop?: number | null;
+  /** Ahorro neto acumulado que la propuesta solar calcula para el ciclo completo. */
+  totalEnergySavingsCop?: number | null;
+  /** Tasa de rendimiento anual explícita de la propuesta solar. */
+  annualInvestmentReturnPercent?: number | null;
 };
 
 export type AllySolarProgramSnapshot = {
@@ -41,8 +45,8 @@ export type AllySolarProgramSnapshot = {
     monthlyFinancingPaymentCop: number | null;
     initialMonthlySolarBillCop: number | null;
     postAgreementMonthlySolarBillCop: number | null;
-    financingPaymentSource: "OpenSolar" | "Derivada de cobertura" | "No disponible";
-    solarBillSource: "OpenSolar" | "Derivada de cobertura" | "No disponible";
+    financingPaymentSource: "Propuesta comercial" | "Derivada de cobertura" | "No disponible";
+    solarBillSource: "Propuesta comercial" | "Derivada de cobertura" | "No disponible";
   };
   /** Ahorro energético bruto: factura de red menos factura solar residual, antes de cuota. */
   initialMonthlySavingsCop: number;
@@ -58,6 +62,10 @@ export type AllySolarProgramSnapshot = {
   postAgreementAnnualSavingsCop: number;
   postAgreementCumulativeSavingsCop: number;
   totalReferenceSavingsCop: number;
+  /** Ahorro neto acumulado explícito de la propuesta, cuando existe. */
+  totalEnergySavingsCop: number | null;
+  /** Rendimiento anual explícito de la propuesta, cuando existe. */
+  annualInvestmentReturnPercent: number | null;
 };
 
 const DEFAULT_AGREEMENT_YEARS = 6;
@@ -116,6 +124,8 @@ export function buildAllySolarProgram(input: AllySolarProgramInput): AllySolarPr
   const monthlyFinancingPaymentCop = positiveOrNull(input.monthlyFinancingPaymentCop, "La cuota mensual de financiación");
   const providedInitialSolarBillCop = positiveOrNull(input.initialMonthlySolarBillCop, "La factura solar residual inicial");
   const providedPostAgreementSolarBillCop = positiveOrNull(input.postAgreementMonthlySolarBillCop, "La factura solar residual posterior al acuerdo");
+  const totalEnergySavingsCop = positiveOrNull(input.totalEnergySavingsCop, "El ahorro total de energía");
+  const annualInvestmentReturnPercent = optionalFinite(input.annualInvestmentReturnPercent);
 
   for (const [field, value] of [
     ["El autoconsumo solar", selfConsumptionPercent],
@@ -128,6 +138,9 @@ export function buildAllySolarProgram(input: AllySolarProgramInput): AllySolarPr
   if (gridTariffCopPerKwh !== null && gridTariffCopPerKwh < 0) throw new Error("La tarifa de red no puede ser negativa");
   if (energyVsConsumptionPercent !== null && (energyVsConsumptionPercent < 0 || energyVsConsumptionPercent > 1000)) {
     throw new Error("La energía frente al consumo debe estar entre 0 y 1000");
+  }
+  if (annualInvestmentReturnPercent !== null && (annualInvestmentReturnPercent < -100 || annualInvestmentReturnPercent > 1000)) {
+    throw new Error("El rendimiento anual debe estar entre -100 y 1000");
   }
 
   const derivedInitialSolarBillCop = round(currentMonthlyBillCop * (1 - savingsCoveragePercent / 100));
@@ -185,8 +198,8 @@ export function buildAllySolarProgram(input: AllySolarProgramInput): AllySolarPr
       monthlyFinancingPaymentCop: monthlyFinancingPaymentCop === null ? null : round(monthlyFinancingPaymentCop),
       initialMonthlySolarBillCop: round(initialMonthlySolarBillCop),
       postAgreementMonthlySolarBillCop: providedPostAgreementSolarBillCop === null ? null : round(providedPostAgreementSolarBillCop),
-      financingPaymentSource: monthlyFinancingPaymentCop === null ? "No disponible" : "OpenSolar",
-      solarBillSource: providedInitialSolarBillCop === null ? "Derivada de cobertura" : "OpenSolar",
+      financingPaymentSource: monthlyFinancingPaymentCop === null ? "No disponible" : "Propuesta comercial",
+      solarBillSource: providedInitialSolarBillCop === null ? "Derivada de cobertura" : "Propuesta comercial",
     },
     initialMonthlySavingsCop,
     initialAnnualSavingsCop,
@@ -200,5 +213,7 @@ export function buildAllySolarProgram(input: AllySolarProgramInput): AllySolarPr
     postAgreementAnnualSavingsCop,
     postAgreementCumulativeSavingsCop: round(postAgreementCumulativeSavingsCop),
     totalReferenceSavingsCop: round(agreementSavingsCop + postAgreementCumulativeSavingsCop),
+    totalEnergySavingsCop: totalEnergySavingsCop === null ? null : round(totalEnergySavingsCop),
+    annualInvestmentReturnPercent: annualInvestmentReturnPercent === null ? null : round(annualInvestmentReturnPercent, 2),
   };
 }

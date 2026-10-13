@@ -1682,10 +1682,14 @@ export const spaceSubmissions = mysqlTable("space_submissions", {
 			// Términos financieros explícitos de la propuesta OpenSolar del aliado.
 			// La cuota contractual y la factura solar residual son conceptos
 			// independientes; no se derivan ni se confunden con la factura de red.
-			solarProgramMonthlyFinancingPaymentCop: bigint("solar_program_monthly_financing_payment_cop", { mode: "number" }),
-			solarProgramInitialMonthlySolarBillCop: bigint("solar_program_initial_monthly_solar_bill_cop", { mode: "number" }),
-			solarProgramPostAgreementMonthlySolarBillCop: bigint("solar_program_post_agreement_monthly_solar_bill_cop", { mode: "number" }),
-			solarSystemPowerKwp: decimal("solar_system_power_kwp", { precision: 10, scale: 2 }),
+				solarProgramMonthlyFinancingPaymentCop: bigint("solar_program_monthly_financing_payment_cop", { mode: "number" }),
+				solarProgramInitialMonthlySolarBillCop: bigint("solar_program_initial_monthly_solar_bill_cop", { mode: "number" }),
+				solarProgramPostAgreementMonthlySolarBillCop: bigint("solar_program_post_agreement_monthly_solar_bill_cop", { mode: "number" }),
+				// Métricas comerciales explícitas de la propuesta solar: ahorro neto
+				// acumulado y rendimiento anual. No se recalculan a partir de CAPEX.
+				solarProgramTotalEnergySavingsCop: bigint("solar_program_total_energy_savings_cop", { mode: "number" }),
+				solarProgramAnnualReturnPercent: decimal("solar_program_annual_return_percent", { precision: 7, scale: 2 }),
+				solarSystemPowerKwp: decimal("solar_system_power_kwp", { precision: 10, scale: 2 }),
 		solarAnnualGenerationKwh: decimal("solar_annual_generation_kwh", { precision: 14, scale: 2 }),
 		solarSelfConsumptionPercent: decimal("solar_self_consumption_percent", { precision: 5, scale: 2 }),
 		solarExportPercent: decimal("solar_export_percent", { precision: 5, scale: 2 }),

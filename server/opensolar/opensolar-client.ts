@@ -75,9 +75,11 @@ type OpenSolarFinancialTerms = {
   monthlyFinancingPaymentCop: number | null;
   initialMonthlySolarBillCop: number | null;
   postAgreementMonthlySolarBillCop: number | null;
+  totalEnergySavingsCop: number | null;
+  annualInvestmentReturnPercent: number | null;
   agreementYears: number | null;
   sources: Partial<Record<
-    "monthlyFinancingPaymentCop" | "initialMonthlySolarBillCop" | "postAgreementMonthlySolarBillCop",
+    "monthlyFinancingPaymentCop" | "initialMonthlySolarBillCop" | "postAgreementMonthlySolarBillCop" | "totalEnergySavingsCop" | "annualInvestmentReturnPercent",
     FieldSource
   >>;
 };
@@ -107,12 +109,14 @@ export type OpenSolarProjectPrefill = {
     monthlyFinancingPaymentCop: number | null;
     initialMonthlySolarBillCop: number | null;
     postAgreementMonthlySolarBillCop: number | null;
+    totalEnergySavingsCop: number | null;
+    annualInvestmentReturnPercent: number | null;
     financingAgreementYears: number | null;
     canActivateAllySolarProgram: boolean;
     systemsCount: number;
     modifiedAt: string | null;
     fieldSources: Partial<Record<
-      "annualConsumptionKwh" | "currentMonthlyBill" | "systemPowerKwp" | "annualGenerationKwh" | "selfConsumptionPercent" | "exportPercent" | "energyVsConsumptionPercent" | "solarSavingsCoveragePercent" | "gridTariffCopPerKwh" | "monthlyFinancingPaymentCop" | "initialMonthlySolarBillCop" | "postAgreementMonthlySolarBillCop",
+      "annualConsumptionKwh" | "currentMonthlyBill" | "systemPowerKwp" | "annualGenerationKwh" | "selfConsumptionPercent" | "exportPercent" | "energyVsConsumptionPercent" | "solarSavingsCoveragePercent" | "gridTariffCopPerKwh" | "monthlyFinancingPaymentCop" | "initialMonthlySolarBillCop" | "postAgreementMonthlySolarBillCop" | "totalEnergySavingsCop" | "annualInvestmentReturnPercent",
       FieldSource
     >>;
   };
@@ -350,6 +354,8 @@ function resolveOpenSolarFinancialTerms(rawDesign: Record<string, unknown> | nul
       monthlyFinancingPaymentCop: null,
       initialMonthlySolarBillCop: null,
       postAgreementMonthlySolarBillCop: null,
+      totalEnergySavingsCop: null,
+      annualInvestmentReturnPercent: null,
       agreementYears: null,
       sources: {},
     };
@@ -392,17 +398,31 @@ function resolveOpenSolarFinancialTerms(rawDesign: Record<string, unknown> | nul
     const postAgreementMonthlySolarBillCop = firstPostAgreementIndex >= 0 && proposedYearly[firstPostAgreementIndex] !== undefined
       ? proposedYearly[firstPostAgreementIndex] / 12
       : null;
+    // net_profit e internal_rate_of_return son métricas calculadas por la
+    // propuesta elegida. No se intenta reconstruirlas desde CAPEX o cuota.
+    const totalEnergySavingsCop = optionalFinite(option.net_profit)
+      ?? optionalFinite(option.electricity_net_profit)
+      ?? optionalFinite(option.electricity_utility_savings_total);
+    const rawAnnualReturn = optionalFinite(option.internal_rate_of_return)
+      ?? optionalFinite(option.electricity_internal_rate_of_return);
+    const annualInvestmentReturnPercent = rawAnnualReturn === null
+      ? null
+      : rawAnnualReturn <= 1 ? rawAnnualReturn * 100 : rawAnnualReturn;
 
-    if (monthlyFinancingPaymentCop !== null || initialMonthlySolarBillCop !== null || postAgreementMonthlySolarBillCop !== null) {
+    if (monthlyFinancingPaymentCop !== null || initialMonthlySolarBillCop !== null || postAgreementMonthlySolarBillCop !== null || totalEnergySavingsCop !== null || annualInvestmentReturnPercent !== null) {
       return {
         monthlyFinancingPaymentCop: rounded(monthlyFinancingPaymentCop),
         initialMonthlySolarBillCop: rounded(initialMonthlySolarBillCop),
         postAgreementMonthlySolarBillCop: rounded(postAgreementMonthlySolarBillCop),
+        totalEnergySavingsCop: rounded(totalEnergySavingsCop),
+        annualInvestmentReturnPercent: rounded(annualInvestmentReturnPercent),
         agreementYears: termYears === null ? null : Math.round(termYears),
         sources: {
           ...(monthlyFinancingPaymentCop !== null ? { monthlyFinancingPaymentCop: "OpenSolar" as const } : {}),
           ...(initialMonthlySolarBillCop !== null ? { initialMonthlySolarBillCop: "OpenSolar" as const } : {}),
           ...(postAgreementMonthlySolarBillCop !== null ? { postAgreementMonthlySolarBillCop: "OpenSolar" as const } : {}),
+          ...(totalEnergySavingsCop !== null ? { totalEnergySavingsCop: "OpenSolar" as const } : {}),
+          ...(annualInvestmentReturnPercent !== null ? { annualInvestmentReturnPercent: "OpenSolar" as const } : {}),
         },
       };
     }
@@ -412,6 +432,8 @@ function resolveOpenSolarFinancialTerms(rawDesign: Record<string, unknown> | nul
     monthlyFinancingPaymentCop: null,
     initialMonthlySolarBillCop: null,
     postAgreementMonthlySolarBillCop: null,
+    totalEnergySavingsCop: null,
+    annualInvestmentReturnPercent: null,
     agreementYears: null,
     sources: {},
   };
@@ -797,6 +819,8 @@ export async function getOpenSolarProjectPrefill(config: OpenSolarProjectLookupI
   if (financialTerms.monthlyFinancingPaymentCop === null) unavailableFields.push("cuota mensual de financiación");
   if (financialTerms.initialMonthlySolarBillCop === null) unavailableFields.push("factura solar residual año 1");
   if (financialTerms.postAgreementMonthlySolarBillCop === null) unavailableFields.push("factura solar residual posterior al plazo");
+  if (financialTerms.totalEnergySavingsCop === null) unavailableFields.push("ahorro total de energía");
+  if (financialTerms.annualInvestmentReturnPercent === null) unavailableFields.push("rendimiento anual de la propuesta");
   if (!rawDesign && solarMetrics.annualGenerationKwh === null) {
     warnings.push("OpenSolar no expuso resultados de generación en este proyecto o plan API; se requiere Raw Data API o una propuesta/factura validada para completar esos campos.");
   }
@@ -838,6 +862,8 @@ export async function getOpenSolarProjectPrefill(config: OpenSolarProjectLookupI
       monthlyFinancingPaymentCop: financialTerms.monthlyFinancingPaymentCop,
       initialMonthlySolarBillCop: financialTerms.initialMonthlySolarBillCop,
       postAgreementMonthlySolarBillCop: financialTerms.postAgreementMonthlySolarBillCop,
+      totalEnergySavingsCop: financialTerms.totalEnergySavingsCop,
+      annualInvestmentReturnPercent: financialTerms.annualInvestmentReturnPercent,
       financingAgreementYears: financialTerms.agreementYears,
       canActivateAllySolarProgram: currentMonthlyBill !== null && solarSavingsCoveragePercent !== null && solarSavingsCoveragePercent > 0,
       systemsCount,
