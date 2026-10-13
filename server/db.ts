@@ -193,11 +193,17 @@ function createPool(): mysql.Pool {
     password: decodeURIComponent(url.password),
     database: url.pathname.slice(1),
     ssl: sslConfig,
-    connectionLimit: 10,
-    maxIdle: 5,
+    // 10/50 se saturaba ("Queue limit reached") con solo 20 cargadores
+    // reconectando a la vez en la prueba de carga de staging (2026-10-09).
+    // Staging permite hasta 151 conexiones MySQL (confirmado con
+    // SHOW VARIABLES LIKE 'max_connections'); 30/200 deja margen amplio
+    // para escalar la prueba de carga hasta 100 estaciones sin acercarse
+    // a ese límite.
+    connectionLimit: 30,
+    maxIdle: 10,
     idleTimeout: 60000,
     waitForConnections: true,
-    queueLimit: 50,
+    queueLimit: 200,
     connectTimeout: 10000,
     enableKeepAlive: true,
     keepAliveInitialDelay: 30000,
@@ -804,7 +810,7 @@ export async function updateStationOnlineStatus(ocppIdentity: string, isOnline: 
   const station = await getChargingStationByOcppIdentity(ocppIdentity);
   if (station) {
     await db.update(chargingStations)
-      .set({ isOnline: isOnline ? 1 : 0, lastBootNotification: isOnline ? new Date().toISOString() : undefined } as any)
+      .set({ isOnline: isOnline ? 1 : 0, lastBootNotification: isOnline ? new Date().toISOString().slice(0, 19).replace("T", " ") : undefined } as any)
       .where(eq(chargingStations.id, station.id));
   }
 
@@ -2480,7 +2486,13 @@ export async function getInvestorPendingBalance(investorId: number) {
 export async function createOcppLog(log: InsertOcppLog) {
   const db = (await getDb())!;
   if (!db) return;
-  await db.insert(ocppLogs).values(log);
+  try {
+    await db.insert(ocppLogs).values(log);
+  } catch (err) {
+    // Logging best-effort: un fallo aquí (ej. pool saturado) nunca debe
+    // propagarse como unhandled rejection ni interrumpir el flujo OCPP real.
+    console.error("[OCPP Log] Error guardando log:", err);
+  }
 }
 
 export async function getOcppLogsByStation(stationId: number, limit = 100) {
@@ -4111,7 +4123,7 @@ export async function acknowledgeOcppAlert(alertId: number, userId?: number): Pr
   await db.update(ocppAlerts)
     .set({
       acknowledged: 1,
-      acknowledgedAt: new Date().toISOString(),
+      acknowledgedAt: new Date().toISOString().slice(0, 19).replace("T", " "),
       acknowledgedBy: userId,
     } as any)
     .where(eq(ocppAlerts.id, alertId));
@@ -4124,13 +4136,14 @@ export async function autoResolveDisconnectionAlerts(ocppIdentity: string): Prom
   const db = (await getDb())!;
   if (!db) return 0;
   
+  const now = new Date().toISOString().slice(0, 19).replace("T", " ");
   const result = await db.update(ocppAlerts)
     .set({
-      resolvedAt: new Date().toISOString(),
+      resolvedAt: now,
       autoResolved: 1,
       resolvedReason: "Cargador reconectado automáticamente",
       acknowledged: 1,
-      acknowledgedAt: new Date().toISOString(),
+      acknowledgedAt: now,
     } as any)
     .where(
       and(
@@ -4922,11 +4935,19 @@ export async function cleanupOrphanedTransactions(maxAgeMinutes: number = 60): P
   const db = (await getDb())!;
   if (!db) return 0;
   
-  const cutoffTime = new Date(Date.now() - maxAgeMinutes * 60 * 1000);
-  
   // Buscar en ambas columnas por compatibilidad histórica. Cada ruta de cierre
   // debe escribir ambas: de otro modo una sesión CANCELLED puede seguir siendo
   // considerada activa por el mapa, precio dinámico u overstay.
+  //
+  // El cutoff se calcula con NOW() del propio servidor de BD, nunca con un
+  // Date de JS. `updatedAt` es CURRENT_TIMESTAMP/ON UPDATE autogenerado por
+  // la BD y su zona horaria depende de la sesión de la BD (@@session.time_zone),
+  // no de este proceso. Comparar un cutoff en JS (siempre UTC vía
+  // toISOString()) contra esa columna solo funciona si la sesión de BD
+  // también está en UTC — en cualquier otra zona (confirmado localmente:
+  // MySQL con time_zone=SYSTEM en una máquina en America/Bogota) el desfase
+  // hace que la condición se cumpla casi de inmediato y cierre+cobre sesiones
+  // que llevan segundos de iniciadas y siguen cargando activamente.
   const orphaned = await db.select()
     .from(transactions)
     .where(
@@ -4936,7 +4957,7 @@ export async function cleanupOrphanedTransactions(maxAgeMinutes: number = 60): P
           eq(transactions.status, "IN_PROGRESS"),
           eq(transactions.transactionStatus, "IN_PROGRESS"),
         ),
-        lte(transactions.updatedAt, cutoffTime.toISOString())
+        sql`${transactions.updatedAt} <= (NOW() - INTERVAL ${maxAgeMinutes} MINUTE)`
       )
     );
   
@@ -4953,7 +4974,7 @@ export async function cleanupOrphanedTransactions(maxAgeMinutes: number = 60): P
       await db.update(transactions)
         .set({
           ...terminalTransactionStatus("COMPLETED"),
-          endTime: new Date().toISOString(),
+          endTime: new Date().toISOString().slice(0, 19).replace("T", " "),
           stopReason: `AUTO_COMPLETE: Sesión finalizada automáticamente (sin actividad por ${maxAgeMinutes} min)`,
         })
         .where(eq(transactions.id, t.id));
@@ -5037,7 +5058,7 @@ export async function cleanupOrphanedTransactions(maxAgeMinutes: number = 60): P
       await db.update(transactions)
         .set({
           ...terminalTransactionStatus("CANCELLED"),
-          endTime: new Date().toISOString(),
+          endTime: new Date().toISOString().slice(0, 19).replace("T", " "),
           stopReason: `AUTO_CLEANUP: Sin actividad por más de ${maxAgeMinutes} minutos`,
         })
         .where(eq(transactions.id, t.id));

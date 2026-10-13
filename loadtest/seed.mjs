@@ -82,10 +82,10 @@ async function ensureTariff(stationId) {
 
 async function ensureCharger(stationId, stationNumber, chargerNumber) {
   const identity = `${config.stationPrefix}-S${String(stationNumber).padStart(3, "0")}-C${String(chargerNumber).padStart(2, "0")}`;
-  const existing = await one("SELECT id FROM chargers WHERE ocpp_identity = ? LIMIT 1", [identity]);
+  const existing = await one("SELECT id FROM chargers WHERE ocppIdentity = ? LIMIT 1", [identity]);
   if (existing?.id) return { id: Number(existing.id), identity };
   const [result] = await pool.execute(
-    `INSERT INTO chargers (station_id, charger_code, display_name, ocpp_identity, brand, model, serial_number, firmware_version, power_kw, max_concurrent_sessions, charger_status, is_online, is_active, notes)
+    `INSERT INTO chargers (stationId, charger_code, display_name, ocppIdentity, brand, model, serialNumber, firmwareVersion, powerKw, max_concurrent_sessions, charger_status, isOnline, isActive, notes)
      VALUES (?, ?, ?, ?, 'EVGreen', 'LoadSimulator', ?, 'loadtest', ?, ?, 'UNKNOWN', 0, 1, ?)`,
     [stationId, `C${String(chargerNumber).padStart(2, "0")}`, `Load charger ${stationNumber}-${chargerNumber}`, identity, identity, config.powerKw, config.connectorsPerCharger, `EVGREEN_LOADTEST:${config.runId}`],
   );
@@ -96,7 +96,7 @@ async function ensureEvse(stationId, chargerId, connectorId) {
   const existing = await one("SELECT id FROM evses WHERE stationId = ? AND charger_id = ? AND connectorId = ? LIMIT 1", [stationId, chargerId, connectorId]);
   if (existing?.id) return Number(existing.id);
   const [result] = await pool.execute(
-    `INSERT INTO evses (stationId, evseIdLocal, connectorId, connector_label, connector_type, charge_type, powerKw, maxVoltage, maxAmperage, connectorStatus, charger_id, isActive)
+    `INSERT INTO evses (stationId, evseIdLocal, connectorId, connector_label, connector_type, charge_type, powerKw, maxVoltage, maxAmperage, connector_status, charger_id, isActive)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'AVAILABLE', ?, 1)`,
     [stationId, connectorId, connectorId, `C${connectorId}`, config.connectorType, config.chargeType, config.powerKw, config.chargeType === "DC" ? 1000 : 240, config.chargeType === "DC" ? 200 : 32, chargerId],
   );

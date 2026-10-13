@@ -12,6 +12,7 @@ import * as db from "../db";
 import { getWompiKeys, getTransactionStatus, getTransactionByReference } from "./config";
 
 let reconciliationInterval: ReturnType<typeof setInterval> | null = null;
+let hasWarnedMissingWompiConfig = false;
 
 const RECONCILIATION_INTERVAL_MS = 5 * 60 * 1000; // 5 minutos
 const MAX_AGE_HOURS = 48; // Solo reconciliar transacciones de las últimas 48 horas
@@ -29,9 +30,17 @@ export async function reconcilePendingTransactions(): Promise<{
 
   const keys = await getWompiKeys();
   if (!keys) {
-    console.warn("[Reconciliación] Wompi no configurado, saltando reconciliación");
+    // Advertir solo la primera vez: en entornos sin llaves de Wompi (ej. staging)
+    // esto se repetiría cada 5 minutos para siempre sin aportar nada nuevo.
+    if (!hasWarnedMissingWompiConfig) {
+      console.warn("[Reconciliación] Wompi no configurado, saltando reconciliación");
+      hasWarnedMissingWompiConfig = true;
+    } else {
+      console.log("[Reconciliación] Wompi no configurado, saltando reconciliación");
+    }
     return { processed: 0, credited: 0, declined: 0, stillPending: 0, errors: 0, totalCreditedAmount: 0 };
   }
+  hasWarnedMissingWompiConfig = false;
 
   let processed = 0;
   let credited = 0;
