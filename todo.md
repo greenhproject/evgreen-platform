@@ -190,4 +190,4 @@
 - [x] Añadir regresión para los campos de la propuesta y un mensaje de precarga que confirma ahorro total y retorno anual, evitando que queden invisibles tras la consulta.
 - [x] Validar TypeScript, 22 pruebas focales y 245 archivos / 2.367 pruebas integrales aprobadas; 5 suites de integración y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo aprobado.
 - [x] QA de consulta segura: el endpoint de precarga devolvió para `11062957` los valores comerciales correctos, sin guardar ni modificar el Espacio.
-- [ ] Guardar checkpoint WebDev, ejecutar publicación segura y verificar el despliegue.
+- [x] Guardar checkpoint `44e6dd27`, publicar de forma segura y verificar Railway exitoso en producción #7030855944 y staging #7030855933.
