@@ -1,5 +1,4 @@
 
-
 ## Espacios — corrección segura de fotografías (2026-10-13)
 
 - [x] Permitir quitar fotos recién seleccionadas tanto en creación como en edición, sin enviar una solicitud de red; se revoca la URL temporal y se conserva una portada local cuando aún hay fotos.
@@ -10,3 +9,12 @@
 - [x] Validación: TypeScript, 14 pruebas focales, suite completa 246 archivos / 2.371 pruebas aprobadas (5 suites y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada), build productivo y ruta local `/admin/spaces` HTTP 200.
 - [x] Guardar checkpoint `4b4f76f2`, publicar de forma segura en GitHub (`4b4f76f22`) y verificar Railway: staging #7032555484 y producción #7032555535 finalizaron `success`; `evgreen.lat` y `app.evgreen.lat` respondieron HTTP 200.
 - [x] Confirmar el despliegue anterior de Crear Espacio: staging #7031639459 y producción #7031639357 finalizaron `success` después de restablecer la autorización GitHub.
+
+## Espacios — márgenes seguros de la Ficha del Aliado (2026-10-13)
+
+- [x] Corregir el desbordamiento de “Operación y demanda del punto” que invadía el footer de la Ficha del Aliado cuando el perfil técnico incluía suficientes filas.
+- [x] Calcular dinámicamente si la sección supera la zona segura del pie en formato Letter; cuando ocurre, moverla a una página operativa dedicada con los mismos datos y contexto comercial.
+- [x] Verificar visualmente una muestra con los datos reportados: el perfil técnico termina antes del pie y la operación queda íntegra dentro de sus márgenes.
+- [x] Añadir regresiones para corte seguro y para perfiles con holgura.
+- [x] Ejecutar validación integral: 246 archivos / 2.373 pruebas aprobadas, 5 suites y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build, TypeScript, revisión visual de la muestra y servicio local HTTP 200 correctos.
+- [ ] Guardar checkpoint, publicar de forma segura y verificar Railway.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildAllyProjectionDisclosure, buildAllySpacePdfContent, type AllySpacePdfData } from "./ally-space-pdf-service";
+import { buildAllyProjectionDisclosure, buildAllySpacePdfContent, requiresDedicatedOperatingPage, type AllySpacePdfData } from "./ally-space-pdf-service";
 
 const sampleData: AllySpacePdfData = {
   code: "SPE-TEST-0001",
@@ -78,6 +78,20 @@ describe("buildAllySpacePdfContent", () => {
     expect(allText).toContain("Carta aceptada");
     expect(allText.toLowerCase()).not.toContain("nano banana");
     expect(allText).toContain("140870");
+  });
+
+  it("mueve operación a una hoja segura cuando el perfil técnico alcanzaría el pie", () => {
+    const content = buildAllySpacePdfContent(sampleData);
+
+    expect(requiresDedicatedOperatingPage(content.profileRows, content.technicalRows, content.operatingRows)).toBe(true);
+  });
+
+  it("conserva operación en el perfil cuando hay holgura real antes del pie", () => {
+    expect(requiresDedicatedOperatingPage(
+      [["Nombre", "Espacio"]],
+      [["Potencia", "120 kW"]],
+      [["Horario", "24 horas"]],
+    )).toBe(false);
   });
 
   it("no expone conceptos reservados del prospecto de inversión", () => {

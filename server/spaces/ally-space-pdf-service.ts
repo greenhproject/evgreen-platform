@@ -1018,7 +1018,30 @@ function addCover(doc: InstanceType<typeof jsPDF>, data: AllySpacePdfData, conte
   doc.text(`${data.code} · ${data.generatedAt.toLocaleDateString("es-CO", { year: "numeric", month: "long", day: "numeric" })} · Documento confidencial para el aliado`, width / 2, height - 11, { align: "center" });
 }
 
-function addProfilePage(doc: InstanceType<typeof jsPDF>, data: AllySpacePdfData, content: AllyPdfContent, logo: { data: string; format: string } | null, width: number, height: number, margin: number) {
+const PDF_ROW_HEIGHT_MM = 9;
+const PDF_FOOTER_SAFE_CLEARANCE_MM = 22;
+
+/**
+ * Calcula si la sección operativa necesita su propia hoja antes de dibujarla.
+ * Conserva los perfiles cortos en una hoja, pero nunca permite que una fila
+ * llegue a la zona reservada al footer en formato Letter.
+ */
+export function requiresDedicatedOperatingPage(
+  profileRows: readonly unknown[],
+  technicalRows: readonly unknown[],
+  operatingRows: readonly unknown[],
+  pageHeight = 279.4,
+): boolean {
+  const profileStartY = 23;
+  const profileContentStartY = profileStartY + 14;
+  const technicalStartY = profileContentStartY + profileRows.length * PDF_ROW_HEIGHT_MM + 9;
+  const technicalContentStartY = technicalStartY + 14;
+  const operatingStartY = technicalContentStartY + technicalRows.length * PDF_ROW_HEIGHT_MM + 9 + 14;
+  const operatingEndY = operatingStartY + operatingRows.length * PDF_ROW_HEIGHT_MM;
+  return operatingEndY > pageHeight - PDF_FOOTER_SAFE_CLEARANCE_MM;
+}
+
+function addProfilePage(doc: InstanceType<typeof jsPDF>, data: AllySpacePdfData, content: AllyPdfContent, logo: { data: string; format: string } | null, width: number, height: number, margin: number, includeOperatingRows: boolean) {
   addHeader(doc, data, logo, width, margin);
   const contentWidth = width - margin * 2;
   let y = 23;
@@ -1026,8 +1049,67 @@ function addProfilePage(doc: InstanceType<typeof jsPDF>, data: AllySpacePdfData,
   y = drawRows(doc, content.profileRows, margin, y, contentWidth, 54) + 9;
   y = drawSectionTitle(doc, "ESPECIFICACIONES TÉCNICAS PRELIMINARES", margin, y, contentWidth);
   y = drawRows(doc, content.technicalRows, margin, y, contentWidth, 57) + 9;
+  if (includeOperatingRows) {
+    y = drawSectionTitle(doc, "OPERACIÓN Y DEMANDA DEL PUNTO", margin, y, contentWidth);
+    drawRows(doc, content.operatingRows, margin, y, contentWidth, 54);
+  }
+}
+
+/**
+ * Mantiene los datos operativos fuera de la zona reservada al pie de página.
+ * Algunos espacios incluyen las tres métricas solares opcionales y hacen que
+ * el perfil técnico llegue al final de la hoja. Separar esta sección evita
+ * que una fila invada la numeración o quede recortada al exportar a Letter.
+ */
+function addOperatingPage(doc: InstanceType<typeof jsPDF>, data: AllySpacePdfData, content: AllyPdfContent, logo: { data: string; format: string } | null, width: number, height: number, margin: number) {
+  addHeader(doc, data, logo, width, margin);
+  const contentWidth = width - margin * 2;
+  let y = 25;
   y = drawSectionTitle(doc, "OPERACIÓN Y DEMANDA DEL PUNTO", margin, y, contentWidth);
-  drawRows(doc, content.operatingRows, margin, y, contentWidth, 54);
+  y = drawRows(doc, content.operatingRows, margin, y, contentWidth, 54) + 13;
+
+  const isAlwaysAvailable = Boolean(data.is24Hours);
+  const availability = isAlwaysAvailable
+    ? "El espacio declara disponibilidad 24 horas, 7 días a la semana."
+    : `El horario informado es ${data.operatingHoursStart || "por confirmar"} a ${data.operatingHoursEnd || "por confirmar"}.`;
+  const demand = data.estimatedDailyVehicles
+    ? `${formatNumber(data.estimatedDailyVehicles)} vehículos/día son la referencia declarada para la evaluación preliminar.`
+    : "La referencia de flujo vehicular se confirmará durante la visita técnica.";
+  const cards: Array<[string, string, [number, number, number], [number, number, number]]> = [
+    ["DISPONIBILIDAD DECLARADA", availability, COLORS.greenLight, COLORS.greenDark],
+    ["REFERENCIA DE DEMANDA", demand, [239, 246, 255], COLORS.blue],
+  ];
+  const gap = 6;
+  const cardWidth = (contentWidth - gap) / 2;
+  cards.forEach(([title, detail, fill, titleColor], index) => {
+    const x = margin + index * (cardWidth + gap);
+    setColor(doc, fill, "fill");
+    doc.roundedRect(x, y, cardWidth, 37, 3, 3, "F");
+    setColor(doc, titleColor);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7.7);
+    doc.text(title, x + 6, y + 9);
+    setColor(doc, COLORS.gray700);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.4);
+    doc.text(doc.splitTextToSize(detail, cardWidth - 12).slice(0, 4), x + 6, y + 17);
+  });
+  y += 49;
+
+  setColor(doc, [255, 251, 235], "fill");
+  doc.roundedRect(margin, y, contentWidth, 28, 3, 3, "F");
+  setColor(doc, [146, 64, 14]);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.text("VALIDACIÓN OPERATIVA", margin + 6, y + 9);
+  setColor(doc, COLORS.gray700);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.3);
+  const validation = doc.splitTextToSize(
+    "La demanda, el horario y la operación final se verifican en sitio antes de definir la ingeniería, la capacidad y el cronograma de implementación.",
+    contentWidth - 12,
+  );
+  doc.text(validation.slice(0, 3), margin + 6, y + 16);
 }
 
 function addLocationPage(
@@ -1240,10 +1322,20 @@ export async function generateAllySpacePdf(data: AllySpacePdfData): Promise<Buff
   const staticMapUrl = buildStaticMapUrl(data);
   const mapImage = staticMapUrl ? await downloadImageAsBase64(staticMapUrl) : null;
   const coverImage = fallbackIndex >= 0 ? photoImages[fallbackIndex] || defaultCover : defaultCover;
+  const needsDedicatedOperatingPage = requiresDedicatedOperatingPage(
+    content.profileRows,
+    content.technicalRows,
+    content.operatingRows,
+    height,
+  );
 
   addCover(doc, data, content, logo, coverImage, coverPhoto, width, height, margin);
   doc.addPage();
-  addProfilePage(doc, data, content, logo, width, height, margin);
+  addProfilePage(doc, data, content, logo, width, height, margin, !needsDedicatedOperatingPage);
+  if (needsDedicatedOperatingPage) {
+    doc.addPage();
+    addOperatingPage(doc, data, content, logo, width, height, margin);
+  }
   doc.addPage();
   addLocationPage(doc, data, logo, mapImage, width, height, margin);
   doc.addPage();
