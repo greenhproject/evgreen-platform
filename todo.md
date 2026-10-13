@@ -8,4 +8,5 @@
 - [x] Sincronizar de forma transaccional la galería de Espacios con el snapshot heredado de Crowdfunding para que una foto retirada o reclasificada no permanezca visible a inversionistas.
 - [x] Aplicar y verificar migración aditiva 0065 (`space_photo_history`, 10 columnas); no se intenta borrado físico de storage no soportado, sino el retiro consistente de referencias aplicativas.
 - [x] Validación: TypeScript, 14 pruebas focales, suite completa 246 archivos / 2.371 pruebas aprobadas (5 suites y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada), build productivo y ruta local `/admin/spaces` HTTP 200.
-- [ ] Guardar checkpoint, publicar de forma segura y verificar Railway.
+- [x] Guardar checkpoint `4b4f76f2`, publicar de forma segura en GitHub (`4b4f76f22`) y verificar Railway: staging #7032555484 y producción #7032555535 finalizaron `success`; `evgreen.lat` y `app.evgreen.lat` respondieron HTTP 200.
+- [x] Confirmar el despliegue anterior de Crear Espacio: staging #7031639459 y producción #7031639357 finalizaron `success` después de restablecer la autorización GitHub.
