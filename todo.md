@@ -191,3 +191,12 @@
 - [x] Validar TypeScript, 22 pruebas focales y 245 archivos / 2.367 pruebas integrales aprobadas; 5 suites de integración y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo aprobado.
 - [x] QA de consulta segura: el endpoint de precarga devolvió para `11062957` los valores comerciales correctos, sin guardar ni modificar el Espacio.
 - [x] Guardar checkpoint `44e6dd27`, publicar de forma segura y verificar Railway exitoso en producción #7030855944 y staging #7030855933.
+
+## Ficha del aliado — rediseño visual comercial (2026-10-13)
+
+- [x] Generar una imagen editorial original con Nano Banana Pro y alojarla como asset privado del proyecto; representa solar + carga EV sin textos, logotipos ni marcas de terceros.
+- [x] Convertir la sección solar en una lámina de propuesta: hero cinematográfico, cuatro tarjetas de beneficio con contexto, contraste noche/esmeralda y utilidad global en dos momentos de valor.
+- [x] Suprimir datos técnicos redundantes y mantener sólo notas comerciales de alcance, acuerdo y validación; no se exponen proveedores de modelación en la ficha.
+- [x] Renderizar y revisar la página solar final: jerarquía legible, tarjetas, imagen, panel de utilidad global y pie de lectura sin solapes ni cortes.
+- [x] Validación integral: 245 archivos / 2.367 pruebas aprobadas; 5 suites de integración y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build productivo aprobado.
+- [ ] Guardar checkpoint WebDev, ejecutar publicación segura y verificar el despliegue.
