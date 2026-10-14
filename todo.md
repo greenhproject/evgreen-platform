@@ -25,4 +25,4 @@
 - [x] Aclarar en la interfaz que 0% aplica cuando el dueño del espacio es el mismo inversionista y no existe una comisión independiente.
 - [x] Alinear los rangos de validación del reparto neto para admitir 0–100%, manteniendo la regla de que Inversor + EVGreen sumen exactamente 100%.
 - [x] Ejecutar pruebas y QA sin escritura: normalizador de porcentaje con 0 válido, 247 archivos / 2.376 pruebas aprobadas, 5 suites y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; TypeScript, build y servicio local HTTP 200 correctos. El navegador sandbox no conserva sesión administrativa y redirigió a inicio de sesión; no se generó ni guardó ningún prospecto.
-- [ ] Guardar checkpoint, publicar de forma segura y verificar Railway.
+- [x] Guardar checkpoint `9079cd66`, rebasar de forma segura sobre `ff671a4ed`, publicar en GitHub (`aa1e911e1`) y verificar Railway: staging #7054098159 y producción #7054098111 finalizaron `success`; `evgreen.lat` y `app.evgreen.lat` respondieron HTTP 200.
