@@ -147,6 +147,15 @@ export function useNotifications() {
       onToken: registerNativeToken,
       onForegroundNotification: (title, body) => {
         toast.info(title, { description: body, duration: 5000 });
+        // El payload de este push trae su propio número de badge calculado
+        // en el momento en que el servidor lo envió — si llegan varios push
+        // seguidos (ej. varias pruebas rápidas desde Configuración), APNs no
+        // garantiza que lleguen en el mismo orden en que se mandaron, así
+        // que ese número puede quedar desincronizado del conteo real.
+        // Mientras la app está en primer plano sí podemos corregirlo de
+        // inmediato pidiendo el conteo real en vez de confiar en el que
+        // trae el push.
+        syncBadgeFromServerRef.current();
       },
       onNotificationTap: (path) => {
         window.dispatchEvent(new CustomEvent("evgreen:native-navigate", { detail: path }));
@@ -266,6 +275,7 @@ export function useNotifications() {
           onToken: registerNativeToken,
           onForegroundNotification: (title, body) => {
             toast.info(title, { description: body, duration: 5000 });
+            syncBadgeFromServerRef.current();
           },
           onNotificationTap: (path) => {
             window.dispatchEvent(new CustomEvent("evgreen:native-navigate", { detail: path }));
