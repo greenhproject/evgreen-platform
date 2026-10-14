@@ -61,4 +61,4 @@
 - [x] Agregar atajos `Ctrl/Cmd + K` y `/`, botón de búsqueda en la barra colapsada, limpieza con `Esc`, contador de resultados y estado vacío accesible.
 - [x] Cerrar automáticamente el panel móvil al seleccionar un resultado y conservar el menú completo al limpiar la consulta.
 - [x] Validar sin mutar datos: 3 regresiones focales de normalización/alias, suite completa 253 archivos / 2.396 pruebas aprobadas (5 suites y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada), TypeScript, build, diff y servicio local HTTP 200 correctos. El navegador del usuario mostró la pantalla pública sin sesión administrativa, por lo que no se modificó ningún registro durante la QA.
-- [ ] Guardar checkpoint, publicar de forma segura y verificar Railway.
+- [x] Guardar checkpoint `eb2f33ca`, rebasar de forma segura sobre `d4ef7d0a`, publicar en GitHub (`810a80d26`) y verificar Railway: staging #7078066832 y producción #7078066778 finalizaron `success`.
