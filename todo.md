@@ -53,3 +53,12 @@
 - [x] Proteger contra doble atribución: se limita la generación solar al menor valor entre kWh cargados y lectura verificada, se exige evidencia para una lectura verificada y se bloquean períodos solapados por estación.
 - [x] Validar sin crear lecturas, costos ni lotes operativos: prueba pública `carbon.publicSummary` responde HTTP 200 y mantiene `published:false`; pruebas focales de asignación solar/economía y suite completa 251 archivos / 2.390 pruebas aprobadas (5 suites y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada), TypeScript, build, esquema aplicado y servicio local HTTP 200 correctos. El navegador autenticado no pudo abrir el preview temporal durante la recuperación del sandbox.
 - [x] Guardar checkpoint `6672a3b2`, rebasar de forma segura sobre `a37150f9`, publicar en GitHub (`0bc645416`) y verificar Railway: staging #7077184725 y producción #7077185493 finalizaron `success`. `app.evgreen.lat` respondió HTTP 200 y el endpoint público devolvió `published:false`, por lo que no se publicaron métricas sin habilitación explícita. El dominio histórico `evgreen.lat` no enruta su API al servicio Railway (HTTP 404), por lo que no se usa para confirmar el módulo de aplicación.
+
+## Navegación — búsqueda rápida de módulos (2026-10-14)
+
+- [x] Incorporar búsqueda contextual en el menú administrativo, que filtra los módulos permitidos por rol sin alterar permisos ni rutas.
+- [x] Hacer la búsqueda tolerante a mayúsculas, acentos y sinónimos operativos (por ejemplo, “ocupación”, “sobreestadía”, “carbono” y “OCPP”).
+- [x] Agregar atajos `Ctrl/Cmd + K` y `/`, botón de búsqueda en la barra colapsada, limpieza con `Esc`, contador de resultados y estado vacío accesible.
+- [x] Cerrar automáticamente el panel móvil al seleccionar un resultado y conservar el menú completo al limpiar la consulta.
+- [x] Validar sin mutar datos: 3 regresiones focales de normalización/alias, suite completa 253 archivos / 2.396 pruebas aprobadas (5 suites y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada), TypeScript, build, diff y servicio local HTTP 200 correctos. El navegador del usuario mostró la pantalla pública sin sesión administrativa, por lo que no se modificó ningún registro durante la QA.
+- [ ] Guardar checkpoint, publicar de forma segura y verificar Railway.

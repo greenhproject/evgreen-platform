@@ -1,5 +1,6 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,6 +23,7 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
+import { matchesNavigationQuery, type NavigationSearchTarget } from "@shared/admin-menu-search";
 import { 
   LayoutDashboard, 
   LogOut, 
@@ -59,50 +61,54 @@ import {
 		Megaphone,
 		Network,
 		FileSignature,
-		Leaf
+		Leaf,
+		Search,
+		X
 } from "lucide-react";
-import { CSSProperties, useEffect, useRef, useState } from "react";
+import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from '@/components/DashboardLayoutSkeleton';
 import { Button } from "@/components/ui/button";
 
 // Items del menú con roles permitidos
-const adminMenuItems: { icon: any; label: string; path: string; roles?: string[] }[] = [
-  { icon: LayoutDashboard, label: "Dashboard", path: "/admin" },
-  { icon: MapPin, label: "Estaciones", path: "/admin/stations" },
-  { icon: Users, label: "Usuarios", path: "/admin/users" },
-  { icon: Receipt, label: "Transacciones", path: "/admin/transactions" },
-  { icon: DollarSign, label: "Tarifas", path: "/admin/tariffs" },
-  { icon: Wallet, label: "Liquidaciones", path: "/admin/payouts" },
-  { icon: Crown, label: "Inversionistas", path: "/admin/investors" },
-  { icon: UserCheck, label: "Onboarding", path: "/admin/onboarding" },
-  { icon: Server, label: "Backup & Recovery", path: "/admin/backup" },
-  { icon: Building2, label: "Crowdfunding", path: "/admin/crowdfunding" },
-	{ icon: Terminal, label: "Monitor OCPP", path: "/admin/ocpp-monitor" },
-	{ icon: Network, label: "OCPI / CargaME", path: "/admin/ocpi" },
-  { icon: Timer, label: "Penalizaciones", path: "/admin/overstay" },
-  { icon: ParkingSquare, label: "Ocupación Parqueadero", path: "/admin/occupancy-liquidations" },
-  { icon: Banknote, label: "Deudas", path: "/admin/debts" },
-  { icon: BarChart3, label: "Reportes", path: "/admin/reports" },
-	{ icon: Leaf, label: "Impacto y Bonos", path: "/admin/carbon", roles: ["admin", "staff"] },
-  { icon: Image, label: "Banners", path: "/admin/banners" },
-  { icon: Megaphone, label: "Anunciantes", path: "/admin/advertisers", roles: ["admin"] },
-  { icon: Bell, label: "Notificaciones", path: "/admin/notifications" },
-  { icon: RotateCcw, label: "Reembolsos", path: "/admin/refunds" },
-  { icon: AlertCircle, label: "Reclamos", path: "/admin/claims" },
-  { icon: Headphones, label: "Soporte", path: "/admin/support" },
-  { icon: PhoneCall, label: "Inicio Remoto", path: "/admin/remote-start" },
-  { icon: FileText, label: "Cotizaciones", path: "/admin/quotes", roles: ["admin", "staff", "host", "comercial"] },
-	{ icon: MapPin, label: "Espacios", path: "/admin/spaces", roles: ["admin", "staff", "comercial"] },
-	{ icon: FileSignature, label: "Contratos", path: "/admin/contracts", roles: ["admin"] },
-  { icon: Calculator, label: "Centro Financiero", path: "/admin/financial" },
-  { icon: Wrench, label: "Fondo Mantenimiento", path: "/admin/maintenance-fund" },
-  { icon: Bot, label: "Asistente IA", path: "/admin/ai-settings" },
-  { icon: Building, label: "Organizaciones SaaS", path: "/admin/organizations" },
-  { icon: MessageCircle, label: "WhatsApp", path: "/admin/whatsapp" },
-  { icon: Star, label: "Feedback Sesiones", path: "/admin/feedback" },
-  { icon: MonitorPlay, label: "Ver en TV / NOC", path: "/admin/tv" },
-  { icon: Settings, label: "Configuración", path: "/admin/settings" },
+type AdminMenuItem = NavigationSearchTarget & { icon: any; roles?: string[] };
+
+const adminMenuItems: AdminMenuItem[] = [
+	{ icon: LayoutDashboard, label: "Dashboard", path: "/admin", keywords: ["inicio", "resumen"] },
+	{ icon: MapPin, label: "Estaciones", path: "/admin/stations", keywords: ["cargadores", "electrolineras", "puntos de carga"] },
+	{ icon: Users, label: "Usuarios", path: "/admin/users", keywords: ["clientes", "perfiles"] },
+	{ icon: Receipt, label: "Transacciones", path: "/admin/transactions", keywords: ["pagos", "cargas", "sesiones"] },
+	{ icon: DollarSign, label: "Tarifas", path: "/admin/tariffs", keywords: ["precios", "tarifa dinámica"] },
+	{ icon: Wallet, label: "Liquidaciones", path: "/admin/payouts", keywords: ["pagos", "aliados", "payouts"] },
+	{ icon: Crown, label: "Inversionistas", path: "/admin/investors", keywords: ["inversión", "capital"] },
+	{ icon: UserCheck, label: "Onboarding", path: "/admin/onboarding", keywords: ["registro", "configurar experiencia"] },
+	{ icon: Server, label: "Backup & Recovery", path: "/admin/backup", keywords: ["respaldo", "recuperación"] },
+	{ icon: Building2, label: "Crowdfunding", path: "/admin/crowdfunding", keywords: ["financiación", "proyectos", "inversión"] },
+	{ icon: Terminal, label: "Monitor OCPP", path: "/admin/ocpp-monitor", keywords: ["logs", "servidor", "cargadores"] },
+	{ icon: Network, label: "OCPI / CargaME", path: "/admin/ocpi", keywords: ["interop", "roaming", "cargame"] },
+	{ icon: Timer, label: "Penalizaciones", path: "/admin/overstay", keywords: ["sobreestadía", "ocupación"] },
+	{ icon: ParkingSquare, label: "Ocupación Parqueadero", path: "/admin/occupancy-liquidations", keywords: ["parking", "sobreestadía", "estacionamiento"] },
+	{ icon: Banknote, label: "Deudas", path: "/admin/debts", keywords: ["cartera", "cobros"] },
+	{ icon: BarChart3, label: "Reportes", path: "/admin/reports", keywords: ["analítica", "indicadores"] },
+	{ icon: Leaf, label: "Impacto y Bonos", path: "/admin/carbon", keywords: ["carbono", "ambiental", "sostenibilidad"], roles: ["admin", "staff"] },
+	{ icon: Image, label: "Banners", path: "/admin/banners", keywords: ["anuncios", "publicidad"] },
+	{ icon: Megaphone, label: "Anunciantes", path: "/admin/advertisers", keywords: ["publicidad", "campañas"], roles: ["admin"] },
+	{ icon: Bell, label: "Notificaciones", path: "/admin/notifications", keywords: ["push", "avisos"] },
+	{ icon: RotateCcw, label: "Reembolsos", path: "/admin/refunds", keywords: ["devoluciones"] },
+	{ icon: AlertCircle, label: "Reclamos", path: "/admin/claims", keywords: ["pqrs", "quejas"] },
+	{ icon: Headphones, label: "Soporte", path: "/admin/support", keywords: ["ayuda", "tickets"] },
+	{ icon: PhoneCall, label: "Inicio Remoto", path: "/admin/remote-start", keywords: ["activar carga", "cargador"] },
+	{ icon: FileText, label: "Cotizaciones", path: "/admin/quotes", keywords: ["propuestas", "presupuestos"], roles: ["admin", "staff", "host", "comercial"] },
+	{ icon: MapPin, label: "Espacios", path: "/admin/spaces", keywords: ["postulaciones", "sitios", "aliados"], roles: ["admin", "staff", "comercial"] },
+	{ icon: FileSignature, label: "Contratos", path: "/admin/contracts", keywords: ["firma", "documentos"], roles: ["admin"] },
+	{ icon: Calculator, label: "Centro Financiero", path: "/admin/financial", keywords: ["finanzas", "ingresos", "costos"] },
+	{ icon: Wrench, label: "Fondo Mantenimiento", path: "/admin/maintenance-fund", keywords: ["mantenimiento", "reparaciones"] },
+	{ icon: Bot, label: "Asistente IA", path: "/admin/ai-settings", keywords: ["inteligencia artificial", "ebe"] },
+	{ icon: Building, label: "Organizaciones SaaS", path: "/admin/organizations", keywords: ["empresas", "tenants"] },
+	{ icon: MessageCircle, label: "WhatsApp", path: "/admin/whatsapp", keywords: ["mensajes", "plantillas"] },
+	{ icon: Star, label: "Feedback Sesiones", path: "/admin/feedback", keywords: ["opiniones", "calificaciones"] },
+	{ icon: MonitorPlay, label: "Ver en TV / NOC", path: "/admin/tv", keywords: ["noc", "pantalla", "monitor"] },
+	{ icon: Settings, label: "Configuración", path: "/admin/settings", keywords: ["ajustes", "preferencias"] },
 ];
 
 /** Filtra items del menú según el rol del usuario */
@@ -199,19 +205,65 @@ function AdminLayoutContent({
 }: AdminLayoutContentProps) {
   const { user, logout } = useAuth();
   const [location, setLocation] = useLocation();
-  const { state, toggleSidebar } = useSidebar();
+  const { state, toggleSidebar, openMobile, setOpenMobile } = useSidebar();
   const isCollapsed = state === "collapsed";
   const [isResizing, setIsResizing] = useState(false);
+  const [menuSearch, setMenuSearch] = useState("");
   const sidebarRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const menuItems = getMenuItemsForRole(user?.role);
+  const filteredMenuItems = useMemo(
+    () => menuItems.filter((item) => matchesNavigationQuery(item, menuSearch)),
+    [menuItems, menuSearch],
+  );
   const activeMenuItem = menuItems.find(item => item.path === location) || adminMenuItems.find(item => item.path === location);
   const isMobile = useIsMobile();
+
+  const focusMenuSearch = () => {
+    if (isMobile && !openMobile) {
+      setOpenMobile(true);
+      window.setTimeout(() => searchInputRef.current?.focus(), 180);
+      return;
+    }
+    if (isCollapsed) {
+      toggleSidebar();
+      window.setTimeout(() => searchInputRef.current?.focus(), 180);
+      return;
+    }
+    searchInputRef.current?.focus();
+  };
+
+  const openMenuItem = (path: string) => {
+    setLocation(path);
+    setMenuSearch("");
+    if (isMobile) setOpenMobile(false);
+  };
 
   useEffect(() => {
     if (isCollapsed) {
       setIsResizing(false);
+      setMenuSearch("");
     }
   }, [isCollapsed]);
+
+  useEffect(() => {
+    const handleNavigationSearchShortcut = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const isTyping = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable;
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        focusMenuSearch();
+        return;
+      }
+      if (event.key === "/" && !isTyping) {
+        event.preventDefault();
+        focusMenuSearch();
+      }
+    };
+
+    window.addEventListener("keydown", handleNavigationSearchShortcut);
+    return () => window.removeEventListener("keydown", handleNavigationSearchShortcut);
+  }, [isCollapsed, isMobile, openMobile, setOpenMobile, toggleSidebar]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -280,14 +332,74 @@ function AdminLayoutContent({
           </SidebarHeader>
 
           <SidebarContent className="gap-0 py-4">
+            {isCollapsed ? (
+              <SidebarMenu className="px-2 pb-3">
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    onClick={focusMenuSearch}
+                    tooltip="Buscar módulo"
+                    className="h-11 rounded-xl hover:bg-primary/10"
+                    aria-label="Buscar módulo"
+                  >
+                    <Search className="h-5 w-5 text-primary" />
+                    <span>Buscar módulo</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            ) : (
+              <div className="px-3 pb-3">
+                <label htmlFor="admin-navigation-search" className="sr-only">
+                  Buscar módulo del panel administrativo
+                </label>
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    ref={searchInputRef}
+                    id="admin-navigation-search"
+                    value={menuSearch}
+                    onChange={(event) => setMenuSearch(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        setMenuSearch("");
+                        event.currentTarget.blur();
+                      }
+                    }}
+                    placeholder="Buscar módulo..."
+                    className="h-10 rounded-xl border-border/70 bg-muted/45 pl-9 pr-16 text-sm shadow-none transition-colors placeholder:text-muted-foreground focus-visible:bg-background"
+                    aria-describedby="admin-navigation-search-help"
+                  />
+                  {menuSearch ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMenuSearch("");
+                        searchInputRef.current?.focus();
+                      }}
+                      className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      aria-label="Limpiar búsqueda de módulos"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  ) : (
+                    <kbd className="pointer-events-none absolute right-2 top-1/2 hidden -translate-y-1/2 rounded border border-border/70 bg-background/70 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground lg:inline">
+                      Ctrl K
+                    </kbd>
+                  )}
+                </div>
+                <p id="admin-navigation-search-help" className="mt-1.5 px-1 text-[10px] text-muted-foreground" aria-live="polite">
+                  {menuSearch ? `${filteredMenuItems.length} de ${menuItems.length} módulos` : `Busca entre ${menuItems.length} módulos · / o Ctrl K`}
+                </p>
+              </div>
+            )}
+
             <SidebarMenu className="px-2 space-y-1">
-              {menuItems.map(item => {
+              {filteredMenuItems.map(item => {
                 const isActive = location === item.path;
                 return (
                   <SidebarMenuItem key={item.path}>
                     <SidebarMenuButton
                       isActive={isActive}
-                      onClick={() => setLocation(item.path)}
+                      onClick={() => openMenuItem(item.path)}
                       tooltip={item.label}
                       className={`h-11 transition-all font-normal rounded-xl ${
                         isActive 
@@ -303,6 +415,11 @@ function AdminLayoutContent({
                   </SidebarMenuItem>
                 );
               })}
+              {!isCollapsed && filteredMenuItems.length === 0 ? (
+                <li className="mx-1 rounded-xl border border-dashed border-border/70 px-3 py-4 text-center text-sm text-muted-foreground" role="status">
+                  No se encontró un módulo para <span className="font-medium text-foreground">“{menuSearch}”</span>.
+                </li>
+              ) : null}
             </SidebarMenu>
           </SidebarContent>
 
