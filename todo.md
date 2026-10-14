@@ -42,4 +42,4 @@
 - [x] Permitir agregar, retirar y ajustar cantidades de componentes del catálogo; mostrar subtotal, descuento, total y comisión recalculados antes de guardar.
 - [x] Recalcular en el servidor de forma autoritativa los ítems, snapshots, totales y comisiones; conservar la edición sólo en cotizaciones abiertas y evitar productos no disponibles o cantidades inválidas.
 - [x] Añadir 2 regresiones de recálculo/snapshots y validar sin escritura: 30 pruebas focales, suite completa 250 archivos / 2.386 pruebas aprobadas, 5 suites y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; TypeScript, build y servicio local HTTP 200 correctos. No se modificó ninguna cotización real.
-- [ ] Guardar checkpoint, publicar de forma segura y verificar Railway.
+- [x] Guardar checkpoint `27b2c194`, rebasar de forma segura sobre `f5c97e55f`, publicar en GitHub (`11f21128f`) y verificar Railway: staging #7054778430 y producción #7054778421 finalizaron `success`; `evgreen.lat` y `app.evgreen.lat` respondieron HTTP 200.
