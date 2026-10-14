@@ -126,22 +126,26 @@ function CarbonImpactSummary() {
             </div>
             <div className="min-w-0 flex-1">
               <h3 className="font-semibold">Energía que has cargado</h3>
-              <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">Tu consumo se cruza proporcionalmente con generación solar medida y verificada de la red.</p>
+              <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">La movilidad eléctrica y la energía solar se reportan por separado para evitar doble conteo.</p>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3 mt-4">
+          <div className="grid grid-cols-2 gap-3 mt-4 sm:grid-cols-3">
             <div className="rounded-xl bg-background/75 border border-border/60 p-3">
               <p className="text-xl font-bold text-foreground">{format(impact.chargingKwh)} <span className="text-xs font-medium text-muted-foreground">kWh</span></p>
               <p className="mt-1 text-[11px] text-muted-foreground">en {impact.sessionCount} carga{impact.sessionCount === 1 ? "" : "s"} completada{impact.sessionCount === 1 ? "" : "s"}</p>
             </div>
             <div className="rounded-xl bg-background/75 border border-border/60 p-3">
-              <p className="text-xl font-bold text-emerald-600">{format(impact.estimatedAvoidedTco2e, 4)} <span className="text-xs font-medium text-muted-foreground">tCO₂e</span></p>
-              <p className="mt-1 text-[11px] text-muted-foreground">impacto solar estimado</p>
+              <p className="text-xl font-bold text-emerald-600">{impact.operationalImpactEnabled ? format(impact.operationalEstimatedAvoidedTco2e, 4) : "—"} <span className="text-xs font-medium text-muted-foreground">tCO₂e</span></p>
+              <p className="mt-1 text-[11px] text-muted-foreground">movilidad estimada</p>
+            </div>
+            <div className="rounded-xl bg-background/75 border border-border/60 p-3">
+              <p className="text-xl font-bold text-violet-600">{format(impact.solarEstimatedAvoidedTco2e, 4)} <span className="text-xs font-medium text-muted-foreground">tCO₂e</span></p>
+              <p className="mt-1 text-[11px] text-muted-foreground">impacto solar atribuible</p>
             </div>
           </div>
           <div className="mt-3 flex gap-2 rounded-lg bg-muted/50 p-2.5 text-[11px] leading-relaxed text-muted-foreground">
             <CloudSun className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
-            <p>{impact.note} Factor aplicado: {impact.factorYear}.</p>
+            <p>{impact.note} {impact.operationalImpactEnabled ? "La estimación de movilidad usa un factor trazable configurado por EVGreen." : `El impacto de movilidad aparecerá al habilitar un factor y fuente verificables; el solar usa UPME ${impact.solarFactorYear}.`}</p>
           </div>
         </div>
       </Card>

@@ -10,7 +10,7 @@ import {
   chargingStations,
   transactions,
 } from "../../drizzle/schema";
-import { calculateCarbonProgramEconomics, calculateSolarBackedImpact, toFiniteNumber } from "../../shared/carbon-program-calculations";
+import { calculateCarbonProgramEconomics, calculateEvDisplacementImpact, calculateSolarBackedImpact, toFiniteNumber } from "../../shared/carbon-program-calculations";
 import { getDb } from "../db";
 
 const UPME_FACTOR_SOURCE = "https://docs.upme.gov.co/Normatividad/085_2026.pdf";
@@ -143,9 +143,9 @@ async function getMeasuredImpact(userId?: number, since?: Date) {
   };
 }
 
-async function getMonthlyMeasuredImpact(since: Date, factor: number) {
+async function getMonthlyMeasuredImpact(since: Date, solarFactor: number, evDisplacement: { enabled: boolean; factor: number | null }) {
   const database = await getDb();
-  if (!database) return [] as { month: string; chargingKwh: number; verifiedSolarKwh: number; solarBackedKwh: number; estimatedAvoidedTco2e: number }[];
+  if (!database) return [] as { month: string; chargingKwh: number; verifiedSolarKwh: number; solarBackedKwh: number; estimatedAvoidedTco2e: number; operationalEstimatedAvoidedTco2e: number }[];
   // Agrupar por la primera expresión seleccionada funciona con ONLY_FULL_GROUP_BY
   // sin depender de cómo Drizzle califique el nombre de columna por cláusula.
   const chargeMonth = sql<string>`DATE_FORMAT(${transactions.endTime}, '%Y-%m')`;
@@ -174,7 +174,12 @@ async function getMonthlyMeasuredImpact(since: Date, factor: number) {
   for (const row of solar) months.set(row.month, { chargingKwh: months.get(row.month)?.chargingKwh ?? 0, verifiedSolarKwh: toFiniteNumber(row.kwh) });
   return [...months.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([month, values]) => ({
     month,
-    ...calculateSolarBackedImpact({ ...values, solarAvoidedFactorTco2ePerMwh: factor }),
+    ...calculateSolarBackedImpact({ ...values, solarAvoidedFactorTco2ePerMwh: solarFactor }),
+    operationalEstimatedAvoidedTco2e: calculateEvDisplacementImpact({
+      chargingKwh: values.chargingKwh,
+      enabled: evDisplacement.enabled,
+      displacementFactorTco2ePerMwh: evDisplacement.factor,
+    }).estimatedAvoidedTco2e,
   }));
 }
 
@@ -185,12 +190,25 @@ async function calculateDashboard() {
   const [lifetime, yearly, monthly] = await Promise.all([
     getMeasuredImpact(),
     getMeasuredImpact(undefined, yearAgo),
-    getMonthlyMeasuredImpact(yearAgo, settings.solarAvoidedFactorTco2ePerMwh),
+    getMonthlyMeasuredImpact(yearAgo, settings.solarAvoidedFactorTco2ePerMwh, {
+      enabled: settings.evDisplacementEnabled,
+      factor: settings.evDisplacementFactorTco2ePerMwh,
+    }),
   ]);
   const lifetimeImpact = calculateSolarBackedImpact({ ...lifetime, solarAvoidedFactorTco2ePerMwh: settings.solarAvoidedFactorTco2ePerMwh });
   const yearlyImpact = calculateSolarBackedImpact({ ...yearly, solarAvoidedFactorTco2ePerMwh: settings.solarAvoidedFactorTco2ePerMwh });
+  const lifetimeOperationalImpact = calculateEvDisplacementImpact({
+    chargingKwh: lifetime.chargingKwh,
+    enabled: settings.evDisplacementEnabled,
+    displacementFactorTco2ePerMwh: settings.evDisplacementFactorTco2ePerMwh,
+  });
+  const yearlyOperationalImpact = calculateEvDisplacementImpact({
+    chargingKwh: yearly.chargingKwh,
+    enabled: settings.evDisplacementEnabled,
+    displacementFactorTco2ePerMwh: settings.evDisplacementFactorTco2ePerMwh,
+  });
   const database = await getDb();
-  if (!database) return { settings, lifetimeImpact, yearlyImpact, monthly, costs: [], lots: [], economics: calculateCarbonProgramEconomics({ projectedTco2e: yearlyImpact.estimatedAvoidedTco2e, estimatedCreditPriceCopPerTco2e: settings.estimatedCreditPriceCopPerTco2e, registryCommissionPercent: settings.registryCommissionPercent, costs: [] }) };
+  if (!database) return { settings, lifetimeImpact, yearlyImpact, lifetimeOperationalImpact, yearlyOperationalImpact, monthly, costs: [], lots: [], economics: calculateCarbonProgramEconomics({ projectedTco2e: yearlyImpact.estimatedAvoidedTco2e, estimatedCreditPriceCopPerTco2e: settings.estimatedCreditPriceCopPerTco2e, registryCommissionPercent: settings.registryCommissionPercent, costs: [] }) };
   const [costs, lots] = await Promise.all([
     database.select().from(carbonCostEntries).orderBy(desc(carbonCostEntries.createdAt)),
     database.select().from(carbonCreditLots).orderBy(desc(carbonCreditLots.periodEnd)),
@@ -209,7 +227,7 @@ async function calculateDashboard() {
   const sellReview = settings.methodologyStatus === "VERIFIED"
     && economics.isEconomicallyViable
     && yearlyImpact.estimatedAvoidedTco2e >= settings.minimumSellableTco2e;
-  return { settings, lifetimeImpact, yearlyImpact, monthly, costs, lots, economics, sellReview };
+  return { settings, lifetimeImpact, yearlyImpact, lifetimeOperationalImpact, yearlyOperationalImpact, monthly, costs, lots, economics, sellReview };
 }
 
 export function buildCarbonRouter(router: any, publicProcedure: any, protectedProcedure: any, adminProcedure: any) {
@@ -222,9 +240,13 @@ export function buildCarbonRouter(router: any, publicProcedure: any, protectedPr
         methodologyStatus: dashboard.settings.methodologyStatus,
         chargingKwh: dashboard.lifetimeImpact.chargingKwh,
         solarBackedKwh: dashboard.lifetimeImpact.solarBackedKwh,
-        estimatedAvoidedTco2e: dashboard.lifetimeImpact.estimatedAvoidedTco2e,
-        factorYear: dashboard.settings.solarAvoidedFactorYear,
-        factorSourceUrl: dashboard.settings.solarAvoidedFactorSourceUrl,
+        solarEstimatedAvoidedTco2e: dashboard.lifetimeImpact.estimatedAvoidedTco2e,
+        solarFactorYear: dashboard.settings.solarAvoidedFactorYear,
+        solarFactorSourceUrl: dashboard.settings.solarAvoidedFactorSourceUrl,
+        operationalImpactEnabled: dashboard.lifetimeOperationalImpact.isEnabled,
+        operationalEstimatedAvoidedTco2e: dashboard.lifetimeOperationalImpact.estimatedAvoidedTco2e,
+        operationalFactorTco2ePerMwh: dashboard.lifetimeOperationalImpact.factorApplied,
+        operationalFactorSourceUrl: dashboard.settings.evDisplacementFactorSourceUrl,
       };
     }),
 
@@ -240,15 +262,24 @@ export function buildCarbonRouter(router: any, publicProcedure: any, protectedPr
         verifiedSolarKwh: userSolarBackedKwh,
         solarAvoidedFactorTco2ePerMwh: settings.solarAvoidedFactorTco2ePerMwh,
       });
+      const userOperationalImpact = calculateEvDisplacementImpact({
+        chargingKwh: userMeasured.chargingKwh,
+        enabled: settings.evDisplacementEnabled,
+        displacementFactorTco2ePerMwh: settings.evDisplacementFactorTco2ePerMwh,
+      });
       return {
         sessionCount: userMeasured.sessionCount,
         chargingKwh: userMeasured.chargingKwh,
         estimatedSolarBackedKwh: userImpact.solarBackedKwh,
-        estimatedAvoidedTco2e: userImpact.estimatedAvoidedTco2e,
-        factorYear: settings.solarAvoidedFactorYear,
-        factorSourceUrl: settings.solarAvoidedFactorSourceUrl,
+        solarEstimatedAvoidedTco2e: userImpact.estimatedAvoidedTco2e,
+        solarFactorYear: settings.solarAvoidedFactorYear,
+        solarFactorSourceUrl: settings.solarAvoidedFactorSourceUrl,
+        operationalImpactEnabled: userOperationalImpact.isEnabled,
+        operationalEstimatedAvoidedTco2e: userOperationalImpact.estimatedAvoidedTco2e,
+        operationalFactorTco2ePerMwh: userOperationalImpact.factorApplied,
+        operationalFactorSourceUrl: settings.evDisplacementFactorSourceUrl,
         methodologyStatus: settings.methodologyStatus,
-        note: "Estimación proporcional sobre generación solar medida y verificada de la red. No representa créditos emitidos, vendidos ni retirados.",
+        note: "La movilidad estimada y el impacto solar atribuible se reportan por separado. Ninguno representa créditos emitidos, vendidos ni retirados.",
       };
     }),
 

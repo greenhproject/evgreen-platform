@@ -33,7 +33,13 @@ Los factores se guardan con año, unidad, propósito y URL de la fuente. La conf
 | Inventario GEI | 0,220 tCO₂e/MWh | Referencia de inventario, no se mezcla con créditos |
 | Acreditación solar/eólica | 0,660 tCO₂e/MWh | Estimación solar de preauditoría |
 
-La atribución de movilidad eléctrica frente a línea base fósil permanece **apagada**. Solo podrá activarse luego de documentar metodología aplicable, adicionalidad, elegibilidad, línea base, fuente del factor y el plan de monitoreo correspondiente.
+La atribución de movilidad eléctrica frente a línea base fósil permanece **apagada** por defecto. Solo podrá activarse luego de documentar metodología aplicable, adicionalidad, elegibilidad, línea base, fuente del factor y el plan de monitoreo correspondiente. Al habilitarla, el panel exige factor y URL de fuente y calcula solo una métrica operativa visible:
+
+```text
+tCO₂e de movilidad estimada = kWh OCPP completados ÷ 1.000 × factor operativo EV
+```
+
+> La métrica de movilidad **no se suma** a la métrica solar, no alimenta por sí misma el punto de equilibrio y no se convierte en crédito. Ambas se mantienen separadas para evitar doble conteo y se etiquetan de acuerdo con su alcance en administración, perfil y landing.
 
 ## Señal económica de revisión
 

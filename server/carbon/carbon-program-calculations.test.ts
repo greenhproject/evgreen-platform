@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { annualizeImpact, calculateCarbonProgramEconomics, calculateSolarBackedImpact } from "../../shared/carbon-program-calculations";
+import { annualizeImpact, calculateCarbonProgramEconomics, calculateEvDisplacementImpact, calculateSolarBackedImpact } from "../../shared/carbon-program-calculations";
 
 describe("impacto solar asignable", () => {
   it("no atribuye más kWh solares que la carga o la medición verificada", () => {
@@ -27,6 +27,34 @@ describe("impacto solar asignable", () => {
   it("no anualiza cuando no hay período observado", () => {
     expect(annualizeImpact({ estimatedAvoidedTco2e: 2.3, observedDays: 0 })).toBe(0);
     expect(annualizeImpact({ estimatedAvoidedTco2e: 2.3, observedDays: 365 })).toBe(2.3);
+  });
+});
+
+describe("impacto operativo por movilidad eléctrica", () => {
+  it("estima movilidad sobre todos los kWh entregados solo cuando el factor está habilitado", () => {
+    const impact = calculateEvDisplacementImpact({
+      chargingKwh: 9_735.7,
+      enabled: true,
+      displacementFactorTco2ePerMwh: 0.5,
+    });
+    expect(impact).toMatchObject({
+      chargingKwh: 9_735.7,
+      factorApplied: 0.5,
+      isEnabled: true,
+    });
+    expect(impact.estimatedAvoidedTco2e).toBeCloseTo(4.86785, 8);
+  });
+
+  it("no genera una estimación operativa si no existe una metodología/factor habilitado", () => {
+    expect(calculateEvDisplacementImpact({
+      chargingKwh: 9_735.7,
+      enabled: false,
+      displacementFactorTco2ePerMwh: 0.5,
+    })).toMatchObject({
+      factorApplied: 0,
+      isEnabled: false,
+      estimatedAvoidedTco2e: 0,
+    });
   });
 });
 

@@ -62,3 +62,12 @@
 - [x] Cerrar automáticamente el panel móvil al seleccionar un resultado y conservar el menú completo al limpiar la consulta.
 - [x] Validar sin mutar datos: 3 regresiones focales de normalización/alias, suite completa 253 archivos / 2.396 pruebas aprobadas (5 suites y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada), TypeScript, build, diff y servicio local HTTP 200 correctos. El navegador del usuario mostró la pantalla pública sin sesión administrativa, por lo que no se modificó ningún registro durante la QA.
 - [x] Guardar checkpoint `eb2f33ca`, rebasar de forma segura sobre `d4ef7d0a`, publicar en GitHub (`810a80d26`) y verificar Railway: staging #7078066832 y producción #7078066778 finalizaron `success`.
+
+## Impacto ambiental — movilidad y solar separados (2026-10-14)
+
+- [x] Identificar el origen del valor cero: existen 9.735,7 kWh OCPP completados, pero no hay lectura solar verificada y el factor de desplazamiento EV está deliberadamente desactivado/sin fuente en la configuración auditada.
+- [x] Mantener separados el impacto operativo estimado por movilidad eléctrica y el impacto solar atribuible; no sumarlos ni tratarlos como créditos, porque representan líneas metodológicas distintas.
+- [x] Exponer la configuración auditada de factor operativo EV, con fuente obligatoria al habilitarla, y mostrar la estimación por movilidad sobre todos los kWh entregados sin alterar el cálculo de elegibilidad/venta de créditos.
+- [x] Mostrar en administración, perfil y estadísticas públicas la etiqueta de alcance correcta, diferenciando “movilidad estimada”, “solar atribuible” y “créditos verificados”.
+- [x] Validar sin cambiar factores ni publicar métricas nuevas: 6 regresiones focales de asignación solar, movilidad habilitada/deshabilitada y punto de equilibrio; suite completa 253 archivos / 2.398 pruebas aprobadas (5 suites y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada), TypeScript, build, diff y servicio local HTTP 200 correctos. La respuesta pública mantiene el factor operativo deshabilitado y no inventa tCO₂e.
+- [ ] Guardar checkpoint, publicar de forma segura y verificar Railway.

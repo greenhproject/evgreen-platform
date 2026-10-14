@@ -91,6 +91,31 @@ export function calculateSolarBackedImpact(input: {
   };
 }
 
+/**
+ * Estimación operacional de movilidad eléctrica sobre la energía que realmente
+ * entregó la red. Se mantiene aparte de la atribución solar y de cualquier
+ * volumen elegible para créditos: la metodología, línea base y verificación
+ * externa determinan después si una parte puede certificarse.
+ */
+export function calculateEvDisplacementImpact(input: {
+  chargingKwh: number;
+  enabled: boolean;
+  displacementFactorTco2ePerMwh: number | null | undefined;
+}) {
+  const chargingKwh = Math.max(0, toFiniteNumber(input.chargingKwh));
+  const factor = input.enabled
+    ? Math.max(0, toFiniteNumber(input.displacementFactorTco2ePerMwh))
+    : 0;
+  const estimatedAvoidedTco2e = (chargingKwh / 1000) * factor;
+
+  return {
+    chargingKwh,
+    factorApplied: factor,
+    isEnabled: input.enabled && factor > 0,
+    estimatedAvoidedTco2e,
+  };
+}
+
 export function annualizeImpact(input: { estimatedAvoidedTco2e: number; observedDays: number }) {
   const observedDays = Math.max(0, toFiniteNumber(input.observedDays));
   const observedTco2e = Math.max(0, toFiniteNumber(input.estimatedAvoidedTco2e));
