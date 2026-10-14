@@ -3,7 +3,7 @@
  * Lista, crea y gestiona cotizaciones de cargadores
  * Incluye sub-navegación a Catálogo y Configuración
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -74,6 +74,8 @@ export default function Quotes() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingQuote, setEditingQuote] = useState<any>(null);
+  const [editingQuoteId, setEditingQuoteId] = useState<number | null>(null);
+  const [editingItems, setEditingItems] = useState<QuoteFormItem[]>([]);
   const [quoteAction, setQuoteAction] = useState<QuoteAction>(null);
   const [formData, setFormData] = useState({
     clientName: "",
@@ -106,6 +108,18 @@ export default function Quotes() {
   const { data: stats } = trpc.quotes.stats.useQuery();
   const { data: catalog } = trpc.quotes.catalog.list.useQuery();
   const { data: settingsDefaults } = trpc.quotes.settings.getDefaults.useQuery();
+  const quoteDetail = trpc.quotes.getById.useQuery(
+    { id: editingQuoteId ?? 0 },
+    { enabled: editingQuoteId !== null }
+  );
+
+  useEffect(() => {
+    if (quoteDetail.data?.quote.id !== editingQuoteId) return;
+    setEditingItems(quoteDetail.data.items.map((item: any) => ({
+      catalogItemId: item.catalogItemId,
+      quantity: item.quantity,
+    })));
+  }, [editingQuoteId, quoteDetail.data]);
 
   const createMutation = trpc.quotes.create.useMutation({
     onSuccess: (data) => {
@@ -149,6 +163,8 @@ export default function Quotes() {
       refetch();
       setIsEditOpen(false);
       setEditingQuote(null);
+      setEditingQuoteId(null);
+      setEditingItems([]);
     },
     onError: (err: any) => toast.error(err.message),
   });
@@ -276,11 +292,25 @@ export default function Quotes() {
 
   function openEdit(quote: any) {
     setEditingQuote(quote);
+    setEditingQuoteId(quote.id);
+    setEditingItems([]);
     setIsEditOpen(true);
   }
 
   function handleEdit() {
     if (!editingQuote) return;
+    if (editingItems.length === 0) {
+      toast.error("Incluye al menos un componente en la cotización");
+      return;
+    }
+    if (unavailableEditingItems.length > 0) {
+      toast.error("Retira o sustituye los componentes que ya no están disponibles");
+      return;
+    }
+    if (getEditingTotals().total < 0) {
+      toast.error("El descuento no puede ser mayor que el subtotal de componentes");
+      return;
+    }
     updateQuoteMutation.mutate({
       id: editingQuote.id,
       clientName: editingQuote.clientName,
@@ -291,7 +321,38 @@ export default function Quotes() {
       clientNotes: editingQuote.clientNotes || "",
       internalNotes: editingQuote.internalNotes || "",
       discount: editingQuote.discount || 0,
+      items: editingItems,
     });
+  }
+
+  function addEditingItem(catalogItemId: number) {
+    setEditingItems((current) => {
+      const existing = current.find((item) => item.catalogItemId === catalogItemId);
+      if (existing) {
+        return current.map((item) => item.catalogItemId === catalogItemId ? { ...item, quantity: item.quantity + 1 } : item);
+      }
+      return [...current, { catalogItemId, quantity: 1 }];
+    });
+  }
+
+  function updateEditingQuantity(catalogItemId: number, quantity: number) {
+    setEditingItems((current) => quantity < 1
+      ? current.filter((item) => item.catalogItemId !== catalogItemId)
+      : current.map((item) => item.catalogItemId === catalogItemId ? { ...item, quantity } : item)
+    );
+  }
+
+  function getEditingTotals() {
+    const subtotal = editingItems.reduce((sum, selected) => {
+      const component = catalog?.find((item: any) => item.id === selected.catalogItemId);
+      return sum + (component ? component.price * selected.quantity : 0);
+    }, 0);
+    const discount = Number(editingQuote?.discount || 0);
+    const totalCommission = editingItems.reduce((sum, selected) => {
+      const component = catalog?.find((item: any) => item.id === selected.catalogItemId);
+      return sum + (component ? Math.round(component.price * selected.quantity * (Number(component.commissionPercent || 0) / 100)) : 0);
+    }, 0);
+    return { subtotal, discount, total: subtotal - discount, totalCommission };
   }
 
   function handleDelete(quote: any) {
@@ -326,6 +387,8 @@ export default function Quotes() {
   }
 
   const hasCatalog = catalog && catalog.length > 0;
+  const editingTotals = editingQuote ? getEditingTotals() : null;
+  const unavailableEditingItems = editingItems.filter((selected) => !catalog?.some((item: any) => item.id === selected.catalogItemId));
 
   return (
     <div className="space-y-6">
@@ -1046,8 +1109,15 @@ export default function Quotes() {
       </Dialog>
 
       {/* Edit Quote Dialog */}
-      <Dialog open={isEditOpen} onOpenChange={(open) => { setIsEditOpen(open); if (!open) setEditingQuote(null); }}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <Dialog open={isEditOpen} onOpenChange={(open) => {
+        setIsEditOpen(open);
+        if (!open) {
+          setEditingQuote(null);
+          setEditingQuoteId(null);
+          setEditingItems([]);
+        }
+      }}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Editar Cotización {editingQuote?.quoteNumber}</DialogTitle>
           </DialogHeader>
@@ -1091,6 +1161,65 @@ export default function Quotes() {
                   />
                 </div>
               </div>
+              <section className="space-y-3 rounded-xl border border-primary/20 bg-primary/5 p-4">
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h3 className="flex items-center gap-2 font-semibold"><Package className="h-4 w-4 text-primary" /> Componentes cotizados</h3>
+                    <p className="text-xs text-muted-foreground">Ajusta cantidades, agrega equipos o retira componentes. Los precios, totales y comisiones se recalculan al guardar.</p>
+                  </div>
+                  {quoteDetail.isLoading && <span className="text-xs text-muted-foreground">Cargando componentes…</span>}
+                </div>
+
+                {quoteDetail.error && (
+                  <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                    No fue posible cargar los componentes. Cierra el diálogo e inténtalo de nuevo antes de guardar.
+                  </div>
+                )}
+
+                {unavailableEditingItems.length > 0 && (
+                  <div className="space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+                    <p className="text-sm font-medium text-amber-300">Hay componentes que ya no están disponibles en el catálogo.</p>
+                    <p className="text-xs text-muted-foreground">Retíralos o sustitúyelos antes de guardar para preservar precios y disponibilidad actuales.</p>
+                    {unavailableEditingItems.map((selected) => {
+                      const item = quoteDetail.data?.items.find((detail: any) => detail.catalogItemId === selected.catalogItemId);
+                      return <div key={selected.catalogItemId} className="flex items-center justify-between gap-3 text-sm"><span>{item?.productName || `Componente #${selected.catalogItemId}`} × {selected.quantity}</span><Button type="button" variant="outline" size="sm" className="text-destructive" onClick={() => updateEditingQuantity(selected.catalogItemId, 0)}>Retirar</Button></div>;
+                    })}
+                  </div>
+                )}
+
+                {!quoteDetail.isLoading && !quoteDetail.error && (
+                  <div className="grid gap-2">
+                    {catalog?.map((item: any) => {
+                      const selected = editingItems.find((selection) => selection.catalogItemId === item.id);
+                      return (
+                        <div key={item.id} className={`flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between ${selected ? "border-primary bg-background/50" : "border-border bg-background/30"}`}>
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">{item.name}</p>
+                            <p className="text-xs text-muted-foreground">{item.powerKw} kW · {item.connectorType} · {formatCOP(item.price)} {item.includesTransformer ? "· Incluye transformador" : ""}</p>
+                          </div>
+                          {selected ? (
+                            <div className="flex shrink-0 items-center gap-2">
+                              <Button type="button" variant="outline" size="icon" className="h-8 w-8" aria-label={`Reducir cantidad de ${item.name}`} onClick={() => updateEditingQuantity(item.id, selected.quantity - 1)}><Minus className="h-3.5 w-3.5" /></Button>
+                              <Input aria-label={`Cantidad de ${item.name}`} type="number" min={1} max={50} className="h-8 w-16 text-center" value={selected.quantity} onChange={(event) => updateEditingQuantity(item.id, Math.min(50, Math.max(1, Number.parseInt(event.target.value, 10) || 1)))} />
+                              <Button type="button" variant="outline" size="icon" className="h-8 w-8" aria-label={`Aumentar cantidad de ${item.name}`} onClick={() => updateEditingQuantity(item.id, selected.quantity + 1)}><Plus className="h-3.5 w-3.5" /></Button>
+                              <Button type="button" variant="ghost" size="sm" className="text-destructive" onClick={() => updateEditingQuantity(item.id, 0)}>Quitar</Button>
+                            </div>
+                          ) : <Button type="button" variant="outline" size="sm" onClick={() => addEditingItem(item.id)}>Agregar</Button>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {editingTotals && (
+                  <div className="grid gap-2 rounded-lg border border-primary/20 bg-background/70 p-3 text-sm sm:grid-cols-4">
+                    <div><p className="text-xs text-muted-foreground">Subtotal</p><p className="font-semibold">{formatCOP(editingTotals.subtotal)}</p></div>
+                    <div><p className="text-xs text-muted-foreground">Descuento</p><p className="font-semibold">{formatCOP(editingTotals.discount)}</p></div>
+                    <div><p className="text-xs text-muted-foreground">Comisión</p><p className="font-semibold text-emerald-400">{formatCOP(editingTotals.totalCommission)}</p></div>
+                    <div><p className="text-xs text-muted-foreground">Total actualizado</p><p className="font-semibold text-primary">{formatCOP(editingTotals.total)}</p></div>
+                  </div>
+                )}
+              </section>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Notas para el cliente</Label>
@@ -1118,8 +1247,8 @@ export default function Quotes() {
                 />
               </div>
               <div className="flex justify-end gap-3">
-                <Button variant="outline" onClick={() => { setIsEditOpen(false); setEditingQuote(null); }}>Cancelar</Button>
-                <Button onClick={handleEdit} disabled={updateQuoteMutation.isPending} className="gap-2">
+                <Button variant="outline" onClick={() => { setIsEditOpen(false); setEditingQuote(null); setEditingQuoteId(null); setEditingItems([]); }}>Cancelar</Button>
+                <Button onClick={handleEdit} disabled={updateQuoteMutation.isPending || quoteDetail.isLoading || Boolean(quoteDetail.error) || editingItems.length === 0 || unavailableEditingItems.length > 0} className="gap-2">
                   <Pencil className="h-4 w-4" />
                   Guardar Cambios
                 </Button>

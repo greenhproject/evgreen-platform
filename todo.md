@@ -35,3 +35,11 @@
 - [x] No reportar envío exitoso ni cambiar el estado a enviada cuando el proveedor de correo rechaza la entrega.
 - [x] Ejecutar validación sin escritura: 28 regresiones focales de ciclo de vida/PDF/email, suite completa 249 archivos / 2.384 pruebas aprobadas, 5 suites y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; TypeScript, build y servicio local HTTP 200 correctos. El navegador del usuario no estuvo disponible para QA autenticado; no se enviaron correos ni se modificó ninguna cotización real.
 - [x] Guardar checkpoint `728bd5c9`, rebasar de forma segura sobre `11ab4dda7`, publicar en GitHub (`f5743318a`) y verificar Railway: staging #7054521868 y producción #7054521793 finalizaron `success`; `evgreen.lat` y `app.evgreen.lat` respondieron HTTP 200.
+
+## Cotizaciones — edición de componentes y cantidades (2026-10-13)
+
+- [x] Cargar el detalle protegido de ítems al abrir Editar, en lugar de limitar el diálogo a datos del cliente y descuento.
+- [x] Permitir agregar, retirar y ajustar cantidades de componentes del catálogo; mostrar subtotal, descuento, total y comisión recalculados antes de guardar.
+- [x] Recalcular en el servidor de forma autoritativa los ítems, snapshots, totales y comisiones; conservar la edición sólo en cotizaciones abiertas y evitar productos no disponibles o cantidades inválidas.
+- [x] Añadir 2 regresiones de recálculo/snapshots y validar sin escritura: 30 pruebas focales, suite completa 250 archivos / 2.386 pruebas aprobadas, 5 suites y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; TypeScript, build y servicio local HTTP 200 correctos. No se modificó ninguna cotización real.
+- [ ] Guardar checkpoint, publicar de forma segura y verificar Railway.

@@ -16,6 +16,7 @@ import {
 import { eq, desc, and, sql, like, or } from "drizzle-orm";
 import { randomBytes } from "crypto";
 import { canSendQuoteEmail, canTransitionQuoteStatus, isQuoteEditable } from "../../shared/quote-lifecycle";
+import { priceQuoteItems } from "../../shared/quote-item-pricing";
 
 // ============================================================================
 // ROLE GUARDS
@@ -316,7 +317,7 @@ export const quotesRouter = router({
         items: z.array(
           z.object({
             catalogItemId: z.number(),
-            quantity: z.number().min(1).max(50),
+            quantity: z.number().int().min(1).max(50),
           })
         ).min(1),
         clientNotes: z.string().optional(),
@@ -353,38 +354,18 @@ export const quotesRouter = router({
           )
         );
 
-      if (catalogItems.length !== catalogIds.length) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Uno o más productos no están disponibles." });
+      let pricedItems: ReturnType<typeof priceQuoteItems>;
+      try {
+        pricedItems = priceQuoteItems(input.items, catalogItems);
+      } catch (error) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "No fue posible calcular los componentes." });
       }
-
-      // Calcular totales y comisiones
-      let subtotal = 0;
-      let totalCommission = 0;
-      const itemsToInsert = input.items.map((item) => {
-        const catalogItem = catalogItems.find((c) => c.id === item.catalogItemId)!;
-        const lineTotal = catalogItem.price * item.quantity;
-        subtotal += lineTotal;
-        const commPct = parseFloat(catalogItem.commissionPercent || "0");
-        const commAmount = Math.round(lineTotal * commPct / 100);
-        totalCommission += commAmount;
-        return {
-          catalogItemId: item.catalogItemId,
-          productName: catalogItem.name,
-          productPowerKw: catalogItem.powerKw,
-          productChargeType: catalogItem.chargeType,
-          productConnector: catalogItem.connectorType,
-          unitPrice: catalogItem.price,
-          quantity: item.quantity,
-          lineTotal,
-          includesTransformer: catalogItem.includesTransformer,
-          cableMetersIncluded: catalogItem.cableMetersIncluded,
-          productImageUrl: catalogItem.imageUrl || null,
-          commissionPercent: commPct.toFixed(2),
-          commissionAmount: commAmount,
-        };
-      });
+      const { itemsToInsert, subtotal, totalCommission } = pricedItems;
 
       const discount = input.discount || 0;
+      if (discount > subtotal) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "El descuento no puede ser mayor que el subtotal de componentes." });
+      }
       const total = subtotal - discount;
 
       // Generar número y token
@@ -926,10 +907,16 @@ export const quotesRouter = router({
       clientNotes: z.string().optional(),
       internalNotes: z.string().optional(),
       discount: z.number().min(0).optional(),
+      items: z.array(
+        z.object({
+          catalogItemId: z.number(),
+          quantity: z.number().int().min(1).max(50),
+        })
+      ).min(1).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDatabase();
-      const { id, ...updateData } = input;
+      const { id, items, ...updateData } = input;
       const [quote] = await db.select().from(quotes).where(eq(quotes.id, id));
       if (!quote) throw new TRPCError({ code: "NOT_FOUND", message: "Cotización no encontrada" });
 
@@ -944,17 +931,55 @@ export const quotesRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "Solo se pueden editar cotizaciones en borrador o enviadas" });
       }
 
-      // Recalcular total si se cambia el descuento
+      // Recalcular total cuando cambian componentes o descuento.
       const finalUpdate: any = {};
       Object.entries(updateData).forEach(([key, value]) => {
         if (value !== undefined) finalUpdate[key] = value;
       });
 
-      if (updateData.discount !== undefined) {
+      let replacementItems: ReturnType<typeof priceQuoteItems>["itemsToInsert"] | undefined;
+      if (items) {
+        const catalogIds = items.map((item) => item.catalogItemId);
+        const catalogItems = await db
+          .select()
+          .from(chargersCatalog)
+          .where(and(
+            sql`${chargersCatalog.id} IN (${sql.join(catalogIds.map(itemId => sql`${itemId}`), sql`, `)})`,
+            eq(chargersCatalog.isActive, 1),
+          ));
+
+        try {
+          const pricedItems = priceQuoteItems(items, catalogItems);
+          replacementItems = pricedItems.itemsToInsert;
+          finalUpdate.subtotal = pricedItems.subtotal;
+          finalUpdate.totalCommission = pricedItems.totalCommission;
+          const discount = updateData.discount ?? quote.discount ?? 0;
+          if (discount > pricedItems.subtotal) {
+            throw new Error("El descuento no puede ser mayor que el subtotal de componentes.");
+          }
+          finalUpdate.discount = discount;
+          finalUpdate.total = pricedItems.subtotal - discount;
+        } catch (error) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "No fue posible recalcular los componentes." });
+        }
+      } else if (updateData.discount !== undefined) {
+        if (updateData.discount > quote.subtotal) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "El descuento no puede ser mayor que el subtotal de componentes." });
+        }
         finalUpdate.total = quote.subtotal - updateData.discount;
       }
 
-      await db.update(quotes).set(finalUpdate).where(eq(quotes.id, id));
+      if (replacementItems) {
+        await db.transaction(async (tx) => {
+          await tx.update(quotes).set(finalUpdate).where(eq(quotes.id, id));
+          await tx.delete(quoteItems).where(eq(quoteItems.quoteId, id));
+          for (const item of replacementItems) {
+            await tx.insert(quoteItems).values({ quoteId: id, ...item } as any);
+          }
+        });
+      } else {
+        await db.update(quotes).set(finalUpdate).where(eq(quotes.id, id));
+      }
       return { success: true };
     }),
 
