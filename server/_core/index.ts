@@ -47,6 +47,14 @@ import { sdk } from "./sdk";
 const LEGACY_DISCONNECT_GRACE_MS = 5 * 60 * 1000; // 5 minutos
 const legacyDisconnectGrace = new Map<string, NodeJS.Timeout>();
 
+// Referencias a nivel de módulo para que el apagado ordenado (SIGTERM/SIGINT,
+// definido al final del archivo) pueda de verdad dejar de aceptar conexiones
+// nuevas y cerrar los WebSocket OCPP activos — antes estas variables vivían
+// solo dentro de startServer() y el handler de SIGTERM no tenía forma de
+// tocarlas, así que el "apagado ordenado" no drenaba nada en la práctica.
+let httpServerRef: ReturnType<typeof createServer> | null = null;
+let wssRef: WebSocketServer | null = null;
+
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
     const server = net.createServer();
@@ -72,6 +80,7 @@ async function startServer() {
   await ensureContractDocumentStorage();
   const app = express();
   const server = createServer(app);
+  httpServerRef = server;
 
   // Railway termina TLS en su proxy. Confiar solo en el primer proxy permite
   // obtener la IP real para los límites de solicitudes sin aceptar cabeceras
@@ -559,6 +568,7 @@ async function startServer() {
       return protocols.size > 0 ? Array.from(protocols)[0] : "ocpp1.6";
     }
   });
+  wssRef = wss;
 
   // Registrar el WSS principal en dualCSMS para auto-recovery de conexiones
   dualCSMS.setMainWss(wss);
@@ -2635,24 +2645,46 @@ process.on('uncaughtException', (error) => {
 });
 
 // Graceful shutdown on SIGTERM (hosting sends this before killing)
+//
+// Antes esto solo esperaba 10s sin hacer nada y forzaba el exit — el server
+// HTTP seguía aceptando conexiones nuevas y los WebSocket OCPP seguían
+// abiertos hasta el kill abrupto, así que cualquier request/conexión que
+// entrara en esos 10s se cortaba de golpe en vez de cerrarse con un código
+// de cierre que permita al cliente (cargador o navegador) reaccionar. Ahora
+// deja de aceptar conexiones nuevas de inmediato y cierra las WS OCPP con un
+// código 1001 ("going away") que les dice a los cargadores que reconecten ya
+// mismo, en vez de esperar un timeout de red para notar la caída.
 let isShuttingDown = false;
-process.on('SIGTERM', () => {
+function shutdownGracefully(signal: string, maxWaitMs: number) {
   if (isShuttingDown) return;
   isShuttingDown = true;
-  console.log('[PROCESS] SIGTERM received. Graceful shutdown starting...');
-  // Give 10 seconds for in-flight requests to complete
+  console.log(`[PROCESS] ${signal} received. Graceful shutdown starting...`);
+
+  // Dejar de aceptar conexiones HTTP nuevas de inmediato.
+  httpServerRef?.close((err) => {
+    if (err) console.error('[PROCESS] Error closing HTTP server:', err);
+  });
+
+  // Avisar a cada cargador conectado que el servidor se va, para que
+  // reconecte de inmediato en vez de esperar a que el socket se caiga solo.
+  if (wssRef) {
+    wssRef.clients.forEach((ws) => {
+      try {
+        ws.close(1001, 'Server shutting down');
+      } catch (err) {
+        console.error('[PROCESS] Error closing WS client during shutdown:', err);
+      }
+    });
+  }
+
   setTimeout(() => {
     console.log('[PROCESS] Graceful shutdown complete. Exiting.');
     process.exit(0);
-  }, 10000);
-});
+  }, maxWaitMs);
+}
 
-process.on('SIGINT', () => {
-  if (isShuttingDown) return;
-  isShuttingDown = true;
-  console.log('[PROCESS] SIGINT received. Shutting down...');
-  setTimeout(() => process.exit(0), 5000);
-});
+process.on('SIGTERM', () => shutdownGracefully('SIGTERM', 10000));
+process.on('SIGINT', () => shutdownGracefully('SIGINT', 5000));
 
 // ============================================
 // Memory monitoring - log warnings when heap grows too large
