@@ -121,6 +121,35 @@ async function verifyMobileOAuthState(token: string): Promise<{ nonce: string; s
 }
 
 /**
+ * Resolves what to pass as the `state` check to openid-client's callback(),
+ * and where to get `sk` from, for both the normal (cookie present) and the
+ * cookie-missing-on-mobile fallback case. Extracted as a pure function so
+ * the exact branch used in production can be exercised by a real test
+ * without needing a live Auth0 redirect.
+ */
+export async function resolveMobileCallbackState(params: {
+  isMobile: boolean;
+  storedState: string | undefined;
+  incomingState: string;
+  cookieSk: string | null;
+}): Promise<{ stateCheck: string | undefined; sk: string | null; usedSignedFallback: boolean }> {
+  const { isMobile, storedState, incomingState, cookieSk } = params;
+
+  if (storedState) {
+    return { stateCheck: storedState, sk: cookieSk, usedSignedFallback: false };
+  }
+
+  if (isMobile) {
+    const verified = await verifyMobileOAuthState(incomingState.slice(0, -2));
+    if (verified) {
+      return { stateCheck: incomingState, sk: cookieSk || verified.sk, usedSignedFallback: true };
+    }
+  }
+
+  return { stateCheck: undefined, sk: cookieSk, usedSignedFallback: false };
+}
+
+/**
  * Get the origin URL respecting reverse proxy headers (Railway uses x-forwarded-proto)
  */
 function getOrigin(req: Request): string {
@@ -224,15 +253,16 @@ export function registerAuth0Routes(app: Express) {
       // If the cookie didn't survive the round-trip (observed with some in-app
       // browsers on mobile), fall back to verifying the signed state itself —
       // see signMobileOAuthState/verifyMobileOAuthState for why this exists.
-      let verifiedMobileState: { nonce: string; sk: string | null } | null = null;
-      if (isMobile && !storedState) {
-        verifiedMobileState = await verifyMobileOAuthState(incomingState.slice(0, -2));
-      }
-      const stateCheck = storedState || (verifiedMobileState ? incomingState : undefined);
+      const { stateCheck, sk, usedSignedFallback } = await resolveMobileCallbackState({
+        isMobile,
+        storedState,
+        incomingState,
+        cookieSk: req.cookies?.auth0_sk || null,
+      });
 
       console.log(
         `[Auth0] Callback state | isMobile=${isMobile} | storedState=${storedState ? 'present' : 'MISSING'} | ` +
-        `signedStateFallback=${verifiedMobileState ? 'valid' : (isMobile && !storedState ? 'invalid' : 'n/a')} | incomingState_suffix=${incomingState.slice(-4)}`
+        `signedStateFallback=${usedSignedFallback ? 'used' : 'n/a'} | incomingState_suffix=${incomingState.slice(-4)}`
       );
 
       // Use mobile client for mobile callbacks so the client_id matches the one used in login
@@ -242,7 +272,6 @@ export function registerAuth0Routes(app: Express) {
       });
 
       // Clear state and legacy mobile cookies
-      const sk = req.cookies?.auth0_sk || verifiedMobileState?.sk || null;
       res.clearCookie("auth0_state", { path: "/" });
       res.clearCookie("auth0_mobile", { path: "/" });
       res.clearCookie("auth0_sk", { path: "/" });
