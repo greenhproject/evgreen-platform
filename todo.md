@@ -34,4 +34,4 @@
 - [x] Hacer consistentes los filtros, métricas, transición a vista pública, permisos del asesor y reglas de edición/eliminación con el campo persistido `quoteStatus`.
 - [x] No reportar envío exitoso ni cambiar el estado a enviada cuando el proveedor de correo rechaza la entrega.
 - [x] Ejecutar validación sin escritura: 28 regresiones focales de ciclo de vida/PDF/email, suite completa 249 archivos / 2.384 pruebas aprobadas, 5 suites y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; TypeScript, build y servicio local HTTP 200 correctos. El navegador del usuario no estuvo disponible para QA autenticado; no se enviaron correos ni se modificó ninguna cotización real.
-- [ ] Guardar checkpoint, publicar de forma segura y verificar Railway.
+- [x] Guardar checkpoint `728bd5c9`, rebasar de forma segura sobre `11ab4dda7`, publicar en GitHub (`f5743318a`) y verificar Railway: staging #7054521868 y producción #7054521793 finalizaron `success`; `evgreen.lat` y `app.evgreen.lat` respondieron HTTP 200.
