@@ -6,7 +6,7 @@
 
 import { z } from "zod";
 import { router, protectedProcedure, publicProcedure } from "../_core/trpc";
-import { getDb } from "../db";
+import { createNotification, getDb } from "../db";
 import { pushDeliveryEvents, pushDevices, users } from "../../drizzle/schema";
 import { desc, eq } from "drizzle-orm";
 import {
@@ -355,6 +355,21 @@ export const pushRouter = router({
     if (!user) {
       return { success: false, error: "Usuario no encontrado" };
     }
+
+    // Igual que cualquier notificación real (ej. "carga completada" en
+    // server/_core/index.ts): primero se crea el registro interno para que
+    // la campanita/badge lo cuenten, y aparte se intenta el push. Antes esta
+    // ruta solo hacía lo segundo, así que "Enviar notificación de prueba"
+    // nunca aparecía en la lista ni subía el contador, aunque el push en sí
+    // funcionara — encontrado al validar el fix del badge (PR #30) contra un
+    // dispositivo real.
+    await createNotification({
+      userId: ctx.user.id,
+      title: "Notificación de prueba",
+      message: `Hola ${user.name || "Usuario"}. EVGreen solicitó una prueba Push; el estado se actualizará cuando la app la reciba.`,
+      type: "system_alert",
+      referenceType: "test_notification",
+    });
 
     const result = await sendUserPushDetailed(ctx.user.id, {
       type: "system_alert",
