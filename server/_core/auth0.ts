@@ -5,6 +5,7 @@
 import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import type { Express, Request, Response } from "express";
 import { Issuer, generators } from "openid-client";
+import { SignJWT, jwtVerify } from "jose";
 import * as db from "../db";
 import { getSessionCookieOptions } from "./cookies";
 import { sdk } from "./sdk";
@@ -85,6 +86,40 @@ async function getAuth0Client(mobile = false) {
 getAuth0Client().catch(console.error);
 getAuth0Client(true).catch(console.error);
 
+function getMobileStateSecret() {
+  return new TextEncoder().encode(ENV.cookieSecret);
+}
+
+/**
+ * Mobile OAuth state that doesn't depend on a cookie surviving the redirect
+ * round-trip through the system/in-app browser. Some in-app browser
+ * implementations (observed with Expo's SFSafariViewController-based
+ * openBrowserAsync) don't reliably send back cookies set on the initial
+ * /api/auth/login response by the time /api/auth/callback is hit, which
+ * left storedState/sk empty and broke the mobile login flow. The nonce+sk
+ * pair is signed with the same secret used for session JWTs so the
+ * callback can verify authenticity and recover `sk` from the state value
+ * itself, with no cookie required.
+ */
+async function signMobileOAuthState(nonce: string, sk: string | null): Promise<string> {
+  return new SignJWT({ n: nonce, sk: sk || null })
+    .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+    .setExpirationTime(Math.floor((Date.now() + 5 * 60 * 1000) / 1000))
+    .sign(getMobileStateSecret());
+}
+
+async function verifyMobileOAuthState(token: string): Promise<{ nonce: string; sk: string | null } | null> {
+  try {
+    const { payload } = await jwtVerify(token, getMobileStateSecret(), { algorithms: ["HS256"] });
+    const n = payload.n;
+    const sk = payload.sk;
+    if (typeof n !== "string") return null;
+    return { nonce: n, sk: typeof sk === "string" ? sk : null };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Get the origin URL respecting reverse proxy headers (Railway uses x-forwarded-proto)
  */
@@ -117,12 +152,21 @@ export function registerAuth0Routes(app: Express) {
       const origin = getOrigin(req);
       const redirectUri = `${origin}/api/auth/callback`;
 
+      // Store the session key (sk) sent by the native app so the callback can
+      // associate the completed auth with the pending token store.
+      const sk = typeof req.query.sk === "string" ? req.query.sk : null;
+
       // Encode mobile flag directly in state so it survives the OAuth redirect chain
       // without relying on cookies (which can be partitioned or blocked in Chrome CCT).
+      // For mobile, the nonce+sk pair is also signed into the state itself (see
+      // signMobileOAuthState) so the callback has a cookie-independent way to
+      // recover sk and validate the request, since some in-app browsers don't
+      // reliably return cookies set here by the time the callback is hit.
       const nonce = generators.state();
-      const state = isMobilePlatform ? `${nonce}:m` : nonce;
+      const state = isMobilePlatform ? `${await signMobileOAuthState(nonce, sk)}:m` : nonce;
 
-      // Store state in a short-lived cookie for CSRF validation
+      // Store state in a short-lived cookie for CSRF validation (used when the
+      // browser does return it; the signed state above covers the case when it doesn't).
       const isSecure = origin.startsWith("https");
       res.cookie("auth0_state", state, {
         httpOnly: true,
@@ -132,9 +176,6 @@ export function registerAuth0Routes(app: Express) {
         path: "/",
       });
 
-      // Store the session key (sk) sent by the native app so the callback can
-      // associate the completed auth with the pending token store.
-      const sk = typeof req.query.sk === "string" ? req.query.sk : null;
       if (sk) {
         res.cookie("auth0_sk", sk, {
           httpOnly: true,
@@ -179,16 +220,29 @@ export function registerAuth0Routes(app: Express) {
       // Mobile flag is encoded as ":m" suffix in the state to survive cross-site redirects
       const incomingState: string = (params as any).state || '';
       const isMobile = incomingState.endsWith(':m') || req.cookies?.auth0_mobile === "1";
-      console.log(`[Auth0] Callback state | isMobile=${isMobile} | storedState=${storedState ? 'present' : 'MISSING'} | incomingState_suffix=${incomingState.slice(-4)}`);
+
+      // If the cookie didn't survive the round-trip (observed with some in-app
+      // browsers on mobile), fall back to verifying the signed state itself —
+      // see signMobileOAuthState/verifyMobileOAuthState for why this exists.
+      let verifiedMobileState: { nonce: string; sk: string | null } | null = null;
+      if (isMobile && !storedState) {
+        verifiedMobileState = await verifyMobileOAuthState(incomingState.slice(0, -2));
+      }
+      const stateCheck = storedState || (verifiedMobileState ? incomingState : undefined);
+
+      console.log(
+        `[Auth0] Callback state | isMobile=${isMobile} | storedState=${storedState ? 'present' : 'MISSING'} | ` +
+        `signedStateFallback=${verifiedMobileState ? 'valid' : (isMobile && !storedState ? 'invalid' : 'n/a')} | incomingState_suffix=${incomingState.slice(-4)}`
+      );
 
       // Use mobile client for mobile callbacks so the client_id matches the one used in login
       const callbackClient = isMobile ? await getAuth0Client(true) : client;
       const tokenSet = await callbackClient.callback(redirectUri, params, {
-        state: storedState,
+        state: stateCheck,
       });
 
       // Clear state and legacy mobile cookies
-      const sk = req.cookies?.auth0_sk || null;
+      const sk = req.cookies?.auth0_sk || verifiedMobileState?.sk || null;
       res.clearCookie("auth0_state", { path: "/" });
       res.clearCookie("auth0_mobile", { path: "/" });
       res.clearCookie("auth0_sk", { path: "/" });
