@@ -18,3 +18,11 @@
 - [x] Añadir regresiones para corte seguro y para perfiles con holgura.
 - [x] Ejecutar validación integral: 246 archivos / 2.373 pruebas aprobadas, 5 suites y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; build, TypeScript, revisión visual de la muestra y servicio local HTTP 200 correctos.
 - [x] Guardar checkpoint `880b78d7`, publicar de forma segura en GitHub (`880b78d79`) y verificar Railway: staging #7032827147 y producción #7032827116 finalizaron `success`; `evgreen.lat` y `app.evgreen.lat` respondieron HTTP 200.
+
+## Espacios — comisión del dueño en cero (2026-10-13)
+
+- [x] Permitir 0% como comisión del aliado en el Prospecto de Inversión sin sustituirlo por 10%.
+- [x] Aclarar en la interfaz que 0% aplica cuando el dueño del espacio es el mismo inversionista y no existe una comisión independiente.
+- [x] Alinear los rangos de validación del reparto neto para admitir 0–100%, manteniendo la regla de que Inversor + EVGreen sumen exactamente 100%.
+- [x] Ejecutar pruebas y QA sin escritura: normalizador de porcentaje con 0 válido, 247 archivos / 2.376 pruebas aprobadas, 5 suites y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; TypeScript, build y servicio local HTTP 200 correctos. El navegador sandbox no conserva sesión administrativa y redirigió a inicio de sesión; no se generó ni guardó ningún prospecto.
+- [ ] Guardar checkpoint, publicar de forma segura y verificar Railway.

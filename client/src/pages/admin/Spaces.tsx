@@ -21,6 +21,7 @@ import { toast } from "sonner";
 import { getSpacePipelineAction } from "@shared/space-pipeline-actions";
 import { getRevenueDistributionForSpaceType, resolveDcInfrastructureRequirement } from "@shared/space-investment-scoring-policy";
 import { buildSpaceTrafficProjection } from "@shared/space-traffic-financial-projection";
+import { parseBoundedPercentageInput } from "@shared/percentage-input";
 import { getPhotoTypeLabel } from "@shared/photo-type-labels";
 import { removePendingSpacePhoto, setPendingSpacePhotoCover } from "./space-photo-selection";
 import {
@@ -3565,19 +3566,21 @@ function SpaceDetailDialog({
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">Aliado (% margen bruto)</Label>
                   <Input
-                    type="number" min={0} max={50}
+                    type="number" min={0} max={50} step={1} inputMode="numeric"
                     value={prospectoConfig.allySharePercent}
                     onChange={e => {
-                      const v = Math.min(50, Math.max(0, parseInt(e.target.value) || 10));
+                      const v = parseBoundedPercentageInput(e.target.value, 50);
+                      if (v === undefined) return;
                       setProspectoConfig(c => ({ ...c, allySharePercent: v }));
                     }}
                     className="bg-[#111827] border-[#374151] text-white h-8 text-sm"
                   />
+                  <p className="mt-1 text-[11px] leading-snug text-gray-500">Use 0% cuando el dueño del espacio sea el mismo inversionista y no aplique una comisión independiente.</p>
                 </div>
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">Inversor (% neto)</Label>
                   <Input
-                    type="number" min={1} max={99}
+                    type="number" min={0} max={100}
                     value={prospectoConfig.investorSharePercent}
                     readOnly
                     aria-readonly="true"
@@ -3587,7 +3590,7 @@ function SpaceDetailDialog({
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">EVGreen (% neto)</Label>
                   <Input
-                    type="number" min={1} max={99}
+                    type="number" min={0} max={100}
                     value={prospectoConfig.platformSharePercent}
                     readOnly
                     aria-readonly="true"

@@ -2835,8 +2835,8 @@ export const spacesRouter = router({
     .input(z.object({
       submissionId: z.number(),
       allySharePercent: z.number().min(0).max(50).default(10),
-      investorSharePercent: z.number().min(1).max(99).default(70),
-      platformSharePercent: z.number().min(1).max(99).default(30),
+      investorSharePercent: z.number().min(0).max(100).default(70),
+      platformSharePercent: z.number().min(0).max(100).default(30),
       installedPowerKw: z.number().positive().max(5000).optional(),
       tarifaKwhCop: z.number().positive().max(10000).optional(),
       energyCostPerKwhCop: z.number().min(0).max(10000).optional(),
