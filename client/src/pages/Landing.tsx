@@ -6,6 +6,7 @@
  */
 import { Button } from "@/components/ui/button";
 import { getLoginUrl } from "@/const";
+import { trpc } from "@/lib/trpc";
 import { Link } from "wouter";
 import { motion, useScroll, useTransform, useInView } from "framer-motion";
 import { useRef, useState, useEffect, useCallback } from "react";
@@ -32,7 +33,10 @@ import {
   Lightbulb,
   Target,
   Building2,
-  ArrowRight
+  ArrowRight,
+  Leaf,
+  CloudSun,
+  Sun,
 } from "lucide-react";
 import { InstallButton } from "@/components/InstallBanner";
 
@@ -90,6 +94,34 @@ function AnimatedCounter({ value, suffix = "", prefix = "" }: { value: number; s
   );
 }
 
+/** Se renderiza únicamente cuando administración publica métricas medidas. */
+function PublicCarbonImpact() {
+  const { data } = (trpc.carbon as any).publicSummary.useQuery(undefined, {
+    staleTime: 5 * 60 * 1000,
+  });
+  if (!data?.published) return null;
+  const format = (value: number, digits = 1) => new Intl.NumberFormat("es-CO", { maximumFractionDigits: digits }).format(Number(value || 0));
+
+  return (
+    <section className="px-4 py-12 sm:py-16 border-y border-emerald-500/15 bg-gradient-to-br from-emerald-500/[0.08] via-background to-background">
+      <div className="container">
+        <div className="mx-auto max-w-4xl text-center">
+          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-600">
+            <Leaf className="h-3.5 w-3.5" /> Impacto medido de la red
+          </div>
+          <h2 className="mt-4 text-2xl font-bold sm:text-3xl">Cada carga deja una trazabilidad ambiental</h2>
+          <p className="mx-auto mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground">Publicamos energía entregada y la porción respaldada por generación solar con lectura verificada. La estimación ambiental no equivale a un bono de carbono emitido.</p>
+          <div className="mx-auto mt-7 grid max-w-2xl grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl border border-border/70 bg-background/75 p-4"><Zap className="mx-auto h-5 w-5 text-blue-500" /><p className="mt-2 text-xl font-bold">{format(data.chargingKwh)} kWh</p><p className="mt-1 text-xs text-muted-foreground">energía entregada</p></div>
+            <div className="rounded-2xl border border-border/70 bg-background/75 p-4"><Sun className="mx-auto h-5 w-5 text-amber-500" /><p className="mt-2 text-xl font-bold">{format(data.solarBackedKwh)} kWh</p><p className="mt-1 text-xs text-muted-foreground">solar asignable</p></div>
+            <div className="rounded-2xl border border-border/70 bg-background/75 p-4"><CloudSun className="mx-auto h-5 w-5 text-emerald-500" /><p className="mt-2 text-xl font-bold">{format(data.estimatedAvoidedTco2e, 4)} tCO₂e</p><p className="mt-1 text-xs text-muted-foreground">impacto estimado</p></div>
+          </div>
+          <p className="mt-5 text-[11px] leading-relaxed text-muted-foreground">Estado metodológico: <strong className="text-foreground">{data.methodologyStatus}</strong>. Factor aplicado: UPME {data.factorYear}. <a className="underline underline-offset-2 hover:text-foreground" href={data.factorSourceUrl} target="_blank" rel="noreferrer">Ver fuente</a>.</p>
+        </div>
+      </div>
+    </section>
+  );
+}
 export default function Landing() {
   // Set SEO-optimized document.title (60 chars, within 30-60 range)
   useEffect(() => {
@@ -288,6 +320,8 @@ export default function Landing() {
           </div>
         </div>
       </section>
+
+      <PublicCarbonImpact />
 
       {/* AI Section - HERO DIFERENCIADOR */}
       <section className="py-12 sm:py-20 px-4 relative overflow-hidden">

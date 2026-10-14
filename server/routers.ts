@@ -58,6 +58,7 @@ import { buildLoyaltyRouter } from "./loyalty/loyalty-router";
 import { advertiserRouter, adminAdvertiserRouter } from "./routers/advertiser";
 import { userOnboardingRouter } from "./routers/user-onboarding";
 import { buildOcpiRouter } from "./ocpi/ocpi-router";
+import { buildCarbonRouter } from "./carbon/carbon-router";
 import { stageSiemLocationSnapshot } from "./ocpi/ocpi-station-snapshot";
 import { contractsRouter } from "./contracts/contracts-router";
 import { projectOperationalConnectorStates, resolveConnectorOperationalState } from "../shared/connector-operational-state";
@@ -9218,6 +9219,7 @@ export const appRouter = router({
 	adminAdvertiser: adminAdvertiserRouter,
 	contracts: contractsRouter,
 	ocpiAdmin: buildOcpiRouter(router, adminProcedure),
+	carbon: buildCarbonRouter(router, publicProcedure, protectedProcedure, adminProcedure),
 });
 
 // Iniciar sistema de backup automático al cargar el módulo

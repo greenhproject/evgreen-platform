@@ -345,6 +345,121 @@ export const chargingStations = mysqlTable("charging_stations", {
 	index("idx_station_network_visibility").on(table.networkAccessMode, table.isActive, table.isPublic),
 	index("idx_station_siem_reporting").on(table.siemReportingEnabled, table.isActive, table.isPublic),
 	index("idx_station_organization").on(table.organizationId),
+	]);
+
+/**
+ * Configuración única del programa de impacto y preauditoría de carbono.
+ * Los factores se versionan junto con su fuente para impedir que la plataforma
+ * mezcle propósitos regulatorios distintos o presente créditos no verificados.
+ */
+export const carbonProgramSettings = mysqlTable("carbon_program_settings", {
+	id: int().autoincrement().notNull().primaryKey(),
+	country: varchar({ length: 100 }).default("Colombia").notNull(),
+	programName: varchar("program_name", { length: 255 }).default("Impacto EVGreen").notNull(),
+	methodologyCode: varchar("methodology_code", { length: 120 }).default("PENDIENTE_DE_DEFINIR").notNull(),
+	methodologyName: varchar("methodology_name", { length: 255 }).default("Metodología por confirmar con el programa certificador").notNull(),
+	methodologyStatus: mysqlEnum("methodology_status", ["DRAFT", "PRE_AUDIT", "REGISTERED", "VALIDATED", "VERIFIED"]).default("DRAFT").notNull(),
+	gridInventoryFactorTco2ePerMwh: decimal("grid_inventory_factor_tco2e_per_mwh", { precision: 12, scale: 6 }).default("0.220000").notNull(),
+	gridInventoryFactorYear: int("grid_inventory_factor_year").default(2024).notNull(),
+	gridInventoryFactorSourceUrl: varchar("grid_inventory_factor_source_url", { length: 500 }).default("https://docs.upme.gov.co/Normatividad/085_2026.pdf").notNull(),
+	solarAvoidedFactorTco2ePerMwh: decimal("solar_avoided_factor_tco2e_per_mwh", { precision: 12, scale: 6 }).default("0.660000").notNull(),
+	solarAvoidedFactorYear: int("solar_avoided_factor_year").default(2024).notNull(),
+	solarAvoidedFactorSourceUrl: varchar("solar_avoided_factor_source_url", { length: 500 }).default("https://docs.upme.gov.co/Normatividad/085_2026.pdf").notNull(),
+	// La movilidad evitada sólo se cuantifica cuando un programa/metodología la respalde.
+	evDisplacementFactorTco2ePerMwh: decimal("ev_displacement_factor_tco2e_per_mwh", { precision: 12, scale: 6 }),
+	evDisplacementFactorSourceUrl: varchar("ev_displacement_factor_source_url", { length: 500 }),
+	evDisplacementEnabled: tinyint("ev_displacement_enabled").default(0).notNull(),
+	estimatedCreditPriceCopPerTco2e: decimal("estimated_credit_price_cop_per_tco2e", { precision: 15, scale: 2 }).default("0.00").notNull(),
+	registryCommissionPercent: decimal("registry_commission_percent", { precision: 7, scale: 4 }).default("0.0000").notNull(),
+	minimumSellableTco2e: decimal("minimum_sellable_tco2e", { precision: 14, scale: 4 }).default("0.0000").notNull(),
+	publicStatsEnabled: tinyint("public_stats_enabled").default(0).notNull(),
+	updatedBy: int("updated_by"),
+	createdAt: timestamp("created_at", { mode: "string" }).default("CURRENT_TIMESTAMP").notNull(),
+	updatedAt: timestamp("updated_at", { mode: "string" }).defaultNow().onUpdateNow().notNull(),
+});
+
+/**
+ * Lectura real de generación solar por estación y período. Las estimaciones de
+ * diseño no se escriben aquí: la columna representa un medidor/inversor/factura
+ * y permite asignar como máximo los kWh solares realmente leídos.
+ */
+export const carbonSolarMeterReadings = mysqlTable("carbon_solar_meter_readings", {
+	id: int().autoincrement().notNull().primaryKey(),
+	stationId: int("station_id").notNull(),
+	periodStart: timestamp("period_start", { mode: "string" }).notNull(),
+	periodEnd: timestamp("period_end", { mode: "string" }).notNull(),
+	generationKwh: decimal("generation_kwh", { precision: 14, scale: 4 }).notNull(),
+	sourceType: mysqlEnum("source_type", ["INVERTER_METER", "UTILITY_BILL", "MANUAL_METER", "OTHER"]).notNull(),
+	verificationStatus: mysqlEnum("verification_status", ["DRAFT", "VERIFIED", "REJECTED"]).default("DRAFT").notNull(),
+	evidenceReference: varchar("evidence_reference", { length: 500 }),
+	note: text(),
+	createdBy: int("created_by").notNull(),
+	createdAt: timestamp("created_at", { mode: "string" }).default("CURRENT_TIMESTAMP").notNull(),
+	updatedAt: timestamp("updated_at", { mode: "string" }).defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+	index("idx_carbon_solar_station_period").on(table.stationId, table.periodStart, table.periodEnd),
+	index("idx_carbon_solar_verification").on(table.verificationStatus, table.periodEnd),
+]);
+
+/** Gastos de preparación, certificación, registro y comercialización. */
+export const carbonCostEntries = mysqlTable("carbon_cost_entries", {
+	id: int().autoincrement().notNull().primaryKey(),
+	name: varchar({ length: 255 }).notNull(),
+	category: mysqlEnum("category", ["CONSULTING", "VALIDATION", "VERIFICATION", "REGISTRY", "LEGAL", "MONITORING", "COMMISSION", "MARKETING", "OTHER"]).notNull(),
+	costType: mysqlEnum("cost_type", ["FIXED", "VARIABLE_PER_TCO2E", "ONE_TIME"]).notNull(),
+	amountCop: decimal("amount_cop", { precision: 15, scale: 2 }).notNull(),
+	periodicity: mysqlEnum("periodicity", ["MONTHLY", "QUARTERLY", "ANNUAL", "ONE_TIME"]).default("ONE_TIME").notNull(),
+	activeFrom: timestamp("active_from", { mode: "string" }).notNull(),
+	activeTo: timestamp("active_to", { mode: "string" }),
+	status: mysqlEnum("status", ["ACTIVE", "ARCHIVED"]).default("ACTIVE").notNull(),
+	note: text(),
+	createdBy: int("created_by").notNull(),
+	createdAt: timestamp("created_at", { mode: "string" }).default("CURRENT_TIMESTAMP").notNull(),
+	updatedAt: timestamp("updated_at", { mode: "string" }).defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+	index("idx_carbon_cost_active").on(table.status, table.activeFrom),
+]);
+
+/**
+ * Lote trazable desde la preauditoría hasta el eventual retiro/venta. No crea
+ * créditos por sí mismo: los seriales y cantidades verificadas se registran
+ * únicamente después de la confirmación externa.
+ */
+export const carbonCreditLots = mysqlTable("carbon_credit_lots", {
+	id: int().autoincrement().notNull().primaryKey(),
+	name: varchar({ length: 255 }).notNull(),
+	periodStart: timestamp("period_start", { mode: "string" }).notNull(),
+	periodEnd: timestamp("period_end", { mode: "string" }).notNull(),
+	estimatedTco2e: decimal("estimated_tco2e", { precision: 14, scale: 4 }).default("0.0000").notNull(),
+	verifiedTco2e: decimal("verified_tco2e", { precision: 14, scale: 4 }),
+	issuedTco2e: decimal("issued_tco2e", { precision: 14, scale: 4 }),
+	soldTco2e: decimal("sold_tco2e", { precision: 14, scale: 4 }),
+	status: mysqlEnum("status", ["DRAFT", "UNDER_REVIEW", "VERIFIED", "ISSUED", "LISTED", "SOLD", "RETIRED", "REJECTED"]).default("DRAFT").notNull(),
+	registryName: varchar("registry_name", { length: 120 }),
+	registryProjectReference: varchar("registry_project_reference", { length: 255 }),
+	serialReference: varchar("serial_reference", { length: 500 }),
+	salePriceCopPerTco2e: decimal("sale_price_cop_per_tco2e", { precision: 15, scale: 2 }),
+	note: text(),
+	createdBy: int("created_by").notNull(),
+	createdAt: timestamp("created_at", { mode: "string" }).default("CURRENT_TIMESTAMP").notNull(),
+	updatedAt: timestamp("updated_at", { mode: "string" }).defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+	index("idx_carbon_lot_status_period").on(table.status, table.periodEnd),
+]);
+
+/** Bitácora inmutable de cambios y decisiones del programa de carbono. */
+export const carbonAuditEvents = mysqlTable("carbon_audit_events", {
+	id: int().autoincrement().notNull().primaryKey(),
+	eventType: varchar("event_type", { length: 80 }).notNull(),
+	entityType: varchar("entity_type", { length: 80 }).notNull(),
+	entityId: int("entity_id"),
+	actorUserId: int("actor_user_id").notNull(),
+	actorRole: varchar("actor_role", { length: 50 }).notNull(),
+	metadata: json(),
+	createdAt: timestamp("created_at", { mode: "string" }).default("CURRENT_TIMESTAMP").notNull(),
+}, (table) => [
+	index("idx_carbon_audit_entity").on(table.entityType, table.entityId, table.createdAt),
+	index("idx_carbon_audit_created").on(table.createdAt),
 ]);
 
 export const claims = mysqlTable("claims", {

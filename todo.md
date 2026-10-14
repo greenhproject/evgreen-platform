@@ -43,3 +43,13 @@
 - [x] Recalcular en el servidor de forma autoritativa los ítems, snapshots, totales y comisiones; conservar la edición sólo en cotizaciones abiertas y evitar productos no disponibles o cantidades inválidas.
 - [x] Añadir 2 regresiones de recálculo/snapshots y validar sin escritura: 30 pruebas focales, suite completa 250 archivos / 2.386 pruebas aprobadas, 5 suites y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; TypeScript, build y servicio local HTTP 200 correctos. No se modificó ninguna cotización real.
 - [x] Guardar checkpoint `27b2c194`, rebasar de forma segura sobre `f5c97e55f`, publicar en GitHub (`11f21128f`) y verificar Railway: staging #7054778430 y producción #7054778421 finalizaron `success`; `evgreen.lat` y `app.evgreen.lat` respondieron HTTP 200.
+
+## Impacto ambiental y preauditoría de carbono (2026-10-14)
+
+- [x] Investigar marco Colombia: factores UPME 2024, ruta RENARE, protocolo Cercarbono, EcoRegistry y requisitos de MRV/adicionalidad; documentar fuentes y límites de elegibilidad.
+- [x] Diseñar y aplicar migración 0066 con configuración versionada, lecturas solares con evidencia, costos fijos/variables, lotes de revisión y bitácora inmutable.
+- [x] Crear panel administrativo **Impacto y Bonos** con energía entregada, solar asignable, tCO₂e estimadas, costos, proyección, punto de equilibrio, alerta de revisión y expedientes por lote.
+- [x] Integrar perfil de usuario y landing de manera condicionada: no se muestra ningún impacto público hasta que administración lo publique explícitamente; las etiquetas aclaran que son estimaciones y no créditos emitidos.
+- [x] Proteger contra doble atribución: se limita la generación solar al menor valor entre kWh cargados y lectura verificada, se exige evidencia para una lectura verificada y se bloquean períodos solapados por estación.
+- [x] Validar sin crear lecturas, costos ni lotes operativos: prueba pública `carbon.publicSummary` responde HTTP 200 y mantiene `published:false`; pruebas focales de asignación solar/economía y suite completa 251 archivos / 2.390 pruebas aprobadas (5 suites y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada), TypeScript, build, esquema aplicado y servicio local HTTP 200 correctos. El navegador autenticado no pudo abrir el preview temporal durante la recuperación del sandbox.
+- [ ] Guardar checkpoint, publicar de forma segura y verificar Railway.

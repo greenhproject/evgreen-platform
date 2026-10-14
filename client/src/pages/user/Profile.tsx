@@ -42,9 +42,11 @@ import {
   Info,
   Building2,
   Star,
-  Gift,
-  ExternalLink,
-  Sparkles,
+	Gift,
+	ExternalLink,
+	Sparkles,
+	Leaf,
+	CloudSun,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -92,6 +94,56 @@ function ActiveAvailabilityAlerts() {
             </button>
           </div>
         ))}
+      </Card>
+    </motion.div>
+  );
+}
+
+/** Impacto mostrado con alcance explícito: estimado y no equivalente a un bono. */
+function CarbonImpactSummary() {
+  const { data: impact, isLoading } = (trpc.carbon as any).myImpact.useQuery(undefined, {
+    staleTime: 5 * 60 * 1000,
+  });
+
+  if (isLoading || !impact || impact.sessionCount === 0) return null;
+
+  const format = (value: number, digits = 1) => new Intl.NumberFormat("es-CO", {
+    maximumFractionDigits: digits,
+  }).format(Number(value || 0));
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.14 }}
+    >
+      <h3 className="text-sm font-medium text-muted-foreground mb-2 px-1">Tu impacto medido</h3>
+      <Card className="overflow-hidden border-emerald-500/20 bg-gradient-to-br from-emerald-500/[0.07] via-background to-background">
+        <div className="p-4 sm:p-6">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-full bg-emerald-500/15 flex items-center justify-center shrink-0">
+              <Leaf className="w-5 h-5 text-emerald-500" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h3 className="font-semibold">Energía que has cargado</h3>
+              <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">Tu consumo se cruza proporcionalmente con generación solar medida y verificada de la red.</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3 mt-4">
+            <div className="rounded-xl bg-background/75 border border-border/60 p-3">
+              <p className="text-xl font-bold text-foreground">{format(impact.chargingKwh)} <span className="text-xs font-medium text-muted-foreground">kWh</span></p>
+              <p className="mt-1 text-[11px] text-muted-foreground">en {impact.sessionCount} carga{impact.sessionCount === 1 ? "" : "s"} completada{impact.sessionCount === 1 ? "" : "s"}</p>
+            </div>
+            <div className="rounded-xl bg-background/75 border border-border/60 p-3">
+              <p className="text-xl font-bold text-emerald-600">{format(impact.estimatedAvoidedTco2e, 4)} <span className="text-xs font-medium text-muted-foreground">tCO₂e</span></p>
+              <p className="mt-1 text-[11px] text-muted-foreground">impacto solar estimado</p>
+            </div>
+          </div>
+          <div className="mt-3 flex gap-2 rounded-lg bg-muted/50 p-2.5 text-[11px] leading-relaxed text-muted-foreground">
+            <CloudSun className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
+            <p>{impact.note} Factor aplicado: {impact.factorYear}.</p>
+          </div>
+        </div>
       </Card>
     </motion.div>
   );
@@ -397,6 +449,8 @@ export default function UserProfile() {
 
         {/* Alertas de disponibilidad activas */}
         <ActiveAvailabilityAlerts />
+
+        <CarbonImpactSummary />
 
         {/* Tarjeta de puntos de fidelización */}
         <LoyaltyCard />

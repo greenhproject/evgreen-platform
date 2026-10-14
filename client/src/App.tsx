@@ -163,6 +163,7 @@ const AdminContracts = lazy(() => import("./pages/admin/Contracts"));
 const AdminOccupancyLiquidations = lazy(() => import("./pages/admin/OccupancyLiquidations"));
 const AdminFeedback = lazy(() => import("./pages/admin/Feedback"));
 const AdminOCPIConfig = lazy(() => import("./pages/admin/OCPIConfig"));
+const AdminCarbonProgram = lazy(() => import("./pages/admin/CarbonProgram"));
 
 // Páginas de Aliado Comercial (Host)
 const HostDashboard = lazy(() => import("./pages/host/Dashboard"));
@@ -1308,6 +1309,13 @@ function Router() {
           <ProtectedRoute allowedRoles={["admin", "staff"]}>
             <AdminLayout>
               <AdminFinancial />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/admin/carbon">
+          <ProtectedRoute allowedRoles={["admin", "staff"]}>
+            <AdminLayout>
+              <AdminCarbonProgram />
             </AdminLayout>
           </ProtectedRoute>
         </Route>
