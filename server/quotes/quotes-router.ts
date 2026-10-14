@@ -15,6 +15,7 @@ import {
 } from "../../drizzle/schema";
 import { eq, desc, and, sql, like, or } from "drizzle-orm";
 import { randomBytes } from "crypto";
+import { canSendQuoteEmail, canTransitionQuoteStatus, isQuoteEditable } from "../../shared/quote-lifecycle";
 
 // ============================================================================
 // ROLE GUARDS
@@ -462,8 +463,7 @@ export const quotesRouter = router({
       }
 
       if (input?.status) {
-        // @ts-ignore
-        conditions.push(eq(quotes.status, input.status));
+        conditions.push(eq(quotes.quoteStatus, input.status));
       }
 
       if (input?.search) {
@@ -529,8 +529,7 @@ export const quotesRouter = router({
         await db.update(quotes).set({
           viewedAt: new Date(),
           viewCount: 1,
-          // @ts-ignore
-          status: quote.status === "SENT" ? "VIEWED" : quote.status,
+          quoteStatus: quote.quoteStatus === "SENT" ? "VIEWED" : quote.quoteStatus,
         } as any).where(eq(quotes.id, quote.id));
       } else {
         await db.update(quotes).set({
@@ -665,8 +664,15 @@ export const quotesRouter = router({
   /** Marcar cotización como enviada */
   markSent: advisorProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = await getDatabase();
+      const [quote] = await db.select().from(quotes).where(eq(quotes.id, input.id));
+      if (!quote) throw new TRPCError({ code: "NOT_FOUND", message: "Cotización no encontrada" });
+      const isAdmin = ctx.user.role === "admin" || ctx.user.role === "staff";
+      if (!isAdmin && quote.advisorId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+      if (!canSendQuoteEmail(quote.quoteStatus)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Solo se pueden enviar cotizaciones en borrador o enviadas." });
+      }
       await db.update(quotes).set({
         quoteStatus: "SENT",
         sentAt: new Date().toISOString(),
@@ -680,11 +686,19 @@ export const quotesRouter = router({
       id: z.number(),
       status: z.enum(["ACCEPTED", "REJECTED", "EXPIRED"]),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = await getDatabase();
-      const updateData: any = { status: input.status };
-      if (input.status === "ACCEPTED") updateData.acceptedAt = new Date();
-      if (input.status === "REJECTED") updateData.rejectedAt = new Date();
+      const [quote] = await db.select().from(quotes).where(eq(quotes.id, input.id));
+      if (!quote) throw new TRPCError({ code: "NOT_FOUND", message: "Cotización no encontrada" });
+      const isAdmin = ctx.user.role === "admin" || ctx.user.role === "staff";
+      if (!isAdmin && quote.advisorId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+      if (!canTransitionQuoteStatus(quote.quoteStatus, input.status)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "La cotización ya está cerrada o no admite este cambio de estado." });
+      }
+
+      const updateData: any = { quoteStatus: input.status };
+      if (input.status === "ACCEPTED") updateData.acceptedAt = new Date().toISOString();
+      if (input.status === "REJECTED") updateData.rejectedAt = new Date().toISOString();
 
       await db.update(quotes).set(updateData).where(eq(quotes.id, input.id));
       return { success: true };
@@ -767,22 +781,22 @@ export const quotesRouter = router({
     const allQuotes = await db.select().from(quotes).where(whereClause);
 
     const total = allQuotes.length;
-    const draft = allQuotes.filter((q: any) => q.status === "DRAFT").length;
-    const sent = allQuotes.filter((q: any) => q.status === "SENT").length;
-    const viewed = allQuotes.filter((q: any) => q.status === "VIEWED").length;
-    const accepted = allQuotes.filter((q: any) => q.status === "ACCEPTED").length;
-    const rejected = allQuotes.filter((q: any) => q.status === "REJECTED").length;
-    const expired = allQuotes.filter((q: any) => q.status === "EXPIRED").length;
+    const draft = allQuotes.filter((q: any) => q.quoteStatus === "DRAFT").length;
+    const sent = allQuotes.filter((q: any) => q.quoteStatus === "SENT").length;
+    const viewed = allQuotes.filter((q: any) => q.quoteStatus === "VIEWED").length;
+    const accepted = allQuotes.filter((q: any) => q.quoteStatus === "ACCEPTED").length;
+    const rejected = allQuotes.filter((q: any) => q.quoteStatus === "REJECTED").length;
+    const expired = allQuotes.filter((q: any) => q.quoteStatus === "EXPIRED").length;
     const totalValue = allQuotes.reduce((sum: number, q: any) => sum + (q.total || 0), 0);
-    const acceptedValue = allQuotes.filter((q: any) => q.status === "ACCEPTED").reduce((sum: number, q: any) => sum + (q.total || 0), 0);
+    const acceptedValue = allQuotes.filter((q: any) => q.quoteStatus === "ACCEPTED").reduce((sum: number, q: any) => sum + (q.total || 0), 0);
     const conversionRate = sent + viewed + accepted + rejected > 0
       ? Math.round((accepted / (sent + viewed + accepted + rejected)) * 100)
       : 0;
 
     // Comisiones
     const totalCommission = allQuotes.reduce((sum: number, q: any) => sum + (q.totalCommission || 0), 0);
-    const acceptedCommission = allQuotes.filter((q: any) => q.status === "ACCEPTED").reduce((sum: number, q: any) => sum + (q.totalCommission || 0), 0);
-    const pendingCommission = allQuotes.filter((q: any) => ["SENT", "VIEWED", "DRAFT"].includes(q.status)).reduce((sum: number, q: any) => sum + (q.totalCommission || 0), 0);
+    const acceptedCommission = allQuotes.filter((q: any) => q.quoteStatus === "ACCEPTED").reduce((sum: number, q: any) => sum + (q.totalCommission || 0), 0);
+    const pendingCommission = allQuotes.filter((q: any) => ["SENT", "VIEWED", "DRAFT"].includes(q.quoteStatus)).reduce((sum: number, q: any) => sum + (q.totalCommission || 0), 0);
 
     return { total, draft, sent, viewed, accepted, rejected, expired, totalValue, acceptedValue, conversionRate, totalCommission, acceptedCommission, pendingCommission };
   }),
@@ -808,6 +822,9 @@ export const quotesRouter = router({
       const isAdmin = ctx.user.role === "admin" || ctx.user.role === "staff";
       if (!isAdmin && quote.advisorId !== ctx.user.id) {
         throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      if (!canSendQuoteEmail(quote.quoteStatus)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Solo se pueden enviar por correo cotizaciones en borrador o enviadas." });
       }
 
       const items = await db.select().from(quoteItems).where(eq(quoteItems.quoteId, input.id));
@@ -880,16 +897,21 @@ export const quotesRouter = router({
         },
       });
 
-      if (result.success) {
-        // Actualizar estado a SENT
-        await db.update(quotes).set({
-          quoteStatus: "SENT",
-          sentAt: new Date().toISOString(),
-          pdfUrl: result.pdfUrl || null,
-        } as any).where(eq(quotes.id, input.id));
+      if (!result.success) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: result.error || "No fue posible enviar la cotización por correo.",
+        });
       }
 
-      return result;
+      // Actualizar estado solo después de una entrega aceptada por el proveedor de correo.
+      await db.update(quotes).set({
+        quoteStatus: "SENT",
+        sentAt: new Date().toISOString(),
+        pdfUrl: result.pdfUrl || null,
+      } as any).where(eq(quotes.id, input.id));
+
+      return { success: true, pdfUrl: result.pdfUrl || null };
     }),
 
   /** Editar datos de una cotización (solo borrador o enviada) */
@@ -918,8 +940,7 @@ export const quotesRouter = router({
       }
 
       // Solo se pueden editar borradores y enviadas
-      // @ts-ignore
-      if (!["DRAFT", "SENT"].includes(quote.status)) {
+      if (!isQuoteEditable(quote.quoteStatus)) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Solo se pueden editar cotizaciones en borrador o enviadas" });
       }
 
@@ -952,8 +973,7 @@ export const quotesRouter = router({
       }
 
       // Solo admin puede eliminar cualquiera, asesores solo borradores
-      // @ts-ignore
-      if (!isAdmin && quote.status !== "DRAFT") {
+      if (!isAdmin && quote.quoteStatus !== "DRAFT") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Solo puedes eliminar cotizaciones en borrador" });
       }
 

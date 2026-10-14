@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 import {
@@ -24,6 +25,7 @@ import {
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
+import { canDecideQuote, canSendQuoteEmail, isQuoteEditable, isQuoteStatus, type QuoteStatus } from "@shared/quote-lifecycle";
 
 function formatCOP(amount: number): string {
   return new Intl.NumberFormat("es-CO", {
@@ -57,6 +59,11 @@ interface QuoteFormItem {
   quantity: number;
 }
 
+type QuoteAction = {
+  quote: any;
+  type: "send" | "accept" | "reject";
+} | null;
+
 export default function Quotes() {
   const [, navigate] = useLocation();
   const { user } = useAuth();
@@ -67,6 +74,7 @@ export default function Quotes() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingQuote, setEditingQuote] = useState<any>(null);
+  const [quoteAction, setQuoteAction] = useState<QuoteAction>(null);
   const [formData, setFormData] = useState({
     clientName: "",
     clientEmail: "",
@@ -121,6 +129,7 @@ export default function Quotes() {
     onSuccess: () => {
       toast.success("Estado actualizado");
       refetch();
+      setQuoteAction(null);
     },
     onError: (err: any) => toast.error(err.message),
   });
@@ -129,6 +138,7 @@ export default function Quotes() {
     onSuccess: () => {
       toast.success("Cotización enviada por email exitosamente");
       refetch();
+      setQuoteAction(null);
     },
     onError: (err: any) => toast.error(err.message),
   });
@@ -288,6 +298,22 @@ export default function Quotes() {
     if (confirm(`¿Eliminar cotización ${quote.quoteNumber}? Esta acción no se puede deshacer.`)) {
       deleteQuoteMutation.mutate({ id: quote.id });
     }
+  }
+
+  function getQuoteStatus(quote: any): QuoteStatus {
+    return isQuoteStatus(quote.quoteStatus) ? quote.quoteStatus : "DRAFT";
+  }
+
+  function executeQuoteAction() {
+    if (!quoteAction) return;
+    if (quoteAction.type === "send") {
+      sendEmailMutation.mutate({ id: quoteAction.quote.id });
+      return;
+    }
+    updateStatusMutation.mutate({
+      id: quoteAction.quote.id,
+      status: quoteAction.type === "accept" ? "ACCEPTED" : "REJECTED",
+    });
   }
 
   function getQuoteUrl(token: string): string {
@@ -472,12 +498,13 @@ export default function Quotes() {
       {/* Quotes List */}
       <div className="space-y-3">
         {quotesData?.quotes?.map((quote: any) => {
-          const config = statusConfig[quote.status] || statusConfig.DRAFT;
+          const quoteStatus = getQuoteStatus(quote);
+          const config = statusConfig[quoteStatus] || statusConfig.DRAFT;
           const StatusIcon = config.icon;
           return (
             <Card key={quote.id} className="hover:border-primary/30 transition-colors">
               <CardContent className="py-4 px-5">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-4">
                     <div className={`p-2 rounded-lg ${config.color}`}>
                       <StatusIcon className="h-4 w-4" />
@@ -496,7 +523,7 @@ export default function Quotes() {
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-4">
+                  <div className="flex w-full items-center justify-between gap-3 sm:w-auto sm:justify-end">
                     <div className="text-right">
                       <div className="font-bold text-lg">{formatCOP(quote.total)}</div>
                       {quote.totalCommission > 0 && (
@@ -508,7 +535,7 @@ export default function Quotes() {
                         <Eye className="h-3 w-3" /> {quote.viewCount || 0} vista(s)
                       </p>
                     </div>
-                    <div className="flex gap-1">
+                    <div className="flex flex-wrap justify-end gap-1">
                       {/* Copiar link */}
                       <Button variant="ghost" size="icon" className="h-8 w-8" title="Copiar link público" onClick={() => copyLink(quote.publicToken)}>
                         <Copy className="h-3.5 w-3.5" />
@@ -529,27 +556,26 @@ export default function Quotes() {
                         onClick={() => duplicateMutation.mutate({ id: quote.id })}>
                         <CopyPlus className="h-3.5 w-3.5" />
                       </Button>
-                      {/* Editar */}
-                      {(quote.status === "DRAFT" || quote.status === "SENT") && (
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-yellow-400" title="Editar cotización"
-                          onClick={() => openEdit(quote)}>
-                          <Pencil className="h-3.5 w-3.5" />
+                      {/* Acciones comerciales visibles y confirmadas */}
+                      {isQuoteEditable(quoteStatus) && (
+                        <Button variant="outline" size="sm" className="h-8 gap-1 border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/10" onClick={() => openEdit(quote)}>
+                          <Pencil className="h-3.5 w-3.5" /> Editar
                         </Button>
                       )}
-                      {/* Enviar por email */}
-                      {(quote.status === "DRAFT" || quote.status === "SENT") && (
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-400" title="Enviar por email"
-                          onClick={() => sendEmailMutation.mutate({ id: quote.id })}
-                          disabled={sendEmailMutation.isPending}>
-                          <Mail className="h-3.5 w-3.5" />
+                      {canSendQuoteEmail(quoteStatus) && (
+                        <Button variant="outline" size="sm" className="h-8 gap-1 border-blue-500/30 text-blue-400 hover:bg-blue-500/10" onClick={() => setQuoteAction({ quote, type: "send" })} disabled={sendEmailMutation.isPending}>
+                          <Mail className="h-3.5 w-3.5" /> Enviar correo
                         </Button>
                       )}
-                      {/* Marcar como aceptada */}
-                      {(quote.status === "DRAFT" || quote.status === "SENT" || quote.status === "VIEWED") && (
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-400" title="Marcar como aceptada"
-                          onClick={() => updateStatusMutation.mutate({ id: quote.id, status: "ACCEPTED" })}>
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                        </Button>
+                      {canDecideQuote(quoteStatus) && (
+                        <>
+                          <Button variant="outline" size="sm" className="h-8 gap-1 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10" onClick={() => setQuoteAction({ quote, type: "accept" })} disabled={updateStatusMutation.isPending}>
+                            <CheckCircle2 className="h-3.5 w-3.5" /> Aceptar
+                          </Button>
+                          <Button variant="outline" size="sm" className="h-8 gap-1 border-red-500/30 text-red-400 hover:bg-red-500/10" onClick={() => setQuoteAction({ quote, type: "reject" })} disabled={updateStatusMutation.isPending}>
+                            <XCircle className="h-3.5 w-3.5" /> Rechazar
+                          </Button>
+                        </>
                       )}
                       {/* Eliminar */}
                       <Button variant="ghost" size="icon" className="h-8 w-8 text-red-400" title="Eliminar cotización"
@@ -592,6 +618,35 @@ export default function Quotes() {
           </Card>
         )}
       </div>
+
+      <AlertDialog open={Boolean(quoteAction)} onOpenChange={(open) => {
+        if (!open && !sendEmailMutation.isPending && !updateStatusMutation.isPending) setQuoteAction(null);
+      }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {quoteAction?.type === "send" ? "Enviar cotización por correo" : quoteAction?.type === "accept" ? "Marcar cotización como aceptada" : "Marcar cotización como rechazada"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {quoteAction?.type === "send"
+                ? <>Se enviará <strong>{quoteAction.quote.quoteNumber}</strong> a <strong>{quoteAction.quote.clientEmail}</strong>. El cliente recibirá un enlace seguro a su cotización.</>
+                : quoteAction?.type === "accept"
+                  ? <>Registrarás <strong>{quoteAction?.quote.quoteNumber}</strong> como aceptada. Esta decisión cerrará la cotización y actualizará sus métricas comerciales.</>
+                  : <>Registrarás <strong>{quoteAction?.quote.quoteNumber}</strong> como rechazada. Esta decisión cerrará la cotización y actualizará sus métricas comerciales.</>}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={sendEmailMutation.isPending || updateStatusMutation.isPending}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className={quoteAction?.type === "reject" ? "bg-red-600 text-white hover:bg-red-500" : undefined}
+              disabled={sendEmailMutation.isPending || updateStatusMutation.isPending}
+              onClick={executeQuoteAction}
+            >
+              {sendEmailMutation.isPending || updateStatusMutation.isPending ? "Procesando…" : quoteAction?.type === "send" ? "Enviar correo" : quoteAction?.type === "accept" ? "Confirmar aceptación" : "Confirmar rechazo"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Create Quote Dialog */}
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>

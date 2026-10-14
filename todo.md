@@ -26,3 +26,12 @@
 - [x] Alinear los rangos de validación del reparto neto para admitir 0–100%, manteniendo la regla de que Inversor + EVGreen sumen exactamente 100%.
 - [x] Ejecutar pruebas y QA sin escritura: normalizador de porcentaje con 0 válido, 247 archivos / 2.376 pruebas aprobadas, 5 suites y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; TypeScript, build y servicio local HTTP 200 correctos. El navegador sandbox no conserva sesión administrativa y redirigió a inicio de sesión; no se generó ni guardó ningún prospecto.
 - [x] Guardar checkpoint `9079cd66`, rebasar de forma segura sobre `ff671a4ed`, publicar en GitHub (`aa1e911e1`) y verificar Railway: staging #7054098159 y producción #7054098111 finalizaron `success`; `evgreen.lat` y `app.evgreen.lat` respondieron HTTP 200.
+
+## Cotizaciones — acciones comerciales restauradas (2026-10-13)
+
+- [x] Corregir el desajuste `status`/`quoteStatus` que hacía que los borradores se interpretaran visualmente como un estado inexistente y ocultaba Editar, Enviar correo, Aceptar y Rechazar.
+- [x] Restaurar acciones comerciales visibles y etiquetadas para cotizaciones abiertas, con confirmación accesible antes de enviar correo o cerrar una cotización como aceptada/rechazada.
+- [x] Hacer consistentes los filtros, métricas, transición a vista pública, permisos del asesor y reglas de edición/eliminación con el campo persistido `quoteStatus`.
+- [x] No reportar envío exitoso ni cambiar el estado a enviada cuando el proveedor de correo rechaza la entrega.
+- [x] Ejecutar validación sin escritura: 28 regresiones focales de ciclo de vida/PDF/email, suite completa 249 archivos / 2.384 pruebas aprobadas, 5 suites y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada; TypeScript, build y servicio local HTTP 200 correctos. El navegador del usuario no estuvo disponible para QA autenticado; no se enviaron correos ni se modificó ninguna cotización real.
+- [ ] Guardar checkpoint, publicar de forma segura y verificar Railway.
