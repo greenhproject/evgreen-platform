@@ -173,6 +173,23 @@ export async function syncAppBadge(count: number): Promise<void> {
   } catch (error) {
     console.warn("[NativePush] No se pudo sincronizar el badge del ícono:", error);
   }
+
+  // Apple nunca avisa a la app cuando el usuario limpia la bandeja de avisos
+  // del sistema (confirmado: no existe ese evento, ni siquiera para apps
+  // grandes) — por eso no se puede sincronizar en ese sentido. Lo que sí se
+  // puede hacer, y es lo que recomiendan los proveedores de push serios
+  // (OneSignal, Braze) por defecto, es el sentido contrario: cuando aquí
+  // adentro ya no queda nada sin leer, los avisos que sigan colgados en esa
+  // bandeja ya son viejos de verdad, así que se limpian para que no se
+  // acumulen mostrando algo que el usuario ya vio en la app.
+  if (count <= 0) {
+    try {
+      const { LocalNotifications } = await import("@capacitor/local-notifications");
+      await LocalNotifications.removeAllDeliveredNotifications();
+    } catch (error) {
+      console.warn("[NativePush] No se pudo limpiar la bandeja de notificaciones del sistema:", error);
+    }
+  }
 }
 
 /** @deprecated usar syncAppBadge(0) — se mantiene por compatibilidad temporal. */
