@@ -110,14 +110,15 @@ function PublicCarbonImpact() {
             <Leaf className="h-3.5 w-3.5" /> Impacto medido de la red
           </div>
           <h2 className="mt-4 text-2xl font-bold sm:text-3xl">Cada carga deja una trazabilidad ambiental</h2>
-          <p className="mx-auto mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground">Publicamos energía entregada, la estimación operativa de movilidad cuando está configurada y la porción solar respaldada por lectura verificada. No se suman entre sí ni equivalen a bonos emitidos.</p>
-          <div className="mx-auto mt-7 grid max-w-3xl grid-cols-1 gap-3 sm:grid-cols-3">
+          <p className="mx-auto mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground">Publicamos energía entregada, la estimación preauditada por vehículos con perfil y factor documentado, y la porción solar respaldada por lectura verificada. No se suman entre sí ni equivalen a bonos emitidos.</p>
+          <div className="mx-auto mt-7 grid max-w-4xl grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-2xl border border-border/70 bg-background/75 p-4"><Zap className="mx-auto h-5 w-5 text-blue-500" /><p className="mt-2 text-xl font-bold">{format(data.chargingKwh)} kWh</p><p className="mt-1 text-xs text-muted-foreground">energía entregada</p></div>
+            {data.vehicleProfileCount > 0 && <div className="rounded-2xl border border-border/70 bg-background/75 p-4"><Leaf className="mx-auto h-5 w-5 text-emerald-500" /><p className="mt-2 text-xl font-bold">{format(data.vehicleEstimatedAvoidedTco2e, 4)} tCO₂e</p><p className="mt-1 text-xs text-muted-foreground">movilidad preauditada · {format(data.vehicleImpactCoveragePercent, 0)}% cubierta</p></div>}
             {data.operationalImpactEnabled && <div className="rounded-2xl border border-border/70 bg-background/75 p-4"><Leaf className="mx-auto h-5 w-5 text-emerald-500" /><p className="mt-2 text-xl font-bold">{format(data.operationalEstimatedAvoidedTco2e, 4)} tCO₂e</p><p className="mt-1 text-xs text-muted-foreground">movilidad estimada</p></div>}
             <div className="rounded-2xl border border-border/70 bg-background/75 p-4"><Sun className="mx-auto h-5 w-5 text-amber-500" /><p className="mt-2 text-xl font-bold">{format(data.solarBackedKwh)} kWh</p><p className="mt-1 text-xs text-muted-foreground">solar asignable</p></div>
             <div className="rounded-2xl border border-border/70 bg-background/75 p-4"><CloudSun className="mx-auto h-5 w-5 text-violet-500" /><p className="mt-2 text-xl font-bold">{format(data.solarEstimatedAvoidedTco2e, 4)} tCO₂e</p><p className="mt-1 text-xs text-muted-foreground">impacto solar atribuible</p></div>
           </div>
-          <p className="mt-5 text-[11px] leading-relaxed text-muted-foreground">Estado metodológico: <strong className="text-foreground">{data.methodologyStatus}</strong>. La atribución solar usa UPME {data.solarFactorYear}. <a className="underline underline-offset-2 hover:text-foreground" href={data.solarFactorSourceUrl} target="_blank" rel="noreferrer">Ver fuente</a>.</p>
+          <p className="mt-5 text-[11px] leading-relaxed text-muted-foreground">Estado metodológico: <strong className="text-foreground">{data.methodologyStatus}</strong>. La movilidad por vehículo solo cubre sesiones asociadas a perfiles y factores documentados; la atribución solar usa UPME {data.solarFactorYear}. <a className="underline underline-offset-2 hover:text-foreground" href={data.solarFactorSourceUrl} target="_blank" rel="noreferrer">Ver fuente</a>.</p>
         </div>
       </div>
     </section>

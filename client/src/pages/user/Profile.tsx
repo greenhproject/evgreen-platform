@@ -135,8 +135,8 @@ function CarbonImpactSummary() {
               <p className="mt-1 text-[11px] text-muted-foreground">en {impact.sessionCount} carga{impact.sessionCount === 1 ? "" : "s"} completada{impact.sessionCount === 1 ? "" : "s"}</p>
             </div>
             <div className="rounded-xl bg-background/75 border border-border/60 p-3">
-              <p className="text-xl font-bold text-emerald-600">{impact.operationalImpactEnabled ? format(impact.operationalEstimatedAvoidedTco2e, 4) : "—"} <span className="text-xs font-medium text-muted-foreground">tCO₂e</span></p>
-              <p className="mt-1 text-[11px] text-muted-foreground">movilidad estimada</p>
+              <p className="text-xl font-bold text-emerald-600">{impact.vehicleEstimatedAvoidedTco2e > 0 ? format(impact.vehicleEstimatedAvoidedTco2e, 4) : "—"} <span className="text-xs font-medium text-muted-foreground">tCO₂e</span></p>
+              <p className="mt-1 text-[11px] text-muted-foreground">movilidad por tu vehículo{impact.vehicleImpactCoveragePercent > 0 ? ` · ${format(impact.vehicleImpactCoveragePercent, 0)}% cubierta` : ""}</p>
             </div>
             <div className="rounded-xl bg-background/75 border border-border/60 p-3">
               <p className="text-xl font-bold text-violet-600">{format(impact.solarEstimatedAvoidedTco2e, 4)} <span className="text-xs font-medium text-muted-foreground">tCO₂e</span></p>
@@ -145,7 +145,7 @@ function CarbonImpactSummary() {
           </div>
           <div className="mt-3 flex gap-2 rounded-lg bg-muted/50 p-2.5 text-[11px] leading-relaxed text-muted-foreground">
             <CloudSun className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
-            <p>{impact.note} {impact.operationalImpactEnabled ? "La estimación de movilidad usa un factor trazable configurado por EVGreen." : `El impacto de movilidad aparecerá al habilitar un factor y fuente verificables; el solar usa UPME ${impact.solarFactorYear}.`}</p>
+            <p>{impact.note} {impact.vehicleEstimatedAvoidedTco2e > 0 ? `Tu perfil usa “${impact.vehicleFactorName}” con calidad ${impact.vehicleImpactDataQuality === "MODEL_SPECIFIC" ? "específica de modelo" : "preauditada y revisable"}.` : `El impacto aparecerá cuando tu vehículo predeterminado tenga un factor documentado; el solar usa UPME ${impact.solarFactorYear}.`}</p>
           </div>
         </div>
       </Card>

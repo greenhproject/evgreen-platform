@@ -379,6 +379,35 @@ export const carbonProgramSettings = mysqlTable("carbon_program_settings", {
 });
 
 /**
+ * Línea base versionable para asociar perfiles registrados de vehículos con una
+ * estimación preauditada de movilidad. No representa una unidad de carbono.
+ * El factor se deriva de consumo EV, combustible comparable y factor de red,
+ * todos conservados aquí junto con su fuente y criterio de calidad.
+ */
+export const carbonVehicleBaselineFactors = mysqlTable("carbon_vehicle_baseline_factors", {
+	id: int().autoincrement().notNull().primaryKey(),
+	brandKey: varchar("brand_key", { length: 120 }).notNull(),
+	modelKey: varchar("model_key", { length: 120 }).notNull(),
+	displayName: varchar("display_name", { length: 255 }).notNull(),
+	vehicleSegment: mysqlEnum("vehicle_segment", ["PASSENGER_CAR", "SUV_LIGHT_TRUCK", "OTHER_LIGHT_EV"]).notNull(),
+	evConsumptionKwhPer100Km: decimal("ev_consumption_kwh_per_100km", { precision: 9, scale: 4 }).notNull(),
+	baselineFuelEconomyKmPerGallon: decimal("baseline_fuel_economy_km_per_gallon", { precision: 9, scale: 4 }).notNull(),
+	baselineFuelEmissionKgCo2PerGallon: decimal("baseline_fuel_emission_kgco2_per_gallon", { precision: 9, scale: 4 }).notNull(),
+	gridFactorTco2ePerMwh: decimal("grid_factor_tco2e_per_mwh", { precision: 12, scale: 6 }).notNull(),
+	dataQuality: mysqlEnum("data_quality", ["MODEL_SPECIFIC", "SEGMENT_CONSERVATIVE", "NEEDS_REVIEW"]).default("NEEDS_REVIEW").notNull(),
+	sourceUrl: varchar("source_url", { length: 500 }).notNull(),
+	sourceTitle: varchar("source_title", { length: 255 }).notNull(),
+	methodologyNote: text("methodology_note"),
+	isActive: tinyint("is_active").default(1).notNull(),
+	createdBy: int("created_by").notNull(),
+	createdAt: timestamp("created_at", { mode: "string" }).default("CURRENT_TIMESTAMP").notNull(),
+	updatedAt: timestamp("updated_at", { mode: "string" }).defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+	uniqueIndex("ux_carbon_vehicle_factor_match").on(table.brandKey, table.modelKey),
+	index("idx_carbon_vehicle_factor_active").on(table.isActive, table.vehicleSegment),
+]);
+
+/**
  * Lectura real de generación solar por estación y período. Las estimaciones de
  * diseño no se escriben aquí: la columna representa un medidor/inversor/factura
  * y permite asignar como máximo los kWh solares realmente leídos.

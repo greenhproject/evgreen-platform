@@ -78,3 +78,13 @@
 - [x] Confirmar que los factores UPME aplicables son 0,220 tCO₂e/MWh para inventarios y 0,660 tCO₂e/MWh para proyectos solares/eólicos de primer período de acreditación; no son un factor universal de reducción por recarga EV.
 - [x] Confirmar que la base actual registra 9.735,7452 kWh OCPP completados, 416 sesiones y ninguna lectura solar verificada; no es correcto crear créditos ni toneladas solares a partir de esos kWh sin la evidencia/metodología requerida.
 - [x] Aplicar la opción 1 aprobada: configuración `EVG-COL-VM0038-PRE-1.0` en estado `PRE_AUDIT`, factores UPME 2024 (0,220 de inventario y 0,660 solar), factor de movilidad deshabilitado, sin precio/comisión/volumen de venta y sin crear créditos. La bitácora registra la decisión administrativa y el endpoint público confirma 9.735,7452 kWh, 0 kWh solares verificadas y 0 tCO₂e publicadas.
+
+## Impacto ambiental — cálculo preauditado por vehículo (2026-10-14)
+
+- [x] Auditar los perfiles reales: 12 vehículos activos y 9 modelos; 10 tienen batería, solo uno tiene autonomía y 1.882,3792 kWh de sesiones completadas se asocian de forma conservadora al vehículo predeterminado vigente de cinco usuarios.
+- [x] Investigar fichas primarias de BYD, AVATR, Nissan y Renault; conservar sin inferir los consumos que los fabricantes no publican y usar únicamente valores/modelos con fuente explícita.
+- [x] Adoptar línea base Colombia por segmento: automóvil gasolina 40 km/gal y camioneta/SUV gasolina 22 km/gal del Balance de Energía Útil UPME, con 8,808 kgCO₂/galón de gasolina motor FECOC/UPME; descontar el factor de red 0,220 tCO₂e/MWh.
+- [x] Implementar una matriz editable de factores por modelo/segmento y calcular tCO₂e preauditadas solo sobre sesiones vinculadas a un vehículo predeterminado, mostrando cobertura, fuente y condición provisional; no crear créditos ni habilitar venta.
+- [x] Aplicar migración 0067 e inyectar cinco factores auditados sin tocar sesiones: BYD Sealion 7/alias, AVATR 11, Renault Kwid E-Tech y BYD Yuan Up. Quedan 5 bitácoras de siembra; 1 es específica del modelo y 4 están marcadas `NEEDS_REVIEW` con su fuente y limitación visibles.
+- [x] Validar: 9 regresiones focales de cálculo/solar, suite completa 255 archivos / 2.407 pruebas aprobadas (5 suites y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada), TypeScript, build y diff correctos. La instancia aislada devuelve 9.735,7452 kWh totales, 1.882,3792 kWh vinculados a cinco perfiles (19,33% de cobertura) y 3,0999 tCO₂e preauditadas; solar permanece en 0 al no haber mediciones verificadas.
+- [ ] Guardar checkpoint, integrar cambios remotos compartidos, publicar de forma segura y verificar Railway.

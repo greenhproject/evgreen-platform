@@ -84,6 +84,24 @@ La investigación respalda inyectar **ya** los factores UPME de red y solar y re
 
 La opción responsable es configurar el programa preauditado ahora y luego activar la estimación de movilidad con un factor calculado a partir de una matriz de segmentos vehiculares documentada. Esa estimación se mostrará como `tCO₂e preauditadas por movilidad` y permanecerá separada de los créditos verificables y de la energía solar medida.
 
+## Implementación inicial por perfiles de EVGreen
+
+La plataforma ahora asocia de forma conservadora los kWh de una sesión completada al **vehículo predeterminado activo** de su usuario. Una sesión sin ese vínculo, o con un modelo que no tiene factor activo, queda fuera de la estimación y se reporta como cobertura pendiente; nunca se rellena con un promedio de red.
+
+La ecuación por perfil es:
+
+```text
+tCO₂e preauditadas = kWh OCPP / 1.000 × [
+  (8,808 kgCO₂/galón ÷ km/galón de la línea base)
+  ÷ (consumo EV kWh/100 km ÷ 100)
+  − factor eléctrico de red (tCO₂e/MWh)
+]
+```
+
+La matriz es editable y versionada con marca/modelo, segmento, consumo EV, línea base, factor de combustible, factor de red, fuente, calidad y bitácora. La carga inicial usa **21,2 kWh/100 km WLTC** para BYD Sealion 7 AWD de la ficha oficial BYD; aplica **40 km/gal** para automóvil y **22 km/gal** para SUV/camioneta del Balance de Energía Útil UPME, el factor **8,808 kgCO₂/gal** de gasolina motor FECOC y **0,220 tCO₂e/MWh** de la red. Los modelos cuya ficha no publicó consumo explícito se marcan `NEEDS_REVIEW`; son una estimación preauditada visible y editable, no una base apta para emitir créditos.
+
+> Antes de preparar un lote para verificación, EVGreen debe sustituir cada proxy por la ficha/homologación aplicable a la versión exacta registrada, completar la cobertura de perfiles y validar línea base, adicionalidad, fugas y derecho sobre la reducción.
+
 ## References
 
 [1]: https://verra.org/methodologies/vm0038-electric-vehicle-charging-systems-v1-1/ "VM0038 Electric Vehicle Charging Systems v1.1"
