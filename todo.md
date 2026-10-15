@@ -71,3 +71,10 @@
 - [x] Mostrar en administración, perfil y estadísticas públicas la etiqueta de alcance correcta, diferenciando “movilidad estimada”, “solar atribuible” y “créditos verificados”.
 - [x] Validar sin cambiar factores ni publicar métricas nuevas: 6 regresiones focales de asignación solar, movilidad habilitada/deshabilitada y punto de equilibrio; suite completa 253 archivos / 2.398 pruebas aprobadas (5 suites y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada), TypeScript, build, diff y servicio local HTTP 200 correctos. La respuesta pública mantiene el factor operativo deshabilitado y no inventa tCO₂e.
 - [x] Guardar checkpoint `59a03a57`, rebasar de forma segura sobre `c88e02e7`, publicar en GitHub (`82a90154a`) y verificar Railway: staging #7078772174 y producción #7078772175 finalizaron `success`; `app.evgreen.lat` respondió HTTP 200 y conserva `operationalImpactEnabled:false`, por lo que ninguna tonelada se inventó ni publicó al habilitar el código.
+
+## Protocolo carbono — configuración preauditada (2026-10-14)
+
+- [x] Investigar y documentar VM0038 v1.1/VMD0049 de Verra, ISO 14064-2/3, RENARE/Resolución 1447, Cercarbono, EcoRegistry, UPME Resolución 000085 de 2026 y FECOC.
+- [x] Confirmar que los factores UPME aplicables son 0,220 tCO₂e/MWh para inventarios y 0,660 tCO₂e/MWh para proyectos solares/eólicos de primer período de acreditación; no son un factor universal de reducción por recarga EV.
+- [x] Confirmar que la base actual registra 9.735,7452 kWh OCPP completados, 416 sesiones y ninguna lectura solar verificada; no es correcto crear créditos ni toneladas solares a partir de esos kWh sin la evidencia/metodología requerida.
+- [x] Aplicar la opción 1 aprobada: configuración `EVG-COL-VM0038-PRE-1.0` en estado `PRE_AUDIT`, factores UPME 2024 (0,220 de inventario y 0,660 solar), factor de movilidad deshabilitado, sin precio/comisión/volumen de venta y sin crear créditos. La bitácora registra la decisión administrativa y el endpoint público confirma 9.735,7452 kWh, 0 kWh solares verificadas y 0 tCO₂e publicadas.
