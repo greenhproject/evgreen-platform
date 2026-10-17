@@ -8,9 +8,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { ArrowLeft, BadgeCheck, CheckCircle2, ClipboardCheck, Download, Eye, FileCheck2, FileOutput, FileSearch, FileSignature, FileText, History, Landmark, Link2, Loader2, Pencil, Plus, Send, Settings2, ShieldCheck, Tags, Trash2, Upload, XCircle } from "lucide-react";
+import { ArrowLeft, BadgeCheck, CheckCircle2, ClipboardCheck, Download, Eye, FileCheck2, FileOutput, FileSearch, FileSignature, FileText, History, Landmark, Link2, Loader2, Pencil, Plus, Search, Send, Settings2, ShieldCheck, Tags, Trash2, Upload, XCircle } from "lucide-react";
 import type { ContractVariableName } from "@shared/site-contracts";
 import { CONTRACT_PARTY_FIELD_LABELS, EMPTY_CONTRACT_PARTY, contractPartyValidationMessage, validateContractParty, type ContractPartyData, type ContractPartyField } from "@shared/contract-parties";
+import { matchesContractSearch } from "@shared/contract-search";
+import { saveBlobCrossPlatform } from "@/lib/pdf-download";
 
 type ContractAction = { id: number; type: "manual" | "docusign" | "cancel" | "verify" | "reject" } | null;
 
@@ -46,14 +48,7 @@ function readFileAsBase64(file: File): Promise<string> {
 
 function downloadBase64Pdf(base64: string, fileName: string) {
   const bytes = Uint8Array.from(window.atob(base64), character => character.charCodeAt(0));
-  const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  saveBlobCrossPlatform(new Blob([bytes], { type: "application/pdf" }), fileName);
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -123,6 +118,7 @@ export default function AdminContracts() {
   const [variables, setVariables] = useState({ PARTICIPACION_ALIADO_PORCENTAJE: "10", PLAZO_INICIAL_ANOS: "10", PRORROGA_ANOS: "5", PLAZO_PAGO_DIAS_HABILES: "15", FECHA_CIERRE_LIQUIDACION: "Último día calendario de cada mes", AREA_CEDIDA_M2: "", PUESTOS_PARQUEO: "", PLANO_ANEXO_URL: "", MARCA_COMERCIAL: "EVGreen" });
   const [contractAction, setContractAction] = useState<ContractAction>(null);
   const [decisionNote, setDecisionNote] = useState("");
+  const [contractSearch, setContractSearch] = useState("");
   const signedPdfInput = useRef<HTMLInputElement>(null);
   const [manualUploadContractId, setManualUploadContractId] = useState<number | null>(null);
 
@@ -135,6 +131,8 @@ export default function AdminContracts() {
   const selectableTemplates = useMemo(() => templates.filter((item: any) => item.status !== "RETIRED"), [templates]);
   const availableSpaces = useMemo(() => spaces.filter((item: any) => item.canCreateContract), [spaces]);
   const protectedSpaces = useMemo(() => spaces.filter((item: any) => !item.canCreateContract), [spaces]);
+  const filteredAvailableSpaces = useMemo(() => availableSpaces.filter((space: any) => matchesContractSearch(contractSearch, [space.spaceName, space.code, space.city, space.department, space.submitterCompany, space.submitterName, space.submitterEmail])), [availableSpaces, contractSearch]);
+  const filteredContracts = useMemo(() => contracts.filter((contract: any) => matchesContractSearch(contractSearch, [contract.contractNumber, contract.spaceName, contract.submissionCode, contract.city, contract.submitterCompany, contract.submitterName, contract.submitterEmail, contract.templateName, contract.templateVersion, STATUS_META[contract.status]?.label, contract.status])), [contracts, contractSearch]);
 
   const invalidate = () => Promise.all([utils.contracts.listTemplates.invalidate(), utils.contracts.listContracts.invalidate(), utils.contracts.listEligibleSpaces.invalidate(), utils.contracts.getDocusignConfig.invalidate(), utils.contracts.getContractOperatorProfile.invalidate()]);
   const createContract = trpc.contracts.createContract.useMutation({ onSuccess: result => { toast.success(`Contrato ${result.contractNumber} creado y congelado.`); setContractDialog(false); invalidate(); }, onError: error => toast.error(readableContractError(error.message)) });
@@ -142,6 +140,13 @@ export default function AdminContracts() {
     onSuccess: result => {
       downloadBase64Pdf(result.pdfBase64, `${result.contractNumber}-v${result.templateVersion}.pdf`);
       toast.success(`Vista previa v${result.templateVersion} generada sin emitir ni activar el contrato.`);
+    },
+    onError: error => toast.error(readableContractError(error.message)),
+  });
+  const downloadContractPdf = trpc.contracts.downloadContractPdf.useMutation({
+    onSuccess: result => {
+      downloadBase64Pdf(result.pdfBase64, result.fileName);
+      toast.success(`Descargado: ${result.artifact}. La descarga quedó registrada en el expediente.`);
     },
     onError: error => toast.error(readableContractError(error.message)),
   });
@@ -159,7 +164,7 @@ export default function AdminContracts() {
     const shareUrl = result.sharePath ? new URL(result.sharePath, window.location.origin).toString() : "";
     if (shareUrl && navigator.clipboard) navigator.clipboard.writeText(shareUrl).then(() => toast.success("PDF emitido y enlace temporal copiado para compartir con la EDS.")).catch(() => toast.success("PDF emitido; copie el enlace desde la lista de contratos."));
     else toast.success("PDF final emitido para firma manuscrita.");
-    if (result.pdfUrl) window.open(result.pdfUrl, "_blank", "noopener,noreferrer");
+    downloadContractPdf.mutate({ id: result.contractId });
     invalidate();
   }, onError: error => toast.error(error.message) });
   const sendDocusign = trpc.contracts.sendToDocusign.useMutation({ onSuccess: () => { toast.success("Contrato enviado a DocuSign en el orden configurado."); invalidate(); }, onError: error => toast.error(error.message) });
@@ -238,16 +243,31 @@ export default function AdminContracts() {
         <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-5"><Send className="h-5 w-5 text-cyan-400" /><p className="mt-4 text-sm font-semibold text-white">{docusign?.ready ? "DocuSign listo" : "DocuSign pendiente"}</p><p className="text-sm text-slate-400">{docusign?.ready ? "Configuración y conexión disponibles" : "Configure y pruebe la integración antes de enviar"}</p></div>
       </section>
 
+      <section className="rounded-2xl border border-blue-400/20 bg-slate-900/60 p-4 sm:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <h2 className="font-semibold text-white">Buscar un contrato o sitio</h2>
+            <p className="mt-1 text-sm text-slate-400">Encuentre pendientes y expedientes por nombre, EDS, código SPE, número contractual, ciudad, plantilla o estado.</p>
+          </div>
+          <p aria-live="polite" className="shrink-0 text-sm text-slate-400">{filteredAvailableSpaces.length} pendiente{filteredAvailableSpaces.length === 1 ? "" : "s"} · {filteredContracts.length} expediente{filteredContracts.length === 1 ? "" : "s"}</p>
+        </div>
+        <div className="relative mt-4">
+          <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <Input type="search" value={contractSearch} onChange={event => setContractSearch(event.target.value)} placeholder="Ej.: Pepinos, SPE-2026-0014, Cali o EVG-CON" aria-label="Buscar contrato o sitio" className="h-12 border-blue-400/20 bg-slate-950/60 pl-10 pr-12 text-base" />
+          {contractSearch && <Button type="button" variant="ghost" size="icon" onClick={() => setContractSearch("")} aria-label="Limpiar búsqueda de contratos" className="absolute right-1 top-1/2 h-9 w-9 -translate-y-1/2 text-slate-400 hover:text-white"><XCircle className="h-4 w-4" /></Button>}
+        </div>
+      </section>
+
       <section className="rounded-2xl border border-emerald-400/20 bg-gradient-to-br from-emerald-500/10 via-slate-900/70 to-slate-900/60 p-5 sm:p-6">
         <div className="flex flex-col gap-4 border-b border-emerald-300/15 pb-5 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <div className="flex flex-wrap items-center gap-2"><h2 className="font-semibold text-white">Pendientes de emitir contrato</h2><Badge className="border-emerald-400/30 bg-emerald-400/10 text-emerald-200">{availableSpaces.length} listos</Badge></div>
+            <div className="flex flex-wrap items-center gap-2"><h2 className="font-semibold text-white">Pendientes de emitir contrato</h2><Badge className="border-emerald-400/30 bg-emerald-400/10 text-emerald-200">{filteredAvailableSpaces.length}{contractSearch ? ` de ${availableSpaces.length}` : ""} listos</Badge></div>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-400">Esta cola incluye todas las cartas de intención firmadas y formalizaciones manuales sin expediente vigente. Los contratos ya generados se administran por separado abajo.</p>
           </div>
           <Button variant="outline" onClick={() => setContractDialog(true)} className="w-full border-emerald-400/30 text-emerald-100 hover:bg-emerald-400/10 sm:w-auto"><Plus className="mr-2 h-4 w-4" />Elegir otro sitio</Button>
         </div>
         <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {availableSpaces.length === 0 ? <p className="rounded-xl border border-dashed border-emerald-300/20 p-4 text-sm text-slate-400 md:col-span-2 xl:col-span-3">No hay sitios pendientes. Cada carta formalizada ya cuenta con un expediente contractual vigente.</p> : availableSpaces.map((space: any) => <article key={space.id} className="flex min-w-0 flex-col rounded-xl border border-white/10 bg-slate-950/40 p-4 transition-colors hover:border-emerald-400/30"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate font-medium text-white" title={space.spaceName}>{space.spaceName}</p><p className="mt-1 truncate text-xs text-slate-500">{space.code} · {space.city}</p></div><Badge variant="outline" className="shrink-0 border-emerald-400/30 bg-emerald-400/10 text-[10px] text-emerald-200">{space.formalizationSource === "DIGITAL_LETTER" ? "Carta firmada" : "Manual"}</Badge></div><p className="mt-3 text-xs leading-5 text-slate-400">{space.submitterCompany || "Razón social por confirmar"}</p><p className="mt-1 text-xs text-slate-500">Formalizado: {formatDate(space.formalizedAt)}</p><Button size="sm" className="mt-4 w-full bg-emerald-500 text-slate-950 hover:bg-emerald-400" onClick={() => prepareContractForSpace(space)}><FileSignature className="mr-1.5 h-3.5 w-3.5" />Preparar contrato</Button></article>)}
+          {availableSpaces.length === 0 ? <p className="rounded-xl border border-dashed border-emerald-300/20 p-4 text-sm text-slate-400 md:col-span-2 xl:col-span-3">No hay sitios pendientes. Cada carta formalizada ya cuenta con un expediente contractual vigente.</p> : filteredAvailableSpaces.length === 0 ? <p className="rounded-xl border border-dashed border-emerald-300/20 p-4 text-sm text-slate-400 md:col-span-2 xl:col-span-3">No hay sitios pendientes que coincidan con “{contractSearch}”.</p> : filteredAvailableSpaces.map((space: any) => <article key={space.id} className="flex min-w-0 flex-col rounded-xl border border-white/10 bg-slate-950/40 p-4 transition-colors hover:border-emerald-400/30"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate font-medium text-white" title={space.spaceName}>{space.spaceName}</p><p className="mt-1 truncate text-xs text-slate-500">{space.code} · {space.city}</p></div><Badge variant="outline" className="shrink-0 border-emerald-400/30 bg-emerald-400/10 text-[10px] text-emerald-200">{space.formalizationSource === "DIGITAL_LETTER" ? "Carta firmada" : "Manual"}</Badge></div><p className="mt-3 text-xs leading-5 text-slate-400">{space.submitterCompany || "Razón social por confirmar"}</p><p className="mt-1 text-xs text-slate-500">Formalizado: {formatDate(space.formalizedAt)}</p><Button size="sm" className="mt-4 w-full bg-emerald-500 text-slate-950 hover:bg-emerald-400" onClick={() => prepareContractForSpace(space)}><FileSignature className="mr-1.5 h-3.5 w-3.5" />Preparar contrato</Button></article>)}
         </div>
         {protectedSpaces.length > 0 && <p className="mt-4 text-xs leading-5 text-slate-500">{protectedSpaces.length} sitio{protectedSpaces.length === 1 ? "" : "s"} formalizado{protectedSpaces.length === 1 ? "" : "s"} no aparece{protectedSpaces.length === 1 ? "" : "n"} en esta cola porque ya cuenta{protectedSpaces.length === 1 ? "" : "n"} con un expediente no cancelado; así se evita emitir o cobrar un contrato duplicado.</p>}
       </section>
@@ -260,7 +280,12 @@ export default function AdminContracts() {
       <section className="grid gap-6 xl:grid-cols-[0.95fr_1.6fr]">
         <div className="rounded-2xl border border-white/10 bg-slate-900/50 p-5"><div className="flex items-center justify-between"><div><h2 className="font-semibold text-white">Plantillas y versiones</h2><p className="mt-1 text-sm text-slate-400">Cambie condiciones creando una nueva versión; las expedidas quedan inmutables.</p></div><History className="h-5 w-5 text-slate-500" /></div><div className="mt-5 space-y-3">{templatesLoading ? <Loader2 className="animate-spin text-emerald-400" /> : templates.length === 0 ? <p className="rounded-xl border border-dashed border-white/15 p-4 text-sm text-slate-400">Aún no hay plantillas. Cargue el DOCX revisado por Legal.</p> : templates.map((template: any) => <div key={template.id} className="rounded-xl border border-white/10 bg-slate-950/40 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-medium text-white">{template.name}</p><p className="mt-1 text-xs text-slate-500">v{template.version} · {template.sourceFilename}</p></div><StatusBadge status={template.status} /></div><p className="mt-3 text-xs text-slate-500">SHA-256: {template.contentHash.slice(0, 16)}… · {template.contractCount || 0} contrato{template.contractCount === 1 ? "" : "s"} asociado{template.contractCount === 1 ? "" : "s"}</p><div className="mt-3 flex flex-wrap items-center gap-2"><Button size="sm" variant="ghost" onClick={() => setTemplateReviewId(template.id)}><Pencil className="mr-1.5 h-3.5 w-3.5" />{template.status === "DRAFT" ? "Revisar y activar" : "Ver versión"}</Button>{template.canDelete ? <Button size="sm" variant="ghost" className="text-red-300 hover:bg-red-500/10 hover:text-red-200" onClick={() => { setTemplateToDelete(template); setDeleteTemplateConfirmation(""); }}><Trash2 className="mr-1.5 h-3.5 w-3.5" />Eliminar borrador</Button> : <span className="text-xs text-slate-500">{template.deletionBlockReason}</span>}</div></div>)}</div></div>
 
-        <div className="rounded-2xl border border-white/10 bg-slate-900/50 p-5"><div className="flex items-center justify-between"><div><h2 className="font-semibold text-white">Expedientes ya creados</h2><p className="mt-1 text-sm text-slate-400">Aquí solo aparecen contratos generados; los pendientes están en la cola superior.</p></div><Landmark className="h-5 w-5 text-emerald-400" /></div><div className="mt-5 space-y-3">{contractsLoading ? <Loader2 className="animate-spin text-emerald-400" /> : contracts.length === 0 ? <p className="rounded-xl border border-dashed border-white/15 p-4 text-sm text-slate-400">No se han emitido contratos todavía.</p> : contracts.map((contract: any) => <article key={contract.id} className="rounded-xl border border-white/10 bg-slate-950/40 p-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div><div className="flex flex-wrap items-center gap-2"><p className="font-medium text-white">{contract.spaceName}</p><StatusBadge status={contract.status} /></div><p className="mt-1 text-sm text-slate-400">{contract.contractNumber} · {contract.city} · {contract.templateName} v{contract.templateVersion}</p><p className="mt-2 text-xs text-slate-500">Actualizado {formatDate(contract.updatedAt)} · SHA-256 {contract.contentHash.slice(0, 16)}…</p></div><div className="flex flex-wrap gap-2">{contract.draftPdfUrl && <Button size="sm" variant="outline" onClick={() => window.open(contract.draftPdfUrl, "_blank", "noopener,noreferrer")}><Download className="mr-1.5 h-3.5 w-3.5" />PDF</Button>}{contract.status === "READY" && <><Button size="sm" variant="outline" onClick={() => setContractAction({ id: contract.id, type: "manual" })}><FileOutput className="mr-1.5 h-3.5 w-3.5" />Emitir manual</Button><Button size="sm" disabled={!docusign?.ready} onClick={() => setContractAction({ id: contract.id, type: "docusign" })}><Send className="mr-1.5 h-3.5 w-3.5" />DocuSign</Button></>}{contract.status === "MANUAL_PDF_ISSUED" && <Button size="sm" variant="outline" onClick={() => { setManualUploadContractId(contract.id); signedPdfInput.current?.click(); }}><Upload className="mr-1.5 h-3.5 w-3.5" />Cargar firmado</Button>}{contract.status === "MANUAL_PDF_RETURNED" && <><Button size="sm" onClick={() => setContractAction({ id: contract.id, type: "verify" })}><CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />Verificar</Button><Button size="sm" variant="outline" onClick={() => setContractAction({ id: contract.id, type: "reject" })}><XCircle className="mr-1.5 h-3.5 w-3.5" />Rechazar</Button></>}{!["DOCUSIGN_COMPLETED", "MANUAL_PDF_VERIFIED", "CANCELLED"].includes(contract.status) && <Button size="sm" variant="ghost" className="text-red-300 hover:text-red-200" onClick={() => setContractAction({ id: contract.id, type: "cancel" })}>Anular</Button>}</div></div></article>)}</div></div>
+        <div className="rounded-2xl border border-white/10 bg-slate-900/50 p-5">
+          <div className="flex items-center justify-between gap-3"><div><h2 className="font-semibold text-white">Expedientes ya creados</h2><p className="mt-1 text-sm text-slate-400">Aquí solo aparecen contratos generados; los pendientes están en la cola superior.</p></div><Landmark className="h-5 w-5 shrink-0 text-emerald-400" /></div>
+          <div className="mt-5 space-y-3">
+            {contractsLoading ? <Loader2 className="animate-spin text-emerald-400" /> : contracts.length === 0 ? <p className="rounded-xl border border-dashed border-white/15 p-4 text-sm text-slate-400">No se han emitido contratos todavía.</p> : filteredContracts.length === 0 ? <p className="rounded-xl border border-dashed border-white/15 p-4 text-sm text-slate-400">No hay expedientes que coincidan con “{contractSearch}”.</p> : filteredContracts.map((contract: any) => <article key={contract.id} className="rounded-xl border border-white/10 bg-slate-950/40 p-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div><div className="flex flex-wrap items-center gap-2"><p className="font-medium text-white">{contract.spaceName}</p><StatusBadge status={contract.status} /></div><p className="mt-1 text-sm text-slate-400">{contract.contractNumber} · {contract.city} · {contract.templateName} v{contract.templateVersion}</p><p className="mt-2 text-xs text-slate-500">Actualizado {formatDate(contract.updatedAt)} · SHA-256 {contract.contentHash.slice(0, 16)}…</p></div><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" disabled={downloadContractPdf.isPending} onClick={() => downloadContractPdf.mutate({ id: contract.id })}>{downloadContractPdf.isPending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Download className="mr-1.5 h-3.5 w-3.5" />}Descargar PDF</Button>{contract.status === "READY" && <><Button size="sm" variant="outline" onClick={() => setContractAction({ id: contract.id, type: "manual" })}><FileOutput className="mr-1.5 h-3.5 w-3.5" />Emitir manual</Button><Button size="sm" disabled={!docusign?.ready} onClick={() => setContractAction({ id: contract.id, type: "docusign" })}><Send className="mr-1.5 h-3.5 w-3.5" />DocuSign</Button></>}{contract.status === "MANUAL_PDF_ISSUED" && <Button size="sm" variant="outline" onClick={() => { setManualUploadContractId(contract.id); signedPdfInput.current?.click(); }}><Upload className="mr-1.5 h-3.5 w-3.5" />Cargar firmado</Button>}{contract.status === "MANUAL_PDF_RETURNED" && <><Button size="sm" onClick={() => setContractAction({ id: contract.id, type: "verify" })}><CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />Verificar</Button><Button size="sm" variant="outline" onClick={() => setContractAction({ id: contract.id, type: "reject" })}><XCircle className="mr-1.5 h-3.5 w-3.5" />Rechazar</Button></>}{!["DOCUSIGN_COMPLETED", "MANUAL_PDF_VERIFIED", "CANCELLED"].includes(contract.status) && <Button size="sm" variant="ghost" className="text-red-300 hover:text-red-200" onClick={() => setContractAction({ id: contract.id, type: "cancel" })}>Anular</Button>}</div></div></article>)}
+          </div>
+        </div>
       </section>
       <input ref={signedPdfInput} className="hidden" type="file" accept="application/pdf" onChange={onManualFile} />
     </div>

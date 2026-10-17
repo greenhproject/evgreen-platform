@@ -88,3 +88,11 @@
 - [x] Aplicar migración 0067 e inyectar cinco factores auditados sin tocar sesiones: BYD Sealion 7/alias, AVATR 11, Renault Kwid E-Tech y BYD Yuan Up. Quedan 5 bitácoras de siembra; 1 es específica del modelo y 4 están marcadas `NEEDS_REVIEW` con su fuente y limitación visibles.
 - [x] Validar: 9 regresiones focales de cálculo/solar, suite completa 255 archivos / 2.407 pruebas aprobadas (5 suites y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada), TypeScript, build y diff correctos. La instancia aislada devuelve 9.735,7452 kWh totales, 1.882,3792 kWh vinculados a cinco perfiles (19,33% de cobertura) y 3,0999 tCO₂e preauditadas; solar permanece en 0 al no haber mediciones verificadas.
 - [x] Guardar checkpoint `c80065ae`, integrar de forma segura los cambios compartidos, publicar en GitHub (`982c83bd7`) y verificar Railway: staging #7081074502 y producción #7081074521 finalizaron `success`. Producción responde HTTP 200 con 3,0999 tCO₂e preauditadas, 19,33% de cobertura y estado `PRE_AUDIT`; solar permanece en 0 sin medición verificada.
+
+## Contratos — descarga PDF y búsqueda (2026-10-17)
+
+- [x] Hacer visible una búsqueda única para cola de sitios pendientes y expedientes creados, por sitio, empresa/EDS, código, ciudad, número contractual, plantilla o estado.
+- [x] Reemplazar la apertura de URL por una descarga explícita y compatible con Android/iOS, a partir del PDF congelado del expediente, sin regenerarlo ni cambiar su contenido.
+- [x] Proteger la descarga con el mismo permiso administrativo y registrar el evento de descarga en el expediente, sin exponer una URL de almacenamiento.
+- [x] Validar sin crear contratos ni descargar expedientes reales: 22 regresiones focales de búsqueda, descarga inmutable, PDF y responsive; suite completa 255 archivos / 2.407 pruebas aprobadas (5 suites y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada), TypeScript, build, diff y servicio local HTTP 200 correctos. El navegador autenticado no estuvo disponible; no se descargó ni alteró ningún expediente real durante QA.
+- [ ] Guardar checkpoint, integrar cambios remotos compartidos, publicar de forma segura y verificar Railway.

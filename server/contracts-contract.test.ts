@@ -1,4 +1,6 @@
 import crypto from "crypto";
+import fs from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   canIssueManualPdf,
@@ -49,5 +51,19 @@ describe("expediente contractual de concesión", () => {
     expect(hashManualDownloadToken("enlace-opaco-de-prueba")).toHaveLength(64);
     expect(hashManualDownloadToken("enlace-opaco-de-prueba")).not.toContain("enlace-opaco");
     expect(new Date(createManualDownloadExpiry(1)).getTime()).toBeGreaterThan(Date.now() + 55 * 60 * 1000);
+  });
+
+  it("descarga el artefacto congelado con autorización y conserva una traza", () => {
+    const source = fs.readFileSync(path.resolve(process.cwd(), "server/contracts/contracts-router.ts"), "utf8");
+    const start = source.indexOf("downloadContractPdf:");
+    const end = source.indexOf("getContract:", start);
+    const procedure = source.slice(start, end);
+
+    expect(procedure).toContain("legalAdminProcedure");
+    expect(procedure).toContain("storageGet(artifact.key)");
+    expect(procedure).toContain("CONTRACT_PDF_DOWNLOADED");
+    expect(procedure).toContain("docusignCompletedPdfKey");
+    expect(procedure).toContain("manualSignedPdfKey");
+    expect(procedure).not.toContain("generateFrozenContractPdf");
   });
 });

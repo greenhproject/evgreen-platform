@@ -30,10 +30,19 @@ describe("formulario contractual responsive", () => {
 
   it("separa los sitios pendientes de los expedientes ya creados y permite prepararlos directamente", () => {
     expect(source).toContain("Pendientes de emitir contrato");
-    expect(source).toContain("availableSpaces.map");
+    expect(source).toContain("filteredAvailableSpaces.map");
     expect(source).toContain("prepareContractForSpace");
     expect(source).toContain("Expedientes ya creados");
     expect(source).toContain("los pendientes están en la cola superior");
+  });
+
+  it("permite buscar en ambas colas y descargar el PDF congelado de forma explícita", () => {
+    expect(source).toContain("Buscar un contrato o sitio");
+    expect(source).toContain("matchesContractSearch");
+    expect(source).toContain("filteredContracts.map");
+    expect(source).toContain("Descargar PDF");
+    expect(source).toContain("downloadContractPdf.mutate");
+    expect(source).toContain("saveBlobCrossPlatform");
   });
 
   it("presenta el asistente de importación como flujo responsive de fuente, mapeo y vista previa", () => {

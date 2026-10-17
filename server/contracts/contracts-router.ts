@@ -708,7 +708,56 @@ export const contractsRouter = trpcRouter({
           templateVersion: siteContracts.templateVersion, contentHash: siteContracts.contentHash, createdAt: siteContracts.createdAt,
           updatedAt: siteContracts.updatedAt, issuedAt: siteContracts.issuedAt, completedAt: siteContracts.completedAt, draftPdfUrl: siteContracts.draftPdfUrl,
           spaceName: spaceSubmissions.spaceName, submissionCode: spaceSubmissions.code, city: spaceSubmissions.city,
+          submitterName: spaceSubmissions.submitterName, submitterCompany: spaceSubmissions.submitterCompany, submitterEmail: spaceSubmissions.submitterEmail,
         }).from(siteContracts).innerJoin(spaceSubmissions, eq(siteContracts.submissionId, spaceSubmissions.id)).orderBy(desc(siteContracts.updatedAt)));
+    }),
+
+    /**
+     * Entrega únicamente el artefacto congelado del expediente al administrador
+     * autenticado. No se vuelve a renderizar el contrato, preservando el hash y
+     * evitando variaciones de maquetación, incluidas hojas adicionales.
+     */
+    downloadContractPdf: legalAdminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ input, ctx }: any) => {
+      const db = await getContractsDb();
+      const [contract] = await db.select({
+        id: siteContracts.id,
+        contractNumber: siteContracts.contractNumber,
+        status: siteContracts.status,
+        contentHash: siteContracts.contentHash,
+        templateVersion: siteContracts.templateVersion,
+        draftPdfKey: siteContracts.draftPdfKey,
+        manualSignedPdfKey: siteContracts.manualSignedPdfKey,
+        docusignCompletedPdfKey: siteContracts.docusignCompletedPdfKey,
+      }).from(siteContracts).where(eq(siteContracts.id, input.id)).limit(1);
+
+      if (!contract) throw new TRPCError({ code: "NOT_FOUND", message: "Contrato no encontrado." });
+
+      const artifact = contract.docusignCompletedPdfKey
+        ? { key: contract.docusignCompletedPdfKey, suffix: "firmado-docusign", label: "contrato firmado por DocuSign" }
+        : contract.manualSignedPdfKey
+          ? { key: contract.manualSignedPdfKey, suffix: "firmado-manual", label: "contrato firmado manualmente" }
+          : contract.draftPdfKey
+            ? { key: contract.draftPdfKey, suffix: "para-firma", label: "contrato congelado para firma" }
+            : null;
+      if (!artifact) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Este expediente no conserva un PDF descargable." });
+
+      const download = await storageGet(artifact.key);
+      const response = await fetch(download.url, { signal: AbortSignal.timeout(20_000) });
+      if (!response.ok) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "No fue posible recuperar el PDF del expediente." });
+      const pdf = Buffer.from(await response.arrayBuffer());
+      if (!pdf.subarray(0, 4).equals(Buffer.from("%PDF"))) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "El archivo congelado no tiene un formato PDF válido." });
+      }
+
+      const fileName = `${safeFilename(contract.contractNumber)}-${artifact.suffix}.pdf`;
+      await recordContractEvent(db, {
+        contractId: contract.id,
+        eventType: "CONTRACT_PDF_DOWNLOADED",
+        channel: "INTERNAL",
+        ctx,
+        details: { artifact: artifact.label, contentHash: contract.contentHash, templateVersion: contract.templateVersion, fileName },
+      });
+      return { success: true, contractNumber: contract.contractNumber, artifact: artifact.label, fileName, pdfBase64: pdf.toString("base64") };
     }),
 
     getContract: legalAdminProcedure.input(z.object({ id: z.number().int().positive() })).query(async ({ input }: any) => {
@@ -811,7 +860,7 @@ export const contractsRouter = trpcRouter({
       const expiresAt = createManualDownloadExpiry();
       await db.update(siteContracts).set({ status: "MANUAL_PDF_ISSUED", issuedAt: contract.issuedAt || nowSql(), manualDownloadTokenHash: hashManualDownloadToken(rawToken), manualDownloadExpiresAt: expiresAt }).where(eq(siteContracts.id, input.id));
       await recordContractEvent(db, { contractId: input.id, eventType: "MANUAL_PDF_ISSUED", channel: "MANUAL_PDF", ctx, details: { contentHash: contract.contentHash, linkExpiresAt: expiresAt } });
-      return { success: true, pdfUrl: contract.draftPdfUrl, sharePath: `/api/contracts/manual/${rawToken}`, shareExpiresAt: expiresAt, contractNumber: contract.contractNumber, contentHash: contract.contentHash };
+      return { success: true, contractId: contract.id, pdfUrl: contract.draftPdfUrl, sharePath: `/api/contracts/manual/${rawToken}`, shareExpiresAt: expiresAt, contractNumber: contract.contractNumber, contentHash: contract.contentHash };
     }),
 
     uploadManualSignedPdf: legalAdminProcedure.input(z.object({ id: z.number().int().positive(), fileName: z.string().trim().min(1).max(255), fileBase64: z.string().min(1) })).mutation(async ({ input, ctx }: any) => {
