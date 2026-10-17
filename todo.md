@@ -96,3 +96,12 @@
 - [x] Proteger la descarga con el mismo permiso administrativo y registrar el evento de descarga en el expediente, sin exponer una URL de almacenamiento.
 - [x] Validar sin crear contratos ni descargar expedientes reales: 22 regresiones focales de búsqueda, descarga inmutable, PDF y responsive; suite completa 255 archivos / 2.407 pruebas aprobadas (5 suites y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada), TypeScript, build, diff y servicio local HTTP 200 correctos. El navegador autenticado no estuvo disponible; no se descargó ni alteró ningún expediente real durante QA.
 - [x] Guardar checkpoint `dd99a304`, integrar de forma segura los cambios remotos compartidos, publicar en GitHub (`25fb4899d`) y verificar Railway: staging #7135420457 y producción #7135420466 finalizaron `success`. `app.evgreen.lat/admin/contracts` responde HTTP 200 y la descarga sin sesión responde 401, confirmando que el PDF no es público.
+
+## Espacios — reparto editable y campos numéricos (2026-10-17)
+
+- [x] Conservar la preconfiguración EDS de 60% inversionista / 40% EVGreen sobre el margen neto, sin permitir que un análisis IA histórico la sustituya.
+- [x] Hacer editables Inversor y EVGreen para acuerdos particulares; validar en cliente y servidor que ambos sumen exactamente 100% antes de generar el prospecto.
+- [x] Permitir borrar temporalmente cualquier porcentaje o parámetro del prospecto para reescribirlo, sin restablecer silenciosamente 10%, 1.800, 850 ni 0 durante la edición.
+- [x] Mantener 0 como un valor válido y bloquear solo la generación mientras el reparto esté incompleto o inválido; los campos vacíos opcionales vuelven a los supuestos vigentes del servidor únicamente al generar.
+- [x] Validar sin generar prospectos ni modificar Espacios: 17 regresiones focales de porcentajes, condición financiera y proyección; suite completa 255 archivos / 2.409 pruebas aprobadas (5 suites y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada), TypeScript, build, diff y servicio local HTTP 200 correctos. El navegador autenticado no estuvo disponible para la QA visual; no se creó ni alteró ningún Espacio.
+- [ ] Guardar checkpoint, integrar cambios remotos compartidos, publicar de forma segura y verificar Railway.

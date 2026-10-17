@@ -37,6 +37,7 @@ import {
   buildSpaceTrafficProjection,
   type SpaceTrafficProjectionSnapshot,
 } from "../../shared/space-traffic-financial-projection";
+import { isNetRevenueDistributionValid } from "../../shared/percentage-input";
 import {
   assertProspectoFinancialScenarioIsDocumented,
   resolveProspectoTechnicalCondition,
@@ -2844,7 +2845,7 @@ export const spacesRouter = router({
       capexIncludesGridUpgrade: z.boolean().default(false),
       technicalConditionNote: z.string().trim().max(2000).optional(),
     }).refine(
-      data => Math.abs(data.investorSharePercent + data.platformSharePercent - 100) < 0.001,
+      data => isNetRevenueDistributionValid(data.investorSharePercent, data.platformSharePercent),
       { message: "La participación de Inversionista y EVGreen debe sumar exactamente 100 % del margen neto" },
     ))
     .mutation(async ({ input, ctx }) => {
@@ -2888,7 +2889,6 @@ export const spacesRouter = router({
 	        submission.technicalNotes,
 	        input.technicalConditionNote,
 	      );
-	      const revenueDistribution = getRevenueDistributionForSpaceType(submission.spaceType);
 	      try {
 	        assertProspectoFinancialScenarioIsDocumented({
 	          technicalCondition,
@@ -2939,8 +2939,8 @@ export const spacesRouter = router({
         chargingSolarSelfConsumptionPercent: submission.chargingSolarSelfConsumptionPercent === null ? null : Number(submission.chargingSolarSelfConsumptionPercent),
         chargingSolarExportPercent: submission.chargingSolarExportPercent === null ? null : Number(submission.chargingSolarExportPercent),
         allySharePercent: input.allySharePercent,
-	        investorSharePercent: revenueDistribution.investorSharePercent,
-	        platformSharePercent: revenueDistribution.evgreenSharePercent,
+        investorSharePercent: input.investorSharePercent,
+        platformSharePercent: input.platformSharePercent,
 	        installedPowerKw: requestedPowerKw,
 	        tarifaKwhCop: input.tarifaKwhCop ?? Number(platformSettings?.precioVentaDefault ?? 1800),
 	        energyCostPerKwhCop: input.energyCostPerKwhCop ?? Number(platformSettings?.costoEnergiaRed ?? 850),

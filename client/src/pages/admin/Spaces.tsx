@@ -21,7 +21,7 @@ import { toast } from "sonner";
 import { getSpacePipelineAction } from "@shared/space-pipeline-actions";
 import { getRevenueDistributionForSpaceType, resolveDcInfrastructureRequirement } from "@shared/space-investment-scoring-policy";
 import { buildSpaceTrafficProjection } from "@shared/space-traffic-financial-projection";
-import { parseBoundedPercentageInput } from "@shared/percentage-input";
+import { isNetRevenueDistributionValid, parseOptionalBoundedPercentageInput } from "@shared/percentage-input";
 import { getPhotoTypeLabel } from "@shared/photo-type-labels";
 import { removePendingSpacePhoto, setPendingSpacePhotoCover } from "./space-photo-selection";
 import {
@@ -1520,7 +1520,17 @@ function SpaceDetailDialog({
   const [showCommercialStageDialog, setShowCommercialStageDialog] = useState(false);
   const [commercialStageNote, setCommercialStageNote] = useState("");
   const [showProspectoDialog, setShowProspectoDialog] = useState(false);
-  const [prospectoConfig, setProspectoConfig] = useState({
+  const [prospectoConfig, setProspectoConfig] = useState<{
+    allySharePercent: number | undefined;
+    investorSharePercent: number | undefined;
+    platformSharePercent: number | undefined;
+    installedPowerKw: number | undefined;
+    tarifaKwhCop: number | undefined;
+    energyCostPerKwhCop: number | undefined;
+    fixedMonthlyExpensesCop: number | undefined;
+    capexIncludesGridUpgrade: boolean;
+    technicalConditionNote: string;
+  }>({
     allySharePercent: 10,
     investorSharePercent: 70,
     platformSharePercent: 30,
@@ -1677,7 +1687,14 @@ function SpaceDetailDialog({
     chargerCount: Number(space.estimatedChargerCount || 1),
     transformerCapacityKva,
   });
-  const revenueDistribution = aiAnalysis?.revenueDistribution || getRevenueDistributionForSpaceType(space.spaceType);
+  // El tipo actual del espacio gobierna la preconfiguración; un análisis IA
+  // histórico no debe sobrescribir el reparto 60/40 propio de una EDS.
+  const revenueDistribution = getRevenueDistributionForSpaceType(space.spaceType);
+  const prospectoDistributionValid = isNetRevenueDistributionValid(
+    prospectoConfig.investorSharePercent,
+    prospectoConfig.platformSharePercent,
+  );
+  const prospectoSharesReady = prospectoConfig.allySharePercent !== undefined && prospectoDistributionValid;
   const prospectoRequiresGridUpgrade = dcInfrastructure.requiresGridUpgrade
     || space.electricalViability === "requires_upgrade"
     || space.electricalViability === "not_viable"
@@ -3561,16 +3578,15 @@ function SpaceDetailDialog({
                 <Settings2 className="w-4 h-4" /> Modelo de Reparto de Ingresos
               </h4>
               <p className="text-gray-500 text-xs leading-relaxed">Ingreso bruto − energía − gastos fijos = margen bruto. El aliado participa sobre ese margen; Inversor y EVGreen se reparten exclusivamente el margen neto resultante.</p>
-              <p className="rounded-md border border-emerald-400/20 bg-emerald-500/5 px-2.5 py-2 text-xs leading-relaxed text-emerald-100">Política aplicada: <strong>{revenueDistribution.investorSharePercent}% inversionista / {revenueDistribution.evgreenSharePercent}% EVGreen</strong> sobre margen neto ({revenueDistribution.basis === "EDS" ? "EDS" : "otros negocios"}). La comisión del dueño del sitio, cuando aplique, permanece separada como porcentaje del aliado sobre el margen bruto.</p>
+              <p className="rounded-md border border-emerald-400/20 bg-emerald-500/5 px-2.5 py-2 text-xs leading-relaxed text-emerald-100">Preconfiguración: <strong>{revenueDistribution.investorSharePercent}% inversionista / {revenueDistribution.evgreenSharePercent}% EVGreen</strong> sobre margen neto ({revenueDistribution.basis === "EDS" ? "EDS" : "otros negocios"}). Puedes ajustarla para este acuerdo; inversionista y EVGreen deben sumar 100%. La comisión del dueño del sitio se mantiene separada sobre el margen bruto.</p>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">Aliado (% margen bruto)</Label>
                   <Input
                     type="number" min={0} max={50} step={1} inputMode="numeric"
-                    value={prospectoConfig.allySharePercent}
+                    value={prospectoConfig.allySharePercent ?? ""}
                     onChange={e => {
-                      const v = parseBoundedPercentageInput(e.target.value, 50);
-                      if (v === undefined) return;
+                      const v = parseOptionalBoundedPercentageInput(e.target.value, 50);
                       setProspectoConfig(c => ({ ...c, allySharePercent: v }));
                     }}
                     className="bg-[#111827] border-[#374151] text-white h-8 text-sm"
@@ -3581,28 +3597,27 @@ function SpaceDetailDialog({
                   <Label className="text-gray-300 text-xs mb-1 block">Inversor (% neto)</Label>
                   <Input
                     type="number" min={0} max={100}
-                    value={prospectoConfig.investorSharePercent}
-                    readOnly
-                    aria-readonly="true"
-                    className="bg-[#111827] border-[#374151] text-white h-8 text-sm opacity-80"
+                    value={prospectoConfig.investorSharePercent ?? ""}
+                    onChange={e => setProspectoConfig(c => ({ ...c, investorSharePercent: parseOptionalBoundedPercentageInput(e.target.value) }))}
+                    className="bg-[#111827] border-[#374151] text-white h-8 text-sm"
                   />
                 </div>
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">EVGreen (% neto)</Label>
                   <Input
                     type="number" min={0} max={100}
-                    value={prospectoConfig.platformSharePercent}
-                    readOnly
-                    aria-readonly="true"
-                    className="bg-[#111827] border-[#374151] text-white h-8 text-sm opacity-80"
+                    value={prospectoConfig.platformSharePercent ?? ""}
+                    onChange={e => setProspectoConfig(c => ({ ...c, platformSharePercent: parseOptionalBoundedPercentageInput(e.target.value) }))}
+                    className="bg-[#111827] border-[#374151] text-white h-8 text-sm"
                   />
                 </div>
               </div>
+              {!prospectoSharesReady && <p className="rounded border border-amber-400/30 bg-amber-400/10 px-2 py-1.5 text-xs text-amber-100">Completa Aliado, Inversor y EVGreen con valores entre 0% y 100%. Inversor y EVGreen deben sumar exactamente 100% antes de generar el prospecto.</p>}
               {/* Barra visual del reparto neto: el aliado se descuenta antes. */}
               {(() => {
-                const allyPct = prospectoConfig.allySharePercent;
-                const invNetPct = prospectoConfig.investorSharePercent;
-                const platformNetPct = prospectoConfig.platformSharePercent;
+                const allyPct = prospectoConfig.allySharePercent ?? 0;
+                const invNetPct = prospectoConfig.investorSharePercent ?? 0;
+                const platformNetPct = prospectoConfig.platformSharePercent ?? 0;
                 return (
                   <>
                     <div className="w-full h-3 rounded-full overflow-hidden flex">
@@ -3629,8 +3644,8 @@ function SpaceDetailDialog({
                   <Input
                     type="number" min={1}
                     placeholder="Auto (del espacio)"
-                    value={prospectoConfig.installedPowerKw || ""}
-                    onChange={e => setProspectoConfig(c => ({ ...c, installedPowerKw: parseFloat(e.target.value) || undefined }))}
+                    value={prospectoConfig.installedPowerKw ?? ""}
+                    onChange={e => setProspectoConfig(c => ({ ...c, installedPowerKw: toOptionalNumber(e.target.value) }))}
                     className="bg-[#111827] border-[#374151] text-white h-8 text-sm placeholder:text-gray-600"
                   />
                 </div>
@@ -3638,8 +3653,8 @@ function SpaceDetailDialog({
                   <Label className="text-gray-300 text-xs mb-1 block">Tarifa (COP/kWh)</Label>
                   <Input
                     type="number" min={500}
-                    value={prospectoConfig.tarifaKwhCop}
-                    onChange={e => setProspectoConfig(c => ({ ...c, tarifaKwhCop: parseInt(e.target.value) || 1800 }))}
+                    value={prospectoConfig.tarifaKwhCop ?? ""}
+                    onChange={e => setProspectoConfig(c => ({ ...c, tarifaKwhCop: toOptionalNumber(e.target.value) }))}
                     className="bg-[#111827] border-[#374151] text-white h-8 text-sm"
                   />
                 </div>
@@ -3647,8 +3662,8 @@ function SpaceDetailDialog({
                   <Label className="text-gray-300 text-xs mb-1 block">Costo energía (COP/kWh)</Label>
                   <Input
                     type="number" min={0}
-                    value={prospectoConfig.energyCostPerKwhCop}
-                    onChange={e => setProspectoConfig(c => ({ ...c, energyCostPerKwhCop: Math.max(0, parseInt(e.target.value) || 0) }))}
+                    value={prospectoConfig.energyCostPerKwhCop ?? ""}
+                    onChange={e => setProspectoConfig(c => ({ ...c, energyCostPerKwhCop: toOptionalNumber(e.target.value) }))}
                     className="bg-[#111827] border-[#374151] text-white h-8 text-sm"
                   />
                 </div>
@@ -3656,8 +3671,8 @@ function SpaceDetailDialog({
                   <Label className="text-gray-300 text-xs mb-1 block">Gastos fijos mensuales (COP)</Label>
                   <Input
                     type="number" min={0}
-                    value={prospectoConfig.fixedMonthlyExpensesCop}
-                    onChange={e => setProspectoConfig(c => ({ ...c, fixedMonthlyExpensesCop: Math.max(0, parseInt(e.target.value) || 0) }))}
+                    value={prospectoConfig.fixedMonthlyExpensesCop ?? ""}
+                    onChange={e => setProspectoConfig(c => ({ ...c, fixedMonthlyExpensesCop: toOptionalNumber(e.target.value) }))}
                     className="bg-[#111827] border-[#374151] text-white h-8 text-sm"
                   />
                   <p className="mt-1 text-[11px] leading-snug text-gray-500">Incluya seguros, fiducia u otros costos recurrentes cuando apliquen.</p>
@@ -3701,6 +3716,10 @@ function SpaceDetailDialog({
             </Button>
             <Button
               onClick={async () => {
+                if (!prospectoSharesReady || prospectoConfig.allySharePercent === undefined || prospectoConfig.investorSharePercent === undefined || prospectoConfig.platformSharePercent === undefined) {
+                  toast.error("Completa el reparto: Inversor y EVGreen deben sumar exactamente 100% del margen neto.");
+                  return;
+                }
                 try {
                   const result = await generateProspectoMutation.mutateAsync({
                     submissionId: id,
@@ -3710,7 +3729,7 @@ function SpaceDetailDialog({
                     installedPowerKw: prospectoConfig.installedPowerKw,
                     tarifaKwhCop: prospectoConfig.tarifaKwhCop,
                     energyCostPerKwhCop: prospectoConfig.energyCostPerKwhCop,
-                    fixedMonthlyExpensesCop: prospectoConfig.fixedMonthlyExpensesCop,
+                    fixedMonthlyExpensesCop: prospectoConfig.fixedMonthlyExpensesCop ?? 0,
                     capexIncludesGridUpgrade: prospectoConfig.capexIncludesGridUpgrade,
                     technicalConditionNote: prospectoConfig.technicalConditionNote.trim() || undefined,
                   });
@@ -3731,7 +3750,7 @@ function SpaceDetailDialog({
                   toast.error(err.message || "Error al generar el prospecto");
                 }
               }}
-              disabled={generateProspectoMutation.isPending || !prospectoTechnicalReady}
+              disabled={generateProspectoMutation.isPending || !prospectoTechnicalReady || !prospectoSharesReady}
               className="bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50"
             >
               {generateProspectoMutation.isPending ? (
