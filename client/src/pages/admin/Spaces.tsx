@@ -913,13 +913,13 @@ export default function AdminSpaces() {
             return (
               <div
                 key={sub.id}
-                className={`w-full text-left bg-[#111827] border rounded-xl p-4 transition-colors ${isSelected ? "border-emerald-500/50 bg-emerald-500/5" : "border-[#1f2937]"}`}
+                className={`w-full text-left bg-[#111827] border rounded-xl p-3 transition-colors ${isSelected ? "border-emerald-500/50 bg-emerald-500/5" : "border-[#1f2937]"}`}
               >
                 <div className="flex items-start gap-3">
                   {canManageAdministrativeActions && <button onClick={() => toggleSelect(sub.id)} className="mt-0.5 text-gray-400 hover:text-emerald-400 transition-colors flex-shrink-0">
                     {isSelected ? <CheckSquare className="w-4 h-4 text-emerald-400" /> : <Square className="w-4 h-4" />}
                   </button>}
-                  <div className="flex-1 min-w-0" onClick={() => setSelectedId(sub.id)}>
+                  <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-3 mb-2">
                       <div className="min-w-0 flex-1">
                         <p className="text-white font-medium text-sm truncate">{sub.spaceName}</p>
@@ -951,11 +951,21 @@ export default function AdminSpaces() {
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center justify-between mt-2">
+                    <div className="mt-2 flex items-center justify-between gap-2 border-t border-[#1f2937] pt-2">
                       <p className="text-[11px] text-gray-600">{formatDateShort(sub.createdAt)}</p>
-                      {sub.estimatedInvestmentCop && (
-                        <span className="text-[11px] text-emerald-400 font-medium">{formatCOP(sub.estimatedInvestmentCop)}</span>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {sub.estimatedInvestmentCop && (
+                          <span className="text-[11px] text-emerald-400 font-medium">{formatCOP(sub.estimatedInvestmentCop)}</span>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setSelectedId(sub.id)}
+                          className="h-8 border-emerald-500/35 px-2.5 text-xs text-emerald-200 hover:bg-emerald-500/10"
+                        >
+                          <Eye className="mr-1 h-3.5 w-3.5" /> Ver
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1108,8 +1118,8 @@ export default function AdminSpaces() {
 
       {/* ===== DIALOG CREAR ESPACIO MANUAL ===== */}
       <Dialog open={showCreateDialog} onOpenChange={handleCreateDialogOpenChange}>
-        <DialogContent className="bg-[#111827] border-[#1f2937] text-white max-w-[95vw] sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="!inset-0 !top-0 !left-0 !h-[100dvh] !w-screen !max-h-none !max-w-none !translate-x-0 !translate-y-0 !rounded-none overflow-y-auto overscroll-contain border-[#1f2937] bg-[#111827] p-3 text-white sm:!top-1/2 sm:!left-1/2 sm:!h-auto sm:!max-h-[90vh] sm:!w-[calc(100%-2rem)] sm:!max-w-2xl sm:!translate-x-[-50%] sm:!translate-y-[-50%] sm:rounded-lg sm:p-6">
+          <DialogHeader className="sticky top-0 z-10 -mx-3 -mt-3 border-b border-[#1f2937] bg-[#111827] px-3 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] pr-14 sm:static sm:m-0 sm:border-0 sm:bg-transparent sm:p-0 sm:pr-0">
             <DialogTitle className="flex items-center gap-2 text-white">
               <Plus className="w-5 h-5 text-emerald-400" />
               Crear Espacio Manualmente
@@ -1464,7 +1474,7 @@ export default function AdminSpaces() {
                 : "Creando el espacio y cargando sus adjuntos…"}
             </div>
           )}
-          <DialogFooter className="flex-col sm:flex-row gap-2">
+          <DialogFooter className="sticky bottom-0 z-10 -mx-3 -mb-3 border-t border-[#1f2937] bg-[#111827] px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:static sm:m-0 sm:border-0 sm:bg-transparent sm:p-0 sm:flex-row">
             <Button type="button" variant="outline" disabled={isCreatingManualSpace} onClick={() => handleCreateDialogOpenChange(false)} className="border-[#374151] text-gray-300 w-full sm:w-auto">
               Cancelar
             </Button>
@@ -1995,9 +2005,9 @@ function SpaceDetailDialog({
   return (
     <>
       <Dialog open onOpenChange={onClose}>
-        <DialogContent className="bg-[#111827] border-[#1f2937] text-white max-w-[95vw] sm:max-w-4xl max-h-[90vh] overflow-y-auto p-4 sm:p-6">
+        <DialogContent className="!inset-0 !top-0 !left-0 !h-[100dvh] !w-screen !max-h-none !max-w-none !translate-x-0 !translate-y-0 !rounded-none overflow-y-auto overscroll-contain border-[#1f2937] bg-[#111827] p-3 text-white sm:!top-1/2 sm:!left-1/2 sm:!h-auto sm:!max-h-[90vh] sm:!w-[calc(100%-2rem)] sm:!max-w-4xl sm:!translate-x-[-50%] sm:!translate-y-[-50%] sm:rounded-lg sm:p-6">
           {/* Header */}
-          <DialogHeader className="pb-2">
+          <DialogHeader className="sticky top-0 z-10 -mx-3 -mt-3 border-b border-[#1f2937] bg-[#111827] px-3 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] pr-14 sm:static sm:m-0 sm:border-0 sm:bg-transparent sm:p-0 sm:pr-0">
             <DialogTitle className="flex flex-col sm:flex-row sm:items-center gap-2">
               <span className="font-mono text-emerald-400 text-base sm:text-lg">{space.code}</span>
               <span className={`self-start inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${statusInfo.color}`}>
@@ -2702,8 +2712,8 @@ function SpaceDetailDialog({
 
       {/* Edit Dialog — EXPANDIDO */}
       <Dialog open={showEditDialog} onOpenChange={handleEditDialogOpenChange}>
-        <DialogContent className="bg-[#111827] border-[#1f2937] text-white max-w-[95vw] sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="!inset-0 !top-0 !left-0 !h-[100dvh] !w-screen !max-h-none !max-w-none !translate-x-0 !translate-y-0 !rounded-none overflow-y-auto overscroll-contain border-[#1f2937] bg-[#111827] p-3 text-white sm:!top-1/2 sm:!left-1/2 sm:!h-auto sm:!max-h-[90vh] sm:!w-[calc(100%-2rem)] sm:!max-w-2xl sm:!translate-x-[-50%] sm:!translate-y-[-50%] sm:rounded-lg sm:p-6">
+          <DialogHeader className="sticky top-0 z-10 -mx-3 -mt-3 border-b border-[#1f2937] bg-[#111827] px-3 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] pr-14 sm:static sm:m-0 sm:border-0 sm:bg-transparent sm:p-0 sm:pr-0">
             <DialogTitle className="flex items-center gap-2"><Pencil className="w-4 h-4 text-blue-400" /> Editar espacio — {space.code}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
@@ -3267,7 +3277,7 @@ function SpaceDetailDialog({
             </div>
           </div>
 
-          <DialogFooter className="flex-col sm:flex-row gap-2 mt-2">
+          <DialogFooter className="sticky bottom-0 z-10 -mx-3 -mb-3 mt-2 border-t border-[#1f2937] bg-[#111827] px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:static sm:m-0 sm:mt-2 sm:border-0 sm:bg-transparent sm:p-0 sm:flex-row">
             <Button variant="outline" onClick={() => handleEditDialogOpenChange(false)} className="border-[#374151] text-gray-300 w-full sm:w-auto">
               Cancelar
             </Button>
@@ -3560,8 +3570,8 @@ function SpaceDetailDialog({
 
       {/* ===== MODAL PROSPECTO DE INVERSIÓN ===== */}
       <Dialog open={showProspectoDialog} onOpenChange={setShowProspectoDialog}>
-        <DialogContent className="w-[calc(100vw-1rem)] max-w-2xl max-h-[90dvh] overflow-y-auto bg-[#111827] border-[#1f2937] text-white">
-          <DialogHeader>
+        <DialogContent className="!inset-0 !top-0 !left-0 !h-[100dvh] !w-screen !max-h-none !max-w-none !translate-x-0 !translate-y-0 !rounded-none overflow-y-auto overscroll-contain border-[#1f2937] bg-[#111827] p-3 text-white sm:!top-1/2 sm:!left-1/2 sm:!h-auto sm:!max-h-[90dvh] sm:!w-[calc(100vw-1rem)] sm:!max-w-2xl sm:!translate-x-[-50%] sm:!translate-y-[-50%] sm:rounded-lg sm:p-6">
+          <DialogHeader className="sticky top-0 z-10 -mx-3 -mt-3 border-b border-[#1f2937] bg-[#111827] px-3 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] pr-14 sm:static sm:m-0 sm:border-0 sm:bg-transparent sm:p-0 sm:pr-0">
             <DialogTitle className="text-white flex items-center gap-2">
               <FileDown className="w-5 h-5 text-emerald-400" />
               Generar Prospecto de Inversión
@@ -3710,8 +3720,8 @@ function SpaceDetailDialog({
               </div>
             )}
           </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setShowProspectoDialog(false)} className="border-[#374151] text-gray-300">
+          <DialogFooter className="sticky bottom-0 z-10 -mx-3 -mb-3 border-t border-[#1f2937] bg-[#111827] px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:static sm:m-0 sm:border-0 sm:bg-transparent sm:p-0">
+            <Button variant="outline" onClick={() => setShowProspectoDialog(false)} className="w-full border-[#374151] text-gray-300 sm:w-auto">
               Cancelar
             </Button>
             <Button
@@ -3751,7 +3761,7 @@ function SpaceDetailDialog({
                 }
               }}
               disabled={generateProspectoMutation.isPending || !prospectoTechnicalReady || !prospectoSharesReady}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50"
+              className="w-full bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 sm:w-auto"
             >
               {generateProspectoMutation.isPending ? (
                 <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Generando PDF...</>

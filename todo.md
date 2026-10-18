@@ -105,3 +105,13 @@
 - [x] Mantener 0 como un valor válido y bloquear solo la generación mientras el reparto esté incompleto o inválido; los campos vacíos opcionales vuelven a los supuestos vigentes del servidor únicamente al generar.
 - [x] Validar sin generar prospectos ni modificar Espacios: 17 regresiones focales de porcentajes, condición financiera y proyección; suite completa 255 archivos / 2.409 pruebas aprobadas (5 suites y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada), TypeScript, build, diff y servicio local HTTP 200 correctos. El navegador autenticado no estuvo disponible para la QA visual; no se creó ni alteró ningún Espacio.
 - [x] Guardar checkpoint `e0fcec13`, integrar de forma segura los cambios remotos compartidos, publicar en GitHub (`d03741424`) y verificar Railway: staging #7146146247 y producción #7146146198 finalizaron `success`; `app.evgreen.lat/admin/spaces` y `evgreen.lat/admin/spaces` responden HTTP 200.
+
+## Espacios — experiencia mobile-first (2026-10-18)
+
+- [x] Rediseñar la galería a pantalla completa para móvil: imagen desde la zona superior útil, cabecera compacta, contador visible, objetivos táctiles de 48 px, miniaturas compactas con scroll horizontal y navegación por gestos/teclado.
+- [x] Convertir detalle, creación, edición y Prospecto PDF en superficies a pantalla completa bajo `sm`, con cabeceras fijas, áreas seguras y desplazamiento interno que no queda por detrás de la barra del sistema.
+- [x] Mantener Guardar, Crear y Generar/Descargar anclados en el borde inferior del móvil; preservar sus dimensiones de diálogo originales en escritorio.
+- [x] Hacer explícito el botón “Ver” en tarjetas móviles de Espacios para evitar zonas de toque ambiguas y mantener selección masiva independiente.
+- [x] Añadir regresiones estáticas de responsive, galería y accesibilidad.
+- [x] Validar sin modificar Espacios: 11 regresiones focales de galería, fotos y responsive; suite completa 256 archivos / 2.412 pruebas aprobadas (5 suites y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada), TypeScript, build, diff y servicio local HTTP 200 correctos. El navegador de QA no estuvo disponible y Chromium headless quedó bloqueado en el sandbox, por lo que se detuvo sin iniciar sesión ni alterar datos.
+- [ ] Guardar checkpoint, integrar cambios remotos compartidos, publicar de forma segura y verificar Railway.
