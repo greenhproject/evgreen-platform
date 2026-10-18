@@ -114,4 +114,4 @@
 - [x] Hacer explícito el botón “Ver” en tarjetas móviles de Espacios para evitar zonas de toque ambiguas y mantener selección masiva independiente.
 - [x] Añadir regresiones estáticas de responsive, galería y accesibilidad.
 - [x] Validar sin modificar Espacios: 11 regresiones focales de galería, fotos y responsive; suite completa 256 archivos / 2.412 pruebas aprobadas (5 suites y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada), TypeScript, build, diff y servicio local HTTP 200 correctos. El navegador de QA no estuvo disponible y Chromium headless quedó bloqueado en el sandbox, por lo que se detuvo sin iniciar sesión ni alterar datos.
-- [ ] Guardar checkpoint, integrar cambios remotos compartidos, publicar de forma segura y verificar Railway.
+- [x] Guardar checkpoint `5d993c36`, integrar de forma segura los cambios remotos compartidos, publicar en GitHub (`f2b4cc31f`) y verificar Railway: staging #7157693301 y producción #7157693278 finalizaron `success`; `app.evgreen.lat/admin/spaces` y `evgreen.lat/admin/spaces` responden HTTP 200.
