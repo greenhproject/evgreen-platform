@@ -309,6 +309,26 @@ describe("Historial de potencia (powerHistory)", () => {
     expect(history[0].power).toBe(7.2);
     expect(history[1].power).toBe(6.5);
   });
+
+  it("conserva cero cuando el cargador lo midió y un hueco cuando no reportó potencia", () => {
+    const firstSample = new Date("2026-10-21T12:00:00Z");
+    const secondSample = new Date("2026-10-21T12:05:00Z");
+    updateActiveSessionMeterData(testTransactionId, {
+      currentKwh: 1,
+      currentPower: 0,
+      currentPowerSource: "measured",
+      sampleAt: firstSample,
+    });
+    updateActiveSessionMeterData(testTransactionId, {
+      currentPower: null,
+      currentPowerSource: "unavailable",
+      sampleAt: secondSample,
+    });
+
+    const history = getActiveSessionPowerHistory(testTransactionId);
+    expect(history[0]).toMatchObject({ power: 0, powerSource: "measured" });
+    expect(history[1]).toMatchObject({ power: null, powerSource: "unavailable" });
+  });
   
   it("debe retornar array vacío si la sesión no existe", () => {
     const history = getActiveSessionPowerHistory(77777);

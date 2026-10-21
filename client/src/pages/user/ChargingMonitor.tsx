@@ -496,6 +496,11 @@ export default function ChargingMonitor() {
   const telemetryIsFresh = telemetryStatus === "live";
   const ocppConnected = (session as any).ocppConnected === true;
   const lastReportedPower = Number((session as any).lastReportedPower || 0);
+  const currentPowerSource = ((session as any).currentPowerSource || "unavailable") as "measured" | "estimated_from_energy" | "unavailable";
+  const hasEstimatedPower = (session as any).hasEstimatedPower === true;
+  const meterReferenceNeedsReview = (session as any).meterReferenceNeedsReview === true;
+  const voltage = (session as any).voltage as number | null | undefined;
+  const currentAmp = (session as any).currentAmp as number | null | undefined;
   const isAcSession = (session as any).chargeType === "AC"
     || String(session.connectorType || "").toUpperCase().includes("AC");
   
@@ -546,8 +551,9 @@ export default function ChargingMonitor() {
   // Potencia real vs nominal
   const realPower = telemetryIsFresh ? (session.currentPower || 0) : 0;
   const nominalPower = session.powerKw || 7;
-  const displayPower = realPower > 0 ? realPower : 0;
-  const hasPowerData = realPower > 0;
+  const displayPower = realPower;
+  const hasPowerData = telemetryIsFresh && currentPowerSource !== "unavailable";
+  const powerIsEstimated = currentPowerSource === "estimated_from_energy";
   
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/30 pb-24">
@@ -843,7 +849,9 @@ export default function ChargingMonitor() {
                 <span className="text-sm font-normal text-muted-foreground ml-1">kWh</span>
               </p>
               <p className="text-xs text-muted-foreground">
-                {!telemetryIsFresh && telemetryAgeSeconds !== null
+                {meterReferenceNeedsReview
+                  ? "Lecturas en conciliación; el total facturable no se alteró"
+                  : !telemetryIsFresh && telemetryAgeSeconds !== null
                   ? `Última lectura ${telemetryAgeLabel}`
                   : session.estimatedKwh > 0
                   ? `de ${session.estimatedKwh.toFixed(1)} kWh estimados`
@@ -897,9 +905,9 @@ export default function ChargingMonitor() {
             <CardContent className="p-4">
               <div className="flex items-center gap-2 text-amber-600 mb-1">
                 <Zap className="w-4 h-4" />
-                <span className="text-xs font-medium">Potencia</span>
+                <span className="text-xs font-medium">{powerIsEstimated ? "Potencia estimada" : "Potencia"}</span>
                 {hasPowerData && (
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className={`w-2 h-2 rounded-full animate-pulse ${powerIsEstimated ? "bg-amber-500" : "bg-emerald-500"}`} />
                 )}
               </div>
               <p className="text-2xl font-bold text-foreground tabular-nums">
@@ -912,46 +920,50 @@ export default function ChargingMonitor() {
               </p>
               <p className="text-xs text-muted-foreground">
                 {hasPowerData 
-                  ? `Máx: ${nominalPower} kW`
+                  ? powerIsEstimated
+                    ? "Calculada desde energía OCPP y tiempo entre muestras"
+                    : "Medida por el cargador"
                   : lastReportedPower > 0 && telemetryAgeSeconds !== null
                     ? `Último: ${lastReportedPower.toFixed(1)} kW · ${telemetryAgeLabel}`
-                  : `Nominal: ${nominalPower} kW`}
+                  : `No reportada por el cargador · nominal ${nominalPower} kW`}
               </p>
             </CardContent>
           </Card>
         </div>
         
-        {/* Datos técnicos adicionales (voltaje, corriente) si están disponibles */}
-        {telemetryIsFresh && ((session as any).voltage || (session as any).currentAmp) && (
+        {/* Solo se muestran V/A que llegaron en MeterValues: nunca se derivan desde potencia. */}
+        {!isSimulation && hasRealData && (
           <div className="grid grid-cols-2 gap-3 mt-3">
-            {(session as any).voltage && (
-              <Card className="bg-gradient-to-br from-cyan-500/10 to-cyan-600/5 border-cyan-500/20">
-                <CardContent className="p-3">
-                  <div className="flex items-center gap-2 text-cyan-600 mb-1">
-                    <Gauge className="w-3 h-3" />
-                    <span className="text-xs font-medium">Voltaje</span>
-                  </div>
-                  <p className="text-lg font-bold text-foreground tabular-nums">
-                    {(session as any).voltage.toFixed(0)}
-                    <span className="text-xs font-normal text-muted-foreground ml-1">V</span>
-                  </p>
-                </CardContent>
-              </Card>
-            )}
-            {(session as any).currentAmp && (
-              <Card className="bg-gradient-to-br from-rose-500/10 to-rose-600/5 border-rose-500/20">
-                <CardContent className="p-3">
-                  <div className="flex items-center gap-2 text-rose-600 mb-1">
-                    <Plug className="w-3 h-3" />
-                    <span className="text-xs font-medium">Corriente</span>
-                  </div>
-                  <p className="text-lg font-bold text-foreground tabular-nums">
-                    {(session as any).currentAmp.toFixed(1)}
-                    <span className="text-xs font-normal text-muted-foreground ml-1">A</span>
-                  </p>
-                </CardContent>
-              </Card>
-            )}
+            <Card className="bg-gradient-to-br from-cyan-500/10 to-cyan-600/5 border-cyan-500/20">
+              <CardContent className="p-3">
+                <div className="flex items-center gap-2 text-cyan-600 mb-1">
+                  <Gauge className="w-3 h-3" />
+                  <span className="text-xs font-medium">Voltaje</span>
+                </div>
+                <p className="text-lg font-bold text-foreground tabular-nums">
+                  {voltage !== null && voltage !== undefined ? voltage.toFixed(0) : <span className="text-muted-foreground">---</span>}
+                  {voltage !== null && voltage !== undefined && <span className="text-xs font-normal text-muted-foreground ml-1">V</span>}
+                </p>
+                <p className="mt-1 text-[10px] leading-tight text-muted-foreground">
+                  {voltage !== null && voltage !== undefined ? "Medido por el cargador" : "No reportado por el cargador"}
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="bg-gradient-to-br from-rose-500/10 to-rose-600/5 border-rose-500/20">
+              <CardContent className="p-3">
+                <div className="flex items-center gap-2 text-rose-600 mb-1">
+                  <Plug className="w-3 h-3" />
+                  <span className="text-xs font-medium">Corriente</span>
+                </div>
+                <p className="text-lg font-bold text-foreground tabular-nums">
+                  {currentAmp !== null && currentAmp !== undefined ? currentAmp.toFixed(1) : <span className="text-muted-foreground">---</span>}
+                  {currentAmp !== null && currentAmp !== undefined && <span className="text-xs font-normal text-muted-foreground ml-1">A</span>}
+                </p>
+                <p className="mt-1 text-[10px] leading-tight text-muted-foreground">
+                  {currentAmp !== null && currentAmp !== undefined ? "Medida por el cargador" : "No reportada por el cargador"}
+                </p>
+              </CardContent>
+            </Card>
           </div>
         )}
         
@@ -963,10 +975,19 @@ export default function ChargingMonitor() {
                 <Zap className="w-4 h-4 text-amber-600" />
                 <div className="min-w-0 flex-1">
                   <span className="block text-sm font-semibold text-foreground">
-                    {telemetryIsFresh ? "Potencia en tiempo real" : "Historial de potencia recibido"}
+                    {hasEstimatedPower ? "Potencia estimada por el medidor" : telemetryIsFresh ? "Potencia en tiempo real" : "Historial de potencia recibido"}
                   </span>
-                  {!telemetryIsFresh && telemetryAgeSeconds !== null && (
-                    <span className="block text-xs text-muted-foreground">Última muestra {telemetryAgeLabel}</span>
+                  <span className="block text-xs text-muted-foreground">
+                    {hasEstimatedPower
+                      ? "Calculada con el delta entre lecturas de energía; no equivale a amperios o voltaje medidos."
+                      : !telemetryIsFresh && telemetryAgeSeconds !== null
+                        ? `Última muestra ${telemetryAgeLabel}`
+                        : "Medición reportada por el cargador."}
+                  </span>
+                  {meterReferenceNeedsReview && (
+                    <span className="mt-1 block text-[11px] font-medium text-amber-700 dark:text-amber-300">
+                      La energía de esta gráfica es relativa; la referencia inicial está en conciliación y no cambia el cobro.
+                    </span>
                   )}
                 </div>
                 <span className={`w-2 h-2 rounded-full ml-auto ${telemetryIsFresh ? "bg-emerald-500 animate-pulse" : "bg-amber-500"}`} />

@@ -39,7 +39,8 @@ ChartJS.register(
 
 interface PowerHistoryPoint {
   timestamp: number;
-  power: number;
+  power: number | null;
+  powerSource?: "measured" | "estimated_from_energy" | "unavailable";
   energy: number;
   soc: number | null;
 }
@@ -70,11 +71,13 @@ export function PowerChart({ powerHistory, startTime, nominalPower = 7 }: PowerC
     });
 
     const hasSoc = powerHistory.some((p) => p.soc !== null);
+    const hasMeasuredPower = powerHistory.some((p) => p.powerSource === "measured" && p.power !== null);
+    const hasEstimatedPower = powerHistory.some((p) => p.powerSource === "estimated_from_energy" && p.power !== null);
 
     const datasets: ChartData<"line">["datasets"] = [
-      {
-        label: "Potencia (kW)",
-        data: powerHistory.map((p) => Math.round(p.power * 10) / 10),
+      ...(hasMeasuredPower ? [{
+        label: "Potencia medida (kW)",
+        data: powerHistory.map((p) => p.powerSource === "measured" && p.power !== null ? Math.round(p.power * 10) / 10 : null),
         borderColor: "rgb(245, 158, 11)",
         backgroundColor: "rgba(245, 158, 11, 0.1)",
         borderWidth: 2,
@@ -83,9 +86,23 @@ export function PowerChart({ powerHistory, startTime, nominalPower = 7 }: PowerC
         tension: 0.3,
         fill: true,
         yAxisID: "y",
-      },
+      }] : []),
+      ...(hasEstimatedPower ? [{
+        label: "Potencia estimada por energía (kW)",
+        data: powerHistory.map((p) => p.powerSource === "estimated_from_energy" && p.power !== null ? Math.round(p.power * 10) / 10 : null),
+        borderColor: "rgb(217, 119, 6)",
+        backgroundColor: "transparent",
+        borderWidth: 2,
+        borderDash: [6, 4],
+        pointRadius: 2,
+        pointHoverRadius: 4,
+        tension: 0.3,
+        fill: false,
+        spanGaps: false,
+        yAxisID: "y",
+      }] : []),
       {
-        label: "Energía (kWh)",
+        label: "Energía relativa (kWh)",
         data: powerHistory.map((p) => Math.round(p.energy * 100) / 100),
         borderColor: "rgb(59, 130, 246)",
         backgroundColor: "rgba(59, 130, 246, 0.08)",
@@ -119,8 +136,11 @@ export function PowerChart({ powerHistory, startTime, nominalPower = 7 }: PowerC
 
   const options = useMemo<ChartOptions<"line">>(() => {
     const hasSoc = powerHistory?.some((p) => p.soc !== null);
-    const maxPower = powerHistory?.length
-      ? Math.max(...powerHistory.map((p) => p.power), nominalPower) * 1.2
+    const reportedPowers = powerHistory
+      .map((point) => point.power)
+      .filter((power): power is number => power !== null && Number.isFinite(power));
+    const maxPower = reportedPowers.length
+      ? Math.max(...reportedPowers, nominalPower) * 1.2
       : nominalPower * 1.2;
 
     const maxEnergy = powerHistory?.length

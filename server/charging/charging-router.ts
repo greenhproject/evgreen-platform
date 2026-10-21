@@ -23,6 +23,8 @@ import {
   buildPowerHistoryFromMeterValues,
   resolveChargingTelemetryFreshness,
   shouldAdvanceTelemetrySample,
+  type ChartEnergyReference,
+  type PowerTelemetrySource,
 } from "../../shared/charging-telemetry";
 import { learnEffectiveSocCapacity } from "../../shared/soc-calibration-learning";
 import {
@@ -102,8 +104,11 @@ const pendingChargeSessions = new Map<string, {
 // Tipo para un punto de datos en el historial de potencia
 export type PowerHistoryPoint = {
   timestamp: number; // Unix ms
-  power: number; // kW
-  energy: number; // kWh acumulados
+  power: number | null; // kW; null si no hubo medición ni estimación válida
+  powerSource: PowerTelemetrySource;
+  // Referencia solo visual; nunca se utiliza para liquidar la transacción.
+  energy: number; // kWh acumulados para la gráfica
+  energyReference: ChartEnergyReference;
   soc: number | null; // % batería
 };
 
@@ -122,6 +127,12 @@ const activeChargeSessions = new Map<number, {
   // Datos en tiempo real del cargador (MeterValues)
   soc: number | null; // State of Charge del vehículo (%)
   currentPower: number; // Potencia actual de carga (kW)
+  currentPowerSource?: PowerTelemetrySource;
+  // Serie cruda y referencia exclusivamente visual para derivar potencia de
+  // cargadores que sólo publican Energy.Active.Import.Register.
+  lastRawEnergyKwh?: number | null;
+  chartEnergyBaselineKwh?: number | null;
+  chartEnergyReference?: ChartEnergyReference;
   voltage: number | null; // Voltaje (V)
   current: number | null; // Corriente (A)
   lastMeterUpdate: Date | null; // Timestamp del último MeterValues
@@ -1420,6 +1431,7 @@ export const chargingRouter = router({
       let currentCost: number;
       let soc: number | null = null;
       let currentPower: number = 0;
+      let currentPowerSource: PowerTelemetrySource = "unavailable";
       let voltage: number | null = null;
       let currentAmp: number | null = null;
       const latestStoredMeterValue = await db.getLastMeterValue(activeTransaction.id);
@@ -1436,6 +1448,7 @@ export const chargingRouter = router({
           }
         } catch (_e) { /* no-op: no bloquear si falla */ }
       }
+      const meterReferenceNeedsReview = resolvedPowerHistory.some((point) => point.energyReference === "first_sample");
       
       if (activeSessionInfo) {
         // Datos actualizados en tiempo real desde MeterValues
@@ -1444,6 +1457,7 @@ export const chargingRouter = router({
         pricePerKwh = activeSessionInfo.pricePerKwh || pricePerKwh;
         soc = activeSessionInfo.soc;
         currentPower = activeSessionInfo.currentPower || 0;
+        currentPowerSource = activeSessionInfo.currentPowerSource ?? "unavailable";
         voltage = activeSessionInfo.voltage;
         currentAmp = activeSessionInfo.current;
 
@@ -1457,6 +1471,10 @@ export const chargingRouter = router({
             ? Math.max(0, parseFloat(latestStoredMeterValue.energyKwh) - meterStart / 1000)
             : currentKwh;
           currentPower = latestStoredMeterValue.powerKw ? parseFloat(latestStoredMeterValue.powerKw) : currentPower;
+          if (latestStoredMeterValue.powerKw !== null && latestStoredMeterValue.powerKw !== undefined) {
+            currentPower = parseFloat(latestStoredMeterValue.powerKw);
+            currentPowerSource = "measured";
+          }
           soc = latestStoredMeterValue.soc ?? soc;
           voltage = latestStoredMeterValue.voltage ? parseFloat(latestStoredMeterValue.voltage) : voltage;
           currentAmp = latestStoredMeterValue.current ? parseFloat(latestStoredMeterValue.current) : currentAmp;
@@ -1471,6 +1489,10 @@ export const chargingRouter = router({
             : 0;
           soc = lastMeterValue.soc;
           currentPower = lastMeterValue.powerKw ? parseFloat(lastMeterValue.powerKw) : 0;
+          if (lastMeterValue.powerKw !== null && lastMeterValue.powerKw !== undefined) {
+            currentPower = parseFloat(lastMeterValue.powerKw);
+            currentPowerSource = "measured";
+          }
           voltage = lastMeterValue.voltage ? parseFloat(lastMeterValue.voltage) : null;
           currentAmp = lastMeterValue.current ? parseFloat(lastMeterValue.current) : null;
         } else {
@@ -1478,44 +1500,40 @@ export const chargingRouter = router({
           currentKwh = activeTransaction.kwhConsumed ? parseFloat(activeTransaction.kwhConsumed) : 0;
         }
         
-        // Calcular costo: energía + tiempo + tarifa de conexión
-        const durationMinutes = (Date.now() - startTime.getTime()) / (1000 * 60);
-        const tariff = activeTransaction.tariffId ? await db.getTariffById(activeTransaction.tariffId) : null;
-        // Solo usar tarifa base si no hay precio dinámico guardado en la transacción
-        if (!activeTransaction.appliedPricePerKwh && tariff?.pricePerKwh) pricePerKwh = parseFloat(tariff.pricePerKwh);
-        const pricePerMinute = tariff ? parseFloat(tariff.pricePerMinute || "0") : 0;
-        const sessionFee = activeTransaction.appliedConnectionFee !== null && activeTransaction.appliedConnectionFee !== undefined
-          ? Number(activeTransaction.appliedConnectionFee)
-          : (tariff ? parseFloat(tariff.pricePerSession || "0") : connectionFee);
-        
-        const energyCost = currentKwh * pricePerKwh;
-        const timeCost = durationMinutes * pricePerMinute;
-        currentCost = energyCost + timeCost + sessionFee;
+        if (meterReferenceNeedsReview) {
+          // La gráfica puede seguir siendo útil, pero ningún dato visual debe
+          // recomponer un cobro mientras la base del medidor esté en revisión.
+          currentKwh = activeTransaction.kwhConsumed ? parseFloat(activeTransaction.kwhConsumed) : 0;
+          currentCost = activeTransaction.totalCost ? parseFloat(activeTransaction.totalCost) : 0;
+        } else {
+          // Calcular costo: energía + tiempo + tarifa de conexión
+          const durationMinutes = (Date.now() - startTime.getTime()) / (1000 * 60);
+          const tariff = activeTransaction.tariffId ? await db.getTariffById(activeTransaction.tariffId) : null;
+          // Solo usar tarifa base si no hay precio dinámico guardado en la transacción
+          if (!activeTransaction.appliedPricePerKwh && tariff?.pricePerKwh) pricePerKwh = parseFloat(tariff.pricePerKwh);
+          const pricePerMinute = tariff ? parseFloat(tariff.pricePerMinute || "0") : 0;
+          const sessionFee = activeTransaction.appliedConnectionFee !== null && activeTransaction.appliedConnectionFee !== undefined
+            ? Number(activeTransaction.appliedConnectionFee)
+            : (tariff ? parseFloat(tariff.pricePerSession || "0") : connectionFee);
+
+          const energyCost = currentKwh * pricePerKwh;
+          const timeCost = durationMinutes * pricePerMinute;
+          currentCost = energyCost + timeCost + sessionFee;
+        }
       }
       
-      // Si no hay potencia instantánea real del cargador (no reporta Power.Active.Import),
-      // intentar estimar por la última diferencia de energía del historial de potencia en memoria.
-      // Solo usar nominalPowerKw como último recurso cuando no hay ningún dato real.
-      if (currentPower <= 0) {
-        // Intentar usar la potencia del último punto del historial (calculada por diferencia de energía en MeterValues)
-        const powerHistory = activeSessionInfo?.powerHistory;
-        if (powerHistory && powerHistory.length >= 2) {
-          // Tomar la potencia del último punto del historial (calculada en tiempo real por OCPP handler)
-          const lastPoint = powerHistory[powerHistory.length - 1];
-          if (lastPoint.power > 0) {
-            currentPower = lastPoint.power;
-          }
-        }
-        // Si aun no hay dato, estimar por kWh totales / tiempo transcurrido
-        // Esto da el promedio real de la sesión, no la potencia máxima del conector
-        if (currentPower <= 0 && currentKwh > 0 && elapsedMinutes > 2) {
-          const elapsedHours = elapsedMinutes / 60;
-          currentPower = currentKwh / elapsedHours;
-          // Limitar al nominal para no mostrar valores imposibles
-          if (currentPower > nominalPowerKw * 1.1) currentPower = nominalPowerKw;
-        }
-        // Solo si no hay absolutamente ninguna información, mostrar 0 (sin dato) en lugar de nominal
-        // El frontend ya maneja currentPower=0 mostrando "---" en lugar de un valor incorrecto
+      // Preferir el último punto reconstruido desde la BD incluso si esta
+      // instancia no recibió los MeterValues. No se usa promedio de toda la
+      // sesión: eso no es potencia instantánea y podría inducir al usuario.
+      const lastResolvedPowerPoint = resolvedPowerHistory.at(-1);
+      if (lastResolvedPowerPoint?.power !== null && lastResolvedPowerPoint?.power !== undefined
+        && (currentPowerSource === "unavailable"
+          // Versiones previas guardaban 0.00 al faltar Power.Active.Import.
+          // Sólo se reemplaza cuando el helper demostró un delta energético
+          // creciente y por tanto identifica ese cero heredado como ambiguo.
+          || (currentPower === 0 && lastResolvedPowerPoint.powerSource === "estimated_from_energy"))) {
+        currentPower = lastResolvedPowerPoint.power;
+        currentPowerSource = lastResolvedPowerPoint.powerSource;
       }
       
       // ============================================================
@@ -1656,6 +1674,7 @@ export const chargingRouter = router({
       const telemetryFreshness = resolveChargingTelemetryFreshness({ sampleAt: lastMeterSampleAt });
       const lastReportedPower = Math.round(currentPower * 10) / 10;
       const liveCurrentPower = telemetryFreshness.isFresh ? lastReportedPower : 0;
+      const hasEstimatedPower = resolvedPowerHistory.some((point) => point.powerSource === "estimated_from_energy");
       const ocppConnected = station?.ocppIdentity ? dualCSMS.isStationConnected(station.ocppIdentity) : false;
       
       return {
@@ -1674,7 +1693,11 @@ export const chargingRouter = router({
         connectionFee,
         powerKw: nominalPowerKw,
         currentPower: liveCurrentPower,
+        currentPowerSource,
         lastReportedPower,
+        lastReportedPowerSource: currentPowerSource,
+        hasEstimatedPower,
+        meterReferenceNeedsReview,
         lastMeterSampleAt,
         telemetryStatus: telemetryFreshness.status,
         telemetryAgeSeconds: telemetryFreshness.ageSeconds,
@@ -2126,8 +2149,13 @@ export function removeActiveSession(transactionId: number) {
 export function updateActiveSessionMeterData(transactionId: number, data: {
   currentKwh?: number;
   currentCost?: number;
+  rawEnergyKwh?: number | null;
+  chartEnergyBaselineKwh?: number | null;
+  chartEnergyReference?: ChartEnergyReference;
+  chartEnergyKwh?: number | null;
   soc?: number | null;
-  currentPower?: number;
+  currentPower?: number | null;
+  currentPowerSource?: PowerTelemetrySource;
   voltage?: number | null;
   current?: number | null;
   sampleAt?: Date;
@@ -2142,8 +2170,16 @@ export function updateActiveSessionMeterData(transactionId: number, data: {
   
   if (data.currentKwh !== undefined) session.currentKwh = data.currentKwh;
   if (data.currentCost !== undefined) session.currentCost = data.currentCost;
+  if (data.rawEnergyKwh !== undefined) session.lastRawEnergyKwh = data.rawEnergyKwh;
+  if (data.chartEnergyBaselineKwh !== undefined && session.chartEnergyBaselineKwh === undefined) {
+    session.chartEnergyBaselineKwh = data.chartEnergyBaselineKwh;
+  }
+  if (data.chartEnergyReference !== undefined && session.chartEnergyReference === undefined) {
+    session.chartEnergyReference = data.chartEnergyReference;
+  }
   if (data.soc !== undefined) session.soc = data.soc;
-  if (data.currentPower !== undefined) session.currentPower = data.currentPower;
+  if (data.currentPower !== undefined) session.currentPower = data.currentPower ?? 0;
+  if (data.currentPowerSource !== undefined) session.currentPowerSource = data.currentPowerSource;
   if (data.voltage !== undefined) session.voltage = data.voltage;
   if (data.current !== undefined) session.current = data.current;
   session.lastMeterUpdate = new Date();
@@ -2227,10 +2263,13 @@ export function updateActiveSessionMeterData(transactionId: number, data: {
   const LOW_POWER_THRESHOLD_KW = 0.15; // kW - umbral MUY bajo (casi cero corriente)
   const LOW_POWER_DURATION_MS = 10 * 60 * 1000; // 10 minutos (antes era 5)
   const currentPowerVal = data.currentPower !== undefined ? data.currentPower : session.currentPower;
+  const currentPowerSource = data.currentPowerSource
+    ?? session.currentPowerSource
+    ?? (currentPowerVal === null ? "unavailable" : "measured");
   const sampleEventAt = data.sampleAt ?? new Date();
   const sampleIsFresh = resolveChargingTelemetryFreshness({ sampleAt: sampleEventAt }).isFresh;
   
-  if (sampleIsFresh && currentPowerVal < LOW_POWER_THRESHOLD_KW && session.currentKwh > 0.5) {
+  if (sampleIsFresh && currentPowerSource !== "unavailable" && currentPowerVal !== null && currentPowerVal < LOW_POWER_THRESHOLD_KW && session.currentKwh > 0.5) {
     // La potencia está por debajo del umbral y ya se ha entregado algo de energía
     if (!session.lowPowerSince) {
       session.lowPowerSince = sampleEventAt;
@@ -2306,7 +2345,7 @@ export function updateActiveSessionMeterData(transactionId: number, data: {
         }
       }
     }
-  } else if (sampleIsFresh && currentPowerVal >= LOW_POWER_THRESHOLD_KW) {
+  } else if (sampleIsFresh && currentPowerSource !== "unavailable" && currentPowerVal !== null && currentPowerVal >= LOW_POWER_THRESHOLD_KW) {
     // La potencia volvió a subir - resetear el timer
     if (session.lowPowerSince) {
       console.log(`[SoC] Transaction ${transactionId}: Power recovered (${currentPowerVal.toFixed(2)} kW). Resetting low power timer.`);
@@ -2318,24 +2357,25 @@ export function updateActiveSessionMeterData(transactionId: number, data: {
   
   // Agregar punto al historial de potencia (máx 360 puntos = ~30 min a 5s interval)
   const rawPower = data.currentPower !== undefined ? data.currentPower : session.currentPower;
-  const energy = data.currentKwh !== undefined ? data.currentKwh : session.currentKwh;
+  const lastChartEnergy = session.powerHistory?.at(-1)?.energy ?? 0;
+  const energy = data.chartEnergyKwh !== null && data.chartEnergyKwh !== undefined
+    ? data.chartEnergyKwh
+    : data.currentKwh !== undefined
+      ? data.currentKwh
+      : lastChartEnergy || session.currentKwh;
   const soc = data.soc !== undefined ? data.soc : session.soc;
-  
-  // Si el cargador no reporta potencia real (rawPower <= 0), NO guardar 0 en el historial
-  // porque genera una línea diagonal ascendente (promedio acumulado). En su lugar, omitir
-  // el punto de potencia (se mostrará como plano en la gráfica) o usar el último valor conocido.
-  const lastKnownPower = session.powerHistory?.length
-    ? session.powerHistory[session.powerHistory.length - 1].power
-    : null;
-  const power = rawPower > 0 ? rawPower : (lastKnownPower && lastKnownPower > 0 ? lastKnownPower : null);
-  
-  // Solo agregar punto si tenemos dato de energía (siempre disponible) o potencia
+
+  // Jamás copiar la última potencia sobre una muestra sin Power.Active.Import.
+  // Un cero medido se preserva; una potencia ausente queda como hueco explícito.
+  const power = rawPower ?? null;
   if (!session.powerHistory) session.powerHistory = [];
   
   session.powerHistory.push({
     timestamp: data.sampleAt?.getTime() ?? Date.now(),
-    power: power ?? 0,
+    power,
+    powerSource: currentPowerSource,
     energy: energy,
+    energyReference: session.chartEnergyReference ?? "meter_start",
     soc: soc,
   });
   

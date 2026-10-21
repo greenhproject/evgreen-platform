@@ -1,4 +1,6 @@
 export type ChargingTelemetryStatus = "live" | "delayed" | "stale" | "unavailable";
+export type PowerTelemetrySource = "measured" | "estimated_from_energy" | "unavailable";
+export type ChartEnergyReference = "meter_start" | "first_sample";
 
 export const TELEMETRY_FRESH_AFTER_MS = 7 * 60 * 1000;
 export const TELEMETRY_STALE_AFTER_MS = 15 * 60 * 1000;
@@ -68,6 +70,20 @@ export type MeterValueHistoryInput = {
   soc?: number | null;
 };
 
+export type PowerHistoryPoint = {
+  timestamp: number;
+  /** null significa que no hubo una medición ni una estimación válida para ese instante. */
+  power: number | null;
+  powerSource: PowerTelemetrySource;
+  /**
+   * Energía relativa únicamente para la curva. Nunca se usa para liquidar una
+   * transacción ni modifica el consumo facturable persistido.
+   */
+  energy: number;
+  energyReference: ChartEnergyReference;
+  soc: number | null;
+};
+
 /**
  * Normaliza las lecturas del cargador para la gráfica del monitor.
  * Algunos cargadores AC no envían Power.Active.Import; en ese caso la potencia
@@ -76,10 +92,10 @@ export type MeterValueHistoryInput = {
 export function buildPowerHistoryFromMeterValues(
   meterValues: MeterValueHistoryInput[],
   meterStartWh = 0,
-): Array<{ timestamp: number; power: number; energy: number; soc: number | null }> {
+): PowerHistoryPoint[] {
   type NormalizedValue = {
     timestamp: number;
-    energy: number | null;
+    rawEnergy: number | null;
     power: number | null;
     soc: number | null;
   };
@@ -98,37 +114,79 @@ export function buildPowerHistoryFromMeterValues(
 
       return {
         timestamp,
-        energy: rawEnergy !== null && Number.isFinite(rawEnergy)
-          ? Math.max(0, rawEnergy - meterStartKwh)
+        rawEnergy: rawEnergy !== null && Number.isFinite(rawEnergy)
+          ? rawEnergy
           : null,
-        power: rawPower !== null && Number.isFinite(rawPower) ? Math.max(0, rawPower) : null,
+        power: rawPower !== null && Number.isFinite(rawPower) && rawPower >= 0 ? rawPower : null,
         soc: rawSoc !== null && Number.isFinite(rawSoc) ? rawSoc : null,
       };
     })
     .filter((value): value is NormalizedValue => value.timestamp !== null)
     .sort((a, b) => a.timestamp - b.timestamp);
 
-  let previousEnergy: number | null = null;
+  const firstRawEnergy = normalized.find((value) => value.rawEnergy !== null)?.rawEnergy ?? null;
+  // Si el StartTransaction no concuerda con la serie (p. ej. es mayor que la
+  // primera lectura), se conserva intacto para facturación y se usa la primera
+  // muestra disponible SOLO como cero visual de la gráfica.
+  const hasUsableMeterStart = firstRawEnergy !== null
+    // Un contador puede comenzar legítimamente en 0 Wh. Sólo se considera
+    // anómala una referencia posterior a la primera muestra disponible.
+    && Number.isFinite(meterStartKwh)
+    && meterStartKwh >= 0
+    && meterStartKwh <= firstRawEnergy;
+  const energyReference: ChartEnergyReference = hasUsableMeterStart ? "meter_start" : "first_sample";
+  const chartEnergyBaseline = hasUsableMeterStart ? meterStartKwh : (firstRawEnergy ?? 0);
+
+  let previousRawEnergy: number | null = null;
   let previousTimestamp: number | null = null;
+  let previousChartEnergy = 0;
 
   return normalized.map((value) => {
-    const energy = value.energy ?? previousEnergy ?? 0;
-    const estimatedPower = value.power === null && previousEnergy !== null && previousTimestamp !== null
+    const energy = value.rawEnergy === null
+      ? previousChartEnergy
+      : previousRawEnergy !== null && value.rawEnergy < previousRawEnergy
+        ? previousChartEnergy
+        : Math.max(0, value.rawEnergy - chartEnergyBaseline);
+
+    // Versiones anteriores almacenaban 0.00 cuando Power.Active.Import no
+    // venía en el payload. Si la energía creció durante el intervalo, ese cero
+    // no puede tratarse como medición instantánea y se recupera la potencia por
+    // delta. Las nuevas ingestas persisten null cuando no hay potencia medida.
+    const legacyZeroWithoutPower = value.power === 0
+      && value.rawEnergy !== null
+      && previousRawEnergy !== null
+      && value.rawEnergy > previousRawEnergy;
+    const measuredPower = legacyZeroWithoutPower ? null : value.power;
+    const estimatedPower = measuredPower === null
+      && value.rawEnergy !== null
+      && previousRawEnergy !== null
+      && previousTimestamp !== null
       ? estimatePowerFromEnergySamples({
-          previousEnergyKwh: previousEnergy,
-          currentEnergyKwh: energy,
+          previousEnergyKwh: previousRawEnergy,
+          currentEnergyKwh: value.rawEnergy,
           previousSampleAt: previousTimestamp,
           currentSampleAt: value.timestamp,
         })
       : null;
 
-    previousEnergy = energy;
-    previousTimestamp = value.timestamp;
+    if (value.rawEnergy !== null) {
+      previousRawEnergy = value.rawEnergy;
+      previousTimestamp = value.timestamp;
+    }
+    previousChartEnergy = energy;
+
+    const powerSource: PowerTelemetrySource = measuredPower !== null
+      ? "measured"
+      : estimatedPower !== null
+        ? "estimated_from_energy"
+        : "unavailable";
 
     return {
       timestamp: value.timestamp,
-      power: value.power ?? estimatedPower ?? 0,
+      power: measuredPower ?? estimatedPower,
+      powerSource,
       energy,
+      energyReference,
       soc: value.soc,
     };
   });

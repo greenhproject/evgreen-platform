@@ -37,6 +37,7 @@ import { ensureContractDocumentStorage } from "../contracts/ensure-contract-docu
 import { registerStorageProxy } from "./storageProxy";
 import { calculateSocEstimation } from "../charging/soc-estimation";
 import { estimatePowerFromEnergySamples, shouldAdvanceTelemetrySample } from "../../shared/charging-telemetry";
+import { matchesOcppMeterValuesScope } from "../../shared/ocpp-meter-values-correlation";
 import { createOcpp16StartFingerprint } from "../../shared/ocpp-start-idempotency";
 import { resolveReservationPricing } from "../../shared/reservation-pricing-policy";
 import { buildInitialMeterValuesTrigger } from "../../shared/ocpp-initial-meter-values";
@@ -2148,74 +2149,69 @@ async function handleOCPP16Message(
       // Importar funciones de sesión activa
       const { updateActiveSessionMeterData, getActiveSessionById, setActiveSession } = await import("../charging/charging-router");
       
-      // === BUSCAR TRANSACCIÓN ===
-      // Estrategia multi-nivel para encontrar la transacción correcta
+      // Resolver primero el alcance físico. Nunca se puede adjudicar una
+      // telemetría a la primera carga de la estación: con varios cargadores
+      // ello movería consumo y costos entre usuarios.
+      let resolvedMeterStationId = stationId;
+      if (!resolvedMeterStationId) {
+        const station = await db.getChargingStationByOcppIdentity(ocppIdentity);
+        resolvedMeterStationId = station?.id ?? null;
+      }
+      if (!resolvedMeterStationId || !Number.isInteger(Number(payload.connectorId)) || Number(payload.connectorId) <= 0) {
+        console.warn(`[OCPP] MeterValues - missing physical scope for ${ocppIdentity}: station=${resolvedMeterStationId}, connector=${payload.connectorId}`);
+        return {};
+      }
+      const meterEvses = await db.getEvsesByStationId(resolvedMeterStationId);
+      const scopedMeterEvses = chargerId
+        ? meterEvses.filter((evse: any) => evse.chargerId === chargerId)
+        : meterEvses;
+      const meterEvse = scopedMeterEvses.find((evse: any) =>
+        evse.evseIdLocal === payload.connectorId || evse.connectorId === payload.connectorId,
+      );
+      if (!meterEvse) {
+        console.warn(`[OCPP] MeterValues - connector ${payload.connectorId} is not registered for ${ocppIdentity}; sample ignored safely`);
+        return {};
+      }
+
+      // El mapa es rápido mientras el proceso está vivo. Tras un reinicio se
+      // rehidrata desde la BD, siempre acotado por estación, EVSE y el ID OCPP.
       let transaction: any = null;
-      
-      // 1. Buscar por mapa de transacciones OCPP en memoria
-      if (transactionId) {
-        const internalTransactionId = ocpp16Transactions.get(transactionId);
+      const numericTransactionId = Number(transactionId);
+      if (Number.isInteger(numericTransactionId) && numericTransactionId > 0) {
+        const internalTransactionId = ocpp16Transactions.get(numericTransactionId);
         console.log(`[OCPP] MeterValues - Map lookup: ocppTxId=${transactionId}, internalId=${internalTransactionId || 'NOT_FOUND'}, mapSize=${ocpp16Transactions.size}, mapKeys=[${Array.from(ocpp16Transactions.keys()).join(',')}]`);
-        
         if (internalTransactionId) {
-          transaction = await db.getTransactionByOcppId(internalTransactionId);
-          if (transaction) {
-            console.log(`[OCPP] MeterValues - Found via map: dbTxId=${transaction.id}`);
+          const mappedTransaction = await db.getTransactionByOcppId(internalTransactionId);
+          if (matchesOcppMeterValuesScope(mappedTransaction, {
+            stationId: resolvedMeterStationId,
+            evseId: meterEvse.id,
+            ocppNumericTxId: numericTransactionId,
+          })) {
+            transaction = mappedTransaction;
+            console.log(`[OCPP] MeterValues - Found verified map: dbTxId=${transaction.id}`);
+          } else if (mappedTransaction) {
+            console.warn(`[OCPP] MeterValues - stale map ignored for OCPP tx ${numericTransactionId}; tx=${mappedTransaction.id} does not match station/EVSE`);
           }
         }
-        
-        // 2. Si el cargador usa su propio transactionId, también guardar el mapeo
-        if (!internalTransactionId && stationId) {
-          // El cargador puede usar un ID diferente al que le asignamos
-          // Intentar encontrar la transacción activa y crear el mapeo
-          try {
-            const activeTransactions = await db.getActiveTransactionsByStationId(stationId);
-            if (activeTransactions && activeTransactions.length > 0) {
-              transaction = activeTransactions[0];
-              // Guardar mapeo para futuras búsquedas
-              if (transaction.ocppTransactionId) {
-                ocpp16Transactions.set(transactionId, transaction.ocppTransactionId);
-                console.log(`[OCPP] MeterValues - Created new mapping: ocppTxId=${transactionId} -> internalId=${transaction.ocppTransactionId} (dbTxId=${transaction.id})`);
-              }
-            }
-          } catch (err) {
-            console.error(`[OCPP] MeterValues station fallback error:`, err);
+        if (!transaction) {
+          transaction = await db.getActiveTransactionByOcppNumericTxIdForEvse({
+            stationId: resolvedMeterStationId,
+            evseId: meterEvse.id,
+            ocppNumericTxId: numericTransactionId,
+          });
+          if (transaction?.ocppTransactionId) {
+            ocpp16Transactions.set(numericTransactionId, transaction.ocppTransactionId);
+            console.log(`[OCPP] MeterValues - durable mapping rehydrated: ocppTxId=${numericTransactionId} -> dbTxId=${transaction.id}`);
           }
         }
+      } else {
+        // Equipos que no envían transactionId: sólo se admite la sesión activa
+        // del EVSE exacto, nunca una selección por el orden de la estación.
+        transaction = await db.getActiveTransaction(meterEvse.id);
       }
-      
-      // 3. Fallback final: buscar transacción activa por estación
-      if (!transaction && stationId) {
-        try {
-          const activeTransactions = await db.getActiveTransactionsByStationId(stationId);
-          if (activeTransactions && activeTransactions.length > 0) {
-            transaction = activeTransactions[0];
-            console.log(`[OCPP] MeterValues - Found via station fallback: dbTxId=${transaction.id}`);
-          }
-        } catch (err) {
-          console.error(`[OCPP] MeterValues station fallback error:`, err);
-        }
-      }
-      
-      // 4. Fallback extremo: buscar por ocppIdentity si no tenemos stationId
-      if (!transaction && !stationId) {
-        try {
-          const station = await db.getChargingStationByOcppIdentity(ocppIdentity);
-          if (station) {
-            stationId = station.id;
-            const activeTransactions = await db.getActiveTransactionsByStationId(station.id);
-            if (activeTransactions && activeTransactions.length > 0) {
-              transaction = activeTransactions[0];
-              console.log(`[OCPP] MeterValues - Found via ocppIdentity fallback: dbTxId=${transaction.id}, stationId=${station.id}`);
-            }
-          }
-        } catch (err) {
-          console.error(`[OCPP] MeterValues ocppIdentity fallback error:`, err);
-        }
-      }
-      
+
       if (!transaction) {
-        console.warn(`[OCPP] MeterValues - NO TRANSACTION FOUND for ocppIdentity=${ocppIdentity}, stationId=${stationId}, transactionId=${transactionId}`);
+        console.warn(`[OCPP] MeterValues - NO VERIFIED TRANSACTION for ocppIdentity=${ocppIdentity}, stationId=${resolvedMeterStationId}, evseId=${meterEvse.id}, transactionId=${transactionId}`);
         return {};
       }
       
@@ -2294,28 +2290,51 @@ async function handleOCPP16Message(
           
           console.log(`[OCPP] MeterValues raw - txId=${transactionId}: energy=${energyWh}Wh, power=${powerW}W, soc=${soc}%, voltage=${voltage}V, current=${currentA}A`);
           
-          // Calcular kWh consumidos
+          // Liquidación: sólo se actualiza si el contador OCPP es consistente
+          // con la referencia persistida. Una curva visual puede derivarse de
+          // deltas crudos, pero no debe modificar kWh, saldos ni importes.
           const meterStart = transaction.meterStart ? parseFloat(transaction.meterStart) : 0;
-          let kwhConsumed = 0;
-          if (energyWh !== null) {
-            kwhConsumed = (energyWh - meterStart) / 1000;
-            if (kwhConsumed < 0) kwhConsumed = 0; // Protección contra valores negativos
-          }
+          const rawKwhConsumed = energyWh !== null && Number.isFinite(meterStart)
+            ? (energyWh - meterStart) / 1000
+            : null;
+          const hasBillableMeterReference = rawKwhConsumed !== null && rawKwhConsumed >= 0;
+          const kwhConsumed = hasBillableMeterReference ? rawKwhConsumed : null;
+          const billableKwhConsumed = kwhConsumed ?? 0;
           
           // Potencia en kW - si el cargador no envía Power, estimar por diferencia de energía
           let powerKw = powerW !== null ? powerW / 1000 : null;
           const activeSessionBeforeUpdate = getActiveSessionById(transaction.id);
           const currentSampleAt = activeSessionBeforeUpdate?.lastMeterSampleAt ?? activeSessionBeforeUpdate?.lastMeterUpdate ?? null;
           const shouldAdvanceCurrentState = shouldAdvanceTelemetrySample(currentSampleAt, sampleTimestamp);
+          const rawEnergyKwh = energyWh !== null ? energyWh / 1000 : null;
+          const previousRawEnergyKwh = activeSessionBeforeUpdate?.lastRawEnergyKwh ?? null;
+          const meterStartKwh = Number.isFinite(meterStart) ? meterStart / 1000 : null;
+          const shouldUseMeterStartForChart = rawEnergyKwh !== null
+            && meterStartKwh !== null
+            && meterStartKwh > 0
+            && rawEnergyKwh >= meterStartKwh;
+          const chartEnergyBaselineKwh = activeSessionBeforeUpdate?.chartEnergyBaselineKwh
+            ?? (rawEnergyKwh === null
+              ? null
+              : shouldUseMeterStartForChart
+                ? meterStartKwh
+                : rawEnergyKwh);
+          const chartEnergyReference = activeSessionBeforeUpdate?.chartEnergyReference
+            ?? (shouldUseMeterStartForChart ? "meter_start" : "first_sample");
+          const chartEnergyKwh = rawEnergyKwh !== null
+            && chartEnergyBaselineKwh !== null
+            && (previousRawEnergyKwh === null || rawEnergyKwh >= previousRawEnergyKwh)
+            ? Math.max(0, rawEnergyKwh - chartEnergyBaselineKwh)
+            : null;
           
           // Si no hay potencia reportada, estimar por diferencia de energía entre lecturas
           if (powerKw === null && energyWh !== null && shouldAdvanceCurrentState) {
             const activeSession = activeSessionBeforeUpdate;
             const previousSampleAt = currentSampleAt;
-            if (activeSession && previousSampleAt) {
+            if (activeSession && previousSampleAt && previousRawEnergyKwh !== null && rawEnergyKwh !== null) {
               powerKw = estimatePowerFromEnergySamples({
-                previousEnergyKwh: activeSession.currentKwh,
-                currentEnergyKwh: kwhConsumed,
+                previousEnergyKwh: previousRawEnergyKwh,
+                currentEnergyKwh: rawEnergyKwh,
                 previousSampleAt,
                 currentSampleAt: sampleTimestamp,
               });
@@ -2359,7 +2378,7 @@ async function handleOCPP16Message(
                 chargeMode: restoredChargeMode as "fixed_amount" | "percentage" | "full_charge",
                 targetValue: restoredTargetValue,
                 startTime: new Date(transaction.startTime),
-                currentKwh: kwhConsumed,
+                currentKwh: kwhConsumed ?? 0,
                 currentCost: 0,
                 pricePerKwh: sessionPricePerKwh,
                 soc: null,
@@ -2405,9 +2424,13 @@ async function handleOCPP16Message(
           const startTime = new Date(transaction.startTime);
           const durationMinutes = (Date.now() - startTime.getTime()) / (1000 * 60);
           
-          const energyCost = kwhConsumed * pricePerKwh;
+          const existingCurrentCost = activeSessionBeforeUpdate?.currentCost
+            ?? (transaction.totalCost ? parseFloat(String(transaction.totalCost)) : 0);
+          const energyCost = hasBillableMeterReference ? billableKwhConsumed * pricePerKwh : 0;
           const timeCost = durationMinutes * pricePerMinute;
-          const currentTotalCost = energyCost + timeCost + sessionFee;
+          const currentTotalCost = hasBillableMeterReference
+            ? energyCost + timeCost + sessionFee
+            : existingCurrentCost;
           
           // Guardar en tabla meter_values de la BD
           try {
@@ -2416,7 +2439,9 @@ async function handleOCPP16Message(
               evseId: transaction.evseId,
               timestamp: sampleTimestamp,
               energyKwh: energyWh !== null ? (energyWh / 1000).toFixed(4) : null,
-              powerKw: powerKw !== null ? powerKw.toFixed(2) : null,
+              // Conservar la medición cruda: una estimación se reconstruye al
+              // leer y nunca se almacena como Power.Active.Import medido.
+              powerKw: powerW !== null ? (powerW / 1000).toFixed(2) : null,
               voltage: voltage !== null ? voltage.toFixed(2) : null,
               current: currentA !== null ? currentA.toFixed(2) : null,
               soc: soc !== null ? Math.round(soc) : null,
@@ -2429,23 +2454,36 @@ async function handleOCPP16Message(
           }
           
           // Actualizar transacción con valores parciales
-          if (energyWh !== null && shouldAdvanceCurrentState) {
+          if (hasBillableMeterReference && shouldAdvanceCurrentState) {
             await db.updateTransaction(transaction.id, {
-              kwhConsumed: kwhConsumed.toFixed(4),
+              kwhConsumed: billableKwhConsumed.toFixed(4),
               energyCost: energyCost.toFixed(2),
               timeCost: timeCost.toFixed(2),
               sessionCost: sessionFee.toFixed(2),
               totalCost: currentTotalCost.toFixed(2),
             });
+          } else if (energyWh !== null && shouldAdvanceCurrentState) {
+            console.warn(`[OCPP] MeterValues - billing update deferred for tx=${transaction.id}; meterStart=${meterStart}Wh, reading=${energyWh}Wh`);
           }
           
           // Actualizar sesión activa en memoria (para consultas en tiempo real del frontend)
           const updated = shouldAdvanceCurrentState
             ? updateActiveSessionMeterData(transaction.id, {
-                currentKwh: kwhConsumed,
-                currentCost: currentTotalCost,
+                ...(hasBillableMeterReference ? {
+                  currentKwh: billableKwhConsumed,
+                  currentCost: currentTotalCost,
+                } : {}),
+                rawEnergyKwh,
+                chartEnergyBaselineKwh,
+                chartEnergyReference,
+                chartEnergyKwh,
                 soc: soc,
-                currentPower: powerKw !== null ? powerKw : 0,
+                currentPower: powerKw,
+                currentPowerSource: powerW !== null
+                  ? "measured"
+                  : powerKw !== null
+                    ? "estimated_from_energy"
+                    : "unavailable",
                 voltage: voltage,
                 current: currentA,
                 sampleAt: sampleTimestamp,
@@ -2456,7 +2494,7 @@ async function handleOCPP16Message(
             console.log(`[OCPP] MeterValues stored as history but ignored for current state: sampleAt=${sampleTimestamp.toISOString()}, currentSampleAt=${currentSampleAt?.toISOString()}`);
           }
           
-          console.log(`[OCPP] MeterValues PROCESSED - txId=${transaction.id}: ${kwhConsumed.toFixed(4)} kWh, $${currentTotalCost.toFixed(0)} COP, SoC=${soc ?? 'N/A'}%, Power=${powerKw?.toFixed(1) ?? 'N/A'}kW, sessionUpdated=${updated}`);
+          console.log(`[OCPP] MeterValues PROCESSED - txId=${transaction.id}: ${kwhConsumed?.toFixed(4) ?? 'reference-pending'} kWh, $${currentTotalCost.toFixed(0)} COP, SoC=${soc ?? 'N/A'}%, Power=${powerKw?.toFixed(1) ?? 'N/A'}kW, sessionUpdated=${updated}`);
           
           // Si la sesión no existía en memoria y no se creó arriba, crearla ahora
           if (!updated && energyWh !== null) {
@@ -2493,19 +2531,33 @@ async function handleOCPP16Message(
               chargeMode: restoredChargeMode2 as "fixed_amount" | "percentage" | "full_charge",
               targetValue: restoredTargetValue2,
               startTime: new Date(transaction.startTime),
-              currentKwh: kwhConsumed,
+              currentKwh: kwhConsumed ?? 0,
               currentCost: currentTotalCost,
               pricePerKwh: sessionPricePerKwh,
               soc: soc,
-              currentPower: powerKw !== null ? powerKw : 0,
+              currentPower: powerKw ?? 0,
+              currentPowerSource: powerW !== null
+                ? "measured"
+                : powerKw !== null
+                  ? "estimated_from_energy"
+                  : "unavailable",
+              lastRawEnergyKwh: rawEnergyKwh,
+              chartEnergyBaselineKwh,
+              chartEnergyReference,
               voltage: voltage,
               current: currentA,
               lastMeterUpdate: new Date(),
               lastMeterSampleAt: sampleTimestamp,
               powerHistory: [{
                 timestamp: sampleTimestamp.getTime(),
-                power: powerKw !== null ? powerKw : 0,
-                energy: kwhConsumed,
+                power: powerKw,
+                powerSource: powerW !== null
+                  ? "measured"
+                  : powerKw !== null
+                  ? "estimated_from_energy"
+                    : "unavailable",
+                energy: chartEnergyKwh ?? 0,
+                energyReference: chartEnergyReference,
                 soc: soc,
               }],
               socTargetNotified: false,

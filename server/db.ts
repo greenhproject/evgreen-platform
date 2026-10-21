@@ -1279,6 +1279,37 @@ export async function getTransactionByOcppId(ocppTransactionId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
+/**
+ * Resuelve una sesión OCPP 1.6 después de un reinicio sin confiar en el orden
+ * de las cargas activas de una estación. El transactionId numérico se repite
+ * entre equipos y reinicios, por eso siempre se acota a estación y EVSE.
+ */
+export async function getActiveTransactionByOcppNumericTxIdForEvse(input: {
+  stationId: number;
+  evseId: number;
+  ocppNumericTxId: number;
+}) {
+  const db = (await getDb())!;
+  if (!db) return undefined;
+
+  const result = await db.select().from(transactions)
+    .where(and(
+      eq(transactions.stationId, input.stationId),
+      eq(transactions.evseId, input.evseId),
+      eq(transactions.ocppNumericTxId, input.ocppNumericTxId),
+      isNull(transactions.endTime),
+      or(
+        eq(transactions.status, "IN_PROGRESS"),
+        eq(transactions.transactionStatus, "IN_PROGRESS"),
+      ),
+    ))
+    // La cardinalidad debe ser exactamente una. Ante una anomalía no se
+    // adjudica telemetría ni costos a una transacción arbitraria.
+    .limit(2);
+
+  return result.length === 1 ? result[0] : undefined;
+}
+
 export async function getTransactionsByUserId(userId: number, limit = 50) {
   const db = (await getDb())!;
   if (!db) return [];

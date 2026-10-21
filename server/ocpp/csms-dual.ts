@@ -13,7 +13,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import * as db from "../db";
 import { nanoid } from "nanoid";
-import { findPendingSessionByOcppIdentity, findPendingSessionFromDb, removePendingSession, setActiveSession, getActiveSessionById, removeActiveSession } from "../charging/charging-router";
+import { findPendingSessionByOcppIdentity, findPendingSessionFromDb, removePendingSession, setActiveSession, getActiveSessionById, removeActiveSession, updateActiveSessionMeterData } from "../charging/charging-router";
 import { sendChargingCompleteNotification } from "../firebase/fcm";
 import * as alertsService from "./alerts-service";
 import mysql from "mysql2/promise";
@@ -21,6 +21,8 @@ import { calculateSocEstimation } from "../charging/soc-estimation";
 import { shouldTreatOcpp16AvailableAsPhysicalDisconnect } from "../../shared/ocpp-status-notification-policy";
 import { resolveReservationPricing } from "../../shared/reservation-pricing-policy";
 import { buildInitialMeterValuesTrigger } from "../../shared/ocpp-initial-meter-values";
+import { estimatePowerFromEnergySamples, shouldAdvanceTelemetrySample } from "../../shared/charging-telemetry";
+import { matchesOcppMeterValuesScope } from "../../shared/ocpp-meter-values-correlation";
 
 // BUILD VERSION para diagnóstico de deploys
 const BUILD_VERSION = "v2026.02.18.B";
@@ -980,16 +982,10 @@ export class DualCSMS {
     // PASO 2: Buscar EVSE/conector
     // =========================================================================
     const evseList = await db.getEvsesByStationId(conn.stationId);
-    let evse = evseList.find(e => e.evseIdLocal === req.connectorId);
-
-    // Fallback: si connectorId=1 y no hay match exacto, usar el primer EVSE disponible
-    if (!evse && evseList.length > 0) {
-      evse = evseList[0];
-      console.warn(`[CSMS-DUAL] StartTransaction: No EVSE with evseIdLocal=${req.connectorId}, using first EVSE (id=${evse.id}, evseIdLocal=${evse.evseIdLocal})`);
-    }
+    const evse = evseList.find(e => e.evseIdLocal === req.connectorId || e.connectorId === req.connectorId);
 
     if (!evse) {
-      console.error(`[CSMS-DUAL] StartTransaction: No EVSEs found for station ${conn.stationId} (${conn.ocppIdentity})`);
+      console.error(`[CSMS-DUAL] StartTransaction: connectorId=${req.connectorId} is not registered for station ${conn.stationId} (${conn.ocppIdentity})`);
       return { idTagInfo: { status: "Invalid" }, transactionId: 0 };
     }
 
@@ -1779,7 +1775,7 @@ export class DualCSMS {
       console.log(`[CSMS-DUAL] MeterValues with transactionId=0 detected for ${conn.ocppIdentity}. Attempting orphan recovery...`);
       
       const evses = await db.getEvsesByStationId(conn.stationId);
-      const evse = evses.find(e => e.evseIdLocal === req.connectorId);
+      const evse = evses.find(e => e.evseIdLocal === req.connectorId || e.connectorId === req.connectorId);
       
       if (evse) {
         // Verificar si ya hay una transacción activa para este EVSE
@@ -1812,8 +1808,8 @@ export class DualCSMS {
                 // @ts-ignore
                 timestamp: new Date(mv.timestamp),
                 measurand,
-                energyKwh: energyKwh || String(sv.value),
-                powerKw: powerKw || undefined,
+                energyKwh,
+                powerKw,
                 context: sv.context,
               });
             }
@@ -1946,9 +1942,33 @@ export class DualCSMS {
     }
     
     if (req.transactionId) {
+      const numericTransactionId = Number(req.transactionId);
+      const meterEvse = conn.stationId
+        ? (await db.getEvsesByStationId(conn.stationId)).find((evse) => evse.evseIdLocal === req.connectorId || evse.connectorId === req.connectorId)
+        : undefined;
+      if (!conn.stationId || !meterEvse || !Number.isInteger(numericTransactionId) || numericTransactionId <= 0) {
+        console.warn(`[CSMS-DUAL] MeterValues ignored: incomplete scope station=${conn.stationId}, connector=${req.connectorId}, tx=${req.transactionId}`);
+        return {};
+      }
       const internalTransactionId = this.ocpp16Transactions.get(req.transactionId);
-      if (internalTransactionId) {
-        const transaction = await db.getTransactionByOcppId(internalTransactionId);
+      let transaction = internalTransactionId
+        ? await db.getTransactionByOcppId(internalTransactionId)
+        : undefined;
+      if (!matchesOcppMeterValuesScope(transaction, {
+        stationId: conn.stationId,
+        evseId: meterEvse.id,
+        ocppNumericTxId: numericTransactionId,
+      })) {
+        transaction = await db.getActiveTransactionByOcppNumericTxIdForEvse({
+          stationId: conn.stationId,
+          evseId: meterEvse.id,
+          ocppNumericTxId: numericTransactionId,
+        });
+        if (transaction?.ocppTransactionId) {
+          this.ocpp16Transactions.set(numericTransactionId, transaction.ocppTransactionId);
+        }
+      }
+      if (transaction) {
         if (transaction) {
           // Variables para actualizar la sesión activa en memoria
           let latestEnergyKwh: number | null = null;
@@ -1957,8 +1977,13 @@ export class DualCSMS {
           let latestVoltage: number | null = null;
           let latestCurrent: number | null = null;
           let latestTemperature: number | null = null;
+          let latestSampleAt: Date | null = null;
           
           for (const mv of req.meterValue) {
+            const sampleAt = new Date(mv.timestamp);
+            if (!Number.isNaN(sampleAt.getTime()) && (!latestSampleAt || sampleAt > latestSampleAt)) {
+              latestSampleAt = sampleAt;
+            }
             for (const sv of mv.sampledValue) {
               const measurand = sv.measurand || "Energy.Active.Import.Register";
               const rawValue = parseFloat(String(sv.value));
@@ -2003,12 +2028,12 @@ export class DualCSMS {
                 // @ts-ignore
                 timestamp: new Date(mv.timestamp),
                 measurand,
-                energyKwh: energyKwh || String(sv.value),
-                powerKw: powerKw || undefined,
-                voltage: voltage || undefined,
-                current: current || undefined,
-                soc: soc ?? undefined,
-                temperature: temperature || undefined,
+                energyKwh,
+                powerKw,
+                voltage,
+                current,
+                soc,
+                temperature,
                 context: sv.context,
               });
             }
@@ -2018,39 +2043,74 @@ export class DualCSMS {
           const activeSession = getActiveSessionById(transaction.id);
           if (activeSession) {
             const meterStart = transaction.meterStart ? parseFloat(transaction.meterStart) : 0;
-            let consumedKwh: number;
-            
-            if (latestEnergyKwh !== null) {
-              // Cálculo directo desde el medidor de energía
-              consumedKwh = Math.max(0, latestEnergyKwh - meterStart);
-            } else if (latestPowerKw !== null && latestPowerKw > 0) {
-              // Estimación basada en potencia: si el cargador solo envía Power sin Energy,
-              // estimar la energía acumulada usando potencia * tiempo transcurrido
-              const elapsedHours = (Date.now() - activeSession.startTime.getTime()) / (1000 * 3600);
-              consumedKwh = Math.max(0, latestPowerKw * elapsedHours);
-              console.log(`[CSMS-DUAL] Energy estimated from power: ${latestPowerKw.toFixed(1)} kW * ${elapsedHours.toFixed(3)} h = ${consumedKwh.toFixed(3)} kWh`);
-            } else {
-              // Sin datos de energía ni potencia, mantener el valor actual
-              consumedKwh = activeSession.currentKwh;
+            const rawConsumedKwh = latestEnergyKwh !== null && Number.isFinite(meterStart)
+              ? latestEnergyKwh - meterStart
+              : null;
+            const hasBillableMeterReference = rawConsumedKwh !== null && rawConsumedKwh >= 0;
+            // La falta o inconsistencia de meterStart no se arregla con una
+            // estimación: se conserva la liquidación previa para conciliación.
+            const consumedKwh = hasBillableMeterReference ? rawConsumedKwh : activeSession.currentKwh;
+            const currentCost = hasBillableMeterReference
+              ? consumedKwh * activeSession.pricePerKwh
+              : activeSession.currentCost;
+            const previousSampleAt = activeSession.lastMeterSampleAt ?? activeSession.lastMeterUpdate;
+            const canAdvance = latestSampleAt
+              ? shouldAdvanceTelemetrySample(previousSampleAt, latestSampleAt)
+              : false;
+            const estimatedPowerKw = latestPowerKw === null
+              && latestEnergyKwh !== null
+              && activeSession.lastRawEnergyKwh !== null
+              && activeSession.lastRawEnergyKwh !== undefined
+              && previousSampleAt
+              && latestSampleAt
+              && canAdvance
+              ? estimatePowerFromEnergySamples({
+                  previousEnergyKwh: activeSession.lastRawEnergyKwh,
+                  currentEnergyKwh: latestEnergyKwh,
+                  previousSampleAt,
+                  currentSampleAt: latestSampleAt,
+                })
+              : null;
+            const effectivePowerKw = latestPowerKw ?? estimatedPowerKw;
+            const chartEnergyBaselineKwh = activeSession.chartEnergyBaselineKwh
+              ?? (latestEnergyKwh === null ? null : meterStart <= latestEnergyKwh ? meterStart : latestEnergyKwh);
+            const chartEnergyReference = activeSession.chartEnergyReference
+              ?? (meterStart <= (latestEnergyKwh ?? Number.NEGATIVE_INFINITY) ? "meter_start" : "first_sample");
+            const chartEnergyKwh = latestEnergyKwh !== null
+              && chartEnergyBaselineKwh !== null
+              && (activeSession.lastRawEnergyKwh === null || activeSession.lastRawEnergyKwh === undefined || latestEnergyKwh >= activeSession.lastRawEnergyKwh)
+              ? Math.max(0, latestEnergyKwh - chartEnergyBaselineKwh)
+              : null;
+
+            updateActiveSessionMeterData(transaction.id, {
+              ...(hasBillableMeterReference ? {
+                currentKwh: Math.round(consumedKwh * 100) / 100,
+                currentCost: Math.round(currentCost),
+              } : {}),
+              rawEnergyKwh: latestEnergyKwh,
+              chartEnergyBaselineKwh,
+              chartEnergyReference,
+              chartEnergyKwh,
+              soc: latestSoc === null ? undefined : latestSoc,
+              currentPower: effectivePowerKw,
+              currentPowerSource: latestPowerKw !== null
+                ? "measured"
+                : estimatedPowerKw !== null
+                  ? "estimated_from_energy"
+                  : "unavailable",
+              voltage: latestVoltage === null ? undefined : latestVoltage,
+              current: latestCurrent === null ? undefined : latestCurrent,
+              sampleAt: latestSampleAt ?? undefined,
+            });
+
+            if (hasBillableMeterReference) {
+              await db.updateTransaction(transaction.id, {
+                kwhConsumed: String(Math.round(consumedKwh * 100) / 100),
+                totalCost: String(Math.round(currentCost)),
+              });
             }
             
-            const currentCost = consumedKwh * activeSession.pricePerKwh;
-            
-            // Actualizar la sesión en memoria
-            setActiveSession(transaction.id, {
-              ...activeSession,
-              currentKwh: Math.round(consumedKwh * 100) / 100,
-              currentCost: Math.round(currentCost),
-              lastMeterUpdate: new Date(),
-            });
-            
-            // También actualizar kwhConsumed en la transacción de la BD
-            await db.updateTransaction(transaction.id, {
-              kwhConsumed: String(Math.round(consumedKwh * 100) / 100),
-              totalCost: String(Math.round(currentCost)),
-            });
-            
-            console.log(`[CSMS-DUAL] MeterValues updated session ${transaction.id}: ${consumedKwh.toFixed(2)} kWh, $${Math.round(currentCost)} COP, power: ${latestPowerKw?.toFixed(1) || 'N/A'} kW`);
+            console.log(`[CSMS-DUAL] MeterValues updated session ${transaction.id}: ${hasBillableMeterReference ? consumedKwh.toFixed(2) : 'reference-pending'} kWh, $${Math.round(currentCost)} COP, power: ${effectivePowerKw?.toFixed(1) || 'N/A'} kW`);
             
             // ============================================================
             // NOTIFICACIÓN: SoC alcanzó el porcentaje objetivo del usuario
