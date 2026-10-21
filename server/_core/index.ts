@@ -38,6 +38,8 @@ import { registerStorageProxy } from "./storageProxy";
 import { calculateSocEstimation } from "../charging/soc-estimation";
 import { estimatePowerFromEnergySamples, shouldAdvanceTelemetrySample } from "../../shared/charging-telemetry";
 import { createOcpp16StartFingerprint } from "../../shared/ocpp-start-idempotency";
+import { resolveReservationPricing } from "../../shared/reservation-pricing-policy";
+import { buildInitialMeterValuesTrigger } from "../../shared/ocpp-initial-meter-values";
 import { handleBillingWebhook } from "../billing/webhook";
 import { handleWhatsAppWebhook, verifyWhatsAppWebhook } from "../whatsapp/webhook";
 import { sdk } from "./sdk";
@@ -938,7 +940,7 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
         if (messageType === 3) {
           const [, messageId, payload] = message;
           // Ignorar silenciosamente respuestas a keepalive y configuración automática
-          if (messageId.startsWith('keepalive-') || messageId.startsWith('cfg-hb-') || messageId.startsWith('trigger-hb-')) {
+          if (messageId.startsWith('keepalive-') || messageId.startsWith('cfg-hb-') || messageId.startsWith('trigger-hb-') || messageId.startsWith('trigger-meter-')) {
             // Respuesta a nuestro TriggerMessage/ChangeConfiguration keepalive - OK, proxy timeout reseteado
             ocppManager.updateLastMessage(ocppIdentity);
             return;
@@ -957,7 +959,7 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
         // Manejar CALLERROR (tipo 4) - errores del cargador
         if (messageType === 4) {
           const [, messageId, errorCode, errorDescription] = message;
-          if (messageId.startsWith('keepalive-') || messageId.startsWith('cfg-hb-') || messageId.startsWith('trigger-hb-')) {
+          if (messageId.startsWith('keepalive-') || messageId.startsWith('cfg-hb-') || messageId.startsWith('trigger-hb-') || messageId.startsWith('trigger-meter-')) {
             // Error en keepalive - ignorar silenciosamente (algunos cargadores no soportan TriggerMessage)
             console.log(`[OCPP] ${ocppIdentity} -> Keepalive command not supported: ${errorCode} - ${errorDescription}`);
             return;
@@ -1089,9 +1091,31 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
             }
           }
 
+          const initialMeterValuesTrigger = response.__evgreenInitialMeterValuesTrigger;
+          delete response.__evgreenInitialMeterValuesTrigger;
+
           // Enviar respuesta
           const callResult = [3, messageId, response];
           ws.send(JSON.stringify(callResult));
+
+          // El TriggerMessage se programa después del CALLRESULT del inicio;
+          // así el cargador AC recibe una secuencia OCPP válida y puede enviar
+          // su primera medición sin que el cliente estime datos inexistentes.
+          if (initialMeterValuesTrigger) {
+            setTimeout(() => {
+              if (ws.readyState !== 1) return;
+              try {
+                ws.send(JSON.stringify([
+                  2,
+                  `trigger-meter-${Date.now()}`,
+                  "TriggerMessage",
+                  initialMeterValuesTrigger,
+                ]));
+              } catch (triggerError) {
+                console.warn(`[OCPP] Unable to request initial AC meter sample from ${ocppIdentity}:`, triggerError);
+              }
+            }, 400);
+          }
 
           console.log(`[OCPP] ${ocppIdentity} <- ${action}:`, JSON.stringify(response).substring(0, 200));
 
@@ -1520,7 +1544,19 @@ async function handleOCPP16Message(
       }
       const txChargeMode = pendingSessionForTx?.session?.chargeMode || "full_charge";
       const txTargetValue = pendingSessionForTx?.session?.targetValue || 0;
-      const txPricePerKwh = pendingSessionForTx?.session?.pricePerKwh || (tariff ? parseFloat(tariff.pricePerKwh) : 1800);
+      const effectivePriceData = await db.getEffectiveStationPrice(resolvedStId);
+      const reservationPricing = userId
+        ? await db.getActiveReservationForUser(evse.id, userId)
+        : undefined;
+      const reservationPrice = resolveReservationPricing({
+        lockedPricePerKwh: reservationPricing?.lockedPricePerKwh,
+        lockedConnectionFee: reservationPricing?.lockedConnectionFee,
+        pendingPricePerKwh: pendingSessionForTx?.session?.pricePerKwh,
+        currentPricePerKwh: tariff ? parseFloat(tariff.pricePerKwh) : effectivePriceData.pricePerKwh,
+        currentConnectionFee: effectivePriceData.connectionFee,
+      });
+      const txPricePerKwh = reservationPrice.pricePerKwh;
+      const txConnectionFee = reservationPrice.connectionFee;
       const ocppStartFingerprint = createOcpp16StartFingerprint({
         stationId: resolvedStId,
         evseId: evse.id,
@@ -1542,6 +1578,7 @@ async function handleOCPP16Message(
         chargeMode: txChargeMode,
         targetValue: String(txTargetValue),
         appliedPricePerKwh: String(txPricePerKwh),
+        appliedConnectionFee: String(txConnectionFee),
       });
       const newTxId = persistedStart.transactionId;
       const effectiveOcppTransactionId = persistedStart.transaction.ocppTransactionId || internalTransactionId;
@@ -1568,6 +1605,21 @@ async function handleOCPP16Message(
           transactionId: effectiveOcppNumericTxId,
         };
       }
+
+      if (userId) {
+        const fulfilledReservationId = await db.fulfillActiveReservationForTransaction(evse.id, userId, newTxId);
+        if (fulfilledReservationId) {
+          console.log(`[OCPP] StartTransaction - Reservation ${fulfilledReservationId} fulfilled for transaction ${newTxId}`);
+        }
+      }
+
+      const initialMeterValuesTrigger = evse.chargeType === "AC"
+        ? buildInitialMeterValuesTrigger({
+          ocppVersion: "1.6",
+          evseId: evse.evseIdLocal,
+          connectorId: payload.connectorId,
+        })
+        : undefined;
       
       // Enviar notificación al usuario cuando inicia la carga
       if (userId) {
@@ -1631,6 +1683,7 @@ async function handleOCPP16Message(
       return {
         idTagInfo: { status: userId ? "Accepted" : "Accepted" }, // Aceptar incluso sin usuario para permitir cargas anónimas
         transactionId: effectiveOcppNumericTxId,
+        __evgreenInitialMeterValuesTrigger: initialMeterValuesTrigger,
       };
     }
     case "StopTransaction": {
@@ -1712,8 +1765,11 @@ async function handleOCPP16Message(
       const pricePerMinute = tariff ? parseFloat(tariff.pricePerMinute || "0") : 0;
       const timeCost = durationMinutes * pricePerMinute;
       
-      // Costo de sesión/conexión fijo (pricePerSession en tarifa)
-      const sessionFee = tariff ? parseFloat(tariff.pricePerSession || "0") : 0;
+      // Costo de sesión/conexión congelado al comenzar. Para una reserva usa
+      // exactamente el valor confirmado, no la configuración actual.
+      const sessionFee = (transaction as any).appliedConnectionFee !== null && (transaction as any).appliedConnectionFee !== undefined
+        ? parseFloat(String((transaction as any).appliedConnectionFee))
+        : (tariff ? parseFloat(tariff.pricePerSession || "0") : 0);
       
       // Total
       const totalCost = energyCost + timeCost + sessionFee;
@@ -2304,7 +2360,9 @@ async function handleOCPP16Message(
             ? parseFloat(String((transaction as any).appliedPricePerKwh))
             : (tariff ? parseFloat(tariff.pricePerKwh) : 1800);
           const pricePerMinute = tariff ? parseFloat(tariff.pricePerMinute || "0") : 0;
-          const sessionFee = tariff ? parseFloat(tariff.pricePerSession || "0") : 0;
+          const sessionFee = (transaction as any).appliedConnectionFee !== null && (transaction as any).appliedConnectionFee !== undefined
+            ? parseFloat(String((transaction as any).appliedConnectionFee))
+            : (tariff ? parseFloat(tariff.pricePerSession || "0") : 0);
           
           const startTime = new Date(transaction.startTime);
           const durationMinutes = (Date.now() - startTime.getTime()) / (1000 * 60);

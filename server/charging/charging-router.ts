@@ -31,10 +31,12 @@ import {
 } from "../../shared/charge-stop-confirmation-policy";
 import { estimateChargePlan } from "../../shared/charge-plan-estimate";
 import { evaluateReservationChargeProtection } from "../../shared/reservation-charge-protection-policy";
+import { resolveReservationPricing } from "../../shared/reservation-pricing-policy";
 import { canStartOnConnectorWithinCharger } from "../../shared/station-charger-hierarchy";
 import { isValidConnectorQrToken, resolveConnectorQrTarget } from "../../shared/connector-qr-policy";
 import { resolveOcppCommandTarget } from "../../shared/charger-command-target";
 import { isTransactionOperationallyActive } from "../../shared/transaction-operational-state";
+import { isConnectorSelectableForReservationOwner } from "../../shared/reservation-connector-availability";
 
 // Helper: buscar conexión por stationId en dualCSMS primero, luego fallback a legacy
 // Si ocppIdentity se provee, también busca en dualCSMS por identidad cuando stationId=null
@@ -519,7 +521,7 @@ export const chargingRouter = router({
     .input(z.object({
       stationId: z.number(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const { stationId } = input;
       
       const connectors = await db.getEvsesByStationId(stationId);
@@ -529,6 +531,15 @@ export const chargingRouter = router({
       // ===== FUENTE ÚNICA DE VERDAD: dualCSMS.isStationOnline() =====
       const stationOcppIdForAvail = station?.ocppIdentity || '';
       const stationIsOnline = isDemo || (stationOcppIdForAvail ? dualCSMS.isStationOnline(stationOcppIdForAvail) : false);
+
+      // Una reserva bloquea el EVSE para terceros, no para su titular. La UI
+      // necesita esta identidad para ofrecer el conector en morado al usuario
+      // correcto sin publicar la reserva de otra persona.
+      const userReservationByEvse = new Map<number, number>();
+      await Promise.all(connectors.map(async (connector) => {
+        const reservation = await db.getActiveReservationForUser(connector.id, ctx.user.id);
+        if (reservation) userReservationByEvse.set(connector.id, reservation.id);
+      }));
 
       // Combinar estado de BD con estado OCPP en tiempo real
       return connectors.map(c => {
@@ -548,7 +559,8 @@ export const chargingRouter = router({
         }
         
         const normalizedStatus = realTimeStatus?.toUpperCase() || 'UNAVAILABLE';
-        const isAvailable = normalizedStatus === "AVAILABLE";
+        const isReservationOwner = userReservationByEvse.has(c.id);
+        const isAvailable = isConnectorSelectableForReservationOwner(normalizedStatus, isReservationOwner);
         const isOccupied = ["PREPARING", "CHARGING", "SUSPENDED_EV", "SUSPENDED_EVSE", "FINISHING"].includes(normalizedStatus);
         
         return {
@@ -563,8 +575,9 @@ export const chargingRouter = router({
           status: normalizedStatus,
           isAvailable,
           isOccupied,
-          activeReservationId: (c as any).activeReservationId || null,
-          activeReservationUserId: (c as any).activeReservationUserId || null,
+          activeReservationId: isReservationOwner ? userReservationByEvse.get(c.id) || null : null,
+          activeReservationUserId: isReservationOwner ? ctx.user.id : null,
+          isReservationOwner,
         };
       });
     }),
@@ -613,6 +626,19 @@ export const chargingRouter = router({
         throw new TRPCError({ code: "NOT_FOUND", message: "El conector seleccionado no pertenece a esta estación." });
       }
       const evseId = selectedConnector.id;
+
+      // Durante la ventana operativa, la reserva del titular es la fuente
+      // comercial autoritativa: el precio no se vuelve a calcular con la
+      // demanda actual ni se aplica un descuento posterior que no se mostró al
+      // confirmar la reserva.
+      const activeReservation = await db.getActiveReservationForUser(evseId, ctx.user.id);
+      const lockedReservationPrice = activeReservation?.lockedPricePerKwh === null || activeReservation?.lockedPricePerKwh === undefined
+        ? null
+        : Number(activeReservation.lockedPricePerKwh);
+      const lockedReservationConnectionFee = activeReservation?.lockedConnectionFee === null || activeReservation?.lockedConnectionFee === undefined
+        ? null
+        : Number(activeReservation.lockedConnectionFee);
+      const hasLockedReservationPrice = Number.isFinite(lockedReservationPrice) && lockedReservationPrice! >= 0;
       
       // Obtener el precio efectivo de la estación (tarifa propia o global)
       const effectivePriceData = await db.getEffectiveStationPrice(stationId);
@@ -621,7 +647,10 @@ export const chargingRouter = router({
       let pricePerKwh: number;
       let dynamicMultiplier = 1;
       
-      if (useAutoPricing && evseId) {
+      if (hasLockedReservationPrice) {
+        pricePerKwh = lockedReservationPrice!;
+        console.log(`[validateAndEstimate] Reservation #${activeReservation!.id} keeps locked price: $${pricePerKwh}/kWh`);
+      } else if (useAutoPricing && evseId) {
         // autoPricing=true: calcular precio dinámico por IA y mostrar nivel de demanda real
         try {
           const dynamicPrice = await dynamicPricing.calculateDynamicPrice(stationId, evseId);
@@ -655,8 +684,11 @@ export const chargingRouter = router({
       }
       
       // ====== APLICAR DESCUENTO DE SUSCRIPCIÓN ======
+      // Un precio ya bloqueado incluye exactamente las condiciones aceptadas
+      // al reservar; por eso nunca se vuelve a modificar aquí.
       let subscriptionDiscount = 0;
       try {
+        if (hasLockedReservationPrice) throw new Error("reservation-price-locked");
         const userSub = await db.getUserSubscription(ctx.user.id);
         if (userSub?.isActive && userSub.discountPercentage) {
           const discountPct = parseFloat(userSub.discountPercentage);
@@ -668,8 +700,14 @@ export const chargingRouter = router({
           }
         }
       } catch (subErr) {
-        console.warn(`[validateAndEstimate] Error checking subscription:`, subErr);
+        if ((subErr as Error).message !== "reservation-price-locked") {
+          console.warn(`[validateAndEstimate] Error checking subscription:`, subErr);
+        }
       }
+
+      const connectionFee = Number.isFinite(lockedReservationConnectionFee) && lockedReservationConnectionFee! >= 0
+        ? lockedReservationConnectionFee!
+        : Number(effectivePriceData.connectionFee || 0);
       
       // La potencia pertenece al EVSE seleccionado, no al primer connectorId
       // coincidente de otro gabinete OCPP 1.6.
@@ -686,7 +724,8 @@ export const chargingRouter = router({
         estimatedMinutes: chargePlan.estimatedTimeMinutes,
         nextReservation,
       });
-      const hasSufficientBalance = balance >= chargePlan.estimatedCost;
+      const estimatedCost = chargePlan.estimatedCost + connectionFee;
+      const hasSufficientBalance = balance >= estimatedCost;
       
       // Calcular precio base (sin descuentos) para mostrar en UI
       const basePricePerKwh = useAutoPricing
@@ -704,13 +743,16 @@ export const chargingRouter = router({
         demandDiscountPercent, // % de descuento por baja demanda (0 si no aplica)
         useAutoPricing, // Si la estación usa precio dinámico por IA (controla qué muestra la UI)
         estimatedKwh: chargePlan.estimatedKwh,
-        estimatedCost: chargePlan.estimatedCost,
+        estimatedCost,
         estimatedTime: chargePlan.estimatedTimeMinutes,
         hasSufficientBalance,
-        shortfall: hasSufficientBalance ? 0 : Math.ceil(chargePlan.estimatedCost - balance),
+        shortfall: hasSufficientBalance ? 0 : Math.ceil(estimatedCost - balance),
         dynamicMultiplier,
         demandLevel: dynamicPricing.getDemandLevel(dynamicMultiplier),
         subscriptionDiscount, // % de descuento aplicado por suscripción (0 si no tiene)
+        connectionFee,
+        reservationPriceLocked: hasLockedReservationPrice,
+        reservationId: activeReservation?.id ?? null,
         reservationProtection,
       };
     }),
@@ -749,13 +791,41 @@ export const chargingRouter = router({
         throw new TRPCError({ code: "NOT_FOUND", message: "El conector seleccionado no pertenece a esta estación." });
       }
       const evseId = selectedConnector.id;
+
+      // Si el titular inicia en su ventana de reserva, conserva la cotización
+      // que aceptó. Una modificación posterior de tarifa, demanda o suscripción
+      // no puede alterar este precio comercial.
+      const activeReservation = evseId ? await db.getActiveReservation(evseId) : undefined;
+      const isReservationOwner = !!activeReservation && activeReservation.userId === ctx.user.id;
+      if (activeReservation && !isReservationOwner) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Este conector está reservado temporalmente para otro usuario.",
+        });
+      }
+      const lockedReservationPrice = isReservationOwner && activeReservation?.lockedPricePerKwh !== null && activeReservation?.lockedPricePerKwh !== undefined
+        ? Number(activeReservation.lockedPricePerKwh)
+        : null;
+      const lockedReservationConnectionFee = isReservationOwner && activeReservation?.lockedConnectionFee !== null && activeReservation?.lockedConnectionFee !== undefined
+        ? Number(activeReservation.lockedConnectionFee)
+        : null;
+      const hasLockedReservationPrice = Number.isFinite(lockedReservationPrice) && lockedReservationPrice! >= 0;
       
       // Obtener el precio efectivo de la estación (tarifa propia o global)
       const effectivePriceData = await db.getEffectiveStationPrice(stationId);
       const tariffSource = effectivePriceData.source; // 'station' o 'global'
+      const committedReservationPricing = resolveReservationPricing({
+        lockedPricePerKwh: lockedReservationPrice,
+        lockedConnectionFee: lockedReservationConnectionFee,
+        currentPricePerKwh: effectivePriceData.pricePerKwh,
+        currentConnectionFee: effectivePriceData.connectionFee,
+      });
       
       let pricePerKwh: number;
-      if (useAutoPricing && evseId) {
+      if (committedReservationPricing.usesLockedPrice) {
+        pricePerKwh = committedReservationPricing.pricePerKwh;
+        console.log(`[Charging] Reservation #${activeReservation!.id} preserves locked price: $${pricePerKwh}/kWh`);
+      } else if (useAutoPricing && evseId) {
         // Usar precio dinámico calculado por IA
         // calculateDynamicPrice ya usa getEffectiveStationPrice internamente
         const dynamicPrice = await dynamicPricing.calculateDynamicPrice(stationId, evseId);
@@ -780,9 +850,12 @@ export const chargingRouter = router({
       }
       
       // ====== APLICAR DESCUENTO DE SUSCRIPCIÓN ======
-      // Si el usuario tiene una suscripción activa, aplicar el descuento en kWh
+      // Si el usuario tiene una suscripción activa, aplicar el descuento en kWh.
+      // Una reserva confirmada ya incluye las condiciones aceptadas y no se
+      // puede modificar después al iniciar la carga.
       let subscriptionDiscount = 0;
       try {
+        if (hasLockedReservationPrice) throw new Error("reservation-price-locked");
         const userSub = await db.getUserSubscription(ctx.user.id);
         if (userSub?.isActive && userSub.discountPercentage) {
           const discountPct = parseFloat(userSub.discountPercentage);
@@ -794,8 +867,12 @@ export const chargingRouter = router({
           }
         }
       } catch (subErr) {
-        console.warn(`[Charging] Error checking subscription discount:`, subErr);
+        if ((subErr as Error).message !== "reservation-price-locked") {
+          console.warn(`[Charging] Error checking subscription discount:`, subErr);
+        }
       }
+
+      const connectionFee = committedReservationPricing.connectionFee;
       
       // Usar el conector ya obtenido arriba (selectedConnector) para cálculos de potencia
       
@@ -807,7 +884,7 @@ export const chargingRouter = router({
         pricePerKwh,
         powerKw: Number(selectedConnector?.powerKw) || 22,
       });
-      const estimatedCost = chargePlan.estimatedCost;
+      const estimatedCost = chargePlan.estimatedCost + connectionFee;
       
       if (balance < estimatedCost) {
         throw new TRPCError({
@@ -816,17 +893,6 @@ export const chargingRouter = router({
         });
       }
       
-      // Una reserva se cumple sólo cuando OCPP confirme que existe una transacción.
-      // Antes de eso protege el conector para su titular, pero jamás se marca como usada.
-      const activeReservation = evseId ? await db.getActiveReservation(evseId) : undefined;
-      const isReservationOwner = !!activeReservation && activeReservation.userId === ctx.user.id;
-      if (activeReservation && !isReservationOwner) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Este conector está reservado temporalmente para otro usuario.",
-        });
-      }
-
       // La disponibilidad del conector no basta para equipos multi-salida: se
       // valida también el cupo físico del gabinete. En un Liboltek configurado
       // con 2 sesiones simultáneas, A y B pueden iniciar/ reservar de forma
@@ -1344,7 +1410,9 @@ export const chargingRouter = router({
       let pricePerKwh = activeTransaction.appliedPricePerKwh 
         ? parseFloat(String(activeTransaction.appliedPricePerKwh)) 
         : effectivePriceData.pricePerKwh;
-      const connectionFee = effectivePriceData.connectionFee || 0;
+      const connectionFee = activeTransaction.appliedConnectionFee !== null && activeTransaction.appliedConnectionFee !== undefined
+        ? Number(activeTransaction.appliedConnectionFee)
+        : Number(effectivePriceData.connectionFee || 0);
       
       // Priorizar datos en memoria (actualizados por MeterValues en tiempo real)
       // Si no hay sesión en memoria, usar datos de la BD como fallback
@@ -1416,7 +1484,9 @@ export const chargingRouter = router({
         // Solo usar tarifa base si no hay precio dinámico guardado en la transacción
         if (!activeTransaction.appliedPricePerKwh && tariff?.pricePerKwh) pricePerKwh = parseFloat(tariff.pricePerKwh);
         const pricePerMinute = tariff ? parseFloat(tariff.pricePerMinute || "0") : 0;
-        const sessionFee = tariff ? parseFloat(tariff.pricePerSession || "0") : connectionFee;
+        const sessionFee = activeTransaction.appliedConnectionFee !== null && activeTransaction.appliedConnectionFee !== undefined
+          ? Number(activeTransaction.appliedConnectionFee)
+          : (tariff ? parseFloat(tariff.pricePerSession || "0") : connectionFee);
         
         const energyCost = currentKwh * pricePerKwh;
         const timeCost = durationMinutes * pricePerMinute;

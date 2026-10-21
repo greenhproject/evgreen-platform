@@ -19,6 +19,8 @@ import * as alertsService from "./alerts-service";
 import mysql from "mysql2/promise";
 import { calculateSocEstimation } from "../charging/soc-estimation";
 import { shouldTreatOcpp16AvailableAsPhysicalDisconnect } from "../../shared/ocpp-status-notification-policy";
+import { resolveReservationPricing } from "../../shared/reservation-pricing-policy";
+import { buildInitialMeterValuesTrigger } from "../../shared/ocpp-initial-meter-values";
 
 // BUILD VERSION para diagnóstico de deploys
 const BUILD_VERSION = "v2026.02.18.B";
@@ -1089,12 +1091,23 @@ export class DualCSMS {
       } catch (e) { /* no-op */ }
     }
 
-    // Obtener tarifa activa (usa precios globales si no tiene tarifa propia)
+    // Obtener tarifa activa (usa precios globales si no tiene tarifa propia).
+    // La reserva del titular prevalece sobre cualquier cálculo actual: esa es
+    // la oferta comercial que ya aceptó, aun si la demanda o tarifa cambió.
     const effectivePrice = await db.getEffectiveStationPrice(conn.stationId);
     const tariff = await db.getActiveTariffByStationId(conn.stationId);
-    // IMPORTANTE: Usar el precio dinámico de la sesión pendiente si existe,
-    // ya que fue calculado al momento de iniciar la carga (incluye tarifa dinámica IA)
-    const pricePerKwh = pendingSessionData?.session?.pricePerKwh || effectivePrice.pricePerKwh;
+    const reservationPricing = userId > 0
+      ? await db.getActiveReservationForUser(evse.id, userId)
+      : undefined;
+    const reservationPrice = resolveReservationPricing({
+      lockedPricePerKwh: reservationPricing?.lockedPricePerKwh,
+      lockedConnectionFee: reservationPricing?.lockedConnectionFee,
+      pendingPricePerKwh: pendingSessionData?.session?.pricePerKwh,
+      currentPricePerKwh: effectivePrice.pricePerKwh,
+      currentConnectionFee: effectivePrice.connectionFee,
+    });
+    const pricePerKwh = reservationPrice.pricePerKwh;
+    const connectionFee = reservationPrice.connectionFee;
 
     // Generar ID de transacción OCPP 1.6 (entero)
     const ocpp16TransactionId = this.transactionIdCounter++;
@@ -1117,6 +1130,7 @@ export class DualCSMS {
       chargeMode: sessionChargeMode,
       targetValue: String(sessionTargetValue),
       appliedPricePerKwh: String(pricePerKwh),
+      appliedConnectionFee: String(connectionFee),
     });
 
     // Mapear ID de transacción OCPP 1.6 a interno
@@ -1199,6 +1213,19 @@ export class DualCSMS {
       });
       console.log(`[CSMS-DUAL] StartTransaction: Created basic active session for userId ${userId}, transactionId: ${transactionId}`);
     }
+
+    // Algunos cargadores AC no publican un MeterValues periódico de inmediato.
+    // Pedimos la primera lectura real de forma asíncrona; nunca se fabrican kWh
+    // o potencia si el equipo no responde a este mensaje estándar OCPP 1.6.
+    void this.sendCall(conn, "TriggerMessage", buildInitialMeterValuesTrigger({
+      ocppVersion: "1.6",
+      evseId: evse.evseIdLocal,
+      connectorId: req.connectorId,
+    })).then((response) => {
+      console.log(`[CSMS-DUAL] Initial MeterValues trigger for ${conn.ocppIdentity}/${req.connectorId}: ${response?.status || "sent"}`);
+    }).catch((error) => {
+      console.warn(`[CSMS-DUAL] Initial MeterValues trigger was not accepted for ${conn.ocppIdentity}/${req.connectorId}: ${error?.message || error}`);
+    });
 
     // Notificar al usuario que la carga ha iniciado exitosamente
     try {
@@ -1375,9 +1402,13 @@ export class DualCSMS {
     // Calcular costo - usar precio dinámico de la sesión activa (que fue calculado al iniciar la carga)
     // Si no hay sesión activa, usar la tarifa de la BD como fallback
     const tariff = transaction.tariffId ? await db.getTariffById(transaction.tariffId) : null;
-    const pricePerKwh = activeSession?.pricePerKwh || (tariff ? parseFloat(tariff.pricePerKwh) : 1800);
+    const pricePerKwh = transaction.appliedPricePerKwh !== null && transaction.appliedPricePerKwh !== undefined
+      ? Number(transaction.appliedPricePerKwh)
+      : (activeSession?.pricePerKwh || (tariff ? parseFloat(tariff.pricePerKwh) : 1800));
     const pricePerMinute = tariff ? parseFloat(tariff.pricePerMinute || "0") : 0;
-    const connectionFee = tariff ? parseFloat(tariff.pricePerSession || "0") : 0;
+    const connectionFee = transaction.appliedConnectionFee !== null && transaction.appliedConnectionFee !== undefined
+      ? Number(transaction.appliedConnectionFee)
+      : (tariff ? parseFloat(tariff.pricePerSession || "0") : 0);
     
     // Calcular costos desglosados
     const energyCost = energyDelivered * pricePerKwh;
@@ -2235,8 +2266,18 @@ export class DualCSMS {
 
         const tariff = await db.getActiveTariffByStationId(conn.stationId);
         const effectivePrice = await db.getEffectiveStationPrice(conn.stationId);
-        const pricePerKwh201 = pendingSession?.session?.pricePerKwh
-          ?? (tariff ? parseFloat(tariff.pricePerKwh) : effectivePrice.pricePerKwh);
+        const reservationPricing = userId > 0
+          ? await db.getActiveReservationForUser(evse.id, userId)
+          : undefined;
+        const reservationPrice = resolveReservationPricing({
+          lockedPricePerKwh: reservationPricing?.lockedPricePerKwh,
+          lockedConnectionFee: reservationPricing?.lockedConnectionFee,
+          pendingPricePerKwh: pendingSession?.session?.pricePerKwh,
+          currentPricePerKwh: tariff ? parseFloat(tariff.pricePerKwh) : effectivePrice.pricePerKwh,
+          currentConnectionFee: effectivePrice.connectionFee,
+        });
+        const pricePerKwh201 = reservationPrice.pricePerKwh;
+        const connectionFee201 = reservationPrice.connectionFee;
         const persistedStart = await db.createTransactionOnceByOcppId({
           evseId: evse.id,
           userId,
@@ -2249,6 +2290,7 @@ export class DualCSMS {
           chargeMode: pendingSession?.session?.chargeMode || "full_charge",
           targetValue: String(pendingSession?.session?.targetValue || 0),
           appliedPricePerKwh: String(pricePerKwh201),
+          appliedConnectionFee: String(connectionFee201),
         });
         const transactionId = persistedStart.transactionId;
 
@@ -2326,6 +2368,17 @@ export class DualCSMS {
           removePendingSession(pendingSession.sessionId);
           await db.consumePendingChargeSession(pendingSession.sessionId);
         }
+        // OCPP 2.0.1 conserva la misma regla: solicitar una muestra real al
+        // comienzo y dejar la pantalla en espera si el cargador no la entrega.
+        void this.sendCall(conn, "TriggerMessage", buildInitialMeterValuesTrigger({
+          ocppVersion: "2.0.1",
+          evseId: req.evse?.id ?? evse.evseIdLocal,
+          connectorId: req.evse?.connectorId ?? evse.connectorId ?? 1,
+        })).then((response) => {
+          console.log(`[CSMS-DUAL] OCPP 2.0.1 initial MeterValues trigger for ${conn.ocppIdentity}: ${response?.status || "sent"}`);
+        }).catch((error) => {
+          console.warn(`[CSMS-DUAL] OCPP 2.0.1 initial MeterValues trigger was not accepted for ${conn.ocppIdentity}: ${error?.message || error}`);
+        });
         break;
       }
 
@@ -2377,7 +2430,9 @@ export class DualCSMS {
             ? parseFloat(String(transaction.appliedPricePerKwh))
             : (tariff201 ? parseFloat(tariff201.pricePerKwh) : 1800);
           const pricePerMinute201 = tariff201 ? parseFloat(tariff201.pricePerMinute || "0") : 0;
-          const connectionFee201 = tariff201 ? parseFloat(tariff201.pricePerSession || "0") : 0;
+          const connectionFee201 = transaction.appliedConnectionFee !== null && transaction.appliedConnectionFee !== undefined
+            ? Number(transaction.appliedConnectionFee)
+            : (tariff201 ? parseFloat(tariff201.pricePerSession || "0") : 0);
           
           const endTime201 = new Date(req.timestamp);
           const startTime201 = transaction.startTime ? new Date(transaction.startTime) : new Date();

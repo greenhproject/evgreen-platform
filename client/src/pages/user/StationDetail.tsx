@@ -323,7 +323,7 @@ export default function StationDetail() {
   // Mutación para crear reserva
   const createReservation = trpc.reservations.create.useMutation({
     onSuccess: (data) => {
-      toast.success(`Reserva creada exitosamente. Tarifa: $${data.reservationFee.toLocaleString()} COP`);
+      toast.success(`Reserva creada. Se bloqueó $${Number(data.lockedPricePerKwh).toLocaleString()} COP/kWh para tu carga; reserva: $${data.reservationFee.toLocaleString()} COP.`);
       setShowReservationModal(false);
       setSelectedEvse(null);
       // Invalidar caches para que el estado RESERVED se refleje inmediatamente
@@ -592,6 +592,8 @@ export default function StationDetail() {
                 const statusStyle = getConnectorStatus(evse.connectorStatus);
                 const chargerGroup = chargerGroupByConnectorId.get(evse.id);
                 const isFirstConnectorInCharger = !!chargerGroup && chargerGroup.connectors?.[0]?.id === evse.id;
+                const isReservationOwner = Boolean(evse.isReservationOwner)
+                  || Boolean(evse.activeReservationUserId && user?.id && String(evse.activeReservationUserId) === String(user.id));
                 return (
                   <div key={evse.id} className="space-y-2">
                     {isFirstConnectorInCharger && (
@@ -609,7 +611,7 @@ export default function StationDetail() {
                         )}
                       </div>
                     )}
-                  <Card className="p-4 bg-card/50 backdrop-blur border-border/50">
+                  <Card className={`p-4 bg-card/50 backdrop-blur border-border/50 ${isReservationOwner ? "border-purple-500/50 bg-purple-500/5" : ""}`}>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <div className={`w-12 h-12 rounded-xl ${statusStyle.bg} flex items-center justify-center`}>
@@ -622,12 +624,12 @@ export default function StationDetail() {
                           </div>
                         </div>
                       </div>
-                      <Badge className={`${statusStyle.bg} ${statusStyle.text}`}>
-                        {statusStyle.label}
+                      <Badge className={isReservationOwner ? "bg-purple-500/20 text-purple-300" : `${statusStyle.bg} ${statusStyle.text}`}>
+                        {isReservationOwner ? "Tu reserva" : statusStyle.label}
                       </Badge>
                     </div>
                     
-                    {evse.connectorStatus === "AVAILABLE" && (
+                    {(evse.connectorStatus === "AVAILABLE" || isReservationOwner) && (
                       <div className="mt-3 space-y-2">
                         {/* Mostrar info de reserva futura si existe */}
                         {(evse as any).nextReservation && (() => {
@@ -707,13 +709,13 @@ export default function StationDetail() {
                             disabled={station.isOnline === false}
                           >
                             <Zap className="w-4 h-4 mr-2" />
-                            {station.isOnline === false ? 'Sin conexión' : 'Iniciar carga'}
+                            {station.isOnline === false ? 'Sin conexión' : isReservationOwner ? 'Iniciar con reserva' : 'Iniciar carga'}
                           </Button>
                           <Button 
                             variant="outline"
                             onClick={() => handleReserve(evse)}
                             className="border-primary/50 hover:bg-primary/10"
-                            disabled={station.isOnline === false}
+                            disabled={station.isOnline === false || isReservationOwner}
                           >
                             <Calendar className="w-4 h-4" />
                           </Button>
@@ -743,7 +745,10 @@ export default function StationDetail() {
                                     <div>Hasta: {formatStationTime(myRes.endTime, stationTimezone)}</div>
                                   )}
                                   {myRes.reservationFee && (
-                                    <div className="text-purple-300">Tarifa: ${Number(myRes.reservationFee).toLocaleString()} COP</div>
+                                    <div className="text-purple-300">Reserva pagada: ${Number(myRes.reservationFee).toLocaleString()} COP</div>
+                                  )}
+                                  {myRes.lockedPricePerKwh !== null && myRes.lockedPricePerKwh !== undefined && (
+                                    <div className="text-purple-300">Tarifa bloqueada: ${Number(myRes.lockedPricePerKwh).toLocaleString()} COP/kWh</div>
                                   )}
                                 </div>
                               </div>
@@ -1092,15 +1097,21 @@ export default function StationDetail() {
                       <span>${dynamicPrice.basePrice.toLocaleString()}/kWh</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Dinámico</span>
+                      <span className="text-muted-foreground">Tarifa que se bloqueará</span>
                       <span className="font-semibold" style={{ color: dynamicPrice.visualization.color }}>
                         ${dynamicPrice.finalPrice.toLocaleString()}/kWh
                       </span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Reserva</span>
+                      <span className="text-muted-foreground">Reserva (se cobra ahora)</span>
                       <span>${dynamicPrice.reservationFee.toLocaleString()}</span>
                     </div>
+                    {dynamicPrice.connectionFee > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Conexión (se cobra al cargar)</span>
+                        <span>${dynamicPrice.connectionFee.toLocaleString()}</span>
+                      </div>
+                    )}
                     <div className="pt-1 mt-1 border-t border-border/50 flex justify-between items-center">
                       <span className="font-medium text-xs">Total estimado</span>
                       <span className="font-bold text-sm" style={{ color: dynamicPrice.visualization.color }}>
@@ -1112,7 +1123,7 @@ export default function StationDetail() {
                   <div className="mt-1.5 pt-1.5 border-t border-border/50">
                     <p className="text-[10px] text-muted-foreground">
                       <AlertTriangle className="w-3 h-3 inline-block mr-1 align-text-bottom" />
-                      No presentarse: <strong>${dynamicPrice.noShowPenalty.toLocaleString()} COP</strong>
+                      Al confirmar, esta tarifa de energía queda bloqueada para tu ventana de reserva. No presentarse: <strong>${dynamicPrice.noShowPenalty.toLocaleString()} COP</strong>
                     </p>
                   </div>
                 </div>

@@ -115,3 +115,15 @@
 - [x] Añadir regresiones estáticas de responsive, galería y accesibilidad.
 - [x] Validar sin modificar Espacios: 11 regresiones focales de galería, fotos y responsive; suite completa 256 archivos / 2.412 pruebas aprobadas (5 suites y 7 pruebas omitidas de forma segura sin `TEST_DATABASE_URL` aislada), TypeScript, build, diff y servicio local HTTP 200 correctos. El navegador de QA no estuvo disponible y Chromium headless quedó bloqueado en el sandbox, por lo que se detuvo sin iniciar sesión ni alterar datos.
 - [x] Guardar checkpoint `5d993c36`, integrar de forma segura los cambios remotos compartidos, publicar en GitHub (`f2b4cc31f`) y verificar Railway: staging #7157693301 y producción #7157693278 finalizaron `success`; `app.evgreen.lat/admin/spaces` y `evgreen.lat/admin/spaces` responden HTTP 200.
+
+## Reservas — tarifa bloqueada, acceso del titular y telemetría AC (2026-10-20)
+
+- [x] Auditar lectura operativa sin escritura: la reserva y sesión de EVG Diamante están vinculadas, pero la tarifa no queda congelada desde la reserva y la última lectura AC persistida es previa a la pantalla; no se deben simular kWh/potencia.
+- [x] Bloquear una tarifa de reserva trazable (kWh y cargo de conexión) al confirmar la reserva y propagarla a la transacción/recibo cuando el titular inicia dentro de su ventana.
+- [x] Mostrar de manera inequívoca la tarifa congelada al reservar y al iniciar, y diferenciar la estimación temporal antes de confirmar de la tarifa que ya quedó protegida.
+- [x] Marcar el conector reservado como seleccionable en morado únicamente para su titular, con entrada directa desde la reserva al EVSE específico; mantenerlo bloqueado para terceros.
+- [x] Recuperar por base de datos la última telemetría disponible de AC y presentar potencia/energía real si existe; cuando no hay lectura nueva, mostrar la antigüedad y diagnóstico OCPP en vez de cero engañoso o datos inventados.
+- [x] Congelar tanto COP/kWh como el cargo de conexión en la reserva; al iniciar y al liquidar la sesión, OCPP 1.6, OCPP 2.0.1 y el puente legado priorizan esos importes, incluyendo un valor válido de COP 0.
+- [x] Solicitar `TriggerMessage(MeterValues)` después del arranque AC por los dos puentes OCPP, sin fabricar kWh/potencia si el equipo no responde y preservando la secuencia de respuesta OCPP.
+- [x] Añadir 8 regresiones de prioridad de precios, acceso exclusivo del titular y payloads OCPP; validación integral: 259 archivos / 2.420 pruebas aprobadas, 5 suites y 7 pruebas omitidas sin `TEST_DATABASE_URL` aislada, TypeScript, build y `git diff --check` correctos. Se verificaron las cuatro columnas de la migración 0068 en el esquema real mediante una consulta de solo lectura; no se creó ninguna reserva, cobro ni comando OCPP. El navegador sandbox no estuvo disponible para QA visual autenticada.
+- [ ] Guardar checkpoint, publicar de forma segura y verificar Railway.

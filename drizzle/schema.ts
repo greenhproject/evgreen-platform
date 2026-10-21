@@ -1646,6 +1646,11 @@ export const reservations = mysqlTable("reservations", {
 	reservationStatus: mysqlEnum("reservation_status", ['ACTIVE','EXPIRED','CANCELLED','FULFILLED','NO_SHOW','SERVICE_UNAVAILABLE']).default('ACTIVE').notNull(),
 	reservationFee: decimal({ precision: 10, scale: 2 }).default('0'),
 	noShowPenalty: decimal({ precision: 10, scale: 2 }).default('0'),
+	// Snapshot comercial confirmado con la reserva. Evita que un cambio dinámico
+	// posterior altere el precio que el titular vio y aceptó para este EVSE.
+	lockedPricePerKwh: decimal("locked_price_per_kwh", { precision: 10, scale: 2 }),
+	lockedConnectionFee: decimal("locked_connection_fee", { precision: 10, scale: 2 }),
+	priceLockedAt: timestamp("price_locked_at", { mode: 'string' }),
 	isPenaltyApplied: tinyint().default(0).notNull(),
 	transactionId: int(),
 	ocppReservationId: int(),
@@ -2384,6 +2389,7 @@ export const transactions = mysqlTable("transactions", {
 	chargeMode: varchar({ length: 20 }).default('full_charge'),
 	targetValue: decimal({ precision: 12, scale: 2 }).default('0'),
 	appliedPricePerKwh: decimal({ precision: 10, scale: 2 }),
+	appliedConnectionFee: decimal("applied_connection_fee", { precision: 10, scale: 2 }),
 },
 (table) => [
 	uniqueIndex("ux_transactions_ocpp_transaction_id").on(table.ocppTransactionId),

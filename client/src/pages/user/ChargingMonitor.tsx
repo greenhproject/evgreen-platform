@@ -496,6 +496,8 @@ export default function ChargingMonitor() {
   const telemetryIsFresh = telemetryStatus === "live";
   const ocppConnected = (session as any).ocppConnected === true;
   const lastReportedPower = Number((session as any).lastReportedPower || 0);
+  const isAcSession = (session as any).chargeType === "AC"
+    || String(session.connectorType || "").toUpperCase().includes("AC");
   
   let progressPercentage = 0;
   
@@ -802,13 +804,17 @@ export default function ChargingMonitor() {
                 <div className="min-w-0 flex-1">
                   <p className="font-semibold text-foreground">
                     {telemetryStatus === "unavailable"
-                      ? "Esperando telemetría del cargador"
+                      ? isAcSession
+                        ? "Esperando la primera lectura del cargador AC"
+                        : "Esperando telemetría del cargador"
                       : ocppConnected
                         ? "Telemetría OCPP retrasada"
                         : "Cargador reconectando con EVGreen"}
                   </p>
                   <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                    El vehículo puede continuar cargando localmente, pero potencia, energía y costo solo se actualizarán cuando llegue una nueva lectura OCPP.
+                    {isAcSession
+                      ? "La carga AC sigue activa. EVGreen solicitó una lectura OCPP al cargador; energía, potencia y costo se actualizarán apenas el equipo la reporte. No se muestran valores estimados como si fueran mediciones reales."
+                      : "El vehículo puede continuar cargando localmente, pero potencia, energía y costo solo se actualizarán cuando llegue una nueva lectura OCPP."}
                   </p>
                   {telemetryAgeSeconds !== null && (
                     <p className="mt-2 text-xs font-medium text-muted-foreground">

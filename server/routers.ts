@@ -62,6 +62,7 @@ import { buildCarbonRouter } from "./carbon/carbon-router";
 import { stageSiemLocationSnapshot } from "./ocpi/ocpi-station-snapshot";
 import { contractsRouter } from "./contracts/contracts-router";
 import { projectOperationalConnectorStates, resolveConnectorOperationalState } from "../shared/connector-operational-state";
+import { isConnectorSelectableForReservationOwner } from "../shared/reservation-connector-availability";
 import { CROWDFUNDING_PROJECT_STATUSES } from "./crowdfunding/project-bulk-policy";
 import { manageCrowdfundingProjectsBulk } from "./crowdfunding/project-bulk-operations";
 import {
@@ -964,7 +965,7 @@ const stationsRouter = router({
   // Obtener EVSEs de una estación (con estado offline aplicado)
   getEvses: protectedProcedure
     .input(z.object({ stationId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const evses = await db.getEvsesByStationId(input.stationId);
       // Verificar si la estación está offline para marcar EVSEs como UNAVAILABLE
       const station = await db.getChargingStationById(input.stationId);
@@ -976,6 +977,11 @@ const stationsRouter = router({
       const realIsOnline = memoryOnline2 || !!station.isOnline;
       const activeTransactions = await db.getActiveTransactionsByStationId(input.stationId);
       const activeTransactionByEvse = new Map(activeTransactions.map(transaction => [transaction.evseId, transaction]));
+      const userReservationByEvse = new Map<number, number>();
+      await Promise.all(evses.map(async (evse) => {
+        const reservation = await db.getActiveReservationForUser(evse.id, ctx.user.id);
+        if (reservation) userReservationByEvse.set(evse.id, reservation.id);
+      }));
       const liveConnection = station.ocppIdentity
         ? dualCSMS.getConnectionInfo(station.ocppIdentity)
         : undefined;
@@ -993,6 +999,7 @@ const stationsRouter = router({
           persistedStatusAt: e.updatedAt,
           activeTransactionId: activeTransaction?.id ?? null,
         });
+        const isReservationOwner = userReservationByEvse.has(e.id);
         return {
           ...e,
           connectorStatus: operationalState.status ?? e.connectorStatus,
@@ -1000,8 +1007,12 @@ const stationsRouter = router({
           operationalStatus: operationalState.status,
           operationalStatusSource: operationalState.source,
           activeTransactionId: activeTransaction?.id ?? null,
+          activeReservationId: isReservationOwner ? userReservationByEvse.get(e.id) || null : null,
+          activeReservationUserId: isReservationOwner ? ctx.user.id : null,
+          isReservationOwner,
           isCharging: operationalState.isCharging,
-          isAvailable: operationalState.isAvailable,
+          // RESERVED es utilizable sólo por el titular, que lo verá en morado.
+          isAvailable: isConnectorSelectableForReservationOwner(operationalState.status, isReservationOwner),
         };
       });
     }),
@@ -2907,10 +2918,18 @@ const reservationsRouter = router({
       // Verificar si la estación tiene autoPricing activado
       const tariff = await db.getActiveTariffByStationId(input.stationId);
       const useAutoPricing = tariff?.autoPricing === 1 || (tariff?.autoPricing as any) === 1;
+      const effectivePriceData = await db.getEffectiveStationPrice(input.stationId);
+      const tariffSource = effectivePriceData.source;
+      const connectionFee = Number(effectivePriceData.connectionFee || 0);
 
       if (!useAutoPricing) {
         // Precio fijo: retornar sin multiplicadores dinámicos
-        const basePricePerKwh = parseFloat(tariff?.pricePerKwh?.toString() || "1300");
+        const priceByConnector = await db.getPriceByConnectorType(
+          input.evseId,
+          effectivePriceData.pricePerKwh,
+          tariffSource,
+        );
+        const basePricePerKwh = priceByConnector.price;
         const reservationFee = parseFloat(tariff?.reservationFee?.toString() || "5000");
         const fixedFactors = {
           occupancyMultiplier: 1,
@@ -2926,8 +2945,9 @@ const reservationsRouter = router({
           finalPrice: basePricePerKwh,
           factors: fixedFactors,
           reservationFee,
+          connectionFee,
           noShowPenalty: reservationFee,
-          estimatedTotal: basePricePerKwh * 10 + reservationFee,
+          estimatedTotal: basePricePerKwh * 10 + reservationFee + connectionFee,
           currency: "COP",
           validUntil: new Date(Date.now() + 15 * 60 * 1000),
           visualization,
@@ -2941,9 +2961,17 @@ const reservationsRouter = router({
         input.requestedDate || new Date(),
         input.estimatedDurationMinutes
       );
+      const priceByConnector = await db.getPriceByConnectorType(
+        input.evseId,
+        price.finalPrice,
+        tariffSource,
+      );
       const visualization = dynamicPricing.getDemandVisualization(price.factors);
       return {
         ...price,
+        finalPrice: priceByConnector.price,
+        connectionFee,
+        estimatedTotal: Math.round(priceByConnector.price * ((price.estimatedTotal - price.reservationFee) / Math.max(price.finalPrice, 1)) + price.reservationFee + connectionFee),
         visualization,
         useAutoPricing: true,
       };
@@ -3055,6 +3083,14 @@ const reservationsRouter = router({
         startTime,
         input.estimatedDurationMinutes
       );
+      const effectivePriceData = await db.getEffectiveStationPrice(input.stationId);
+      const priceByConnector = await db.getPriceByConnectorType(
+        input.evseId,
+        dynamicPrice.finalPrice,
+        effectivePriceData.source,
+      );
+      const lockedPricePerKwh = priceByConnector.price;
+      const lockedConnectionFee = Number(effectivePriceData.connectionFee || 0);
       
       // Verificar saldo del usuario
       const wallet = await db.getWalletByUserId(ctx.user.id);
@@ -3081,6 +3117,9 @@ const reservationsRouter = router({
         expiryTime,
         reservationFee: dynamicPrice.reservationFee.toString(),
         noShowPenalty: dynamicPrice.noShowPenalty.toString(),
+        lockedPricePerKwh: String(lockedPricePerKwh),
+        lockedConnectionFee: String(lockedConnectionFee),
+        priceLockedAt: new Date().toISOString(),
         status: "ACTIVE",
       });
       
@@ -3135,6 +3174,8 @@ const reservationsRouter = router({
         id,
         reservationFee: dynamicPrice.reservationFee,
         noShowPenalty: dynamicPrice.noShowPenalty,
+        lockedPricePerKwh,
+        lockedConnectionFee,
         demandLevel: dynamicPrice.factors.demandLevel,
         startTime,
         endTime,
