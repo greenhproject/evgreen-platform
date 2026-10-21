@@ -36,7 +36,7 @@ import { handleManualContractDownload } from "../contracts/manual-contract-downl
 import { ensureContractDocumentStorage } from "../contracts/ensure-contract-document-storage";
 import { registerStorageProxy } from "./storageProxy";
 import { calculateSocEstimation } from "../charging/soc-estimation";
-import { estimatePowerFromEnergySamples, shouldAdvanceTelemetrySample } from "../../shared/charging-telemetry";
+import { estimatePowerFromEnergySamples, resolveBillableEnergyKwh, shouldAdvanceTelemetrySample } from "../../shared/charging-telemetry";
 import { matchesOcppMeterValuesScope } from "../../shared/ocpp-meter-values-correlation";
 import { createOcpp16StartFingerprint } from "../../shared/ocpp-start-idempotency";
 import { resolveReservationPricing } from "../../shared/reservation-pricing-policy";
@@ -1786,8 +1786,20 @@ async function handleOCPP16Message(
         console.warn(`[OCPP] StopTransaction - No transaction found for txId=${payload.transactionId}, idTag=${payload.idTag}. Accepting without altering connector state.`);
         return { idTagInfo: { status: "Accepted" } };
       }
-      const meterStart = transaction.meterStart ? parseFloat(transaction.meterStart) : 0;
-      const energyDelivered = (payload.meterStop - meterStart) / 1000;
+      const firstEnergyMeterValue = await db.getFirstEnergyMeterValue(transaction.id);
+      const { getActiveSessionById: getSessionForStop } = await import("../charging/charging-router");
+      const activeSessionForStop = getSessionForStop(transaction.id);
+      const stopEnergyResolution = resolveBillableEnergyKwh({
+        meterStartWh: transaction.meterStart,
+        firstSessionEnergyKwh: activeSessionForStop?.billingEnergyBaselineKwh
+          ?? firstEnergyMeterValue?.energyKwh,
+        currentEnergyKwh: Number(payload.meterStop) / 1000,
+      });
+      // Ante un reset o una lectura final inválida, conservar únicamente el
+      // último consumo ya verificado; nunca fabricar un delta nuevo.
+      const energyDelivered = stopEnergyResolution.kwh
+        ?? activeSessionForStop?.currentKwh
+        ?? (transaction.kwhConsumed ? parseFloat(String(transaction.kwhConsumed)) : 0);
       const tariff = transaction.tariffId ? await db.getTariffById(transaction.tariffId) : null;
       // Priorizar precio dinámico guardado en la transacción
       const pricePerKwh = (transaction as any).appliedPricePerKwh 
@@ -2290,23 +2302,33 @@ async function handleOCPP16Message(
           
           console.log(`[OCPP] MeterValues raw - txId=${transactionId}: energy=${energyWh}Wh, power=${powerW}W, soc=${soc}%, voltage=${voltage}V, current=${currentA}A`);
           
-          // Liquidación: sólo se actualiza si el contador OCPP es consistente
-          // con la referencia persistida. Una curva visual puede derivarse de
-          // deltas crudos, pero no debe modificar kWh, saldos ni importes.
+          // Liquidación: se usa meterStart cuando es consistente. Si el
+          // StartTransaction trae una referencia posterior a la primera
+          // lectura OCPP de ESTA misma sesión, se cobra el delta observado
+          // desde esa primera lectura. No se estima energía anterior a ella.
           const meterStart = transaction.meterStart ? parseFloat(transaction.meterStart) : 0;
-          const rawKwhConsumed = energyWh !== null && Number.isFinite(meterStart)
-            ? (energyWh - meterStart) / 1000
-            : null;
-          const hasBillableMeterReference = rawKwhConsumed !== null && rawKwhConsumed >= 0;
-          const kwhConsumed = hasBillableMeterReference ? rawKwhConsumed : null;
-          const billableKwhConsumed = kwhConsumed ?? 0;
-          
-          // Potencia en kW - si el cargador no envía Power, estimar por diferencia de energía
-          let powerKw = powerW !== null ? powerW / 1000 : null;
           const activeSessionBeforeUpdate = getActiveSessionById(transaction.id);
           const currentSampleAt = activeSessionBeforeUpdate?.lastMeterSampleAt ?? activeSessionBeforeUpdate?.lastMeterUpdate ?? null;
           const shouldAdvanceCurrentState = shouldAdvanceTelemetrySample(currentSampleAt, sampleTimestamp);
           const rawEnergyKwh = energyWh !== null ? energyWh / 1000 : null;
+          let firstSessionEnergyKwh = activeSessionBeforeUpdate?.billingEnergyBaselineKwh ?? null;
+          if (firstSessionEnergyKwh === null && rawEnergyKwh !== null) {
+            const firstStoredEnergy = await db.getFirstEnergyMeterValue(transaction.id);
+            firstSessionEnergyKwh = firstStoredEnergy?.energyKwh === null || firstStoredEnergy?.energyKwh === undefined
+              ? rawEnergyKwh
+              : Number(firstStoredEnergy.energyKwh);
+          }
+          const billingEnergyResolution = resolveBillableEnergyKwh({
+            meterStartWh: transaction.meterStart,
+            firstSessionEnergyKwh,
+            currentEnergyKwh: rawEnergyKwh,
+          });
+          const hasBillableMeterReference = billingEnergyResolution.kwh !== null;
+          const kwhConsumed = billingEnergyResolution.kwh;
+          const billableKwhConsumed = kwhConsumed ?? 0;
+
+          // Potencia en kW - si el cargador no envía Power, estimar por diferencia de energía
+          let powerKw = powerW !== null ? powerW / 1000 : null;
           const previousRawEnergyKwh = activeSessionBeforeUpdate?.lastRawEnergyKwh ?? null;
           const meterStartKwh = Number.isFinite(meterStart) ? meterStart / 1000 : null;
           const shouldUseMeterStartForChart = rawEnergyKwh !== null
@@ -2473,6 +2495,10 @@ async function handleOCPP16Message(
                   currentKwh: billableKwhConsumed,
                   currentCost: currentTotalCost,
                 } : {}),
+                billingEnergyBaselineKwh: billingEnergyResolution.reference === "first_session_sample"
+                  ? firstSessionEnergyKwh
+                  : undefined,
+                billingEnergyReference: billingEnergyResolution.reference,
                 rawEnergyKwh,
                 chartEnergyBaselineKwh,
                 chartEnergyReference,
@@ -2494,7 +2520,7 @@ async function handleOCPP16Message(
             console.log(`[OCPP] MeterValues stored as history but ignored for current state: sampleAt=${sampleTimestamp.toISOString()}, currentSampleAt=${currentSampleAt?.toISOString()}`);
           }
           
-          console.log(`[OCPP] MeterValues PROCESSED - txId=${transaction.id}: ${kwhConsumed?.toFixed(4) ?? 'reference-pending'} kWh, $${currentTotalCost.toFixed(0)} COP, SoC=${soc ?? 'N/A'}%, Power=${powerKw?.toFixed(1) ?? 'N/A'}kW, sessionUpdated=${updated}`);
+          console.log(`[OCPP] MeterValues PROCESSED - txId=${transaction.id}: ${kwhConsumed?.toFixed(4) ?? 'reference-pending'} kWh (${billingEnergyResolution.reference}), $${currentTotalCost.toFixed(0)} COP, SoC=${soc ?? 'N/A'}%, Power=${powerKw?.toFixed(1) ?? 'N/A'}kW, sessionUpdated=${updated}`);
           
           // Si la sesión no existía en memoria y no se creó arriba, crearla ahora
           if (!updated && energyWh !== null) {

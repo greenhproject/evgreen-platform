@@ -17,6 +17,8 @@ vi.mock("../db", () => ({
   getTransactionByOcppId: vi.fn(),
   updateTransaction: vi.fn(),
   createMeterValue: vi.fn(),
+  getFirstEnergyMeterValue: vi.fn(),
+  getLatestEnergyMeterValue: vi.fn(),
   getActiveTariffByStationId: vi.fn(),
   getTariffById: vi.fn(),
   createOcppLog: vi.fn(),
@@ -220,6 +222,70 @@ describe("DualCSMS", () => {
       const latestHistoryPoint = getActiveSessionById(transactionId)?.powerHistory.at(-1);
       expect(latestHistoryPoint?.power).toBeCloseTo(4.8, 6);
       expect(latestHistoryPoint?.powerSource).toBe("estimated_from_energy");
+
+      removeActiveSession(transactionId);
+      (dualCSMS as any).ocpp16Transactions.delete(1023);
+    });
+
+    it("cobra el delta observado si meterStart es posterior a la primera muestra OCPP", async () => {
+      const transactionId = 956_002;
+      const mockedDb = db as unknown as Record<string, ReturnType<typeof vi.fn>>;
+      mockedDb.getEvsesByStationId.mockResolvedValue([{ id: 602, evseIdLocal: 1 }]);
+      mockedDb.getTransactionByOcppId.mockResolvedValue({
+        id: transactionId,
+        stationId: 501,
+        evseId: 602,
+        ocppNumericTxId: 1023,
+        status: "IN_PROGRESS",
+        transactionStatus: "IN_PROGRESS",
+        endTime: null,
+        meterStart: "3643078",
+      });
+      mockedDb.getFirstEnergyMeterValue.mockResolvedValue({ energyKwh: "3597.9510" });
+      mockedDb.createMeterValue.mockResolvedValue(undefined);
+      mockedDb.updateTransaction.mockResolvedValue(undefined);
+      (dualCSMS as any).ocpp16Transactions.set(1023, "internal-ocpp-id");
+      setActiveSession(transactionId, {
+        transactionId,
+        userId: 1,
+        stationId: 501,
+        connectorId: 1,
+        chargeMode: "full_charge",
+        targetValue: 100,
+        startTime: new Date("2026-10-21T03:03:36Z"),
+        currentKwh: 0,
+        currentCost: 0,
+        pricePerKwh: 1709,
+        soc: null,
+        currentPower: 0,
+        voltage: null,
+        current: null,
+        lastMeterUpdate: null,
+        powerHistory: [],
+        socTargetNotified: false,
+        manualSoc: null,
+        manualBatteryCapacityKwh: null,
+        lowPowerSince: null,
+        chargeCompleteDetected: false,
+        chargeCompleteNotified: false,
+        autoStopSent: false,
+        energyBasedSoc: null,
+      });
+
+      const handler = (dualCSMS as any).handleOCPP16MeterValues.bind(dualCSMS);
+      await handler({ stationId: 501, ocppIdentity: "EVG-TEST" } as any, {
+        connectorId: 1,
+        transactionId: 1023,
+        meterValue: [{
+          timestamp: "2026-10-21T13:23:46Z",
+          sampledValue: [{ measurand: "Energy.Active.Import.Register", unit: "Wh", value: "3644828" }],
+        }],
+      });
+
+      expect(mockedDb.updateTransaction).toHaveBeenCalledWith(transactionId, expect.objectContaining({
+        kwhConsumed: "46.8770",
+      }));
+      expect(getActiveSessionById(transactionId)?.currentKwh).toBeCloseTo(46.88, 2);
 
       removeActiveSession(transactionId);
       (dualCSMS as any).ocpp16Transactions.delete(1023);

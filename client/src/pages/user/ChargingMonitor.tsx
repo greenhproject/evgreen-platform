@@ -499,6 +499,7 @@ export default function ChargingMonitor() {
   const currentPowerSource = ((session as any).currentPowerSource || "unavailable") as "measured" | "estimated_from_energy" | "unavailable";
   const hasEstimatedPower = (session as any).hasEstimatedPower === true;
   const meterReferenceNeedsReview = (session as any).meterReferenceNeedsReview === true;
+  const billingEnergyReference = (session as any).billingEnergyReference as "meter_start" | "first_session_sample" | "unavailable" | undefined;
   const voltage = (session as any).voltage as number | null | undefined;
   const currentAmp = (session as any).currentAmp as number | null | undefined;
   const isAcSession = (session as any).chargeType === "AC"
@@ -850,7 +851,9 @@ export default function ChargingMonitor() {
               </p>
               <p className="text-xs text-muted-foreground">
                 {meterReferenceNeedsReview
-                  ? "Lecturas en conciliación; el total facturable no se alteró"
+                  ? billingEnergyReference === "first_session_sample"
+                    ? "Consumo medido desde la primera lectura OCPP disponible"
+                    : "Lecturas del medidor en conciliación"
                   : !telemetryIsFresh && telemetryAgeSeconds !== null
                   ? `Última lectura ${telemetryAgeLabel}`
                   : session.estimatedKwh > 0

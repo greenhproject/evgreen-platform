@@ -1,6 +1,7 @@
 export type ChargingTelemetryStatus = "live" | "delayed" | "stale" | "unavailable";
 export type PowerTelemetrySource = "measured" | "estimated_from_energy" | "unavailable";
 export type ChartEnergyReference = "meter_start" | "first_sample";
+export type BillingEnergyReference = "meter_start" | "first_session_sample" | "unavailable";
 
 export const TELEMETRY_FRESH_AFTER_MS = 7 * 60 * 1000;
 export const TELEMETRY_STALE_AFTER_MS = 15 * 60 * 1000;
@@ -61,6 +62,78 @@ export function estimatePowerFromEnergySamples(input: {
   const maxPowerKw = input.maxPowerKw ?? 150;
   if (!Number.isFinite(powerKw) || powerKw < 0) return null;
   return Math.min(powerKw, maxPowerKw);
+}
+
+/**
+ * Resuelve el consumo que puede cobrarse con evidencia del medidor OCPP.
+ *
+ * Normalmente el contador informado por StartTransaction es la base. Cuando
+ * ese contador es posterior a la primera muestra de energía asociada de forma
+ * estricta a la misma sesión, es una referencia inconsistente: se usa esa
+ * primera muestra como base facturable observada. Así no se inventan kWh, ni
+ * se pierde toda la energía posterior por un error de StartTransaction.
+ *
+ * La primera muestra puede llegar minutos después del inicio físico. Por eso
+ * el resultado `first_session_sample` es un mínimo medido y no pretende
+ * reconstruir energía anterior a dicha muestra.
+ */
+export function resolveBillableEnergyKwh(input: {
+  meterStartWh: number | string | null | undefined;
+  firstSessionEnergyKwh: number | string | null | undefined;
+  currentEnergyKwh: number | string | null | undefined;
+}): {
+  kwh: number | null;
+  reference: BillingEnergyReference;
+  meterStartConsistent: boolean | null;
+} {
+  const hasMeterStart = input.meterStartWh !== null
+    && input.meterStartWh !== undefined
+    && String(input.meterStartWh).trim() !== "";
+  const meterStartWh = hasMeterStart ? Number(input.meterStartWh) : Number.NaN;
+  const meterStartKwh = Number.isFinite(meterStartWh) && meterStartWh >= 0
+    ? meterStartWh / 1000
+    : null;
+  const hasFirstSessionEnergy = input.firstSessionEnergyKwh !== null
+    && input.firstSessionEnergyKwh !== undefined
+    && String(input.firstSessionEnergyKwh).trim() !== "";
+  const firstSessionEnergyKwh = hasFirstSessionEnergy ? Number(input.firstSessionEnergyKwh) : Number.NaN;
+  const firstSampleKwh = Number.isFinite(firstSessionEnergyKwh) && firstSessionEnergyKwh >= 0
+    ? firstSessionEnergyKwh
+    : null;
+  const currentEnergyKwh = Number(input.currentEnergyKwh);
+  const currentSampleKwh = Number.isFinite(currentEnergyKwh) && currentEnergyKwh >= 0
+    ? currentEnergyKwh
+    : null;
+
+  if (currentSampleKwh === null) {
+    return { kwh: null, reference: "unavailable", meterStartConsistent: null };
+  }
+
+  const meterStartConsistent = meterStartKwh === null || firstSampleKwh === null
+    ? null
+    : meterStartKwh <= firstSampleKwh;
+  const baselineKwh = meterStartKwh !== null && meterStartConsistent !== false
+    ? meterStartKwh
+    : firstSampleKwh;
+  const reference: BillingEnergyReference = baselineKwh === null
+    ? "unavailable"
+    : meterStartKwh !== null && meterStartConsistent !== false
+      ? "meter_start"
+      : "first_session_sample";
+
+  if (baselineKwh === null || currentSampleKwh < baselineKwh) {
+    // Una regresión indica reset/reinicio de contador o dato no correlacionado.
+    // Nunca se convierte en un cobro negativo ni en una energía estimada.
+    return { kwh: null, reference, meterStartConsistent };
+  }
+
+  return {
+    // MeterValues se persiste con 4 decimales de kWh. Normalizar en la misma
+    // precisión evita exponer artefactos binarios como 46.14899999999989.
+    kwh: Math.round((currentSampleKwh - baselineKwh) * 10_000) / 10_000,
+    reference,
+    meterStartConsistent,
+  };
 }
 
 export type MeterValueHistoryInput = {

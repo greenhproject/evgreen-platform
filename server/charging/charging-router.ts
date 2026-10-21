@@ -21,6 +21,7 @@ import { dispatchOrganizationWebhookEvent } from "../api/webhook-dispatcher";
 import { calculateSocEstimation, getManualSocAvailability, resolveOperationalSoc } from "./soc-estimation";
 import {
   buildPowerHistoryFromMeterValues,
+  resolveBillableEnergyKwh,
   resolveChargingTelemetryFreshness,
   shouldAdvanceTelemetrySample,
   type ChartEnergyReference,
@@ -133,6 +134,10 @@ const activeChargeSessions = new Map<number, {
   lastRawEnergyKwh?: number | null;
   chartEnergyBaselineKwh?: number | null;
   chartEnergyReference?: ChartEnergyReference;
+  // Referencia de cobro observada cuando meterStart OCPP es inconsistente.
+  // Es independiente de la curva y no reemplaza el valor crudo auditado.
+  billingEnergyBaselineKwh?: number | null;
+  billingEnergyReference?: "meter_start" | "first_session_sample" | "unavailable";
   voltage: number | null; // Voltaje (V)
   current: number | null; // Corriente (A)
   lastMeterUpdate: Date | null; // Timestamp del último MeterValues
@@ -1428,13 +1433,20 @@ export const chargingRouter = router({
       // Priorizar datos en memoria (actualizados por MeterValues en tiempo real)
       // Si no hay sesión en memoria, usar datos de la BD como fallback
       let currentKwh: number;
-      let currentCost: number;
+      let currentCost = activeTransaction.totalCost ? parseFloat(String(activeTransaction.totalCost)) : 0;
       let soc: number | null = null;
       let currentPower: number = 0;
       let currentPowerSource: PowerTelemetrySource = "unavailable";
       let voltage: number | null = null;
       let currentAmp: number | null = null;
       const latestStoredMeterValue = await db.getLastMeterValue(activeTransaction.id);
+      const firstStoredEnergyMeterValue = await db.getFirstEnergyMeterValue(activeTransaction.id);
+      const latestStoredEnergyMeterValue = await db.getLatestEnergyMeterValue(activeTransaction.id);
+      const billingEnergyResolution = resolveBillableEnergyKwh({
+        meterStartWh: activeTransaction.meterStart,
+        firstSessionEnergyKwh: firstStoredEnergyMeterValue?.energyKwh,
+        currentEnergyKwh: latestStoredEnergyMeterValue?.energyKwh,
+      });
       let resolvedPowerHistory = activeSessionInfo?.powerHistory || [];
 
       // ── Reconstruir powerHistory desde BD si la memoria está vacía (ej: tras reinicio) ──
@@ -1500,12 +1512,7 @@ export const chargingRouter = router({
           currentKwh = activeTransaction.kwhConsumed ? parseFloat(activeTransaction.kwhConsumed) : 0;
         }
         
-        if (meterReferenceNeedsReview) {
-          // La gráfica puede seguir siendo útil, pero ningún dato visual debe
-          // recomponer un cobro mientras la base del medidor esté en revisión.
-          currentKwh = activeTransaction.kwhConsumed ? parseFloat(activeTransaction.kwhConsumed) : 0;
-          currentCost = activeTransaction.totalCost ? parseFloat(activeTransaction.totalCost) : 0;
-        } else {
+        if (!meterReferenceNeedsReview) {
           // Calcular costo: energía + tiempo + tarifa de conexión
           const durationMinutes = (Date.now() - startTime.getTime()) / (1000 * 60);
           const tariff = activeTransaction.tariffId ? await db.getTariffById(activeTransaction.tariffId) : null;
@@ -1520,6 +1527,24 @@ export const chargingRouter = router({
           const timeCost = durationMinutes * pricePerMinute;
           currentCost = energyCost + timeCost + sessionFee;
         }
+      }
+
+      // La referencia de facturación se decide sobre las lecturas OCPP de la
+      // misma transacción, no sobre la gráfica ni el valor anómalo de inicio.
+      // Si sólo existe la primera muestra posterior al arranque, representa el
+      // consumo mínimo observado: no se inventan los minutos sin lectura.
+      if (billingEnergyResolution.kwh !== null) {
+        currentKwh = billingEnergyResolution.kwh;
+        const durationMinutes = (Date.now() - startTime.getTime()) / (1000 * 60);
+        const tariff = activeTransaction.tariffId ? await db.getTariffById(activeTransaction.tariffId) : null;
+        if (!activeTransaction.appliedPricePerKwh && tariff?.pricePerKwh) {
+          pricePerKwh = parseFloat(tariff.pricePerKwh);
+        }
+        const pricePerMinute = tariff ? parseFloat(tariff.pricePerMinute || "0") : 0;
+        const sessionFee = activeTransaction.appliedConnectionFee !== null && activeTransaction.appliedConnectionFee !== undefined
+          ? Number(activeTransaction.appliedConnectionFee)
+          : (tariff ? parseFloat(tariff.pricePerSession || "0") : connectionFee);
+        currentCost = currentKwh * pricePerKwh + durationMinutes * pricePerMinute + sessionFee;
       }
       
       // Preferir el último punto reconstruido desde la BD incluso si esta
@@ -1698,6 +1723,7 @@ export const chargingRouter = router({
         lastReportedPowerSource: currentPowerSource,
         hasEstimatedPower,
         meterReferenceNeedsReview,
+        billingEnergyReference: billingEnergyResolution.reference,
         lastMeterSampleAt,
         telemetryStatus: telemetryFreshness.status,
         telemetryAgeSeconds: telemetryFreshness.ageSeconds,
@@ -2152,6 +2178,8 @@ export function updateActiveSessionMeterData(transactionId: number, data: {
   rawEnergyKwh?: number | null;
   chartEnergyBaselineKwh?: number | null;
   chartEnergyReference?: ChartEnergyReference;
+  billingEnergyBaselineKwh?: number | null;
+  billingEnergyReference?: "meter_start" | "first_session_sample" | "unavailable";
   chartEnergyKwh?: number | null;
   soc?: number | null;
   currentPower?: number | null;
@@ -2177,6 +2205,10 @@ export function updateActiveSessionMeterData(transactionId: number, data: {
   if (data.chartEnergyReference !== undefined && session.chartEnergyReference === undefined) {
     session.chartEnergyReference = data.chartEnergyReference;
   }
+  if (data.billingEnergyBaselineKwh !== undefined && session.billingEnergyBaselineKwh === undefined) {
+    session.billingEnergyBaselineKwh = data.billingEnergyBaselineKwh;
+  }
+  if (data.billingEnergyReference !== undefined) session.billingEnergyReference = data.billingEnergyReference;
   if (data.soc !== undefined) session.soc = data.soc;
   if (data.currentPower !== undefined) session.currentPower = data.currentPower ?? 0;
   if (data.currentPowerSource !== undefined) session.currentPowerSource = data.currentPowerSource;
@@ -2513,21 +2545,33 @@ async function completeTransactionLocally(transactionId: number, transaction: an
     // Obtener datos de la sesión activa en memoria (si existe)
     const activeSession = activeChargeSessions.get(transactionId);
     
-    // Calcular energía entregada
-    let energyDelivered = 0;
-    if (activeSession?.currentKwh && activeSession.currentKwh > 0) {
-      energyDelivered = activeSession.currentKwh;
-    } else if (transaction.meterEnd && transaction.meterStart) {
-      energyDelivered = (parseFloat(transaction.meterEnd) - parseFloat(transaction.meterStart)) / 1000;
-    } else if (transaction.kwhConsumed) {
-      energyDelivered = parseFloat(transaction.kwhConsumed);
-    }
+    // Calcular energía entregada con la misma regla que MeterValues y
+    // StopTransaction. Esto evita que el cierre local reintroduzca la resta
+    // errónea cuando meterStart es posterior a la primera lectura OCPP.
+    const [firstEnergyMeterValue, latestEnergyMeterValue] = await Promise.all([
+      db.getFirstEnergyMeterValue(transactionId),
+      db.getLatestEnergyMeterValue(transactionId),
+    ]);
+    const localEnergyResolution = resolveBillableEnergyKwh({
+      meterStartWh: transaction.meterStart,
+      firstSessionEnergyKwh: activeSession?.billingEnergyBaselineKwh ?? firstEnergyMeterValue?.energyKwh,
+      currentEnergyKwh: transaction.meterEnd
+        ? Number(transaction.meterEnd) / 1000
+        : latestEnergyMeterValue?.energyKwh,
+    });
+    const energyDelivered = localEnergyResolution.kwh
+      ?? activeSession?.currentKwh
+      ?? (transaction.kwhConsumed ? parseFloat(transaction.kwhConsumed) : 0);
     
     // Obtener tarifa
     const tariff = transaction.tariffId ? await db.getTariffById(transaction.tariffId) : null;
-    const pricePerKwh = tariff ? parseFloat(tariff.pricePerKwh) : 1800;
+    const pricePerKwh = transaction.appliedPricePerKwh !== null && transaction.appliedPricePerKwh !== undefined
+      ? Number(transaction.appliedPricePerKwh)
+      : (tariff ? parseFloat(tariff.pricePerKwh) : 1800);
     const pricePerMinute = tariff ? parseFloat(tariff.pricePerMinute || "0") : 0;
-    const sessionFee = tariff ? parseFloat(tariff.pricePerSession || "0") : 0;
+    const sessionFee = transaction.appliedConnectionFee !== null && transaction.appliedConnectionFee !== undefined
+      ? Number(transaction.appliedConnectionFee)
+      : (tariff ? parseFloat(tariff.pricePerSession || "0") : 0);
     
     // Calcular costos
     const energyCost = energyDelivered * pricePerKwh;

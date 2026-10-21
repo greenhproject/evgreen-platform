@@ -3,6 +3,7 @@ import {
   buildPowerHistoryFromMeterValues,
   estimatePowerFromEnergySamples,
   formatTelemetryAge,
+  resolveBillableEnergyKwh,
   resolveChargingTelemetryFreshness,
   shouldAdvanceTelemetrySample,
 } from "../../shared/charging-telemetry";
@@ -80,6 +81,56 @@ describe("telemetría autoritativa de carga", () => {
 
     expect(history.map((point) => point.energyReference)).toEqual(["meter_start", "meter_start"]);
     expect(history[1]).toMatchObject({ energy: 0.5, powerSource: "estimated_from_energy" });
+  });
+
+  it("liquida la energía observada desde la primera muestra si meterStart es posterior", () => {
+    const result = resolveBillableEnergyKwh({
+      meterStartWh: 3_643_078,
+      firstSessionEnergyKwh: "3597.9510",
+      currentEnergyKwh: "3644.1000",
+    });
+
+    expect(result).toEqual({
+      kwh: 46.149,
+      reference: "first_session_sample",
+      meterStartConsistent: false,
+    });
+  });
+
+  it("mantiene el medidor inicial cuando es consistente con la primera muestra", () => {
+    expect(resolveBillableEnergyKwh({
+      meterStartWh: 1_000,
+      firstSessionEnergyKwh: 1.4,
+      currentEnergyKwh: 1.8,
+    })).toEqual({
+      kwh: 0.8,
+      reference: "meter_start",
+      meterStartConsistent: true,
+    });
+  });
+
+  it("no inventa un cobro si la lectura actual retrocede respecto a su base", () => {
+    expect(resolveBillableEnergyKwh({
+      meterStartWh: 100_000,
+      firstSessionEnergyKwh: 100,
+      currentEnergyKwh: 2,
+    })).toEqual({
+      kwh: null,
+      reference: "meter_start",
+      meterStartConsistent: true,
+    });
+  });
+
+  it("mantiene la energía sin dato cuando no hay una referencia verificable", () => {
+    expect(resolveBillableEnergyKwh({
+      meterStartWh: null,
+      firstSessionEnergyKwh: null,
+      currentEnergyKwh: 44,
+    })).toEqual({
+      kwh: null,
+      reference: "unavailable",
+      meterStartConsistent: null,
+    });
   });
 
   it("distingue una potencia cero medida de una potencia no reportada", () => {

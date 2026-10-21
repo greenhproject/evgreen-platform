@@ -21,7 +21,7 @@ import { calculateSocEstimation } from "../charging/soc-estimation";
 import { shouldTreatOcpp16AvailableAsPhysicalDisconnect } from "../../shared/ocpp-status-notification-policy";
 import { resolveReservationPricing } from "../../shared/reservation-pricing-policy";
 import { buildInitialMeterValuesTrigger } from "../../shared/ocpp-initial-meter-values";
-import { estimatePowerFromEnergySamples, shouldAdvanceTelemetrySample } from "../../shared/charging-telemetry";
+import { estimatePowerFromEnergySamples, resolveBillableEnergyKwh, shouldAdvanceTelemetrySample } from "../../shared/charging-telemetry";
 import { matchesOcppMeterValuesScope } from "../../shared/ocpp-meter-values-correlation";
 
 // BUILD VERSION para diagnóstico de deploys
@@ -1389,15 +1389,19 @@ export class DualCSMS {
       return { idTagInfo: { status: "Accepted" } };
     }
 
-    const meterStart = transaction.meterStart ? parseFloat(transaction.meterStart) : 0;
-    let energyDelivered = (req.meterStop - meterStart) / 1000; // Wh a kWh
-    
-    // Si la energía entregada es 0 o negativa, intentar usar los datos de la sesión activa
     const activeSession = getActiveSessionById(transaction.id);
-    if (energyDelivered <= 0 && activeSession && activeSession.currentKwh > 0) {
-      energyDelivered = activeSession.currentKwh;
-      console.log(`[CSMS-DUAL] StopTransaction: Using session energy ${energyDelivered} kWh (meterStop gave 0)`);
-    }
+    const firstEnergyMeterValue = await db.getFirstEnergyMeterValue(transaction.id);
+    const stopEnergyResolution = resolveBillableEnergyKwh({
+      meterStartWh: transaction.meterStart,
+      firstSessionEnergyKwh: activeSession?.billingEnergyBaselineKwh
+        ?? firstEnergyMeterValue?.energyKwh,
+      currentEnergyKwh: Number(req.meterStop) / 1000,
+    });
+    // Una lectura final regresiva (reset) no puede inventar ni borrar energía:
+    // se conserva sólo el último consumo OCPP previamente verificado.
+    let energyDelivered = stopEnergyResolution.kwh
+      ?? activeSession?.currentKwh
+      ?? (transaction.kwhConsumed ? Number(transaction.kwhConsumed) : 0);
 
     // Calcular costo - usar precio dinámico de la sesión activa (que fue calculado al iniciar la carga)
     // Si no hay sesión activa, usar la tarifa de la BD como fallback
@@ -2039,17 +2043,20 @@ export class DualCSMS {
             }
           }
           
+          const firstEnergyMeterValue = latestEnergyKwh === null
+            ? undefined
+            : await db.getFirstEnergyMeterValue(transaction.id);
+          const billingEnergyResolution = resolveBillableEnergyKwh({
+            meterStartWh: transaction.meterStart,
+            firstSessionEnergyKwh: firstEnergyMeterValue?.energyKwh,
+            currentEnergyKwh: latestEnergyKwh,
+          });
+
           // Actualizar sesión activa en memoria con los datos más recientes
           const activeSession = getActiveSessionById(transaction.id);
           if (activeSession) {
-            const meterStart = transaction.meterStart ? parseFloat(transaction.meterStart) : 0;
-            const rawConsumedKwh = latestEnergyKwh !== null && Number.isFinite(meterStart)
-              ? latestEnergyKwh - meterStart
-              : null;
-            const hasBillableMeterReference = rawConsumedKwh !== null && rawConsumedKwh >= 0;
-            // La falta o inconsistencia de meterStart no se arregla con una
-            // estimación: se conserva la liquidación previa para conciliación.
-            const consumedKwh = hasBillableMeterReference ? rawConsumedKwh : activeSession.currentKwh;
+            const consumedKwh = billingEnergyResolution.kwh ?? activeSession.currentKwh;
+            const hasBillableMeterReference = billingEnergyResolution.kwh !== null;
             const currentCost = hasBillableMeterReference
               ? consumedKwh * activeSession.pricePerKwh
               : activeSession.currentCost;
@@ -2072,10 +2079,11 @@ export class DualCSMS {
                 })
               : null;
             const effectivePowerKw = latestPowerKw ?? estimatedPowerKw;
+            const meterStartKwh = transaction.meterStart ? Number(transaction.meterStart) / 1000 : null;
             const chartEnergyBaselineKwh = activeSession.chartEnergyBaselineKwh
-              ?? (latestEnergyKwh === null ? null : meterStart <= latestEnergyKwh ? meterStart : latestEnergyKwh);
+              ?? (latestEnergyKwh === null ? null : meterStartKwh !== null && meterStartKwh <= latestEnergyKwh ? meterStartKwh : latestEnergyKwh);
             const chartEnergyReference = activeSession.chartEnergyReference
-              ?? (meterStart <= (latestEnergyKwh ?? Number.NEGATIVE_INFINITY) ? "meter_start" : "first_sample");
+              ?? (meterStartKwh !== null && meterStartKwh <= (latestEnergyKwh ?? Number.NEGATIVE_INFINITY) ? "meter_start" : "first_sample");
             const chartEnergyKwh = latestEnergyKwh !== null
               && chartEnergyBaselineKwh !== null
               && (activeSession.lastRawEnergyKwh === null || activeSession.lastRawEnergyKwh === undefined || latestEnergyKwh >= activeSession.lastRawEnergyKwh)
@@ -2087,6 +2095,10 @@ export class DualCSMS {
                 currentKwh: Math.round(consumedKwh * 100) / 100,
                 currentCost: Math.round(currentCost),
               } : {}),
+              billingEnergyBaselineKwh: billingEnergyResolution.reference === "first_session_sample"
+                ? Number(firstEnergyMeterValue?.energyKwh)
+                : undefined,
+              billingEnergyReference: billingEnergyResolution.reference,
               rawEnergyKwh: latestEnergyKwh,
               chartEnergyBaselineKwh,
               chartEnergyReference,
@@ -2105,7 +2117,7 @@ export class DualCSMS {
 
             if (hasBillableMeterReference) {
               await db.updateTransaction(transaction.id, {
-                kwhConsumed: String(Math.round(consumedKwh * 100) / 100),
+                kwhConsumed: consumedKwh.toFixed(4),
                 totalCost: String(Math.round(currentCost)),
               });
             }

@@ -1,4 +1,4 @@
-import { eq, and, desc, asc, gte, lte, lt, gt, sql, or, count, sum, avg, ne, inArray, isNull, not, like } from "drizzle-orm";
+import { eq, and, desc, asc, gte, lte, lt, gt, sql, or, count, sum, avg, ne, inArray, isNull, isNotNull, not, like } from "drizzle-orm";
 /**
  * ============================================================================
  * EVGreen Platform - Funciones de Base de Datos (db.ts)
@@ -1724,6 +1724,37 @@ export async function getLatestMeterValue(transactionId: number) {
   if (!db) return undefined;
   const result = await db.select().from(meterValues)
     .where(eq(meterValues.transactionId, transactionId))
+    .orderBy(desc(meterValues.timestamp))
+    .limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+/**
+ * Primera lectura de energía asociada a una transacción. Sirve únicamente como
+ * referencia de contingencia cuando el meterStart del StartTransaction es
+ * inconsistente con la secuencia OCPP; no mezcla lecturas de otros EVSEs.
+ */
+export async function getFirstEnergyMeterValue(transactionId: number) {
+  const db = (await getDb())!;
+  if (!db) return undefined;
+  const result = await db.select().from(meterValues)
+    .where(and(
+      eq(meterValues.transactionId, transactionId),
+      isNotNull(meterValues.energyKwh),
+    ))
+    .orderBy(asc(meterValues.timestamp))
+    .limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getLatestEnergyMeterValue(transactionId: number) {
+  const db = (await getDb())!;
+  if (!db) return undefined;
+  const result = await db.select().from(meterValues)
+    .where(and(
+      eq(meterValues.transactionId, transactionId),
+      isNotNull(meterValues.energyKwh),
+    ))
     .orderBy(desc(meterValues.timestamp))
     .limit(1);
   return result.length > 0 ? result[0] : undefined;
