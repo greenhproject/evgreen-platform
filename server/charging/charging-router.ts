@@ -1680,7 +1680,9 @@ export const chargingRouter = router({
         telemetryAgeSeconds: telemetryFreshness.ageSeconds,
         hasFreshMeterData: telemetryFreshness.isFresh,
         ocppConnected,
-        status: activeTransaction.status,
+        status: isTransactionOperationallyActive(activeTransaction)
+          ? "IN_PROGRESS"
+          : activeTransaction.status,
         transactionStatus: activeTransaction.transactionStatus,
         stopRequestedAt: activeTransaction.stopRequestedAt,
         stopRequestStatus: activeTransaction.stopRequestStatus,

@@ -7,8 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { Calendar, Clock, MapPin, Zap, X, AlertTriangle, Loader2, CheckCircle2 } from "lucide-react";
+import { Calendar, Clock, MapPin, Zap, X, AlertTriangle, Loader2, CheckCircle2, Download } from "lucide-react";
 import { toast } from "sonner";
+import { saveBlobCrossPlatform } from "@/lib/pdf-download";
 
 export default function UserReservations() {
   const [, setLocation] = useLocation();
@@ -35,6 +36,25 @@ export default function UserReservations() {
       toast.error(error.message || "Error al cancelar la reserva");
     },
   });
+
+  const receiptMutation = trpc.reservations.downloadReceipt.useMutation({
+    onSuccess: (data) => {
+      try {
+        const payload = atob(data.base64);
+        const bytes = new Uint8Array(payload.length);
+        for (let index = 0; index < payload.length; index++) bytes[index] = payload.charCodeAt(index);
+        saveBlobCrossPlatform(new Blob([bytes], { type: "application/pdf" }), data.fileName);
+        toast.success("Comprobante listo para descargar");
+      } catch {
+        toast.error("No fue posible preparar el comprobante PDF");
+      }
+    },
+    onError: (error) => toast.error(error.message || "No fue posible generar el comprobante"),
+  });
+
+  const downloadReceipt = (reservationId: number) => {
+    if (!receiptMutation.isPending) receiptMutation.mutate({ reservationId });
+  };
 
   const handleCancelClick = (reservation: any) => {
     setSelectedReservation(reservation);
@@ -157,10 +177,22 @@ export default function UserReservations() {
                           <p className="text-xs text-muted-foreground">
                             No se aplicará penalidad ni se registrará una no presentación. Nuestro equipo operativo fue informado.
                           </p>
-                          <Button size="sm" className="w-full sm:w-auto" onClick={() => setLocation("/map")}>
-                            <MapPin className="w-4 h-4 mr-1.5" />
-                            Buscar otro conector
-                          </Button>
+                          <div className="flex flex-col gap-2 sm:flex-row">
+                            <Button size="sm" className="w-full sm:w-auto" onClick={() => setLocation("/map")}>
+                              <MapPin className="w-4 h-4 mr-1.5" />
+                              Buscar otro conector
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-full sm:w-auto"
+                              disabled={receiptMutation.isPending}
+                              onClick={() => downloadReceipt(reservation.id)}
+                            >
+                              {receiptMutation.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Download className="w-4 h-4 mr-1.5" />}
+                              Descargar comprobante
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     </Card>
@@ -267,6 +299,16 @@ export default function UserReservations() {
                           >
                             <Navigation className="w-4 h-4" />
                           </Button>
+                          <Button
+                            variant="outline"
+                            className="h-10 px-3 border-emerald-500/40 hover:bg-emerald-500/10 text-emerald-200"
+                            disabled={receiptMutation.isPending}
+                            onClick={() => downloadReceipt(reservation.id)}
+                            aria-label="Descargar comprobante de reserva"
+                            title="Descargar comprobante"
+                          >
+                            {receiptMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                          </Button>
                         </div>
                       </motion.div>
                     );
@@ -369,12 +411,22 @@ export default function UserReservations() {
                             </Button>
                             <Button
                               size="sm"
-variant="outline"
+	variant="outline"
                               className="flex-1 border-primary/40 hover:bg-primary/10"
                               onClick={() => setLocation(`/station/${reservation.stationId}`)}
                             >
                               <Navigation className="w-4 h-4 mr-1" />
                               Ver Estación
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="flex-1"
+                              disabled={receiptMutation.isPending}
+                              onClick={() => downloadReceipt(reservation.id)}
+                            >
+                              {receiptMutation.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Download className="w-4 h-4 mr-1" />}
+                              Comprobante
                             </Button>
                           </div>
                         </Card>
@@ -418,6 +470,16 @@ variant="outline"
                           </div>
                           {getStatusBadge(reservation.reservationStatus)}
                         </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full mt-3"
+                          disabled={receiptMutation.isPending}
+                          onClick={() => downloadReceipt(reservation.id)}
+                        >
+                          {receiptMutation.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Download className="w-4 h-4 mr-1.5" />}
+                          Descargar comprobante
+                        </Button>
                       </Card>
                     </motion.div>
                   ))}

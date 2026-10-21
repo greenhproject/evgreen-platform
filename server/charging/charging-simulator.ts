@@ -263,7 +263,11 @@ export async function startSimulation(params: {
   });
 
   // Actualizar estado del EVSE
-  await db.updateEvseStatus(evseId, "CHARGING", { triggeredBy: "SIMULATOR" });
+  await db.updateEvseStatus(evseId, "CHARGING", {
+    triggeredBy: "SIMULATOR",
+    transactionId,
+    userId,
+  });
 
   // Crear sesión de simulación
   const session: SimulationSession = {

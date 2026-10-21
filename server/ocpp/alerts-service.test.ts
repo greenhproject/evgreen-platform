@@ -19,6 +19,7 @@ vi.mock("../notifications/technician-notification-service", () => ({
 
 vi.mock("../db", () => ({
   createOcppAlert: vi.fn().mockResolvedValue(1),
+  createNoTelemetryAlertIfAbsent: vi.fn().mockResolvedValue({ id: 1, created: true }),
   getOcppAlerts: vi.fn().mockResolvedValue([]),
   acknowledgeOcppAlert: vi.fn().mockResolvedValue(undefined),
   getOcppAlertStats: vi.fn().mockResolvedValue({
@@ -144,6 +145,43 @@ describe("OCPP Alerts Service", () => {
           }),
         })
       );
+    });
+  });
+
+  describe("handleActiveChargeWithoutTelemetry", () => {
+    it("notifica solo cuando se abre una alerta telemétrica nueva", async () => {
+      await alertsService.handleActiveChargeWithoutTelemetry({
+        transactionId: 92,
+        evseId: 4,
+        stationId: 7,
+        ocppIdentity: "AC-007",
+        stationName: "Estación Central",
+        connectorLabel: "Conector 1",
+        minutesWithoutTelemetry: 13,
+        severity: "warning",
+        lastMeterAt: null,
+      });
+      expect(db.createNoTelemetryAlertIfAbsent).toHaveBeenCalledWith(expect.objectContaining({
+        alertType: "NO_TELEMETRY",
+        transactionId: 92,
+        evseId: 4,
+      }));
+      expect(notifyOwner).toHaveBeenCalledWith(expect.objectContaining({
+        title: expect.stringContaining("sin telemetría"),
+      }));
+    });
+
+    it("no vuelve a avisar si la alerta de la misma sesión sigue activa", async () => {
+      vi.mocked(db.createNoTelemetryAlertIfAbsent).mockResolvedValueOnce({ id: 1, created: false });
+      await alertsService.handleActiveChargeWithoutTelemetry({
+        transactionId: 93,
+        evseId: 5,
+        stationId: 7,
+        ocppIdentity: "AC-007",
+        minutesWithoutTelemetry: 31,
+        severity: "critical",
+      });
+      expect(notifyOwner).not.toHaveBeenCalled();
     });
   });
 

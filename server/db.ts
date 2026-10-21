@@ -17,6 +17,7 @@ import { eq, and, desc, asc, gte, lte, lt, gt, sql, or, count, sum, avg, ne, inA
 import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2";
 import { isReservationHoldingConnector } from "../shared/reservation-lifecycle-policy";
+import { isTransactionProtectedFromOrphanCleanup } from "../shared/orphan-transaction-cleanup-policy";
 import { terminalTransactionStatus } from "../shared/transaction-operational-state";
 import {
   InsertUser,
@@ -1122,6 +1123,7 @@ export async function updateEvseStatus(
     triggeredBy?: TriggeredBy;
     reason?: string;
     transactionId?: number;
+    userId?: number | null;
     ocppMessageType?: string;
   }
 ) {
@@ -1132,6 +1134,7 @@ export async function updateEvseStatus(
     triggeredBy: options?.triggeredBy ?? "SYSTEM",
     reason: options?.reason,
     transactionId: options?.transactionId,
+    userId: options?.userId,
     ocppMessageType: options?.ocppMessageType,
   });
 }
@@ -1713,6 +1716,65 @@ export async function getRecentMeterValuesByTransactionId(transactionId: number,
     .orderBy(desc(meterValues.timestamp))
     .limit(safeLimit);
   return result.reverse();
+}
+
+/**
+ * Devuelve sesiones AC físicas que siguen activas junto con la última lectura
+ * OCPP persistida. El watchdog usa una sola consulta agrupada para evitar
+ * recorrer la tabla de medidores una vez por cada sesión.
+ */
+export async function getActiveAcTransactionTelemetrySnapshots(limit = 200) {
+  const db = (await getDb())!;
+  if (!db) return [];
+
+  const safeLimit = Math.min(Math.max(Math.trunc(limit), 1), 500);
+  const latestMeter = db
+    .select({
+      transactionId: meterValues.transactionId,
+      lastMeterAt: sql<string | null>`MAX(${meterValues.timestamp})`.as("last_meter_at"),
+      lastEnergyKwh: sql<string | null>`MAX(${meterValues.energyKwh})`.as("last_energy_kwh"),
+    })
+    .from(meterValues)
+    .groupBy(meterValues.transactionId)
+    .as("latest_meter");
+
+  return db
+    .select({
+      transactionId: transactions.id,
+      stationId: transactions.stationId,
+      evseId: transactions.evseId,
+      startedAt: transactions.startTime,
+      stationName: chargingStations.name,
+      ocppIdentity: chargingStations.ocppIdentity,
+      connectorId: evses.connectorId,
+      connectorLabel: evses.connectorLabel,
+      lastMeterAt: latestMeter.lastMeterAt,
+      lastEnergyKwh: latestMeter.lastEnergyKwh,
+    })
+    .from(transactions)
+    .innerJoin(evses, eq(evses.id, transactions.evseId))
+    .innerJoin(chargingStations, eq(chargingStations.id, transactions.stationId))
+    .leftJoin(latestMeter, eq(latestMeter.transactionId, transactions.id))
+    .where(and(
+      isNull(transactions.endTime),
+      eq(evses.chargeType, "AC"),
+      or(
+        eq(transactions.status, "IN_PROGRESS"),
+        eq(transactions.transactionStatus, "IN_PROGRESS"),
+      ),
+    ))
+    .orderBy(asc(transactions.startTime))
+    .limit(safeLimit);
+}
+
+export async function getTransactionByReservationId(reservationId: number) {
+  const db = (await getDb())!;
+  if (!db) return undefined;
+  const result = await db.select().from(transactions)
+    .where(eq(transactions.reservationId, reservationId))
+    .orderBy(desc(transactions.startTime))
+    .limit(1);
+  return result[0];
 }
 
 // ============================================================================
@@ -3991,7 +4053,9 @@ export async function getWompiConfig() {
 export interface OcppAlertInput {
   ocppIdentity: string;
   stationId?: number | null;
-  alertType: "DISCONNECTION" | "ERROR" | "FAULT" | "OFFLINE_TIMEOUT" | "BOOT_REJECTED" | "TRANSACTION_ERROR";
+  transactionId?: number | null;
+  evseId?: number | null;
+  alertType: "DISCONNECTION" | "ERROR" | "FAULT" | "OFFLINE_TIMEOUT" | "BOOT_REJECTED" | "TRANSACTION_ERROR" | "NO_TELEMETRY";
   severity: "info" | "warning" | "critical";
   title: string;
   message: string;
@@ -4004,17 +4068,24 @@ export async function createOcppAlert(alert: OcppAlertInput): Promise<number> {
   const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   
-  // Prevenir alertas duplicadas: verificar si ya existe una alerta activa del mismo tipo para el mismo cargador
+  // Para telemetría, una alerta reconocida continúa abierta hasta que llegue
+  // una lectura reciente. Dedupe por sesión, no por cargador, para no ocultar
+  // otro conector afectado de la misma estación.
+  const telemetryConditions = alert.alertType === "NO_TELEMETRY" && alert.transactionId
+    ? and(
+      eq(ocppAlerts.transactionId, alert.transactionId),
+      eq(ocppAlerts.ocppAlertType, alert.alertType),
+      isNull(ocppAlerts.resolvedAt),
+    )
+    : and(
+      eq(ocppAlerts.ocppIdentity, alert.ocppIdentity),
+      eq(ocppAlerts.ocppAlertType, alert.alertType),
+      eq(ocppAlerts.acknowledged, 0),
+      isNull(ocppAlerts.resolvedAt),
+    );
   const existing = await db.select({ id: ocppAlerts.id })
     .from(ocppAlerts)
-    .where(
-      and(
-        eq(ocppAlerts.ocppIdentity, alert.ocppIdentity),
-        eq(ocppAlerts.ocppAlertType, alert.alertType),
-        eq(ocppAlerts.acknowledged, 0),
-        isNull(ocppAlerts.resolvedAt)
-      )
-    )
+    .where(telemetryConditions)
     .limit(1);
   
   if (existing.length > 0) {
@@ -4025,6 +4096,8 @@ export async function createOcppAlert(alert: OcppAlertInput): Promise<number> {
   const result = await db.insert(ocppAlerts).values({
     ocppIdentity: alert.ocppIdentity,
     stationId: alert.stationId,
+    transactionId: alert.transactionId,
+    evseId: alert.evseId,
     ocppAlertType: alert.alertType,
     ocppAlertSeverity: alert.severity,
     title: alert.title,
@@ -4034,6 +4107,42 @@ export async function createOcppAlert(alert: OcppAlertInput): Promise<number> {
   } as any);
   
   return result[0].insertId;
+}
+
+/**
+ * Inserta una alerta de telemetría a lo sumo una vez por sesión abierta. La
+ * respuesta distingue una inserción real de una alerta ya vigente para que el
+ * watchdog no vuelva a notificar al NOC cada minuto.
+ */
+export async function createNoTelemetryAlertIfAbsent(alert: OcppAlertInput): Promise<{ id: number; created: boolean }> {
+  if (alert.alertType !== "NO_TELEMETRY" || !alert.transactionId) {
+    throw new Error("La alerta telemétrica requiere tipo NO_TELEMETRY y transactionId");
+  }
+  const db = (await getDb())!;
+  if (!db) throw new Error("Database not available");
+  const existing = await db.select({ id: ocppAlerts.id })
+    .from(ocppAlerts)
+    .where(and(
+      eq(ocppAlerts.transactionId, alert.transactionId),
+      eq(ocppAlerts.ocppAlertType, "NO_TELEMETRY"),
+      isNull(ocppAlerts.resolvedAt),
+    ))
+    .limit(1);
+  if (existing[0]) return { id: existing[0].id, created: false };
+
+  const result = await db.insert(ocppAlerts).values({
+    ocppIdentity: alert.ocppIdentity,
+    stationId: alert.stationId,
+    transactionId: alert.transactionId,
+    evseId: alert.evseId,
+    ocppAlertType: alert.alertType,
+    ocppAlertSeverity: alert.severity,
+    title: alert.title,
+    message: alert.message,
+    payload: alert.payload,
+    acknowledged: 0,
+  } as any);
+  return { id: result[0].insertId, created: true };
 }
 
 export async function getOcppAlerts(options: {
@@ -4154,6 +4263,30 @@ export async function autoResolveDisconnectionAlerts(ocppIdentity: string): Prom
       )
     );
   
+  return result[0]?.affectedRows || 0;
+}
+
+/** Resuelve una alerta telemétrica al recibir una lectura OCPP reciente. */
+export async function autoResolveNoTelemetryAlertsForTransaction(
+  transactionId: number,
+  reason = "Se recibió una lectura OCPP reciente para la sesión activa",
+): Promise<number> {
+  const db = (await getDb())!;
+  if (!db) return 0;
+  const now = new Date().toISOString().slice(0, 19).replace("T", " ");
+  const result = await db.update(ocppAlerts)
+    .set({
+      resolvedAt: now,
+      autoResolved: 1,
+      resolvedReason: reason.slice(0, 255),
+      acknowledged: 1,
+      acknowledgedAt: now,
+    } as any)
+    .where(and(
+      eq(ocppAlerts.transactionId, transactionId),
+      eq(ocppAlerts.ocppAlertType, "NO_TELEMETRY"),
+      isNull(ocppAlerts.resolvedAt),
+    ));
   return result[0]?.affectedRows || 0;
 }
 
@@ -4913,6 +5046,7 @@ export async function getActiveTransactionByUserId(userId: number) {
     .where(
       and(
         eq(transactions.userId, userId),
+        isNull(transactions.endTime),
         or(
           eq(transactions.status, "IN_PROGRESS"),
           eq(transactions.transactionStatus, "IN_PROGRESS"),
@@ -4966,6 +5100,18 @@ export async function cleanupOrphanedTransactions(maxAgeMinutes: number = 60): P
   let cleanedCount = 0;
   
   for (const t of orphaned) {
+    const evse = await getEvseById(t.evseId);
+    if (isTransactionProtectedFromOrphanCleanup({
+      transactionId: t.id,
+      connectorStatus: evse?.connectorStatus,
+      currentTransactionId: evse?.currentTransactionId,
+    })) {
+      console.warn(
+        `[Cleanup] Se conserva la transacción ${t.id}: el conector ${t.evseId} aún la reporta físicamente activa.`,
+      );
+      continue;
+    }
+
     const kwhConsumed = parseFloat(t.kwhConsumed || "0");
     const totalCost = parseFloat(t.totalCost || "0");
     

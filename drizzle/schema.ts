@@ -1149,8 +1149,12 @@ export const occupancyLiquidations = mysqlTable("occupancy_liquidations", {
 export const ocppAlerts = mysqlTable("ocpp_alerts", {
 	id: int().autoincrement().notNull(),
 	stationId: int(),
+	// Cuando la alerta está ligada a una carga activa, conservar la sesión y
+	// conector permite deduplicarla y resolverla al llegar una nueva lectura.
+	transactionId: int("transaction_id"),
+	evseId: int("evse_id"),
 	ocppIdentity: varchar({ length: 100 }).notNull(),
-	ocppAlertType: mysqlEnum("ocpp_alert_type", ['DISCONNECTION','ERROR','FAULT','OFFLINE_TIMEOUT','BOOT_REJECTED','TRANSACTION_ERROR']).notNull(),
+	ocppAlertType: mysqlEnum("ocpp_alert_type", ['DISCONNECTION','ERROR','FAULT','OFFLINE_TIMEOUT','BOOT_REJECTED','TRANSACTION_ERROR','NO_TELEMETRY']).notNull(),
 	ocppAlertSeverity: mysqlEnum("ocpp_alert_severity", ['info','warning','critical']).notNull(),
 	title: varchar({ length: 255 }).notNull(),
 	message: text().notNull(),
@@ -1162,7 +1166,10 @@ export const ocppAlerts = mysqlTable("ocpp_alerts", {
 	resolvedAt: timestamp({ mode: 'string' }),
 	autoResolved: tinyint().default(0).notNull(),
 	resolvedReason: varchar({ length: 255 }),
-});
+}, (table) => [
+	index("idx_ocpp_alerts_transaction_type_active").on(table.transactionId, table.ocppAlertType, table.resolvedAt),
+	index("idx_ocpp_alerts_station_type_created").on(table.stationId, table.ocppAlertType, table.createdAt),
+]);
 
 export const ocppLogs = mysqlTable("ocpp_logs", {
 	id: bigint({ mode: "number" }).autoincrement().notNull(),

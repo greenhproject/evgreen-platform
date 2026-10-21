@@ -25,7 +25,8 @@ export type OcppAlertType =
   | "FAULT"
   | "OFFLINE_TIMEOUT"
   | "BOOT_REJECTED"
-  | "TRANSACTION_ERROR";
+  | "TRANSACTION_ERROR"
+  | "NO_TELEMETRY";
 
 export type OcppAlertSeverity = "info" | "warning" | "critical";
 
@@ -33,6 +34,8 @@ export interface OcppAlert {
   id?: number;
   ocppIdentity: string;
   stationId?: number | null;
+  transactionId?: number | null;
+  evseId?: number | null;
   alertType: OcppAlertType;
   severity: OcppAlertSeverity;
   title: string;
@@ -87,6 +90,8 @@ function determineSeverity(alertType: OcppAlertType, _payload?: Record<string, u
     case "BOOT_REJECTED":
     case "TRANSACTION_ERROR":
       return "critical";
+    case "NO_TELEMETRY":
+      return "warning";
     case "DISCONNECTION":
       // Desconexiones son warning, no critical — muchas son temporales (proxy cycle)
       // Solo escalan a critical si hay múltiples desconexiones reales
@@ -324,6 +329,53 @@ export async function handleTransactionReplay(input: {
 }
 
 /**
+ * Registra una sesión AC iniciada pero sin lecturas OCPP recientes. La alerta
+ * está atada a la transacción y se resuelve automáticamente cuando el
+ * cargador vuelve a reportar, sin confundirla con una estación desconectada.
+ */
+export async function handleActiveChargeWithoutTelemetry(input: {
+  transactionId: number;
+  evseId: number;
+  stationId: number;
+  ocppIdentity: string | null;
+  stationName?: string | null;
+  connectorLabel?: string | null;
+  minutesWithoutTelemetry: number;
+  severity: OcppAlertSeverity;
+  lastMeterAt?: Date | string | null;
+}): Promise<void> {
+  const ocppIdentity = input.ocppIdentity || `station-${input.stationId}`;
+  const roundedMinutes = Math.max(0, Math.floor(input.minutesWithoutTelemetry));
+  const connector = input.connectorLabel ? ` (${input.connectorLabel})` : "";
+  const stationName = input.stationName || `Estación #${input.stationId}`;
+  const alert: OcppAlert = {
+    ocppIdentity,
+    stationId: input.stationId,
+    transactionId: input.transactionId,
+    evseId: input.evseId,
+    alertType: "NO_TELEMETRY",
+    severity: input.severity,
+    title: `Carga AC sin telemetría: ${stationName}${connector}`,
+    message: `La sesión #${input.transactionId} continúa activa sin una lectura OCPP reciente durante ${roundedMinutes} min. Revisa conectividad, medidor y firmware del cargador; no se modifica ni se liquida la sesión automáticamente.`,
+    payload: {
+      event: "ACTIVE_AC_CHARGE_NO_TELEMETRY",
+      transactionId: input.transactionId,
+      evseId: input.evseId,
+      connectorLabel: input.connectorLabel || null,
+      minutesWithoutTelemetry: roundedMinutes,
+      lastMeterAt: input.lastMeterAt ? new Date(input.lastMeterAt).toISOString() : null,
+    },
+    acknowledged: false,
+    createdAt: new Date(),
+  };
+
+  const persisted = await db.createNoTelemetryAlertIfAbsent(alert);
+  if (!persisted.created) return;
+  await notifyPersistedAlert(alert);
+  registerAlert(ocppIdentity, "NO_TELEMETRY");
+}
+
+/**
  * Guarda la alerta en BD y envía notificaciones a owner + técnicos.
  * 
  * Para alertas de DISCONNECTION, hace una verificación final antes de notificar:
@@ -335,55 +387,46 @@ async function saveAndNotifyAlert(alert: OcppAlert): Promise<void> {
   try {
     // Guardar en BD (siempre, para auditoría)
     await db.createOcppAlert(alert);
-    
-    // VERIFICACIÓN FINAL para desconexiones: si el cargador ya se reconectó
-    // entre la creación de la alerta y ahora, NO enviar notificaciones
-    if (alert.alertType === "DISCONNECTION") {
-      if (isChargerCurrentlyConnected(alert.ocppIdentity)) {
-        console.log(`[OCPP Alert] SUPPRESSED notifications for ${alert.ocppIdentity}: charger reconnected before notification dispatch`);
-        // Auto-resolver la alerta que acabamos de crear
-        try {
-          await db.autoResolveDisconnectionAlerts(alert.ocppIdentity);
-        } catch (e) {
-          // Ignorar error de auto-resolve
-        }
-        return;
-      }
-    }
-    
-    // Obtener nombre de la estación para las notificaciones
-    const stationName = await getStationName(alert.ocppIdentity, alert.stationId);
-    
-    // Enviar notificación al owner solo para alertas críticas o warnings
-    if (alert.severity === "critical" || alert.severity === "warning") {
-      const emoji = alert.severity === "critical" ? "🚨" : "⚠️";
-      await notifyOwner({
-        title: `${emoji} ${alert.title}`,
-        content: `${alert.message}\n\nFecha: ${alert.createdAt.toLocaleString()}\nIdentificador: ${alert.ocppIdentity}`,
-      });
-    }
-    
-    // Notificar a técnicos activos (FCM push + email + in-app)
-    // Solo para alertas critical y warning
-    if (alert.severity === "critical" || alert.severity === "warning") {
-      const techResult = await notifyTechniciansOfAlert({
-        alertType: alert.alertType,
-        severity: alert.severity,
-        title: alert.title,
-        message: alert.message,
-        ocppIdentity: alert.ocppIdentity,
-        stationId: alert.stationId,
-        stationName: stationName || alert.ocppIdentity,
-        payload: alert.payload,
-      });
-      
-      console.log(`[OCPP Alert] Tech notifications: ${techResult.pushSent} push, ${techResult.emailSent} email, ${techResult.inAppCreated} in-app`);
-    }
-    
-    console.log(`[OCPP Alert] ${alert.severity.toUpperCase()}: ${alert.title}`);
+    await notifyPersistedAlert(alert);
   } catch (error) {
     console.error("[OCPP Alert] Error saving/notifying alert:", error);
   }
+}
+
+/** Notifica una alerta que ya fue guardada; no vuelve a escribir en la BD. */
+async function notifyPersistedAlert(alert: OcppAlert): Promise<void> {
+  // VERIFICACIÓN FINAL para desconexiones: si el cargador ya se reconectó
+  // entre la creación de la alerta y ahora, NO enviar notificaciones.
+  if (alert.alertType === "DISCONNECTION" && isChargerCurrentlyConnected(alert.ocppIdentity)) {
+    console.log(`[OCPP Alert] SUPPRESSED notifications for ${alert.ocppIdentity}: charger reconnected before notification dispatch`);
+    try {
+      await db.autoResolveDisconnectionAlerts(alert.ocppIdentity);
+    } catch {
+      // La alerta sigue auditada aunque la auto-resolución temporal falle.
+    }
+    return;
+  }
+
+  const stationName = await getStationName(alert.ocppIdentity, alert.stationId);
+  if (alert.severity === "critical" || alert.severity === "warning") {
+    const emoji = alert.severity === "critical" ? "🚨" : "⚠️";
+    await notifyOwner({
+      title: `${emoji} ${alert.title}`,
+      content: `${alert.message}\n\nFecha: ${alert.createdAt.toLocaleString()}\nIdentificador: ${alert.ocppIdentity}`,
+    });
+    const techResult = await notifyTechniciansOfAlert({
+      alertType: alert.alertType,
+      severity: alert.severity,
+      title: alert.title,
+      message: alert.message,
+      ocppIdentity: alert.ocppIdentity,
+      stationId: alert.stationId,
+      stationName: stationName || alert.ocppIdentity,
+      payload: alert.payload,
+    });
+    console.log(`[OCPP Alert] Tech notifications: ${techResult.pushSent} push, ${techResult.emailSent} email, ${techResult.inAppCreated} in-app`);
+  }
+  console.log(`[OCPP Alert] ${alert.severity.toUpperCase()}: ${alert.title}`);
 }
 
 /**

@@ -61,6 +61,7 @@ import { buildOcpiRouter } from "./ocpi/ocpi-router";
 import { buildCarbonRouter } from "./carbon/carbon-router";
 import { stageSiemLocationSnapshot } from "./ocpi/ocpi-station-snapshot";
 import { contractsRouter } from "./contracts/contracts-router";
+import { generateReservationReceiptPdf } from "./reservations/reservation-receipt-pdf";
 import { projectOperationalConnectorStates, resolveConnectorOperationalState } from "../shared/connector-operational-state";
 import { isConnectorSelectableForReservationOwner } from "../shared/reservation-connector-availability";
 import { CROWDFUNDING_PROJECT_STATUSES } from "./crowdfunding/project-bulk-policy";
@@ -2119,7 +2120,11 @@ const transactionsRouter = router({
       });
       
       // Actualizar estado del EVSE
-      await db.updateEvseStatus(input.evseId, "CHARGING", { triggeredBy: "SYSTEM" });
+      await db.updateEvseStatus(input.evseId, "CHARGING", {
+        triggeredBy: "SYSTEM",
+        transactionId,
+        userId: ctx.user.id,
+      });
       
       return {
         transactionId,
@@ -2878,6 +2883,74 @@ const reservationsRouter = router({
     return enriched;
   }),
   
+  /**
+   * Comprobante descargable del titular. Se genera en memoria desde el
+   * expediente existente: no crea una reserva ni modifica saldo, estado o
+   * importes de la carga.
+   */
+  downloadReceipt: protectedProcedure
+    .input(z.object({ reservationId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const reservations = await db.getReservationsByUserId(ctx.user.id);
+      const reservation = reservations.find((candidate: any) => Number(candidate.id) === input.reservationId);
+      if (!reservation) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "No se encontró la reserva solicitada." });
+      }
+
+      const [station, evse, transaction] = await Promise.all([
+        db.getChargingStationById(reservation.stationId),
+        db.getEvseById(reservation.evseId),
+        reservation.transactionId
+          ? db.getTransactionById(reservation.transactionId)
+          : db.getTransactionByReservationId(reservation.id),
+      ]);
+      if (!station || !evse || evse.stationId !== reservation.stationId) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "El comprobante no está disponible porque falta información de la estación o del conector.",
+        });
+      }
+
+      const pdf = generateReservationReceiptPdf({
+        reservationId: reservation.id,
+        status: reservation.reservationStatus,
+        customerName: ctx.user.name || "Usuario EVGreen",
+        stationName: station.name,
+        stationAddress: station.address,
+        stationTimezone: normalizeStationTimezone(station.timezone),
+        connectorLabel: evse.connectorLabel || `Conector ${evse.connectorId}`,
+        connectorType: evse.connectorType,
+        chargeType: evse.chargeType,
+        powerKw: evse.powerKw,
+        startTime: reservation.startTime,
+        endTime: reservation.endTime,
+        createdAt: reservation.createdAt,
+        reservationFee: reservation.reservationFee,
+        noShowPenalty: reservation.noShowPenalty,
+        lockedPricePerKwh: reservation.lockedPricePerKwh,
+        lockedConnectionFee: reservation.lockedConnectionFee,
+        priceLockedAt: reservation.priceLockedAt,
+        serviceIssueCode: reservation.serviceIssueCode,
+        transaction: transaction ? {
+          status: transaction.status,
+          transactionStatus: transaction.transactionStatus,
+          startTime: transaction.startTime,
+          endTime: transaction.endTime,
+          kwhConsumed: transaction.kwhConsumed,
+          appliedPricePerKwh: transaction.appliedPricePerKwh,
+          energyCost: transaction.energyCost,
+          timeCost: transaction.timeCost,
+          sessionCost: transaction.sessionCost,
+          overstayCost: transaction.overstayCost,
+          totalCost: transaction.totalCost,
+        } : null,
+      });
+      return {
+        fileName: `Comprobante-reserva-${reservation.id}.pdf`,
+        base64: pdf.toString("base64"),
+      };
+    }),
+
   /** Consulta mínima para que la reserva vigente nunca desaparezca del mapa. */
   activeForBanner: protectedProcedure.query(async ({ ctx }) => {
     const now = new Date();

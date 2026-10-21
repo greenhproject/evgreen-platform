@@ -308,6 +308,26 @@ async function startServer() {
     }
   });
 
+  // ─── Heartbeat: vigilancia de telemetría de cargas AC ─────────────────────
+  // Una lectura ausente no autoriza parar, cerrar o liquidar una carga. El
+  // watchdog solo abre una alerta deduplicada por sesión y la auto-resuelve
+  // cuando llega una nueva lectura OCPP.
+  app.post("/api/scheduled/ac-telemetry-watchdog", express.json(), async (req, res) => {
+    const authHeader = req.headers.authorization || "";
+    const expectedToken = process.env.BUILT_IN_FORGE_API_KEY || "";
+    if (expectedToken && authHeader !== `Bearer ${expectedToken}`) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    try {
+      const { runAcTelemetryWatchdog } = await import("../charging/ac-telemetry-watchdog");
+      const result = await runAcTelemetryWatchdog();
+      return res.json({ ok: true, ...result });
+    } catch (err: any) {
+      console.error("[Heartbeat] Error vigilando telemetría de cargas AC:", err);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
   // ─── Heartbeat: recordatorios habituales de carga ─────────────────────────
   // Evalúa la franja día+hora local del usuario y respeta su opt-in de WhatsApp.
   app.post("/api/scheduled/charging-habit-reminders", express.json(), async (req, res) => {
@@ -834,6 +854,20 @@ async function startServer() {
           console.log(`[Heartbeat] Job de reconciliación de detener carga registrado: ${job.taskUid}`);
         } else {
           console.log("[Heartbeat] Job de reconciliación de detener carga ya existe, omitiendo registro.");
+        }
+
+        const acTelemetryWatchdogExists = existing.jobs?.some((j: any) => j.name === "evgreen-ac-telemetry-watchdog");
+        if (!acTelemetryWatchdogExists) {
+          const job = await createHeartbeatJob({
+            name: "evgreen-ac-telemetry-watchdog",
+            cron: "30 * * * * *",
+            path: "/api/scheduled/ac-telemetry-watchdog",
+            method: "POST",
+            description: "Vigila telemetría de cargas AC activas; alerta sin detener ni liquidar sesiones y se auto-resuelve con la próxima lectura OCPP",
+          }, "");
+          console.log(`[Heartbeat] Job de telemetría AC registrado: ${job.taskUid}`);
+        } else {
+          console.log("[Heartbeat] Job de telemetría AC ya existe, omitiendo registro.");
         }
 
         // Los jobs de hábitos se administran como Heartbeats de proyecto, no
@@ -1586,7 +1620,11 @@ async function handleOCPP16Message(
       console.log(`[OCPP] StartTransaction - ${persistedStart.created ? "Created" : "Deduplicated"} tx: dbId=${newTxId}, ocppNumericTxId=${effectiveOcppNumericTxId}, internalId=${effectiveOcppTransactionId}`);
       
       ocpp16Transactions.set(effectiveOcppNumericTxId, effectiveOcppTransactionId);
-      await db.updateEvseStatus(evse.id, "CHARGING", { triggeredBy: "OCPP" });
+      await db.updateEvseStatus(evse.id, "CHARGING", {
+        triggeredBy: "OCPP",
+        transactionId: newTxId,
+        userId: userId || null,
+      });
 
       // Una retransmisión del cargador no representa una sesión nueva: responder
       // con el mismo id físico sin reenviar WhatsApp, recibos ni crear cobros.

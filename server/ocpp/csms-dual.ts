@@ -1146,7 +1146,11 @@ export class DualCSMS {
     }
 
     // Actualizar estado del EVSE
-    await db.updateEvseStatus(evse.id, "CHARGING", { triggeredBy: "OCPP" });
+    await db.updateEvseStatus(evse.id, "CHARGING", {
+      triggeredBy: "OCPP",
+      transactionId,
+      userId: userId || null,
+    });
     
     // Siempre crear sesión activa en memoria (para tracking de MeterValues)
     if (pendingSessionData && pendingSessionData.session) {
@@ -1896,7 +1900,11 @@ export class DualCSMS {
           });
           
           this.ocpp16Transactions.set(ocpp16TxId, internalTxId);
-          await db.updateEvseStatus(evse.id, "CHARGING", { triggeredBy: "OCPP" });
+          await db.updateEvseStatus(evse.id, "CHARGING", {
+            triggeredBy: "OCPP",
+            transactionId: txId,
+            userId: userId || null,
+          });
           
           setActiveSession(txId, {
             transactionId: txId,
@@ -2243,7 +2251,11 @@ export class DualCSMS {
       case "Started": {
         const existingTransaction = await db.getTransactionByOcppId(req.transactionInfo.transactionId);
         if (existingTransaction) {
-          await db.updateEvseStatus(evse.id, "CHARGING", { triggeredBy: "OCPP" });
+          await db.updateEvseStatus(evse.id, "CHARGING", {
+            triggeredBy: "OCPP",
+            transactionId: existingTransaction.id,
+            userId: existingTransaction.userId || null,
+          });
           break;
         }
 
@@ -2296,7 +2308,11 @@ export class DualCSMS {
 
         if (!persistedStart.created) {
           console.warn(`[CSMS-DUAL] OCPP 2.0.1 Started replay ignored for transaction ${transactionId}`);
-          await db.updateEvseStatus(evse.id, "CHARGING", { triggeredBy: "OCPP" });
+          await db.updateEvseStatus(evse.id, "CHARGING", {
+            triggeredBy: "OCPP",
+            transactionId,
+            userId: userId || null,
+          });
           alertsService.handleTransactionReplay({
             ocppIdentity: conn.ocppIdentity,
             stationId: conn.stationId,
@@ -2336,7 +2352,11 @@ export class DualCSMS {
           }
         }
 
-        await db.updateEvseStatus(evse.id, "CHARGING", { triggeredBy: "OCPP" });
+        await db.updateEvseStatus(evse.id, "CHARGING", {
+          triggeredBy: "OCPP",
+          transactionId,
+          userId: userId || null,
+        });
 
         setActiveSession(transactionId, {
           transactionId,

@@ -55,6 +55,7 @@ export interface TransitionOptions {
   triggeredBy: TriggeredBy;
   reason?: string;
   transactionId?: number;
+  userId?: number | null;
   ocppMessageType?: string;
   /** Si true, omite la validación de transición (solo para casos de reset/fuerza mayor) */
   force?: boolean;
@@ -90,7 +91,7 @@ export const ConnectorStateService = {
    * @returns true si la transición fue exitosa, false si fue rechazada
    */
   async transition(options: TransitionOptions): Promise<boolean> {
-    const { evseId, newStatus, triggeredBy, reason, transactionId, ocppMessageType, force } = options;
+    const { evseId, newStatus, triggeredBy, reason, transactionId, userId, ocppMessageType, force } = options;
 
     const db = (await getDb())!;
     if (!db) {
@@ -108,7 +109,13 @@ export const ConnectorStateService = {
     const previousStatus = evse.connectorStatus as ConnectorStatus;
 
     // 2. Validar transición (a menos que sea forzada)
-    if (!force && previousStatus === newStatus) {
+    const needsTransactionBinding = newStatus === "CHARGING"
+      && transactionId !== undefined
+      && evse.currentTransactionId !== transactionId;
+    const needsTransactionRelease = newStatus === "AVAILABLE"
+      && (evse.currentTransactionId !== null || evse.currentUserId !== null);
+
+    if (!force && previousStatus === newStatus && !needsTransactionBinding && !needsTransactionRelease) {
       // Sin cambio — no registrar log, solo retornar true silenciosamente
       return true;
     }
@@ -131,6 +138,14 @@ export const ConnectorStateService = {
         .set({
           connectorStatus: newStatus,
           lastStatusUpdate: new Date().toISOString().slice(0, 19).replace("T", " "),
+          ...(newStatus === "CHARGING" && transactionId !== undefined ? {
+            currentTransactionId: transactionId,
+            currentUserId: userId ?? null,
+          } : {}),
+          ...(newStatus === "AVAILABLE" ? {
+            currentTransactionId: null,
+            currentUserId: null,
+          } : {}),
         })
         .where(eq(evses.id, evseId));
     } catch (err) {

@@ -22,4 +22,10 @@ describe("visibilidad de reservas activas", () => {
     expect(reservationsSource).toContain("setLocation(`/station/${reservation.stationId}`)");
     expect(reservationsSource).toContain("30 minutos o más antes: reembolso completo");
   });
+
+  it("permite descargar un comprobante sin convertirlo en una acción de carga", () => {
+    expect(reservationsSource).toContain("trpc.reservations.downloadReceipt.useMutation");
+    expect(reservationsSource).toContain("saveBlobCrossPlatform");
+    expect(reservationsSource).toContain("Descargar comprobante");
+  });
 });
