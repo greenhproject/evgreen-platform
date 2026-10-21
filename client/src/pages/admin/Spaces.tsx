@@ -2712,11 +2712,12 @@ function SpaceDetailDialog({
 
       {/* Edit Dialog — EXPANDIDO */}
       <Dialog open={showEditDialog} onOpenChange={handleEditDialogOpenChange}>
-        <DialogContent className="!inset-0 !top-0 !left-0 !h-[100dvh] !w-screen !max-h-none !max-w-none !translate-x-0 !translate-y-0 !rounded-none overflow-y-auto overscroll-contain border-[#1f2937] bg-[#111827] p-3 text-white sm:!top-1/2 sm:!left-1/2 sm:!h-auto sm:!max-h-[90vh] sm:!w-[calc(100%-2rem)] sm:!max-w-2xl sm:!translate-x-[-50%] sm:!translate-y-[-50%] sm:rounded-lg sm:p-6">
-          <DialogHeader className="sticky top-0 z-10 -mx-3 -mt-3 border-b border-[#1f2937] bg-[#111827] px-3 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] pr-14 sm:static sm:m-0 sm:border-0 sm:bg-transparent sm:p-0 sm:pr-0">
+        <DialogContent className="!inset-0 !top-0 !left-0 !flex !h-[100dvh] !w-screen !max-h-none !max-w-none !translate-x-0 !translate-y-0 !flex-col !gap-0 !overflow-hidden !rounded-none border-[#1f2937] bg-[#111827] !p-0 text-white sm:!top-1/2 sm:!left-1/2 sm:!h-[90vh] sm:!max-h-[90vh] sm:!w-[calc(100%-2rem)] sm:!max-w-2xl sm:!translate-x-[-50%] sm:!translate-y-[-50%] sm:rounded-lg">
+          <DialogHeader className="z-10 shrink-0 border-b border-[#1f2937] bg-[#111827] px-3 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] pr-14 sm:px-6 sm:py-4 sm:pr-14">
             <DialogTitle className="flex items-center gap-2"><Pencil className="w-4 h-4 text-blue-400" /> Editar espacio — {space.code}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 pb-6 sm:px-6">
+            <div className="space-y-4">
 
             {/* SECCIÓN: Datos básicos */}
             <div className="bg-[#0a0f1a] border border-[#374151] rounded-lg p-3">
@@ -3275,9 +3276,10 @@ function SpaceDetailDialog({
                 )}
               </div>
             </div>
+            </div>
           </div>
 
-          <DialogFooter className="sticky bottom-0 z-10 -mx-3 -mb-3 mt-2 border-t border-[#1f2937] bg-[#111827] px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:static sm:m-0 sm:mt-2 sm:border-0 sm:bg-transparent sm:p-0 sm:flex-row">
+          <DialogFooter className="!mt-0 z-10 flex-col-reverse gap-2 border-t border-[#1f2937] bg-[#111827] px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:flex-row sm:justify-end sm:px-6 sm:pb-4 sm:pt-3">
             <Button variant="outline" onClick={() => handleEditDialogOpenChange(false)} className="border-[#374151] text-gray-300 w-full sm:w-auto">
               Cancelar
             </Button>

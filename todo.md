@@ -162,3 +162,10 @@
 - [x] Validar sin tocar la sesión, cargador, saldo ni configuración: el procedimiento real del monitor para el titular devuelve `46,88 kWh`, `$82.113 COP`, conexión `$2.000`, potencia `4,4 kW`, corriente y voltaje `null`, con fuente `first_session_sample`. La cifra cubre sólo energía observada desde la primera lectura y no reclama estimar los minutos anteriores.
 - [x] Ejecutar TypeScript, 68 regresiones focales (incluido el caso exacto `3.597,9510 → 3.644,8280 = 46,8770 kWh`), suite completa con `263` archivos / `2.447` pruebas aprobadas (`5` archivos / `7` pruebas omitidas de forma segura), build y `git diff --check` correctos.
 - [x] Publicar el checkpoint funcional como `4c066e2b8` mediante push normal, tras rebase seguro sobre `github/main`; sin force-push. Railway/hosting confirmó el despliegue y `evgreen.lat`, `evgreen.manus.space` y `greenevplat-ucurociz.manus.space` responden `/api/health` con `healthy` y entregan el bundle `ChargingMonitor-D6dOOIiv.js` esperado. No se enviaron órdenes OCPP ni se modificaron manualmente la sesión, su saldo o su facturación.
+
+## Hotfix móvil — edición y carga de fotos en Espacios (2026-10-21)
+
+- [x] Corregir el diálogo «Editar espacio»: antes, encabezado, formulario y pie compartían un único contenedor con scroll y el `DialogFooter` `sticky` se superponía sobre «Agregar nuevas fotos» y «Cancelar» en Android.
+- [x] Separar la pantalla en encabezado fijo, cuerpo con scroll interno y pie independiente. El cuerpo tiene `min-h-0` y `overflow-y-auto`; el pie ya no es `sticky`, conserva la zona segura inferior de Android y los botones quedan siempre fuera del área de carga de fotos.
+- [x] Conservar encabezado, botón de cierre, acciones táctiles, orden de los botones y vista de escritorio; no se modificaron datos de Espacios ni se ejecutaron cargas de fotos durante QA.
+- [x] Validar: regresión específica del editor y selección de fotos aprobadas; TypeScript, build, suite completa `263` archivos / `2.447` pruebas aprobadas (`5` archivos / `7` pruebas omitidas de forma segura) y `git diff --check` correctos.

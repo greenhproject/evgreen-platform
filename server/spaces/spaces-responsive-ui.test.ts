@@ -4,6 +4,9 @@ import { describe, expect, it } from "vitest";
 
 const spacesSource = fs.readFileSync(path.resolve(process.cwd(), "client/src/pages/admin/Spaces.tsx"), "utf8");
 const lightboxSource = fs.readFileSync(path.resolve(process.cwd(), "client/src/components/spaces/SpacePhotoLightbox.tsx"), "utf8");
+const editDialogStart = spacesSource.indexOf("{/* Edit Dialog — EXPANDIDO */}");
+const editDialogEnd = spacesSource.indexOf("{/* Delete Confirmation Dialog */}", editDialogStart);
+const editDialogSource = spacesSource.slice(editDialogStart, editDialogEnd);
 
 describe("Espacios mobile-first", () => {
   it("convierte detalle, creación, edición y prospecto en superficies seguras para móvil", () => {
@@ -15,9 +18,17 @@ describe("Espacios mobile-first", () => {
     expect(spacesSource).toContain("Generar Prospecto de Inversión");
   });
 
-  it("mantiene las acciones primarias visibles y el expediente fácil de abrir en móvil", () => {
-    expect(spacesSource).toContain("sticky bottom-0 z-10");
-    expect(spacesSource).toContain("Guardar cambios");
+  it("separa las acciones del cuerpo desplazable para no cubrir la carga de fotos en móvil", () => {
+    expect(editDialogStart).toBeGreaterThanOrEqual(0);
+    expect(editDialogEnd).toBeGreaterThan(editDialogStart);
+    expect(editDialogSource).toContain("!flex !h-[100dvh]");
+    expect(editDialogSource).toContain("!flex-col !gap-0 !overflow-hidden");
+    expect(editDialogSource).toContain("min-h-0 flex-1 overflow-y-auto overscroll-contain");
+    expect(editDialogSource).toContain("Agregar nuevas fotos");
+    expect(editDialogSource).toContain("pb-[max(0.75rem,env(safe-area-inset-bottom))]");
+    expect(editDialogSource).not.toContain("sticky bottom-0");
+    expect(editDialogSource).not.toContain("sticky top-0");
+    expect(editDialogSource).toContain("Guardar cambios");
     expect(spacesSource).toContain("Crear Espacio");
     expect(spacesSource).toContain("Generar y Descargar");
     expect(spacesSource).toContain("<Eye className=\"mr-1 h-3.5 w-3.5\" /> Ver");
