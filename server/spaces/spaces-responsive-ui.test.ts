@@ -34,6 +34,14 @@ describe("Espacios mobile-first", () => {
     expect(spacesSource).toContain("<Eye className=\"mr-1 h-3.5 w-3.5\" /> Ver");
   });
 
+  it("aprovecha el ancho y alto de una tablet antes de limitar el editor en escritorio grande", () => {
+    expect(editDialogSource).toContain("sm:!h-[calc(100dvh-2rem)]");
+    expect(editDialogSource).toContain("sm:!w-[calc(100vw-2rem)]");
+    expect(editDialogSource).toContain("sm:!max-w-none");
+    expect(editDialogSource).toContain("xl:!max-w-[72rem]");
+    expect(editDialogSource).not.toContain("sm:!max-w-2xl");
+  });
+
   it("mantiene la galería compacta, táctil y accesible", () => {
     expect(lightboxSource).toContain("grid-rows-[auto_minmax(0,1fr)_auto]");
     expect(lightboxSource).toContain("touch-pan-y");

@@ -2712,7 +2712,7 @@ function SpaceDetailDialog({
 
       {/* Edit Dialog — EXPANDIDO */}
       <Dialog open={showEditDialog} onOpenChange={handleEditDialogOpenChange}>
-        <DialogContent className="!inset-0 !top-0 !left-0 !flex !h-[100dvh] !w-screen !max-h-none !max-w-none !translate-x-0 !translate-y-0 !flex-col !gap-0 !overflow-hidden !rounded-none border-[#1f2937] bg-[#111827] !p-0 text-white sm:!top-1/2 sm:!left-1/2 sm:!h-[90vh] sm:!max-h-[90vh] sm:!w-[calc(100%-2rem)] sm:!max-w-2xl sm:!translate-x-[-50%] sm:!translate-y-[-50%] sm:rounded-lg">
+        <DialogContent className="!inset-0 !top-0 !left-0 !flex !h-[100dvh] !w-screen !max-h-none !max-w-none !translate-x-0 !translate-y-0 !flex-col !gap-0 !overflow-hidden !rounded-none border-[#1f2937] bg-[#111827] !p-0 text-white sm:!top-1/2 sm:!left-1/2 sm:!h-[calc(100dvh-2rem)] sm:!max-h-[calc(100dvh-2rem)] sm:!w-[calc(100vw-2rem)] sm:!max-w-none sm:!translate-x-[-50%] sm:!translate-y-[-50%] sm:rounded-lg xl:!h-[90vh] xl:!max-h-[90vh] xl:!w-[92vw] xl:!max-w-[72rem]">
           <DialogHeader className="z-10 shrink-0 border-b border-[#1f2937] bg-[#111827] px-3 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] pr-14 sm:px-6 sm:py-4 sm:pr-14">
             <DialogTitle className="flex items-center gap-2"><Pencil className="w-4 h-4 text-blue-400" /> Editar espacio — {space.code}</DialogTitle>
           </DialogHeader>

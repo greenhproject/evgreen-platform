@@ -169,3 +169,5 @@
 - [x] Separar la pantalla en encabezado fijo, cuerpo con scroll interno y pie independiente. El cuerpo tiene `min-h-0` y `overflow-y-auto`; el pie ya no es `sticky`, conserva la zona segura inferior de Android y los botones quedan siempre fuera del área de carga de fotos.
 - [x] Conservar encabezado, botón de cierre, acciones táctiles, orden de los botones y vista de escritorio; no se modificaron datos de Espacios ni se ejecutaron cargas de fotos durante QA.
 - [x] Validar: regresión específica del editor y selección de fotos aprobadas; TypeScript, build, suite completa `263` archivos / `2.447` pruebas aprobadas (`5` archivos / `7` pruebas omitidas de forma segura) y `git diff --check` correctos.
+
+- [x] Ajustar el breakpoint de tablet del editor de Espacios: `sm` ya no hereda el límite `max-w-2xl` ni la altura de escritorio. Entre móvil y `xl` el diálogo usa el viewport menos 2rem; sólo en escritorio grande se limita a 72rem. Se agregó una regresión que verifica esta política. Validado con TypeScript, build y suite completa `263` archivos / `2.448` pruebas aprobadas, sin crear ni modificar Espacios o fotos.
