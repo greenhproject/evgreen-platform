@@ -2372,6 +2372,11 @@ export const transactions = mysqlTable("transactions", {
 	investorShare: decimal({ precision: 12, scale: 2 }).default('0'),
 	platformFee: decimal({ precision: 12, scale: 2 }).default('0'),
 	status: mysqlEnum("status", ['PENDING','IN_PROGRESS','COMPLETED','FAILED','CANCELLED']).default('PENDING').notNull(),
+	// Algunas instalaciones históricas conservaron `transactionStatus` además
+	// de `status` y `transaction_status`. Se mantiene declarado para que las
+	// rutas actuales lo sincronicen y una lectura heredada no contradiga una
+	// sesión que físicamente continúa cargando.
+	legacyTransactionStatus: mysqlEnum("transactionStatus", ['PENDING','IN_PROGRESS','COMPLETED','FAILED','CANCELLED']).default('PENDING').notNull(),
 	transactionStatus: mysqlEnum("transaction_status", ['PENDING','IN_PROGRESS','COMPLETED','FAILED','CANCELLED']).default('PENDING').notNull(),
 	startMethod: varchar({ length: 50 }),
 	stopReason: varchar({ length: 100 }),

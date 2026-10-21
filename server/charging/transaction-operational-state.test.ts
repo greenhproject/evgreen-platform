@@ -25,15 +25,24 @@ describe("transaction operational state", () => {
       transactionStatus: "PENDING",
       endTime: null,
     })).toBe(true);
+
+    expect(isTransactionOperationallyActive({
+      status: "PENDING",
+      legacyTransactionStatus: "IN_PROGRESS",
+      transactionStatus: "PENDING",
+      endTime: null,
+    })).toBe(true);
   });
 
-  it("siempre cierra ambas columnas históricas de forma consistente", () => {
+  it("siempre cierra las tres columnas históricas de forma consistente", () => {
     expect(terminalTransactionStatus("CANCELLED")).toEqual({
       status: "CANCELLED",
+      legacyTransactionStatus: "CANCELLED",
       transactionStatus: "CANCELLED",
     });
     expect(terminalTransactionStatus("COMPLETED")).toEqual({
       status: "COMPLETED",
+      legacyTransactionStatus: "COMPLETED",
       transactionStatus: "COMPLETED",
     });
   });

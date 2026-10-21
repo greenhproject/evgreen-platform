@@ -1166,19 +1166,31 @@ export async function getAvailableEvses(filters?: { connectorType?: Evse["connec
 // TRANSACTION OPERATIONS
 // ============================================================================
 
+/**
+ * Las primeras versiones persistieron tres variantes del mismo estado:
+ * `status`, `transactionStatus` y `transaction_status`. Toda escritura nueva
+ * debe unificarlas para que el banner, el cobro y los procesos OCPP observen
+ * la misma sesión. La columna camelCase ya existe en producción (migración
+ * histórica 0028), por lo que este helper no añade ni modifica el esquema.
+ */
+function synchronizeTransactionState<T extends Record<string, any>>(transaction: T): T {
+  const state = transaction.status
+    ?? transaction.transactionStatus
+    ?? transaction.legacyTransactionStatus;
+  if (!state) return transaction;
+
+  return {
+    ...transaction,
+    status: state,
+    legacyTransactionStatus: state,
+    transactionStatus: state,
+  } as T;
+}
+
 export async function createTransaction(transaction: InsertTransaction) {
   const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
-  // Mantener la compatibilidad de las dos columnas históricas de estado desde
-  // la creación, no sólo al actualizar. Así todos los consumidores observan la
-  // misma sesión en progreso o completada.
-  const normalizedTransaction: any = { ...transaction };
-  if (normalizedTransaction.status && normalizedTransaction.transactionStatus === undefined) {
-    normalizedTransaction.transactionStatus = normalizedTransaction.status;
-  }
-  if (normalizedTransaction.transactionStatus && normalizedTransaction.status === undefined) {
-    normalizedTransaction.status = normalizedTransaction.transactionStatus;
-  }
+  const normalizedTransaction: any = synchronizeTransactionState({ ...transaction });
   const result = await db.insert(transactions).values(normalizedTransaction);
   return result[0].insertId;
 }
@@ -1196,13 +1208,7 @@ export async function createOcpp16TransactionOnce(
   const database = (await getDb())!;
   if (!database) throw new Error("Database not available");
 
-  const normalizedTransaction: any = { ...transaction };
-  if (normalizedTransaction.status && normalizedTransaction.transactionStatus === undefined) {
-    normalizedTransaction.transactionStatus = normalizedTransaction.status;
-  }
-  if (normalizedTransaction.transactionStatus && normalizedTransaction.status === undefined) {
-    normalizedTransaction.status = normalizedTransaction.transactionStatus;
-  }
+  const normalizedTransaction: any = synchronizeTransactionState({ ...transaction });
 
   try {
     const result = await database.insert(transactions).values(normalizedTransaction);
@@ -1236,13 +1242,7 @@ export async function createTransactionOnceByOcppId(
   const database = (await getDb())!;
   if (!database) throw new Error("Database not available");
 
-  const normalizedTransaction: any = { ...transaction };
-  if (normalizedTransaction.status && normalizedTransaction.transactionStatus === undefined) {
-    normalizedTransaction.transactionStatus = normalizedTransaction.status;
-  }
-  if (normalizedTransaction.transactionStatus && normalizedTransaction.status === undefined) {
-    normalizedTransaction.status = normalizedTransaction.transactionStatus;
-  }
+  const normalizedTransaction: any = synchronizeTransactionState({ ...transaction });
 
   try {
     const result = await database.insert(transactions).values(normalizedTransaction);
@@ -1428,16 +1428,7 @@ export async function getAllTransactionsByInvestor(investorId: number, filters?:
 export async function updateTransaction(id: number, data: Partial<InsertTransaction>) {
   const db = (await getDb())!;
   if (!db) return;
-  // Legacy `status` and `transaction_status` coexist in producción. Nunca
-  // permitir que una finalización actualice sólo una de ellas: una discrepancia
-  // deja al mapa, al cobro o al monitor viendo sesiones distintas.
-  const normalizedData: any = { ...data };
-  if (normalizedData.status && normalizedData.transactionStatus === undefined) {
-    normalizedData.transactionStatus = normalizedData.status;
-  }
-  if (normalizedData.transactionStatus && normalizedData.status === undefined) {
-    normalizedData.status = normalizedData.transactionStatus;
-  }
+  const normalizedData: any = synchronizeTransactionState({ ...data });
   await db.update(transactions).set(normalizedData).where(eq(transactions.id, id));
 }
 
@@ -1450,7 +1441,7 @@ export async function completeTransactionOnce(id: number, data: Partial<InsertTr
   const database = (await getDb())!;
   if (!database) return false;
 
-  const normalizedData: any = { ...data, status: "COMPLETED", transactionStatus: "COMPLETED" };
+  const normalizedData: any = synchronizeTransactionState({ ...data, status: "COMPLETED" });
   const result = await database
     .update(transactions)
     .set(normalizedData)
