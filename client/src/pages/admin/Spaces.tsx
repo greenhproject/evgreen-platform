@@ -1641,7 +1641,7 @@ function SpaceDetailDialog({
   if (isLoading || !space) {
     return (
       <Dialog open onOpenChange={onClose}>
-        <DialogContent className="bg-[#111827] border-[#1f2937] text-white max-w-[95vw] sm:max-w-4xl">
+        <DialogContent className="!inset-0 !top-0 !left-0 !h-[100dvh] !w-screen !max-h-none !max-w-none !translate-x-0 !translate-y-0 !rounded-none overflow-y-auto overscroll-contain border-[#1f2937] bg-[#111827] p-3 text-white sm:!top-1/2 sm:!left-1/2 sm:!h-[calc(100dvh-2rem)] sm:!max-h-[calc(100dvh-2rem)] sm:!w-[calc(100vw-2rem)] sm:!max-w-none sm:!translate-x-[-50%] sm:!translate-y-[-50%] sm:rounded-lg sm:p-6 xl:!h-[90vh] xl:!max-h-[90vh] xl:!w-[92vw] xl:!max-w-[72rem]">
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-8 h-8 text-emerald-400 animate-spin" />
           </div>
@@ -2005,7 +2005,7 @@ function SpaceDetailDialog({
   return (
     <>
       <Dialog open onOpenChange={onClose}>
-        <DialogContent className="!inset-0 !top-0 !left-0 !h-[100dvh] !w-screen !max-h-none !max-w-none !translate-x-0 !translate-y-0 !rounded-none overflow-y-auto overscroll-contain border-[#1f2937] bg-[#111827] p-3 text-white sm:!top-1/2 sm:!left-1/2 sm:!h-auto sm:!max-h-[90vh] sm:!w-[calc(100%-2rem)] sm:!max-w-4xl sm:!translate-x-[-50%] sm:!translate-y-[-50%] sm:rounded-lg sm:p-6">
+        <DialogContent className="!inset-0 !top-0 !left-0 !h-[100dvh] !w-screen !max-h-none !max-w-none !translate-x-0 !translate-y-0 !rounded-none overflow-y-auto overscroll-contain border-[#1f2937] bg-[#111827] p-3 text-white sm:!top-1/2 sm:!left-1/2 sm:!h-[calc(100dvh-2rem)] sm:!max-h-[calc(100dvh-2rem)] sm:!w-[calc(100vw-2rem)] sm:!max-w-none sm:!translate-x-[-50%] sm:!translate-y-[-50%] sm:rounded-lg sm:p-6 xl:!h-[90vh] xl:!max-h-[90vh] xl:!w-[92vw] xl:!max-w-[72rem]">
           {/* Header */}
           <DialogHeader className="sticky top-0 z-10 -mx-3 -mt-3 border-b border-[#1f2937] bg-[#111827] px-3 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] pr-14 sm:static sm:m-0 sm:border-0 sm:bg-transparent sm:p-0 sm:pr-0">
             <DialogTitle className="flex flex-col sm:flex-row sm:items-center gap-2">

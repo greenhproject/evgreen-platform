@@ -171,3 +171,10 @@
 - [x] Validar: regresión específica del editor y selección de fotos aprobadas; TypeScript, build, suite completa `263` archivos / `2.447` pruebas aprobadas (`5` archivos / `7` pruebas omitidas de forma segura) y `git diff --check` correctos.
 
 - [x] Ajustar el breakpoint de tablet del editor de Espacios: `sm` ya no hereda el límite `max-w-2xl` ni la altura de escritorio. Entre móvil y `xl` el diálogo usa el viewport menos 2rem; sólo en escritorio grande se limita a 72rem. Se agregó una regresión que verifica esta política. Validado con TypeScript, build y suite completa `263` archivos / `2.448` pruebas aprobadas, sin crear ni modificar Espacios o fotos.
+
+## Espacios — superficie de detalle para tablet (2026-10-23)
+
+- [x] Corregir el modal de detalle de Espacios que seguía limitado a `max-w-4xl` en tablet: desde `sm` usa el ancho y alto útiles del viewport con márgenes seguros; el máximo de 72rem queda reservado para escritorio `xl`.
+- [x] Aplicar la misma superficie al estado de carga del detalle, evitando que el usuario vea una ventana pequeña antes de que lleguen los datos.
+- [x] Mantener la experiencia móvil como superficie completa y los botones/acciones existentes sin cambiar datos ni permisos.
+- [x] Añadir regresión específica para el detalle de tablet. Validación: TypeScript, 5 pruebas responsive focales, suite completa 263 archivos / 2.449 pruebas aprobadas (5 archivos y 7 pruebas omitidas) y build productivo; no se modificaron Espacios ni fotografías.

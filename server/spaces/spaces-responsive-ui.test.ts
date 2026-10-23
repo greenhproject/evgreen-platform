@@ -7,6 +7,9 @@ const lightboxSource = fs.readFileSync(path.resolve(process.cwd(), "client/src/c
 const editDialogStart = spacesSource.indexOf("{/* Edit Dialog — EXPANDIDO */}");
 const editDialogEnd = spacesSource.indexOf("{/* Delete Confirmation Dialog */}", editDialogStart);
 const editDialogSource = spacesSource.slice(editDialogStart, editDialogEnd);
+const detailDialogStart = spacesSource.indexOf("function SpaceDetailDialog");
+const detailDialogEnd = spacesSource.indexOf("{/* Edit Dialog — EXPANDIDO */}", detailDialogStart);
+const detailDialogSource = spacesSource.slice(detailDialogStart, detailDialogEnd);
 
 describe("Espacios mobile-first", () => {
   it("convierte detalle, creación, edición y prospecto en superficies seguras para móvil", () => {
@@ -40,6 +43,16 @@ describe("Espacios mobile-first", () => {
     expect(editDialogSource).toContain("sm:!max-w-none");
     expect(editDialogSource).toContain("xl:!max-w-[72rem]");
     expect(editDialogSource).not.toContain("sm:!max-w-2xl");
+  });
+
+  it("aprovecha la misma superficie de trabajo en el detalle de tablet", () => {
+    expect(detailDialogStart).toBeGreaterThanOrEqual(0);
+    expect(detailDialogEnd).toBeGreaterThan(detailDialogStart);
+    expect(detailDialogSource).toContain("sm:!h-[calc(100dvh-2rem)]");
+    expect(detailDialogSource).toContain("sm:!w-[calc(100vw-2rem)]");
+    expect(detailDialogSource).toContain("sm:!max-w-none");
+    expect(detailDialogSource).toContain("xl:!max-w-[72rem]");
+    expect(detailDialogSource).not.toContain("sm:!max-w-4xl");
   });
 
   it("mantiene la galería compacta, táctil y accesible", () => {
