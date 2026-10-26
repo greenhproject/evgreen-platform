@@ -178,3 +178,10 @@
 - [x] Aplicar la misma superficie al estado de carga del detalle, evitando que el usuario vea una ventana pequeña antes de que lleguen los datos.
 - [x] Mantener la experiencia móvil como superficie completa y los botones/acciones existentes sin cambiar datos ni permisos.
 - [x] Añadir regresión específica para el detalle de tablet. Validación: TypeScript, 5 pruebas responsive focales, suite completa 263 archivos / 2.449 pruebas aprobadas (5 archivos y 7 pruebas omitidas) y build productivo; no se modificaron Espacios ni fotografías.
+
+## Gestor comercial — comisión editable sin fallback silencioso (2026-10-26)
+
+- [x] Corregir el contrato entre el diálogo de Espacios y la API: el cliente ahora envía `gestorCommissionPercent` en lugar de la clave errónea `commissionPercent`, que Zod descartaba y reemplazaba con el default 3,75%.
+- [x] Convertir la comisión en una entrada temporalmente vaciable y editable: admite `0`, `3.75` o `3,75`, preserva dos decimales y muestra una validación clara para valores vacíos, no numéricos, mayores a 30% o con más de dos decimales. El 3,75% queda sólo como sugerencia inicial al vincular por primera vez.
+- [x] Eliminar el `as any` que ocultaba el contrato incorrecto y endurecer los procedimientos de Espacio/Estación: comisión obligatoria, 0–30%, dos decimales y objeto Zod estricto que rechaza claves mal escritas en vez de aplicar una comisión por defecto.
+- [x] Validar sin modificar gestores, Espacios, estaciones ni comisiones reales: TypeScript, 13 regresiones focales de entrada/contrato/cálculo, suite completa 264 archivos / 2.453 pruebas aprobadas (5 archivos y 7 pruebas omitidas) y build productivo correctos.

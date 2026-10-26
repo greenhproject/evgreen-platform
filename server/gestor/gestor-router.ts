@@ -29,6 +29,13 @@ import {
   getColombiaDayBounds,
   getColombiaMonthBounds,
 } from "./gestor-calculations";
+import {
+  spaceGestorAssignmentInput,
+  stationGestorAssignmentInput,
+} from "./gestor-assignment-input";
+import {
+  DEFAULT_GESTOR_COMMISSION_PERCENT,
+} from "../../shared/gestor-commission";
 
 // ============================================================================
 // ROLE GUARDS
@@ -183,7 +190,7 @@ export const gestorRouter = router({
         additionalNotes: input.additionalNotes ?? null,
         spaceStatus: "pending",
         gestorId: ctx.user.id,
-        gestorCommissionPercent: "3.75",
+        gestorCommissionPercent: String(DEFAULT_GESTOR_COMMISSION_PERCENT),
         investmentType: "individual",
       });
 
@@ -936,11 +943,7 @@ export const gestorRouter = router({
   // ADMIN: ASIGNAR GESTOR A ESPACIO Y CONFIGURAR COMISIÓN
   // --------------------------------------------------------------------------
   asignarGestorAEspacio: adminProcedure
-    .input(z.object({
-      spaceId: z.number().int(),
-      gestorId: z.number().int().nullable(),
-      gestorCommissionPercent: z.number().min(0).max(30).default(3.75),
-    }))
+    .input(spaceGestorAssignmentInput)
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
       await db.update(spaceSubmissions)
@@ -957,11 +960,7 @@ export const gestorRouter = router({
   // ADMIN: ASIGNAR GESTOR A ESTACIÓN Y CONFIGURAR COMISIÓN
   // --------------------------------------------------------------------------
   asignarGestorAEstacion: adminProcedure
-    .input(z.object({
-      stationId: z.number().int(),
-      gestorId: z.number().int().nullable(),
-      gestorCommissionPercent: z.number().min(0).max(30).default(3.75),
-    }))
+    .input(stationGestorAssignmentInput)
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
       await db.update(chargingStations)
