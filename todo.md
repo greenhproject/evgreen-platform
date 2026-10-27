@@ -192,3 +192,10 @@
 - [x] Crear `/login` como alias canónico de servidor: responde `302` fijo a `/api/auth/login` antes del fallback de la SPA, sin destinos dinámicos ni retorno abierto. Con ello Auth0 conserva el mismo `state`, cookie HTTP-only, callback y la redirección por rol ya existentes.
 - [x] Añadir respaldo de cliente para PWA con shell cacheado y reemplazar la landing comercial por la pantalla explícita de acceso cuando una ruta protegida se visita sin sesión. No se cambia el flujo Capacitor (`platform=mobile`, `sk`, claim ni esquema nativo).
 - [x] Validar sin usar credenciales ni crear sesiones: TypeScript, 7 regresiones focales (incluido HTTP 302 y rechazo de `next` externo), comprobación local `/login` → `/api/auth/login` → Auth0, suite completa 266 archivos / 2.458 pruebas aprobadas (5 archivos y 7 pruebas omitidas) y build productivo correctos. Los avisos de mocks del simulador son preexistentes y no fallos de la suite.
+
+## Hotfix Railway — arranque y healthcheck de producción (2026-10-27)
+
+- [x] Diagnosticar el despliegue del acceso: Railway completó build y deploy, pero agotó el healthcheck de red a los 31 s antes de que la instancia abriera el puerto; la versión previa siguió sirviendo tráfico.
+- [x] Evitar que la verificación idempotente de tablas/columnas contractuales retrase `server.listen`: se ejecuta en segundo plano después de abrir el puerto y conserva la misma promesa que el router de Contratos espera antes de realizar cualquier operación contractual. Los fallos permanecen registrados y no se silencian.
+- [x] Alinear Railway con el margen real del contenedor: `/api/health` se mantiene como healthcheck y su plazo externo aumenta de 30 a 90 segundos. No se cambian datos, sesiones, cargadores, tarifas ni autenticación.
+- [x] Añadir regresión de arranque/configuración. Validado con TypeScript, 5 archivos / 28 pruebas focales, suite integral 267 archivos / 2.460 pruebas aprobadas (5 archivos y 7 pruebas omitidas), build productivo y `git diff --check` correctos.

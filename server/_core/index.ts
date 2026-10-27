@@ -78,9 +78,11 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 }
 
 async function startServer() {
-  // Aplica de forma idempotente únicamente la ampliación no destructiva que
-  // necesita una plantilla DOCX contractual extensa antes de atender cargas.
-  await ensureContractDocumentStorage();
+  // La verificación del esquema contractual puede requerir DDL idempotente en
+  // una base de datos fría. No debe retrasar la apertura del puerto HTTP:
+  // Railway descartaría una instancia sana antes de poder consultar /api/health.
+  // El router de contratos conserva la misma verificación awaitable antes de
+  // cada operación contractual, por lo que esos flujos no operan sin esquema.
   const app = express();
   const server = createServer(app);
   httpServerRef = server;
@@ -796,6 +798,14 @@ async function startServer() {
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
     console.log(`OCPP WebSocket endpoint: ws://localhost:${port}/ocpp/{chargePointId}`);
+
+    // La rutina es idempotente y comparte su promesa con el router de
+    // Contratos. Así el healthcheck puede confirmar primero que la instancia
+    // escucha, sin ocultar un fallo de esquema ni permitir operaciones
+    // contractuales antes de que la verificación termine.
+    void ensureContractDocumentStorage().catch((error) => {
+      console.error("[Contracts] Deferred document storage verification failed", error);
+    });
     
     // Registrar Heartbeat job de forma async (no bloquea el listen)
     (async () => {
