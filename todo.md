@@ -185,3 +185,10 @@
 - [x] Convertir la comisión en una entrada temporalmente vaciable y editable: admite `0`, `3.75` o `3,75`, preserva dos decimales y muestra una validación clara para valores vacíos, no numéricos, mayores a 30% o con más de dos decimales. El 3,75% queda sólo como sugerencia inicial al vincular por primera vez.
 - [x] Eliminar el `as any` que ocultaba el contrato incorrecto y endurecer los procedimientos de Espacio/Estación: comisión obligatoria, 0–30%, dos decimales y objeto Zod estricto que rechaza claves mal escritas en vez de aplicar una comisión por defecto.
 - [x] Validar sin modificar gestores, Espacios, estaciones ni comisiones reales: TypeScript, 13 regresiones focales de entrada/contrato/cálculo, suite completa 264 archivos / 2.453 pruebas aprobadas (5 archivos y 7 pruebas omitidas) y build productivo correctos.
+
+## Acceso web — entrada explícita a la cuenta (2026-10-27)
+
+- [x] Corregir la ambigüedad de acceso en navegador móvil: la landing conserva sus CTA comerciales, pero ahora expone un enlace visible, accesible y táctil de **“Iniciar sesión”** hacia `/login`.
+- [x] Crear `/login` como alias canónico de servidor: responde `302` fijo a `/api/auth/login` antes del fallback de la SPA, sin destinos dinámicos ni retorno abierto. Con ello Auth0 conserva el mismo `state`, cookie HTTP-only, callback y la redirección por rol ya existentes.
+- [x] Añadir respaldo de cliente para PWA con shell cacheado y reemplazar la landing comercial por la pantalla explícita de acceso cuando una ruta protegida se visita sin sesión. No se cambia el flujo Capacitor (`platform=mobile`, `sk`, claim ni esquema nativo).
+- [x] Validar sin usar credenciales ni crear sesiones: TypeScript, 7 regresiones focales (incluido HTTP 302 y rechazo de `next` externo), comprobación local `/login` → `/api/auth/login` → Auth0, suite completa 266 archivos / 2.458 pruebas aprobadas (5 archivos y 7 pruebas omitidas) y build productivo correctos. Los avisos de mocks del simulador son preexistentes y no fallos de la suite.

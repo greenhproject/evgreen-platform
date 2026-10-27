@@ -37,6 +37,7 @@ import {
   Leaf,
   CloudSun,
   Sun,
+  LogIn,
 } from "lucide-react";
 import { InstallButton } from "@/components/InstallBanner";
 
@@ -174,6 +175,18 @@ export default function Landing() {
         {/* Gradient overlays for text legibility */}
         <div className="absolute inset-0 z-[1] bg-gradient-to-b from-black/30 via-background/70 to-background" />
         <div className="absolute inset-x-0 bottom-0 h-1/3 z-[1] bg-gradient-to-b from-transparent to-background" />
+
+        <div className="absolute inset-x-0 top-0 z-20 px-4 pt-[max(1rem,env(safe-area-inset-top))] sm:pt-6">
+          <div className="container flex justify-end">
+            <a
+              href="/login"
+              className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/25 bg-black/35 px-4 py-2 text-sm font-semibold text-white shadow-lg backdrop-blur-md transition-colors hover:border-emerald-300/80 hover:bg-emerald-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+            >
+              <LogIn className="h-4 w-4" aria-hidden="true" />
+              Iniciar sesión
+            </a>
+          </div>
+        </div>
         
         <div className="container relative z-10 px-4 pt-24 sm:pt-32">
           <div className="max-w-4xl mx-auto text-center">

@@ -11,7 +11,7 @@ import { Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { useAuth } from "./_core/hooks/useAuth";
-import { isCapacitorNative, openLoginBrowser } from "@/const";
+import { getLoginUrl, isCapacitorNative, openLoginBrowser } from "@/const";
 import { loadMapScript } from "@/components/Map";
 import { trpc } from "@/lib/trpc";
 import { resolveAdvertiserAccess } from "@shared/advertiser-access";
@@ -250,9 +250,11 @@ function isPWAInstalled(): boolean {
   return false;
 }
 
-// Pantalla de login para la PWA cuando el usuario no está autenticado (web instalada)
-function PWALoginScreen() {
-  const webLoginUrl = `${window.location.origin}/api/auth/login`;
+// Pantalla de acceso inequívoca para PWA y rutas protegidas en navegador web.
+// La landing comercial permanece disponible en /; esta pantalla se reserva para
+// personas que ya eligieron ingresar a su cuenta o accedieron a un área privada.
+function LoginScreen() {
+  const webLoginUrl = getLoginUrl();
 
   const handleLogin = async () => {
     if (isCapacitorNative()) {
@@ -300,6 +302,18 @@ function PWALoginScreen() {
       </p>
     </div>
   );
+}
+
+function LoginEntryRoute() {
+  const redirectStarted = useRef(false);
+
+  useEffect(() => {
+    if (redirectStarted.current) return;
+    redirectStarted.current = true;
+    window.location.replace(getLoginUrl());
+  }, []);
+
+  return <LoginScreen />;
 }
 
 // Detecta si corre dentro de Capacitor nativo, incluso cuando el bridge tarda en
@@ -706,7 +720,7 @@ function RoleBasedRedirect() {
 
   // Web PWA installed: show native-style login screen
   if (!isAuthenticated && isPWAInstalled()) {
-    return <PWALoginScreen />;
+    return <LoginScreen />;
   }
 
   if (!isAuthenticated) {
@@ -740,8 +754,7 @@ function ProtectedRoute({
   }
 
   if (!isAuthenticated) {
-    if (isPWAInstalled()) return <PWALoginScreen />;
-    return <Landing />;
+    return <LoginScreen />;
   }
 
   if (!allowedRoles.includes(user?.role || "user")) {
@@ -794,7 +807,7 @@ function AdvertiserPortalRoute({ children }: { children: React.ReactNode }) {
 }
 
 // Rutas públicas que NO necesitan esperar autenticación
-const PUBLIC_PATHS = ["/partners", "/investors", "/landing", "/saas", "/gracias-inversionistas", "/postula-tu-espacio", "/cotizacion", "/carta-intencion", "/crowdfunding"];
+const PUBLIC_PATHS = ["/login", "/partners", "/investors", "/landing", "/saas", "/gracias-inversionistas", "/postula-tu-espacio", "/cotizacion", "/carta-intencion", "/crowdfunding"];
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some(p => pathname === p || pathname.startsWith(p + "/"));
@@ -816,6 +829,11 @@ function Router() {
   return (
     <Suspense fallback={<LazySpinner />}>
       <Switch>
+        {/* Respaldo cliente para /login si una PWA cacheada entrega el shell. */}
+        <Route path="/login">
+          <LoginEntryRoute />
+        </Route>
+
         {/* Página de inicio - Redirige según rol */}
         <Route path="/">
           <RoleBasedRedirect />

@@ -9,6 +9,7 @@ import * as db from "../db";
 import { getSessionCookieOptions } from "./cookies";
 import { sdk } from "./sdk";
 import { ENV } from "./env";
+import { registerLoginEntryRoute } from "./auth-login-entry";
 
 // Auth0 configuration from environment variables
 const AUTH0_DOMAIN = ENV.auth0Domain;
@@ -103,6 +104,9 @@ function getOrigin(req: Request): string {
 export function registerAuth0Routes(app: Express) {
   // Trust proxy (Railway runs behind a reverse proxy)
   app.set("trust proxy", true);
+
+  // Regístralo antes del fallback SPA y del inicio OAuth completo.
+  registerLoginEntryRoute(app);
 
   // Login route - redirects to Auth0
   app.get("/api/auth/login", async (req: Request, res: Response) => {
