@@ -1,4 +1,4 @@
-import { getLoginUrl } from "@/const";
+import { clearNativeLoginAttempt, getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
 import { COOKIE_NAME, NATIVE_TOKEN_KEY } from "@shared/const";
 import { TRPCClientError } from "@trpc/client";
@@ -45,6 +45,9 @@ export function useAuth(options?: UseAuthOptions) {
     } finally {
       localStorage.removeItem(NATIVE_TOKEN_KEY);
       localStorage.removeItem('manus-runtime-user-info');
+      // Un callback o browserFinished tardío no puede restaurar una sesión
+      // después de que la persona eligió cerrar sesión explícitamente.
+      clearNativeLoginAttempt();
       // Clear local cookie (set on evgreen://localhost, not app.evgreen.lat)
       document.cookie = `${COOKIE_NAME}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax`;
 

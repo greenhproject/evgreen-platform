@@ -7,7 +7,12 @@ import { getApiUrl } from "@/lib/utils";
 import { isRejectedSessionMessage } from "@shared/auth-session-recovery";
 import superjson from "superjson";
 import App from "./App";
-import { getLoginUrl } from "./const";
+import {
+  clearNativeLoginAttempt,
+  getLoginUrl,
+  NATIVE_LOGIN_ACTIVE_KEY,
+  NATIVE_LOGIN_SESSION_KEY,
+} from "./const";
 import "./index.css";
 
 // ============================================
@@ -189,14 +194,14 @@ async function bootstrap() {
     // The app stored a random sk in localStorage before opening the CCT;
     // the server saved the token under that sk after a successful OAuth callback.
     Browser.addListener('browserFinished', async () => {
-      const sk = localStorage.getItem('login_sk');
+      const sk = localStorage.getItem(NATIVE_LOGIN_SESSION_KEY);
+      // Capacitor Android can emit browserFinished for a browser closed before
+      // this login attempt. Claim only after openLoginBrowser confirms that the
+      // current Custom Tab is the one associated with this session key.
+      const activeSk = sessionStorage.getItem(NATIVE_LOGIN_ACTIVE_KEY);
+      if (!sk || activeSk !== sk) return;
       if (sk && !claimInProgress) {
         claimInProgress = true;
-        localStorage.removeItem('login_sk');
-        // Dispatch early so App.tsx cancels the 1.5s retry timer immediately and
-        // shows the loading spinner instead of the "Iniciar sesión" button while
-        // the claim fetch is in flight.
-        window.dispatchEvent(new Event('evgreen-auth-updated'));
         let claimed = false;
         try {
           const apiBase = (import.meta.env.VITE_API_URL as string) || window.location.origin;
@@ -228,8 +233,12 @@ async function bootstrap() {
         } finally {
           claimInProgress = false;
         }
-        // Only cancel if neither this handler nor appStateChange claimed a token.
-        if (!claimed && !localStorage.getItem(NATIVE_TOKEN_KEY)) {
+        if (claimed) {
+          clearNativeLoginAttempt(sk);
+          // Sólo anunciar inicio de sesión cuando sí existe un token recuperado.
+          window.dispatchEvent(new Event('evgreen-auth-updated'));
+        } else if (!localStorage.getItem(NATIVE_TOKEN_KEY)) {
+          clearNativeLoginAttempt(sk);
           window.dispatchEvent(new Event('evgreen-auth-cancelled'));
         }
       }
@@ -265,7 +274,7 @@ async function bootstrap() {
 
       // Prevent browserFinished from making a redundant /api/auth/claim call
       // now that the token arrived via the OS-level intent redirect.
-      localStorage.removeItem('login_sk');
+      clearNativeLoginAttempt();
 
       // Store token BEFORE dispatching the event so that any auth.me refetch
       // triggered by the event finds the token already in localStorage.
@@ -317,7 +326,7 @@ async function bootstrap() {
         if (resp.ok) {
           const data = await resp.json();
           if (data.token) {
-            localStorage.removeItem('login_sk');
+            clearNativeLoginAttempt(sk);
             setAuthCookie(data.token);
             console.log('[Auth] Token claimed on app resume');
             setTimeout(() => queryClient.invalidateQueries(), 300);
@@ -330,7 +339,7 @@ async function bootstrap() {
 
     // Startup claim: app may have been killed while CCT was open and auth completed
     // while dead. Try claiming immediately if login_sk is present.
-    const startupSk = localStorage.getItem('login_sk');
+    const startupSk = localStorage.getItem(NATIVE_LOGIN_SESSION_KEY);
     if (startupSk) {
       try {
         const apiBase = (import.meta.env.VITE_API_URL as string) || window.location.origin;
@@ -338,7 +347,7 @@ async function bootstrap() {
         if (resp.ok) {
           const data = await resp.json();
           if (data.token) {
-            localStorage.removeItem('login_sk');
+            clearNativeLoginAttempt(startupSk);
             setAuthCookie(data.token);
             console.log('[Auth] Token claimed on startup');
           }
@@ -354,7 +363,7 @@ async function bootstrap() {
       if (launchUrl?.url) {
         const token = extractToken(launchUrl.url);
         if (token) {
-          localStorage.removeItem('login_sk');
+          clearNativeLoginAttempt();
           // If the user just logged out, skip deep-link re-auth and go straight to login screen
           if (sessionStorage.getItem('evgreen_logout')) {
             sessionStorage.removeItem('evgreen_logout');

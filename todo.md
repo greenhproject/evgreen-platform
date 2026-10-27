@@ -199,3 +199,12 @@
 - [x] Evitar que la verificación idempotente de tablas/columnas contractuales retrase `server.listen`: se ejecuta en segundo plano después de abrir el puerto y conserva la misma promesa que el router de Contratos espera antes de realizar cualquier operación contractual. Los fallos permanecen registrados y no se silencian.
 - [x] Alinear Railway con el margen real del contenedor: `/api/health` se mantiene como healthcheck y su plazo externo aumenta de 30 a 90 segundos. No se cambian datos, sesiones, cargadores, tarifas ni autenticación.
 - [x] Añadir regresión de arranque/configuración. Validado con TypeScript, 5 archivos / 28 pruebas focales, suite integral 267 archivos / 2.460 pruebas aprobadas (5 archivos y 7 pruebas omitidas), build productivo y `git diff --check` correctos.
+
+## App Android — apertura y recuperación de login OAuth (2026-10-27)
+
+- [x] Confirmar que no es una caída de Auth0: el servidor redirige correctamente a Auth0 y el descubrimiento OIDC responde. El bloqueo de “Iniciando sesión…” era una carrera local de Custom Tabs en Android.
+- [x] Eliminar el cierre preventivo de `Browser` antes de abrir Auth0; dicho cierre podía emitir `browserFinished` sobre la nueva llave temporal `login_sk`, consumirla y mostrar una sesión inexistente antes de abrir la pantalla de acceso.
+- [x] Correlacionar el cierre de Custom Tab con el intento activo (`evgreen_native_login_active`), reclamar token sólo tras una apertura confirmada, anunciar autenticación sólo si existe token y limpiar el intento ante error, cancelación, deep-link o logout explícito.
+- [x] Unificar el botón de acceso manual con el mismo flujo seguro; ya no puede caer en `localhost` ni perder la llave temporal de recuperación.
+- [x] Subir la versión de release a **1.5.2** (Android `versionCode 31`; iOS build 6) y sincronizar el bundle productivo con Android. Preflight de Firebase/Push aprobado y el bundle embebido contiene la salvaguarda sin `Browser.close()` preventivo.
+- [x] Validar: TypeScript, 11 regresiones focales de autenticación, suite integral 268 archivos / 2.463 pruebas aprobadas (5 archivos y 7 pruebas omitidas), build web y sincronización Android correctos. La compilación Gradle local no pudo completarse porque este sandbox no tiene Android SDK ni `android/local.properties`; no es un fallo del código ni se generó/publicó un APK o AAB. La subida a Google Play queda pendiente de disponer de un entorno de release firmado y de aprobación explícita.

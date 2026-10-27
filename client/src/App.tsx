@@ -258,10 +258,9 @@ function LoginScreen() {
 
   const handleLogin = async () => {
     if (isCapacitorNative()) {
-      // En native, abrir SFSafariViewController con la URL real del servidor Express
-      const apiBase = (import.meta.env.VITE_API_URL as string) || 'http://localhost:3000';
-      const { Browser } = await import('@capacitor/browser');
-      await Browser.open({ url: `${apiBase}/api/auth/login?platform=mobile` });
+      // Reutiliza el flujo nativo que agrega una llave temporal de claim y
+      // evita una URL localhost o un callback imposible de recuperar.
+      await openLoginBrowser();
     } else {
       window.location.href = webLoginUrl;
     }
