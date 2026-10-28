@@ -34,6 +34,7 @@ import { handleResendWebhook } from "../email/resend-webhook-router";
 import { handleDocusignWebhook } from "../contracts/docusign-webhook";
 import { handleManualContractDownload } from "../contracts/manual-contract-download";
 import { ensureContractDocumentStorage } from "../contracts/ensure-contract-document-storage";
+import { registerDetailedHealthRoute, checkDatabaseConnection } from "./health-detailed";
 import { registerStorageProxy } from "./storageProxy";
 import { calculateSocEstimation } from "../charging/soc-estimation";
 import { estimatePowerFromEnergySamples, resolveBillableEnergyKwh, shouldAdvanceTelemetrySample } from "../../shared/charging-telemetry";
@@ -464,6 +465,13 @@ async function startServer() {
       res.status(500).json({ status: 'error', error: error.message });
     }
   });
+
+  // Endpoint de salud para monitoreo externo (uptime/alertas) — a diferencia
+  // del anterior, sí responde 503 real cuando la base de datos falla, para
+  // que una herramienta de uptime estándar lo detecte sin configuración de
+  // palabra clave. Deliberadamente separado de /api/health, que Railway usa
+  // para promover despliegues y no debe depender de la base de datos.
+  registerDetailedHealthRoute(app, checkDatabaseConnection);
 
   // Endpoint de verificación OCPP (HTTP) - bajo /api/ para que funcione en producción
   app.get("/api/ocpp/status", (req, res) => {
