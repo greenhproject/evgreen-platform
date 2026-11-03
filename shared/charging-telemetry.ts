@@ -1,7 +1,9 @@
+import { resolveMeteredEnergySegments } from "./metered-energy-segments";
+
 export type ChargingTelemetryStatus = "live" | "delayed" | "stale" | "unavailable";
 export type PowerTelemetrySource = "measured" | "estimated_from_energy" | "unavailable";
 export type ChartEnergyReference = "meter_start" | "first_sample";
-export type BillingEnergyReference = "meter_start" | "first_session_sample" | "unavailable";
+export type BillingEnergyReference = "meter_start" | "first_session_sample" | "observed_segments" | "unavailable";
 
 export const TELEMETRY_FRESH_AFTER_MS = 7 * 60 * 1000;
 export const TELEMETRY_STALE_AFTER_MS = 15 * 60 * 1000;
@@ -165,6 +167,7 @@ export type PowerHistoryPoint = {
 export function buildPowerHistoryFromMeterValues(
   meterValues: MeterValueHistoryInput[],
   meterStartWh = 0,
+  billingContext?: { startTime: Date | string | number; maxPowerKw?: number },
 ): PowerHistoryPoint[] {
   type NormalizedValue = {
     timestamp: number;
@@ -214,12 +217,20 @@ export function buildPowerHistoryFromMeterValues(
   let previousTimestamp: number | null = null;
   let previousChartEnergy = 0;
 
-  return normalized.map((value) => {
-    const energy = value.rawEnergy === null
+  return normalized.map((value, index) => {
+    const segmentEnergy = billingContext ? resolveMeteredEnergySegments({
+      meterStartWh,
+      startTime: billingContext.startTime,
+      maxPowerKw: billingContext.maxPowerKw,
+      samples: normalized.slice(0, index + 1).map(point => ({
+        timestamp: point.timestamp, energyKwh: point.rawEnergy,
+      })),
+    }) : null;
+    const energy = segmentEnergy?.kwh ?? (value.rawEnergy === null
       ? previousChartEnergy
-      : previousRawEnergy !== null && value.rawEnergy < previousRawEnergy
-        ? previousChartEnergy
-        : Math.max(0, value.rawEnergy - chartEnergyBaseline);
+      : previousRawEnergy !== null
+        ? previousChartEnergy + Math.max(0, value.rawEnergy - previousRawEnergy)
+        : Math.max(0, value.rawEnergy - chartEnergyBaseline));
 
     // Versiones anteriores almacenaban 0.00 cuando Power.Active.Import no
     // venía en el payload. Si la energía creció durante el intervalo, ese cero
@@ -259,7 +270,7 @@ export function buildPowerHistoryFromMeterValues(
       power: measuredPower ?? estimatedPower,
       powerSource,
       energy,
-      energyReference,
+      energyReference: segmentEnergy?.resetCount || segmentEnergy?.rejectedJumpCount ? "first_sample" : energyReference,
       soc: value.soc,
     };
   });

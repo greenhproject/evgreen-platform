@@ -36,7 +36,8 @@ import { handleManualContractDownload } from "../contracts/manual-contract-downl
 import { ensureContractDocumentStorage } from "../contracts/ensure-contract-document-storage";
 import { registerStorageProxy } from "./storageProxy";
 import { calculateSocEstimation } from "../charging/soc-estimation";
-import { estimatePowerFromEnergySamples, resolveBillableEnergyKwh, shouldAdvanceTelemetrySample } from "../../shared/charging-telemetry";
+import { estimatePowerFromEnergySamples, shouldAdvanceTelemetrySample } from "../../shared/charging-telemetry";
+import { getMeteredBillingResolution } from "../charging/metered-billing";
 import { matchesOcppMeterValuesScope } from "../../shared/ocpp-meter-values-correlation";
 import { createOcpp16StartFingerprint } from "../../shared/ocpp-start-idempotency";
 import { resolveReservationPricing } from "../../shared/reservation-pricing-policy";
@@ -1676,28 +1677,13 @@ async function handleOCPP16Message(
           const station = await db.getChargingStationById(resolvedStId);
           const stationName = station?.name || "Estación";
           // Usar precio dinámico de la transacción (ya calculado al iniciar)
-          const formattedPrice = Math.round(txPricePerKwh).toLocaleString("es-CO");
-          await db.createNotification({
-            userId: userId,
-            title: "Carga iniciada",
-            message: `Hola ${userName}, tu carga ha comenzado en ${stationName}. Tarifa: $${formattedPrice} COP/kWh. Te notificaremos cuando finalice.`,
-            type: "CHARGE_START",
-            referenceId: null,
-            referenceType: "transaction",
+          const formattedPrice = Math.round(Number(persistedStart.transaction.appliedPricePerKwh)).toLocaleString("es-CO");
+          const { notifyChargingStartedOnce } = await import("../notifications/charging-started");
+          const { getStationTimezone } = await import("../utils/timezone");
+          await notifyChargingStartedOnce({
+            transactionId: newTxId, stationName, connectorId: payload.connectorId,
+            timeZone: getStationTimezone(station ?? {}),
           });
-          // Push notification: notificar inicio de carga
-          try {
-            const { sendUserPush } = await import("../push/unified-push");
-            sendUserPush(userId, {
-              type: "charging_started",
-              title: "\u26a1 Carga iniciada",
-              body: `Tu carga ha comenzado en ${stationName}. Tarifa: $${formattedPrice} COP/kWh`,
-              clickAction: "/charging-monitor",
-              data: { stationId: resolvedStId.toString(), connectorId: String(payload.connectorId) },
-            }).then(ok => console.log(`[Push] charge_start: result=${ok}`)).catch((e: Error) => console.error("[Push] charge_start error:", e.message));
-          } catch (pushErr: any) {
-            console.error(`[Push] charge_start exception:`, pushErr?.message);
-          }
           // WhatsApp: notificar inicio de carga
           try {
             const userForWa = await db.getUserById(userId);
@@ -1796,15 +1782,12 @@ async function handleOCPP16Message(
         console.warn(`[OCPP] StopTransaction - No transaction found for txId=${payload.transactionId}, idTag=${payload.idTag}. Accepting without altering connector state.`);
         return { idTagInfo: { status: "Accepted" } };
       }
-      const firstEnergyMeterValue = await db.getFirstEnergyMeterValue(transaction.id);
       const { getActiveSessionById: getSessionForStop } = await import("../charging/charging-router");
       const activeSessionForStop = getSessionForStop(transaction.id);
-      const stopEnergyResolution = resolveBillableEnergyKwh({
-        meterStartWh: transaction.meterStart,
-        firstSessionEnergyKwh: activeSessionForStop?.billingEnergyBaselineKwh
-          ?? firstEnergyMeterValue?.energyKwh,
-        currentEnergyKwh: Number(payload.meterStop) / 1000,
-      });
+      const stopEnergyResolution = await getMeteredBillingResolution(transaction, [{
+        timestamp: payload.timestamp || new Date(),
+        energyKwh: payload.meterStop == null ? null : Number(payload.meterStop) / 1000,
+      }]);
       // Ante un reset o una lectura final inválida, conservar únicamente el
       // último consumo ya verificado; nunca fabricar un delta nuevo.
       const energyDelivered = stopEnergyResolution.kwh
@@ -2255,7 +2238,7 @@ async function handleOCPP16Message(
           let currentA: number | null = null;
           let temperature: number | null = null;
           
-          for (const mv of orderedMeterValues) {
+          for (const mv of [latestMeterSample]) {
             for (const sv of mv.sampledValue || []) {
               const measurand = sv.measurand || "Energy.Active.Import.Register";
               const value = parseFloat(sv.value);
@@ -2264,7 +2247,7 @@ async function handleOCPP16Message(
               if (isNaN(value)) continue;
               
               // Energy.Active.Import.Register (Wh o kWh)
-              if (measurand.includes("Energy.Active.Import") || measurand === "Energy.Active.Import.Register") {
+              if (measurand === "Energy.Active.Import.Register") {
                 energyWh = unit === "kwh" ? value * 1000 : value; // Normalizar a Wh
               }
               // Power.Active.Import (W o kW)
@@ -2321,18 +2304,12 @@ async function handleOCPP16Message(
           const currentSampleAt = activeSessionBeforeUpdate?.lastMeterSampleAt ?? activeSessionBeforeUpdate?.lastMeterUpdate ?? null;
           const shouldAdvanceCurrentState = shouldAdvanceTelemetrySample(currentSampleAt, sampleTimestamp);
           const rawEnergyKwh = energyWh !== null ? energyWh / 1000 : null;
-          let firstSessionEnergyKwh = activeSessionBeforeUpdate?.billingEnergyBaselineKwh ?? null;
-          if (firstSessionEnergyKwh === null && rawEnergyKwh !== null) {
-            const firstStoredEnergy = await db.getFirstEnergyMeterValue(transaction.id);
-            firstSessionEnergyKwh = firstStoredEnergy?.energyKwh === null || firstStoredEnergy?.energyKwh === undefined
-              ? rawEnergyKwh
-              : Number(firstStoredEnergy.energyKwh);
-          }
-          const billingEnergyResolution = resolveBillableEnergyKwh({
-            meterStartWh: transaction.meterStart,
-            firstSessionEnergyKwh,
-            currentEnergyKwh: rawEnergyKwh,
-          });
+          // Include every timestamp in a replay/batch, not just the last value.
+          const billingSamples = orderedMeterValues.flatMap((mv: any) => (mv.sampledValue || [])
+            .filter((sv: any) => (sv.measurand || "Energy.Active.Import.Register") === "Energy.Active.Import.Register")
+            .map((sv: any) => ({ timestamp: mv.timestamp, context: sv.context || "Sample.Periodic", energyKwh: sv.value == null || String(sv.value).trim() === ""
+              ? null : Number(sv.value) / ((sv.unit || "Wh").toLowerCase() === "kwh" ? 1 : 1000) })));
+          const billingEnergyResolution = await getMeteredBillingResolution(transaction, billingSamples);
           const hasBillableMeterReference = billingEnergyResolution.kwh !== null;
           const kwhConsumed = billingEnergyResolution.kwh;
           const billableKwhConsumed = kwhConsumed ?? 0;
@@ -2466,6 +2443,16 @@ async function handleOCPP16Message(
           
           // Guardar en tabla meter_values de la BD
           try {
+            for (const sample of billingSamples) {
+              const timestamp = new Date(sample.timestamp);
+              if (timestamp.getTime() === sampleTimestamp.getTime() || Number.isNaN(timestamp.getTime())
+                || sample.energyKwh === null || !Number.isFinite(sample.energyKwh)) continue;
+              await db.createMeterValue({
+                transactionId: transaction.id, evseId: transaction.evseId,
+                timestamp, energyKwh: sample.energyKwh.toFixed(4),
+                powerKw: null, context: sample.context, measurand: "Energy.Active.Import.Register",
+              });
+            }
             await db.createMeterValue({
               transactionId: transaction.id,
               evseId: transaction.evseId,
@@ -2478,7 +2465,8 @@ async function handleOCPP16Message(
               current: currentA !== null ? currentA.toFixed(2) : null,
               soc: soc !== null ? Math.round(soc) : null,
               temperature: temperature !== null ? temperature.toFixed(2) : null,
-              context: "Sample.Periodic",
+              context: latestMeterSample?.sampledValue?.find((sv: any) =>
+                (sv.measurand || "Energy.Active.Import.Register") === "Energy.Active.Import.Register")?.context || "Sample.Periodic",
               measurand: "Energy.Active.Import.Register",
             });
           } catch (mvErr) {
@@ -2505,14 +2493,11 @@ async function handleOCPP16Message(
                   currentKwh: billableKwhConsumed,
                   currentCost: currentTotalCost,
                 } : {}),
-                billingEnergyBaselineKwh: billingEnergyResolution.reference === "first_session_sample"
-                  ? firstSessionEnergyKwh
-                  : undefined,
                 billingEnergyReference: billingEnergyResolution.reference,
                 rawEnergyKwh,
                 chartEnergyBaselineKwh,
                 chartEnergyReference,
-                chartEnergyKwh,
+                chartEnergyKwh: billingEnergyResolution.kwh ?? chartEnergyKwh,
                 soc: soc,
                 currentPower: powerKw,
                 currentPowerSource: powerW !== null

@@ -2373,6 +2373,46 @@ export async function createNotification(notification: InsertNotification) {
   return result[0].insertId;
 }
 
+/** Serialize competing OCPP handlers on the physical transaction row. */
+export async function claimChargingStartedNotification(
+  transactionId: number,
+  build: (transaction: Transaction) => InsertNotification,
+): Promise<{ created: boolean; transaction: Transaction | null; notificationId: number | null }> {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  return database.transaction(async (tx) => {
+    const [transaction] = await tx.select().from(transactions)
+      .where(eq(transactions.id, transactionId)).limit(1).for("update");
+    if (!transaction || transaction.status !== "IN_PROGRESS") {
+      return { created: false, transaction: transaction ?? null, notificationId: null };
+    }
+    const [existing] = await tx.select().from(notifications).where(and(
+      eq(notifications.userId, transaction.userId),
+      eq(notifications.referenceId, transactionId),
+      eq(notifications.referenceType, "transaction"),
+      inArray(notifications.type, ["CHARGE_START", "CHARGING_STARTED"]),
+    )).limit(1);
+    if (existing) return { created: false, transaction, notificationId: existing.id };
+    const notification = build(transaction);
+    if (notification.userId !== transaction.userId || notification.referenceId !== transactionId
+      || notification.referenceType !== "transaction" || notification.type !== "CHARGE_START") {
+      throw new Error("Invalid charging-start event scope");
+    }
+    const [created] = await tx.insert(notifications).values(notification);
+    return { created: true, transaction, notificationId: created.insertId };
+  });
+}
+
+/** Provider acceptance only, not a claim of delivery to the phone. */
+export async function markChargingStartedPushAccepted(notificationId: number, accepted: boolean) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  await database.update(notifications).set({
+    pushSent: accepted ? 1 : 0,
+    pushSentAt: accepted ? new Date().toISOString() : null,
+  }).where(eq(notifications.id, notificationId));
+}
+
 export async function getNotificationsByUserId(userId: number, unreadOnly = false) {
   const db = (await getDb())!;
   if (!db) return [];

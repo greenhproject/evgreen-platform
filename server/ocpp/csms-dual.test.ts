@@ -17,6 +17,8 @@ vi.mock("../db", () => ({
   getTransactionByOcppId: vi.fn(),
   updateTransaction: vi.fn(),
   createMeterValue: vi.fn(),
+  getMeterValuesByTransactionId: vi.fn(),
+  getEvseById: vi.fn(),
   getFirstEnergyMeterValue: vi.fn(),
   getLatestEnergyMeterValue: vi.fn(),
   getActiveTariffByStationId: vi.fn(),
@@ -162,11 +164,15 @@ describe("DualCSMS", () => {
         transactionStatus: "IN_PROGRESS",
         endTime: null,
         meterStart: "1000",
+        startTime: new Date("2026-10-21T11:00:00Z"),
       };
       const mockedDb = db as unknown as Record<string, ReturnType<typeof vi.fn>>;
       mockedDb.getEvsesByStationId.mockResolvedValue([{ id: 601, evseIdLocal: 1 }]);
       mockedDb.getTransactionByOcppId.mockResolvedValue(meterTransaction);
-      mockedDb.createMeterValue.mockResolvedValue(undefined);
+      const readings: any[] = [];
+      mockedDb.getEvseById.mockResolvedValue({ id: 601, powerKw: "7" });
+      mockedDb.getMeterValuesByTransactionId.mockImplementation(async () => [...readings]);
+      mockedDb.createMeterValue.mockImplementation(async (sample) => { readings.push(sample); });
       mockedDb.updateTransaction.mockResolvedValue(undefined);
       (dualCSMS as any).ocpp16Transactions.set(1023, "internal-ocpp-id");
       setActiveSession(transactionId, {
@@ -240,9 +246,13 @@ describe("DualCSMS", () => {
         transactionStatus: "IN_PROGRESS",
         endTime: null,
         meterStart: "3643078",
+        startTime: new Date("2026-10-21T03:03:36Z"),
       });
       mockedDb.getFirstEnergyMeterValue.mockResolvedValue({ energyKwh: "3597.9510" });
-      mockedDb.createMeterValue.mockResolvedValue(undefined);
+      const readings: any[] = [{ evseId: 602, energyKwh: "3597.9510", timestamp: new Date("2026-10-21T03:03:36Z") }];
+      mockedDb.getEvseById.mockResolvedValue({ id: 602, powerKw: "7" });
+      mockedDb.getMeterValuesByTransactionId.mockImplementation(async () => [...readings]);
+      mockedDb.createMeterValue.mockImplementation(async (sample) => { readings.push(sample); });
       mockedDb.updateTransaction.mockResolvedValue(undefined);
       (dualCSMS as any).ocpp16Transactions.set(1023, "internal-ocpp-id");
       setActiveSession(transactionId, {
@@ -285,7 +295,7 @@ describe("DualCSMS", () => {
       expect(mockedDb.updateTransaction).toHaveBeenCalledWith(transactionId, expect.objectContaining({
         kwhConsumed: "46.8770",
       }));
-      expect(getActiveSessionById(transactionId)?.currentKwh).toBeCloseTo(46.88, 2);
+      expect(getActiveSessionById(transactionId)?.currentKwh).toBeCloseTo(46.877, 4);
 
       removeActiveSession(transactionId);
       (dualCSMS as any).ocpp16Transactions.delete(1023);

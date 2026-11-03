@@ -92,7 +92,7 @@ export async function sendWebPush(
       },
       payload,
       {
-        TTL: 60 * 60, // 1 hora
+        TTL: notification.data?.type === "charging_started" ? 300 : 60 * 60,
         urgency: "high",
       }
     );

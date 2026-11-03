@@ -21,8 +21,10 @@ import { calculateSocEstimation } from "../charging/soc-estimation";
 import { shouldTreatOcpp16AvailableAsPhysicalDisconnect } from "../../shared/ocpp-status-notification-policy";
 import { resolveReservationPricing } from "../../shared/reservation-pricing-policy";
 import { buildInitialMeterValuesTrigger } from "../../shared/ocpp-initial-meter-values";
-import { estimatePowerFromEnergySamples, resolveBillableEnergyKwh, shouldAdvanceTelemetrySample } from "../../shared/charging-telemetry";
+import { estimatePowerFromEnergySamples, shouldAdvanceTelemetrySample } from "../../shared/charging-telemetry";
+import { getMeteredBillingResolution } from "../charging/metered-billing";
 import { matchesOcppMeterValuesScope } from "../../shared/ocpp-meter-values-correlation";
+import { createOcpp16StartFingerprint } from "../../shared/ocpp-start-idempotency";
 
 // BUILD VERSION para diagnóstico de deploys
 const BUILD_VERSION = "v2026.02.18.B";
@@ -1106,19 +1108,22 @@ export class DualCSMS {
     const connectionFee = reservationPrice.connectionFee;
 
     // Generar ID de transacción OCPP 1.6 (entero)
-    const ocpp16TransactionId = this.transactionIdCounter++;
-    const internalTransactionId = nanoid();
+    let ocpp16TransactionId = this.transactionIdCounter++;
+    let internalTransactionId = nanoid();
 
     // Crear transacción con el userId correcto (incluir chargeMode y targetValue para restaurar sesión)
     const sessionChargeMode = pendingSessionData?.session?.chargeMode || "full_charge";
     const sessionTargetValue = pendingSessionData?.session?.targetValue || 0;
-    const transactionId = await db.createTransaction({
+    const persistedStart = await db.createOcpp16TransactionOnce({
       evseId: evse.id,
       userId,
       stationId: conn.stationId,
       tariffId: tariff?.id,
       ocppTransactionId: internalTransactionId,
       ocppNumericTxId: ocpp16TransactionId, // ID numérico OCPP 1.6 para RemoteStopTransaction
+      ocppStartFingerprint: createOcpp16StartFingerprint({
+        stationId: conn.stationId, evseId: evse.id, meterStart: req.meterStart, timestamp: req.timestamp,
+      }),
       // @ts-ignore
       startTime: new Date(req.timestamp),
       status: "IN_PROGRESS",
@@ -1128,9 +1133,15 @@ export class DualCSMS {
       appliedPricePerKwh: String(pricePerKwh),
       appliedConnectionFee: String(connectionFee),
     });
+    const transactionId = persistedStart.transactionId;
+    ocpp16TransactionId = persistedStart.transaction.ocppNumericTxId ?? ocpp16TransactionId;
+    internalTransactionId = persistedStart.transaction.ocppTransactionId ?? internalTransactionId;
 
     // Mapear ID de transacción OCPP 1.6 a interno
     this.ocpp16Transactions.set(ocpp16TransactionId, internalTransactionId);
+    if (!persistedStart.created) {
+      return { idTagInfo: { status: "Accepted" }, transactionId: ocpp16TransactionId };
+    }
 
     // Sólo el inicio confirmado por el cargador cumple la reserva. Así el
     // inversionista y el usuario pueden auditar la relación reserva ↔ recarga.
@@ -1232,16 +1243,13 @@ export class DualCSMS {
       const station = await db.getChargingStationById(conn.stationId);
       const stationName = station?.name || conn.ocppIdentity;
       // Usar precio dinámico efectivo para la notificación
-      const formattedPrice = Math.round(pricePerKwh).toLocaleString("es-CO");
-      await db.createNotification({
-        userId,
-        title: "Carga iniciada",
-        message: `Tu sesión de carga ha comenzado en ${stationName} (conector #${req.connectorId}). Tarifa: $${formattedPrice} COP/kWh. Puedes monitorear el progreso en tiempo real.`,
-        type: "CHARGING_STARTED",
-        referenceId: transactionId,
-        referenceType: "transaction",
+      const formattedPrice = Math.round(Number(persistedStart.transaction.appliedPricePerKwh)).toLocaleString("es-CO");
+      const { notifyChargingStartedOnce } = await import("../notifications/charging-started");
+      const { getStationTimezone } = await import("../utils/timezone");
+      await notifyChargingStartedOnce({
+        transactionId, stationName, connectorId: req.connectorId,
+        timeZone: getStationTimezone(station ?? {}),
       });
-      console.log(`[CSMS-DUAL] StartTransaction: Notification sent to user ${userId} for charging started at $${formattedPrice}/kWh`);
       // WhatsApp: notificar inicio de carga (plantilla aprobada)
       console.log(`[WhatsApp] charge_start: checking userId=${userId}`);
       if (userId) {
@@ -1390,13 +1398,10 @@ export class DualCSMS {
     }
 
     const activeSession = getActiveSessionById(transaction.id);
-    const firstEnergyMeterValue = await db.getFirstEnergyMeterValue(transaction.id);
-    const stopEnergyResolution = resolveBillableEnergyKwh({
-      meterStartWh: transaction.meterStart,
-      firstSessionEnergyKwh: activeSession?.billingEnergyBaselineKwh
-        ?? firstEnergyMeterValue?.energyKwh,
-      currentEnergyKwh: Number(req.meterStop) / 1000,
-    });
+    const stopEnergyResolution = await getMeteredBillingResolution(transaction, [{
+      timestamp: req.timestamp || new Date(),
+      energyKwh: req.meterStop == null ? null : Number(req.meterStop) / 1000,
+    }]);
     // Una lectura final regresiva (reset) no puede inventar ni borrar energía:
     // se conserva sólo el último consumo OCPP previamente verificado.
     let energyDelivered = stopEnergyResolution.kwh
@@ -2001,9 +2006,10 @@ export class DualCSMS {
               let soc: number | null = null;
               let temperature: string | null = null;
               
-              if (measurand.includes("Energy")) {
+              if (!Number.isFinite(rawValue)) continue;
+              if (measurand === "Energy.Active.Import.Register") {
                 // Convertir Wh a kWh si es necesario
-                const kwhValue = unit === "wh" ? rawValue / 1000 : rawValue;
+                const kwhValue = unit === "kwh" ? rawValue : rawValue / 1000;
                 energyKwh = String(kwhValue);
                 latestEnergyKwh = kwhValue;
               } else if (measurand.includes("Power")) {
@@ -2043,22 +2049,22 @@ export class DualCSMS {
             }
           }
           
-          const firstEnergyMeterValue = latestEnergyKwh === null
-            ? undefined
-            : await db.getFirstEnergyMeterValue(transaction.id);
-          const billingEnergyResolution = resolveBillableEnergyKwh({
-            meterStartWh: transaction.meterStart,
-            firstSessionEnergyKwh: firstEnergyMeterValue?.energyKwh,
-            currentEnergyKwh: latestEnergyKwh,
-          });
+          const billingEnergyResolution = await getMeteredBillingResolution(transaction);
 
           // Actualizar sesión activa en memoria con los datos más recientes
           const activeSession = getActiveSessionById(transaction.id);
           if (activeSession) {
             const consumedKwh = billingEnergyResolution.kwh ?? activeSession.currentKwh;
             const hasBillableMeterReference = billingEnergyResolution.kwh !== null;
+            const frozenPricePerKwh = transaction.appliedPricePerKwh == null
+              ? activeSession.pricePerKwh : Number(transaction.appliedPricePerKwh);
+            const tariff = transaction.tariffId ? await db.getTariffById(transaction.tariffId) : null;
+            const frozenConnectionFee = transaction.appliedConnectionFee == null
+              ? Number(tariff?.pricePerSession || 0) : Number(transaction.appliedConnectionFee);
+            const timeCost = Math.max(0, (Date.now() - new Date(transaction.startTime).getTime()) / 60000)
+              * Number(tariff?.pricePerMinute || 0);
             const currentCost = hasBillableMeterReference
-              ? consumedKwh * activeSession.pricePerKwh
+              ? consumedKwh * frozenPricePerKwh + frozenConnectionFee + timeCost
               : activeSession.currentCost;
             const previousSampleAt = activeSession.lastMeterSampleAt ?? activeSession.lastMeterUpdate;
             const canAdvance = latestSampleAt
@@ -2092,17 +2098,14 @@ export class DualCSMS {
 
             updateActiveSessionMeterData(transaction.id, {
               ...(hasBillableMeterReference ? {
-                currentKwh: Math.round(consumedKwh * 100) / 100,
+                currentKwh: consumedKwh,
                 currentCost: Math.round(currentCost),
               } : {}),
-              billingEnergyBaselineKwh: billingEnergyResolution.reference === "first_session_sample"
-                ? Number(firstEnergyMeterValue?.energyKwh)
-                : undefined,
               billingEnergyReference: billingEnergyResolution.reference,
               rawEnergyKwh: latestEnergyKwh,
               chartEnergyBaselineKwh,
               chartEnergyReference,
-              chartEnergyKwh,
+              chartEnergyKwh: billingEnergyResolution.kwh ?? chartEnergyKwh,
               soc: latestSoc === null ? undefined : latestSoc,
               currentPower: effectivePowerKw,
               currentPowerSource: latestPowerKw !== null
@@ -2118,6 +2121,9 @@ export class DualCSMS {
             if (hasBillableMeterReference) {
               await db.updateTransaction(transaction.id, {
                 kwhConsumed: consumedKwh.toFixed(4),
+                energyCost: (consumedKwh * frozenPricePerKwh).toFixed(2),
+                sessionCost: frozenConnectionFee.toFixed(2),
+                timeCost: timeCost.toFixed(2),
                 totalCost: String(Math.round(currentCost)),
               });
             }

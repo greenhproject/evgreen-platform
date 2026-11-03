@@ -154,13 +154,19 @@ export async function sendPushNotificationDetailed(
       },
       android: {
         priority: "high",
+        ...(notification.type === "charging_started" ? { ttl: 300_000 } : {}),
         notification: {
           color: style.color,
           channelId: "evgreen_notifications",
           sound: "default",
+          ...(notification.data?.notificationTag ? { tag: notification.data.notificationTag } : {}),
         },
       },
       apns: {
+        ...(notification.type === "charging_started" ? { headers: {
+          "apns-expiration": String(Math.floor(Date.now() / 1000) + 300),
+          ...(notification.data?.notificationTag ? { "apns-collapse-id": notification.data.notificationTag } : {}),
+        } } : {}),
         payload: {
           aps: {
             sound: "default",
@@ -171,7 +177,7 @@ export async function sendPushNotificationDetailed(
       webpush: {
         headers: {
           Urgency: "high",
-          TTL: "86400",
+          TTL: notification.type === "charging_started" ? "300" : "86400",
         },
         notification: {
           title: `${style.icon} ${notification.title}`,
@@ -179,8 +185,8 @@ export async function sendPushNotificationDetailed(
           icon: "/icons/icon-192x192.png",
           badge: "/icons/badge-72x72.png",
           vibrate: [200, 100, 200] as any,
-          tag: notification.type,
-          renotify: true,
+          tag: notification.data?.notificationTag || notification.type,
+          renotify: notification.type !== "charging_started",
           requireInteraction: notification.type === "low_balance" || notification.type === "charging_error" || notification.type === "overstay_alert",
           data: {
             type: notification.type,
