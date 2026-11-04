@@ -12,6 +12,7 @@
 import { useParams, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { getChargingSummaryIssue, parseChargingTransactionId } from "@shared/charging-summary-state";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -203,18 +204,18 @@ interface ReceiptLineItem {
 export default function ChargingSummary() {
   const { transactionId } = useParams<{ transactionId: string }>();
   const [, setLocation] = useLocation();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const receiptRef = useRef<HTMLDivElement>(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   
-  const parsedTxId = parseInt(transactionId || "0");
+  const parsedTxId = parseChargingTransactionId(transactionId);
   
   // Obtener detalles de la transacción con retry automático
-  const { data: transaction, isLoading, error } = trpc.transactions.getById.useQuery(
-    { id: parsedTxId },
+  const { data: transaction, isPending, isFetching, error, refetch } = trpc.transactions.getById.useQuery(
+    { id: parsedTxId ?? 0 },
     { 
-      enabled: !!transactionId && parsedTxId > 0 && !!user,
-      retry: 5,
+      enabled: parsedTxId !== null && !!user,
+      retry: (failureCount, queryError) => getChargingSummaryIssue(queryError.data?.code).retryable && failureCount < 3,
       retryDelay: (attemptIndex) => Math.min(1000 * (attemptIndex + 1), 5000),
       refetchInterval: (query) => {
         const data = query.state.data as { status?: string } | undefined;
@@ -223,6 +224,10 @@ export default function ChargingSummary() {
       },
     }
   );
+  const summaryIssue = getChargingSummaryIssue(parsedTxId === null ? "BAD_REQUEST" : error?.data?.code, !!user);
+  // Un error de actualización no debe ocultar un recibo válido en caché.
+  // Sí se bloquea si la cuenta perdió autorización.
+  const canUseCachedReceipt = !!transaction && summaryIssue.retryable;
   
   // Estado para controlar la animación de confetti
   const [showConfetti, setShowConfetti] = useState(false);
@@ -652,7 +657,7 @@ export default function ChargingSummary() {
     }
   };
   
-  if (isLoading) {
+  if (authLoading || (!!user && parsedTxId !== null && isPending)) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
@@ -664,7 +669,7 @@ export default function ChargingSummary() {
   }
   
   // Si la transacción está en progreso, mostrar pantalla de espera
-  if (transaction?.status === "IN_PROGRESS") {
+  if (transaction?.status === "IN_PROGRESS" && user && parsedTxId !== null && (!error || canUseCachedReceipt)) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <div className="text-center">
@@ -673,22 +678,32 @@ export default function ChargingSummary() {
           <p className="text-muted-foreground mb-4">
             Esperando confirmación del cargador. Esto puede tomar unos segundos.
           </p>
+          <Button variant="outline" disabled={isFetching} onClick={() => void refetch()}>
+            Actualizar estado
+          </Button>
+          <Button variant="ghost" onClick={() => setLocation("/charging-history")}>Ver historial de cargas</Button>
         </div>
       </div>
     );
   }
   
-  if (error || !transaction) {
+  if (!user || parsedTxId === null || !transaction || (error && !canUseCachedReceipt)) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <Card className="max-w-md w-full">
           <CardContent className="pt-6 text-center">
             <AlertCircle className="w-12 h-12 text-destructive mx-auto mb-4" />
-            <h2 className="text-xl font-semibold mb-2">Transacción no encontrada</h2>
+            <h2 className="text-xl font-semibold mb-2">{summaryIssue.title}</h2>
             <p className="text-muted-foreground mb-4">
-              No pudimos encontrar los detalles de esta transacción.
+              {summaryIssue.message}
             </p>
             <div className="flex flex-col gap-2">
+              {summaryIssue.retryable && parsedTxId !== null && user && (
+                <Button disabled={isFetching} onClick={() => void refetch()}>
+                  {isFetching && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  Reintentar consulta
+                </Button>
+              )}
               <Button onClick={() => setLocation("/map")}>
                 <Home className="w-4 h-4 mr-2" />
                 Ir al mapa
@@ -711,6 +726,12 @@ export default function ChargingSummary() {
   
   return (
     <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-background dark:from-emerald-950/20 dark:to-background pb-24">
+      {error && canUseCachedReceipt && (
+        <div role="status" className="p-3 bg-amber-500/10 text-foreground text-sm text-center">
+          No se pudo actualizar. Mostramos el último resumen recibido.
+          <Button variant="ghost" size="sm" disabled={isFetching} onClick={() => void refetch()}>Reintentar</Button>
+        </div>
+      )}
       {/* Header de éxito */}
       <div className="bg-emerald-600 text-white p-6 pb-12 rounded-b-3xl shadow-lg text-center">
         <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">

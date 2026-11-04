@@ -1692,7 +1692,7 @@ const tariffsRouter = router({
 const transactionsRouter = router({
   // Obtener transacción por ID (solo si pertenece al usuario o es admin)
   getById: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
       const transaction = await db.getTransactionById(input.id);
       
@@ -1716,10 +1716,14 @@ const transactionsRouter = router({
       const evse = await db.getEvseById(transaction.evseId);
       const tariff = transaction.tariffId ? await db.getTariffById(transaction.tariffId) : null;
       
-      // Calcular duración
-      const startTime = new Date(transaction.startTime);
-      const endTime = transaction.endTime ? new Date(transaction.endTime) : new Date();
-      const durationMinutes = Math.floor((endTime.getTime() - startTime.getTime()) / 60000);
+      // Drizzle TIMESTAMP mode:string no devuelve Date. Serializar ambos
+      // extremos en UTC antes de calcular duración o entregar el recibo.
+      const startTimeIso = toIsoDateOrEmpty(transaction.startTime);
+      const endTimeIso = toIsoDateOrEmpty(transaction.endTime);
+      const startMs = Date.parse(startTimeIso);
+      const endMs = transaction.endTime == null ? Date.now() : Date.parse(endTimeIso);
+      const durationMinutes = Number.isFinite(startMs) && Number.isFinite(endMs)
+        ? Math.max(0, Math.floor((endMs - startMs) / 60000)) : 0;
       
       // Obtener precios efectivos de la estación para referencia
       const effectivePrice = await db.getEffectiveStationPrice(transaction.stationId);
@@ -1733,9 +1737,8 @@ const transactionsRouter = router({
         connectorId: evse?.connectorId || 1,
         connectorType: evse?.connectorType || "TYPE_2",
         chargeType: evse?.chargeType || "AC",
-        startTime: transaction.startTime,
-        // @ts-expect-error -- Drizzle type mismatch: schema field type vs inferred type
-        endTime: transaction.endTime?.toISOString() || null,
+        startTime: startTimeIso,
+        endTime: endTimeIso || null,
         durationMinutes,
         kwhConsumed: transaction.kwhConsumed ? parseFloat(transaction.kwhConsumed).toFixed(2) : "0.00",
         // Tarifa aplicada (la que se usó al momento de la carga)
