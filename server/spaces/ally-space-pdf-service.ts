@@ -21,6 +21,15 @@ const COVER_BG_URL = "https://evgreen.manus.space/manus-storage/1000605862_8fd22
 const COMMERCIAL_ECOSYSTEM_URL = "https://evgreen.manus.space/manus-storage/1000605863_a84485cf.png";
 const SOLAR_COMMERCIAL_HERO_URL = "https://d2xsxph8kpxj0f.cloudfront.net/310519663169336317/UcUrociZeo4QVAHHN9vAuZ/system-assets/evgreen/solar-alliance-hero-6efc1a.png";
 
+/** Visuales conceptuales versionados y alojados fuera del repositorio. */
+export const ALLY_PLATFORM_BENEFIT_IMAGE_URLS = {
+  dashboard: "https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/WmvmKKKrcBIZvIXj.jpg",
+  "dynamic-pricing": "https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/wrBTrZPGWnlfhShK.jpg",
+  "carbon-impact": "https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/UeQMWvvxkwbNpBJo.jpg",
+  loyalty: "https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/tVMMJFdxJoTeARaM.jpg",
+  branding: "https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/uJfQAIyjYnhRUhPO.jpg",
+} as const satisfies Record<AllyPlatformBenefit["id"], string>;
+
 export interface AllySpacePdfData {
   code: string;
   spaceName: string;
@@ -376,7 +385,7 @@ export function buildAllySpacePdfContent(data: AllySpacePdfData): AllyPdfContent
   };
 }
 
-async function downloadImageAsBase64(url: string): Promise<{ data: string; format: string; width: number; height: number; aspect: number } | null> {
+async function downloadImageAsBase64(url: string, quality = 72): Promise<{ data: string; format: string; width: number; height: number; aspect: number } | null> {
   try {
     const response = await axios.get(url, {
       responseType: "arraybuffer",
@@ -394,7 +403,7 @@ async function downloadImageAsBase64(url: string): Promise<{ data: string; forma
       const compressed = await sharp(buffer).resize({ width: 900, height: 700, fit: "inside", withoutEnlargement: true }).png({ compressionLevel: 9 }).toBuffer();
       return { data: `data:image/png;base64,${compressed.toString("base64")}`, format: "PNG", width, height, aspect: width / height };
     }
-    const compressed = await sharp(buffer).resize({ width: 1200, height: 900, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 72, mozjpeg: true }).toBuffer();
+    const compressed = await sharp(buffer).resize({ width: 1200, height: 900, fit: "inside", withoutEnlargement: true }).jpeg({ quality, mozjpeg: true }).toBuffer();
     return { data: `data:image/jpeg;base64,${compressed.toString("base64")}`, format: "JPEG", width, height, aspect: width / height };
   } catch {
     return null;
@@ -990,7 +999,7 @@ function addPlatformBenefitsPage(
   data: AllySpacePdfData,
   content: AllyPdfContent,
   logo: { data: string; format: string } | null,
-  cover: { data: string; format: string; aspect: number } | null,
+  benefitImages: Partial<Record<AllyPlatformBenefit["id"], Awaited<ReturnType<typeof downloadImageAsBase64>>>>,
   width: number,
   height: number,
   margin: number,
@@ -998,65 +1007,79 @@ function addPlatformBenefitsPage(
   addHeader(doc, data, logo, width, margin);
   const contentWidth = width - margin * 2;
   let y = drawSectionTitle(doc, "EL VALOR DEL ECOSISTEMA EVGREEN", margin, 24, contentWidth);
-  const heroHeight = 39;
-  const imageWidth = 59;
+  const heroHeight = 23;
   setColor(doc, COLORS.navy, "fill");
   doc.roundedRect(margin, y, contentWidth, heroHeight, 3, 3, "F");
-  if (cover) drawFitImage(doc, cover, width - margin - imageWidth - 5, y + 5, imageWidth, heroHeight - 10, COLORS.navy);
   setColor(doc, COLORS.greenMid);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(7.1);
-  doc.text("SOFTWARE PROPIO + OPERACIÓN + MARCA", margin + 7, y + 9);
+  doc.setFontSize(6.7);
+  doc.text("SOFTWARE PROPIO + OPERACIÓN + MARCA", margin + 7, y + 6.5);
   setColor(doc, COLORS.white);
-  doc.setFontSize(17);
-  doc.text(["Más que cargadores.", "Tecnología que crea valor."], margin + 7, y + 19, { lineHeightFactor: 1.12 });
-  y += heroHeight + 7;
+  doc.setFontSize(15.2);
+  doc.text("Más que cargadores. Tecnología que crea valor.", margin + 7, y + 16.3);
+  y += heroHeight + 5;
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.8);
+  doc.setFontSize(8.5);
   setColor(doc, COLORS.gray700);
   const intro = doc.splitTextToSize("Una plataforma que conecta la operación del punto con la transparencia para el aliado, la experiencia del usuario y el posicionamiento del espacio.", contentWidth);
   doc.text(intro, margin, y);
-  y += intro.length * 4.3 + 6;
+  y += intro.length * 3.8 + 4;
 
   for (const [index, benefit] of content.platformBenefits.entries()) {
-    const textX = margin + 20;
-    const textWidth = contentWidth - 26;
+    const imageWidth = 48;
+    const imageHeight = 32;
+    const textX = margin + imageWidth + 8;
+    const textWidth = contentWidth - imageWidth - 15;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9.4);
     const titleLines: string[] = doc.splitTextToSize(benefit.title, textWidth);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8.6);
     const bodyLines: string[] = doc.splitTextToSize(benefit.description, textWidth);
-    const cardHeight = 12 + titleLines.length * 4 + bodyLines.length * 3.8;
+    const cardHeight = Math.max(imageHeight, 8 + titleLines.length * 4 + bodyLines.length * 3.7);
     // Medición previa: nunca dibujar texto en la zona reservada al pie.
-    if (y + cardHeight > height - 32) {
+    if (y + cardHeight > height - 27) {
       doc.addPage();
       addHeader(doc, data, logo, width, margin);
       y = drawSectionTitle(doc, "ECOSISTEMA EVGREEN · CONTINUACIÓN", margin, 24, contentWidth);
     }
-    setColor(doc, index % 2 === 0 ? COLORS.greenLight : COLORS.gray100, "fill");
-    doc.roundedRect(margin, y, contentWidth, cardHeight, 2.5, 2.5, "F");
-    setColor(doc, COLORS.greenDark, "fill");
-    doc.circle(margin + 10, y + 11, 5, "F");
-    setColor(doc, COLORS.white);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(8.6);
-    doc.text(String(index + 1).padStart(2, "0"), margin + 10, y + 12.1, { align: "center" });
+    setColor(doc, index % 2 === 0 ? [247, 250, 249] : COLORS.white, "fill");
+    doc.roundedRect(margin, y, contentWidth, cardHeight, 2, 2, "F");
+    const image = benefitImages[benefit.id];
+    const imageY = y + (cardHeight - imageHeight) / 2;
+    if (image) {
+      // Proporción 3:2: conserva toda la composición y no recorta los visuales.
+      const drawWidth = Math.min(imageWidth, imageHeight * image.aspect);
+      const drawHeight = drawWidth / image.aspect;
+      doc.addImage(image.data, image.format, margin + (imageWidth - drawWidth) / 2, imageY + (imageHeight - drawHeight) / 2, drawWidth, drawHeight, undefined, "FAST");
+    } else {
+      // Fallback editorial deliberado: la ficha sigue siendo legible si falla el CDN.
+      setColor(doc, COLORS.navyCard, "fill");
+      doc.roundedRect(margin, imageY, imageWidth, imageHeight, 2, 2, "F");
+      setColor(doc, COLORS.greenMid);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(18);
+      doc.text(String(index + 1).padStart(2, "0"), margin + imageWidth / 2, imageY + 18, { align: "center" });
+    }
+    setColor(doc, COLORS.greenDark, "draw");
+    doc.setLineWidth(0.6);
+    doc.line(textX, y + 3.5, textX + 8, y + 3.5);
     setColor(doc, COLORS.gray900);
+    doc.setFont("helvetica", "bold");
     doc.setFontSize(9.4);
-    doc.text(titleLines, textX, y + 8, { lineHeightFactor: 1.2 });
+    doc.text(titleLines, textX, y + 9, { lineHeightFactor: 1.2 });
     setColor(doc, COLORS.gray700);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8.6);
-    doc.text(bodyLines, textX, y + 9 + titleLines.length * 4, { lineHeightFactor: 1.2 });
+    doc.text(bodyLines, textX, y + 10 + titleLines.length * 4, { lineHeightFactor: 1.2 });
     y += cardHeight + 3;
   }
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(6.8);
   setColor(doc, COLORS.gray500);
-  const notes: string[] = doc.splitTextToSize("El monitoreo depende de la conectividad y la telemetría disponible. El CO2 evitado es una estimación, no créditos de carbono certificados. Los beneficios y el branding se habilitan según el alcance acordado.", contentWidth);
+  const notes: string[] = doc.splitTextToSize("Imágenes e interfaces conceptuales; no son capturas de la plataforma ni un diseño definitivo. El monitoreo depende de conectividad y telemetría. El CO2 evitado es estimado, no créditos certificados. Beneficios y branding sujetos al alcance acordado.", contentWidth);
   if (y + notes.length * 3.1 > height - 18) {
     doc.addPage();
     addHeader(doc, data, logo, width, margin);
@@ -1432,13 +1455,20 @@ export async function generateAllySpacePdf(data: AllySpacePdfData): Promise<Buff
   const coverIndex = data.photos.findIndex((photo) => Boolean(photo.isCover));
   const fallbackIndex = coverIndex >= 0 ? coverIndex : (data.photos.length > 0 ? 0 : -1);
   const coverPhoto = fallbackIndex >= 0 ? data.photos[fallbackIndex] : null;
-  const [logo, defaultCover, ecosystemImage, solarCommercialHero, ...photoImages] = await Promise.all([
-    downloadImageAsBase64(LOGO_URL),
-    downloadImageAsBase64(COVER_BG_URL),
-    downloadImageAsBase64(COMMERCIAL_ECOSYSTEM_URL),
-    downloadImageAsBase64(SOLAR_COMMERCIAL_HERO_URL),
-    ...data.photos.map((photo) => downloadImageAsBase64(photo.url)),
+  const [[logo, defaultCover, ecosystemImage, solarCommercialHero, ...photoImages], benefitImageEntries] = await Promise.all([
+    Promise.all([
+      downloadImageAsBase64(LOGO_URL),
+      downloadImageAsBase64(COVER_BG_URL),
+      downloadImageAsBase64(COMMERCIAL_ECOSYSTEM_URL),
+      downloadImageAsBase64(SOLAR_COMMERCIAL_HERO_URL),
+      ...data.photos.map((photo) => downloadImageAsBase64(photo.url)),
+    ]),
+    Promise.all(content.platformBenefits.map(async (benefit) => [
+      benefit.id,
+      await downloadImageAsBase64(ALLY_PLATFORM_BENEFIT_IMAGE_URLS[benefit.id], 90),
+    ] as const)),
   ]);
+  const benefitImages = Object.fromEntries(benefitImageEntries);
   const staticMapUrl = buildStaticMapUrl(data);
   const mapImage = staticMapUrl ? await downloadImageAsBase64(staticMapUrl) : null;
   const coverImage = fallbackIndex >= 0 ? photoImages[fallbackIndex] || defaultCover : defaultCover;
@@ -1451,7 +1481,7 @@ export async function generateAllySpacePdf(data: AllySpacePdfData): Promise<Buff
 
   addCover(doc, data, content, logo, coverImage, coverPhoto, width, height, margin);
   doc.addPage();
-  addPlatformBenefitsPage(doc, data, content, logo, coverImage, width, height, margin);
+  addPlatformBenefitsPage(doc, data, content, logo, benefitImages, width, height, margin);
   doc.addPage();
   addProfilePage(doc, data, content, logo, width, height, margin, !needsDedicatedOperatingPage);
   if (needsDedicatedOperatingPage) {

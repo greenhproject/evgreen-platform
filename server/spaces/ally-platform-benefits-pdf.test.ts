@@ -1,6 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
-import { PDFDocument } from "pdf-lib";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import axios from "axios";
+import sharp from "sharp";
+import { PDFDict, PDFDocument, PDFName } from "pdf-lib";
 import {
+  ALLY_PLATFORM_BENEFIT_IMAGE_URLS,
   buildAllyPlatformBenefits,
   buildAllySpacePdfContent,
   generateAllySpacePdf,
@@ -9,6 +12,32 @@ import {
 
 // QA completamente local: no descarga de medios, mapa, anexos ni acceso a BD.
 vi.mock("axios", () => ({ default: { get: vi.fn().mockRejectedValue(new Error("offline test")) } }));
+
+beforeEach(() => {
+  vi.mocked(axios.get).mockReset().mockRejectedValue(new Error("offline test"));
+});
+
+function renderedText(bytes: Buffer): string {
+  // jsPDF serializa cada línea como un Tj distinto: un salto no es pérdida de texto.
+  return [...bytes.toString("latin1").matchAll(/\(((?:\\.|[^\\()])*)\) Tj/g)]
+    .map(match => match[1]).join(" ");
+}
+
+async function mockBenefitImages(failedBenefit?: string) {
+  const buffers = new Map<string, Buffer>();
+  for (const [index, [id, url]] of Object.entries(ALLY_PLATFORM_BENEFIT_IMAGE_URLS).entries()) {
+    if (id === failedBenefit) continue;
+    buffers.set(url, await sharp({ create: {
+      width: 120, height: 80, channels: 3,
+      background: { r: 10 + index * 30, g: 100 + index * 20, b: 45 + index * 15 },
+    } }).jpeg().toBuffer());
+  }
+  vi.mocked(axios.get).mockImplementation(async (url) => {
+    const buffer = buffers.get(String(url));
+    if (!buffer) throw new Error("local fixture unavailable");
+    return { data: buffer, headers: { "content-type": "image/jpeg" } };
+  });
+}
 
 const data: AllySpacePdfData = {
   code: "SPE-LOCAL-0018",
@@ -100,9 +129,45 @@ describe("Ficha del aliado: beneficios del ecosistema", () => {
     // jsPDF usa streams sin compresión: estos rótulos ASCII deben estar en la salida real.
     const serialized = bytes.toString("latin1");
     expect(serialized).toContain("EL VALOR DEL ECOSISTEMA EVGREEN");
-    expect(serialized).toContain("CO2 evitado estimado");
+    expect(renderedText(bytes)).toContain("CO2 evitado estimado");
     expect(serialized).toContain("ECOSISTEMA EVGREEN");
     expect(serialized).not.toContain("CONTINUACI");
     expect(serialized).toContain("Ficha del Aliado EVGreen");
+  });
+
+  it("dispone de una URL HTTPS externa diferente para cada beneficio", () => {
+    const urls = Object.values(ALLY_PLATFORM_BENEFIT_IMAGE_URLS);
+    expect(urls).toHaveLength(5);
+    expect(new Set(urls).size).toBe(5);
+    for (const url of urls) expect(url).toMatch(/^https:\/\/files\.manuscdn\.com\/.+\.jpg$/);
+  });
+
+  it("inserta los cinco visuales en una sola hoja y los identifica como conceptuales", async () => {
+    await mockBenefitImages();
+    const bytes = await generateAllySpacePdf(data);
+    const pdf = await PDFDocument.load(bytes);
+    expect(pdf.getPageCount()).toBe(10);
+    const resources = pdf.getPages()[1].node.Resources()!;
+    expect(resources.lookup(PDFName.of("XObject"), PDFDict).keys()).toHaveLength(5);
+    const serialized = bytes.toString("latin1");
+    expect(serialized.match(/\/I\d+ Do/g)).toHaveLength(5);
+    expect(serialized).toContain("no son capturas");
+    expect(serialized).not.toContain("CONTINUACI");
+    for (const url of Object.values(ALLY_PLATFORM_BENEFIT_IMAGE_URLS)) {
+      expect(axios.get).toHaveBeenCalledWith(url, expect.objectContaining({ responseType: "arraybuffer", timeout: 10000 }));
+    }
+  });
+
+  it("conserva la hoja, el texto y los otros cuatro visuales si falla un recurso", async () => {
+    await mockBenefitImages("loyalty");
+    const bytes = await generateAllySpacePdf(data);
+    const pdf = await PDFDocument.load(bytes);
+    expect(pdf.getPageCount()).toBe(10);
+    const resources = pdf.getPages()[1].node.Resources()!;
+    expect(resources.lookup(PDFName.of("XObject"), PDFDict).keys()).toHaveLength(4);
+    const serialized = bytes.toString("latin1");
+    expect(serialized.match(/\/I\d+ Do/g)).toHaveLength(4);
+    expect(renderedText(bytes)).toContain("saldo para futuras recargas");
+    expect(serialized).not.toContain("CONTINUACI");
   });
 });

@@ -234,4 +234,12 @@
 - [x] Mantener las estimaciones ambientales separadas de créditos certificados y del solar atribuible; no cambiar proyecciones, repartos ni programa solar.
 - [x] Validar 15 regresiones focales, TypeScript y build; QA sin DATABASE_URL: 271 suites / 2.570 pruebas aprobadas y 5 suites / 7 pruebas omitidas por su guardia. Se excluyeron explícitamente 7 suites de integración que fallan por no disponer de BD aislada (creación crowdfunding, lista OCPP, partners, badges/push y limpieza de transacciones); no se reactivó producción ni se crearon fixtures.
 - [x] Generar y revisar la ficha de Edificio Sequoya con la página nueva: 11 páginas, comparación de texto de las 10 originales íntegra salvo footer, 6 cifras económicas originales conservadas, márgenes seguros y ninguna hoja vacía; verificador PASS sin warnings y revisión visual final.
-- [ ] Guardar checkpoint, publicar sin force-push y verificar despliegue.
+- [x] Guardar checkpoint `064d957e`, rebasar únicamente el cambio validado sobre `ce7b8a3ba` con comparación de árbol idéntica y publicar sin force-push como `10685a791`. Railway: staging #7946591321 y producción #7946591344 `success`; `/api/health` de la aplicación HTTP 200. No se generaron fichas productivas para QA ni se escribieron datos comerciales.
+
+## Ficha del Aliado — imágenes prémium del ecosistema (2026-11-20)
+
+- [x] Diseñar una hoja editorial con cinco imágenes conceptuales, una por beneficio, manteniendo contenido y límites comerciales aprobados.
+- [x] Generar cinco imágenes originales de 2496×1664, comprobarlas y publicarlas en almacenamiento externo al repositorio; las cinco URLs HTTPS devuelven HTTP 200 e imágenes válidas.
+- [x] Integrar los recursos en paralelo con calidad JPEG 90, proporción íntegra 3:2 y fallback por beneficio. La ficha prémium conserva 11 páginas; las 10 páginas originales coinciden en texto salvo footer y permanecen las seis cifras económicas, fotos y mapa. Las interfaces están identificadas como conceptuales.
+- [x] Validar 18 regresiones focales, TypeScript y build. QA sin BD: 271 suites / 2.573 pruebas aprobadas, 5 suites / 7 pruebas omitidas por guardia, con las mismas 7 suites de integración excluidas explícitamente por ausencia de BD aislada. PDF final 11 páginas / 2,56 MB, cinco imágenes más logo en la hoja, verificador PASS, márgenes y revisión visual correctos, ninguna página vacía. No se crearon fixtures o registros comerciales.
+- [ ] Guardar checkpoint, publicar sin force-push y comprobar Railway.
