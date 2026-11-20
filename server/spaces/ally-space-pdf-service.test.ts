@@ -69,7 +69,7 @@ describe("buildAllySpacePdfContent", () => {
     expect(content.solarProgram?.initialMonthlySavingsCop).toBe(6_000_000);
     expect(content.solarProgram?.initialAnnualSavingsCop).toBe(72_000_000);
     expect(content.combinedBenefit?.combinedAnnualCop).toBeGreaterThan(72_000_000);
-    expect(buildAllyProjectionDisclosure(content.incomeProjection!.assumptions).toLowerCase()).not.toContain("margen bruto");
+    expect(buildAllyProjectionDisclosure(content.incomeProjection!.assumptions).toLowerCase()).toContain("10 % al margen bruto de energía");
     expect(buildAllyProjectionDisclosure(content.incomeProjection!.assumptions).toLowerCase()).not.toContain("ingreso bruto");
     expect(content.allyResponsibilities.length).toBeGreaterThanOrEqual(4);
     expect(content.evgreenResponsibilities.length).toBeGreaterThanOrEqual(4);
@@ -102,6 +102,7 @@ describe("buildAllySpacePdfContent", () => {
     });
     const allText = JSON.stringify(content).toLowerCase();
     const forbiddenTerms = [
+      "capex",
       "roi",
       "payback",
       "waterfall",
@@ -110,8 +111,8 @@ describe("buildAllySpacePdfContent", () => {
       "meta de inversión",
       "capital total",
       "participación del inversionista",
+      "participación de evgreen",
       "ingreso bruto",
-      "margen bruto",
     ];
 
     for (const term of forbiddenTerms) {
@@ -119,12 +120,17 @@ describe("buildAllySpacePdfContent", () => {
     }
   });
 
-  it("mantiene la presentación del aliado aislada de los valores upstream", () => {
+  it("explica la base del canon sin revelar distribuciones de terceros", () => {
     const content = buildAllySpacePdfContent(sampleData);
     const disclosure = buildAllyProjectionDisclosure(content.incomeProjection!.assumptions).toLowerCase();
-    expect(disclosure).not.toContain("precio de venta");
-    expect(disclosure).not.toContain("costo energético");
-    expect(disclosure).not.toContain("del margen");
+    const remuneration = content.remuneration!;
+    expect(remuneration.title).toBe("Retribución del aliado / canon del espacio");
+    expect(remuneration.salePrice).toBe("$1.800 COP/kWh");
+    expect(remuneration.effectiveEnergyCost).toBe("$850 COP/kWh");
+    expect(remuneration.remunerationPerKwh).toBe("$95 COP/kWh");
+    expect(remuneration.formulas.join(" ")).toContain("precio de venta - costo energético efectivo");
+    expect(remuneration.formulas.join(" ")).not.toContain("inversionista");
+    expect(remuneration.formulas.join(" ")).not.toContain("participación de EVGreen");
     expect(disclosure).toContain("estimación mensual del aliado");
   });
 

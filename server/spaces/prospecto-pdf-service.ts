@@ -850,6 +850,8 @@ function addProyeccionFinanciera(
         salePricePerKwh: tarifaKwh,
         energyCostPerKwh,
         hostSharePercent: allyPct,
+        investorSharePercent: investorNetPct,
+        evgreenSharePercent: platformNetPct,
         fixedMonthlyExpenses,
       }) : null;
       const scenarioData = scenarios.map(({ key, name, color }) => {

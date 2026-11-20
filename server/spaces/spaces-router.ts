@@ -45,6 +45,25 @@ import {
 import { buildProspectoGridUpgradeNote } from "./prospecto-grid-upgrade-note";
 import { getRevenueDistributionForSpaceType } from "../../shared/space-investment-scoring-policy";
 import { buildAllySolarProgram } from "../../shared/ally-solar-program";
+import {
+  resolveSpaceCommercialDistribution, validateSpaceDistributionPatch,
+  spaceDistributionColumns,
+  type DistributionFields,
+} from "../../shared/space-commercial-distribution";
+
+const commercialDistributionInput = {
+  allySharePercent: z.number().min(0).max(50).optional(),
+  investorSharePercent: z.number().min(0).max(100).optional(),
+  evgreenSharePercent: z.number().min(0).max(100).optional(),
+};
+const distributionValidationMessage = "Completa los tres porcentajes con máximo dos decimales: aliado 0–50 %; inversionista y EVGreen deben sumar 100 % del remanente.";
+
+async function resolveSubmissionDistribution(db: any, submission: DistributionFields & { crowdfundingProjectId?: number | null }, settings?: any) {
+  const [project] = submission.crowdfundingProjectId
+    ? await db.select().from(crowdfundingProjects).where(eq(crowdfundingProjects.id, submission.crowdfundingProjectId)).limit(1)
+    : [];
+  return resolveSpaceCommercialDistribution(submission, project, settings?.hostSharePercent ?? 10);
+}
 
 // ============================================================================
 // ROLE GUARDS
@@ -120,8 +139,8 @@ function safePdfSegment(value: string): string {
 /**
  * Genera únicamente la ficha técnica/comercial del aliado.
  * El objeto enviado al servicio PDF se construye de forma explícita para
- * impedir que CAPEX, ROI, payback, waterfall o participaciones financieras
- * lleguen accidentalmente al documento destinado al propietario del espacio.
+ * impedir que CAPEX, ROI, payback o reparto interno de inversionista/EVGreen
+ * lleguen al documento; solo se expone la retribución del propio aliado.
  */
 async function generateAllySpacePdfForSubmission(submissionId: number) {
   const db = await getDatabase();
@@ -137,6 +156,7 @@ async function generateAllySpacePdfForSubmission(submissionId: number) {
     .where(eq(spacePhotos.submissionId, submissionId))
     .orderBy(desc(spacePhotos.isCover), spacePhotos.sortOrder);
   const platformSettings = await getPlatformSettings();
+  const commercialDistribution = await resolveSubmissionDistribution(db, submission, platformSettings);
 
   const { generateAllySpacePdf } = await import("./ally-space-pdf-service");
   const pdfBuffer = await generateAllySpacePdf({
@@ -179,7 +199,7 @@ async function generateAllySpacePdfForSubmission(submissionId: number) {
     salePricePerKwh: Number(platformSettings?.precioVentaDefault ?? 1800),
     energyCostPerKwh: Number(platformSettings?.costoEnergiaRed ?? 850),
     efficiencyPercent: Number(platformSettings?.eficienciaCargaDc ?? 92),
-    allySharePercent: Number((platformSettings as any)?.hostSharePercent ?? 10),
+    allySharePercent: commercialDistribution.allySharePercent,
     solarCoveragePercent: submission.solarCoveragePercent === null ? null : Number(submission.solarCoveragePercent),
     solarEnergyCostPerKwh: submission.solarEnergyCostPerKwh === null ? null : Number(submission.solarEnergyCostPerKwh),
     chargingSolarOpenSolarProjectId: submission.chargingSolarOpenSolarProjectId,
@@ -288,7 +308,7 @@ function parseProjectionSnapshot(value: unknown): FinancialProjectionSnapshot | 
   return typeof value === "object" ? value as FinancialProjectionSnapshot : null;
 }
 
-async function buildSpaceCrowdfundingProjection(input: {
+export async function buildSpaceCrowdfundingProjection(input: DistributionFields & {
   investmentCop: number;
   totalPowerKw: number;
   spaceType?: string | null;
@@ -307,13 +327,9 @@ async function buildSpaceCrowdfundingProjection(input: {
 
   const settings = await getPlatformSettings();
   const stored = parseProjectionSnapshot(input.currentProject?.financialProjectionSnapshot);
-  const distribution = getRevenueDistributionForSpaceType(input.spaceType);
-  const investorSharePercent = Number(
-    distribution.investorSharePercent,
-  );
-  const evgreenSharePercent = Number(
-    distribution.evgreenSharePercent,
-  );
+  const distribution = resolveSpaceCommercialDistribution(input, input.currentProject);
+  const investorSharePercent = distribution.investorSharePercent;
+  const evgreenSharePercent = distribution.evgreenSharePercent;
   const selectedScenario = stored?.selectedScenario ?? "REALISTIC";
   const salePricePerKwh = Number(stored?.assumptions.salePricePerKwh ?? settings?.precioVentaDefault ?? 1800);
   const energyCostPerKwh = Number(
@@ -322,11 +338,7 @@ async function buildSpaceCrowdfundingProjection(input: {
       ?? settings?.costoEnergiaRed
       ?? 850,
   );
-  const hostSharePercent = Number(
-    input.currentProject?.hostSharePercent
-      ?? stored?.assumptions.hostSharePercent
-      ?? 10,
-  );
+  const hostSharePercent = distribution.allySharePercent;
   const fixedMonthlyExpenses = Number(stored?.assumptions.fixedMonthlyExpenses ?? 0);
   const efficiencyPercent = Number(
     stored?.basis === "EVGREEN_CROWDFUNDING_SCENARIOS"
@@ -356,6 +368,8 @@ async function buildSpaceCrowdfundingProjection(input: {
       salePricePerKwh,
       energyCostPerKwh,
       hostSharePercent,
+      investorSharePercent,
+      evgreenSharePercent,
       fixedMonthlyExpenses,
     }, selectedScenario);
     return {
@@ -571,6 +585,7 @@ export const spacesRouter = router({
   // ========================================================================
   submit: publicProcedure
     .input(z.object({
+      ...commercialDistributionInput,
       // Datos del postulante
       submitterName: z.string().min(2, "El nombre es requerido"),
       submitterEmail: z.string().email("Email inválido"),
@@ -669,9 +684,14 @@ export const spacesRouter = router({
         fileName: z.string().trim().min(1).max(255),
         contentType: z.string().optional(),
       }).optional(),
-    }))
+    }).refine(validateSpaceDistributionPatch, { message: distributionValidationMessage }))
     .mutation(async ({ input, ctx }) => {
+      const hasDistribution = input.allySharePercent !== undefined;
+      if (hasDistribution && !canManageSpaceAdministration(ctx.user?.role)) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Solo administración puede configurar la distribución económica del espacio." });
+      }
       const db = await getDatabase();
+      const initialDistribution = hasDistribution ? spaceDistributionColumns(resolveSpaceCommercialDistribution(input)) : {};
       let solarProgram: ReturnType<typeof buildAllySolarProgram> = null;
       try {
         solarProgram = buildAllySolarProgram({
@@ -708,6 +728,7 @@ export const spacesRouter = router({
 
         const created = await insertSubmissionWithCodeRetry(tx, (code) => ({
             code,
+            ...initialDistribution,
             submitterName: input.submitterName,
             submitterEmail: input.submitterEmail,
             submitterPhone: input.submitterPhone,
@@ -804,6 +825,9 @@ export const spacesRouter = router({
         investmentCop: Number(input.estimatedInvestmentCop ?? 0),
         totalPowerKw: Number(input.estimatedPowerKw ?? 0),
         spaceType: input.spaceType,
+        allySharePercent: input.allySharePercent,
+        investorSharePercent: input.investorSharePercent,
+        evgreenSharePercent: input.evgreenSharePercent,
         estimatedDailyVehicles: input.estimatedDailyVehicles,
         estimatedEvPercent: input.estimatedEvPercent,
         chargerCount: input.estimatedChargerCount,
@@ -1300,7 +1324,9 @@ export const spacesRouter = router({
           .where(eq(spacePhotos.submissionId, input.id))
           .orderBy(spacePhotos.sortOrder);
 
-        return { ...submission, status: submission.spaceStatus, photos };
+        const settings = await getPlatformSettings();
+        const commercialDistribution = await resolveSubmissionDistribution(db, submission, settings);
+        return { ...submission, status: submission.spaceStatus, photos, commercialDistribution };
       }),
 
     // ========================================================================
@@ -1487,6 +1513,9 @@ export const spacesRouter = router({
 					investmentCop: targetAmount,
 					totalPowerKw,
 					spaceType: submission.spaceType,
+					allySharePercent: submission.allySharePercent,
+					investorSharePercent: submission.investorSharePercent,
+					evgreenSharePercent: submission.evgreenSharePercent,
 					estimatedDailyVehicles: Number(submission.estimatedDailyVehicles ?? 0),
 					estimatedEvPercent: Number(submission.estimatedEvPercent ?? 0),
 					chargerCount: Number(submission.estimatedChargerCount ?? 0),
@@ -1518,7 +1547,7 @@ export const spacesRouter = router({
 					financialProjectionScenario: projection?.selectedScenario ?? null,
 					financialProjectionUpdatedAt: projection ? toSqlTimestamp() : null,
 					financialProjectionUpdatedBy: projection ? ctx.user.id : null,
-					status: "DRAFT",
+              status: "DRAFT",
               spaceSubmissionId: input.id,
 				spaceInheritanceSnapshot: inherited,
               createdById: ctx.user.id,
@@ -1752,6 +1781,7 @@ export const spacesRouter = router({
     // ========================================================================
     publishToCrowdfunding: commercialPipelineProcedure
       .input(z.object({
+        ...commercialDistributionInput,
         id: z.number(),
 		targetAmount: z.number().min(1000000, "La meta de inversión debe ser al menos $1.000.000").optional(),
         minimumInvestment: z.number().optional(),
@@ -1759,9 +1789,10 @@ export const spacesRouter = router({
         estimatedPaybackMonths: z.number().int().optional(),
         manualFormalizationReason: z.string().trim().min(15).max(2000).optional(),
         manualFormalizationEvidence: z.string().trim().min(5).max(2000).optional(),
-      }))
+      }).refine(validateSpaceDistributionPatch, { message: distributionValidationMessage }))
       .mutation(async ({ input, ctx }) => {
-        const db = await getDatabase();
+        const database = await getDatabase();
+        return database.transaction(async (db: any) => {
 
         const [submission] = await db
           .select()
@@ -1773,11 +1804,17 @@ export const spacesRouter = router({
           throw new TRPCError({ code: "NOT_FOUND", message: "Postulación no encontrada" });
         }
 
+        if (input.allySharePercent !== undefined && !canManageSpaceAdministration(ctx.user.role)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Solo administración puede modificar el reparto al publicar." });
+        }
         const publicationDecision = getCrowdfundingPublicationDecision(
           submission.spaceStatus,
           input.manualFormalizationReason,
           input.manualFormalizationEvidence,
         );
+        const commercialDistribution = await resolveSubmissionDistribution(db, { ...submission, ...(input.allySharePercent !== undefined ? input : {}) }, await getPlatformSettings());
+        const distributionColumns = spaceDistributionColumns(commercialDistribution);
+        Object.assign(submission, distributionColumns);
 
 			const inheritedPhotos = await db.select({
 				submissionId: spacePhotos.submissionId, url: spacePhotos.photoUrl, type: spacePhotos.photoType,
@@ -1797,6 +1834,9 @@ export const spacesRouter = router({
 				investmentCop: targetAmount,
 				totalPowerKw,
 				spaceType: submission.spaceType,
+				allySharePercent: submission.allySharePercent,
+				investorSharePercent: submission.investorSharePercent,
+				evgreenSharePercent: submission.evgreenSharePercent,
 				estimatedDailyVehicles: Number(submission.estimatedDailyVehicles ?? 0),
 				estimatedEvPercent: Number(submission.estimatedEvPercent ?? 0),
 				chargerCount: Number(submission.estimatedChargerCount ?? 0),
@@ -1871,6 +1911,11 @@ export const spacesRouter = router({
         await db.update(spaceSubmissions)
           .set({
             spaceStatus: "published",
+            ...distributionColumns,
+            estimatedRoiPercent: sanitizeProjectionRoi(projection.selected.roiAnnualPercent),
+            estimatedPaybackMonths: sanitizeProjectionPayback(projection.selected.paybackMonths),
+            financialProjectionUpdatedAt: toSqlTimestamp(),
+            financialProjectionUpdatedBy: ctx.user.id,
             crowdfundingProjectId,
 			estimatedInvestmentCop: targetAmount,
             ...(publicationDecision.isManualFormalization
@@ -1900,6 +1945,7 @@ export const spacesRouter = router({
           crowdfundingProjectId,
           manualFormalization: publicationDecision.isManualFormalization,
         };
+        });
       }),
 
     // ========================================================================
@@ -1970,6 +2016,7 @@ export const spacesRouter = router({
     // ========================================================================
     updateSpace: adminProcedure
       .input(z.object({
+        ...commercialDistributionInput,
         id: z.number(),
         spaceName: z.string().optional(),
         spaceType: z.string().optional(),
@@ -2055,7 +2102,7 @@ export const spacesRouter = router({
           fileName: z.string().trim().min(1).max(255),
           contentType: z.string().optional(),
         }).optional(),
-      }))
+      }).refine(validateSpaceDistributionPatch, { message: distributionValidationMessage }))
       .mutation(async ({ input, ctx }) => {
         const db = await getDatabase();
         const { id, requiresNewTransformer, proposedTransformerKva, electricalDistanceM, solarOfferPdf, ...updateFields } = input;
@@ -2063,6 +2110,11 @@ export const spacesRouter = router({
         const [previousSubmission] = await db
           .select({
             id: spaceSubmissions.id,
+            allySharePercent: spaceSubmissions.allySharePercent,
+            investorSharePercent: spaceSubmissions.investorSharePercent,
+            evgreenSharePercent: spaceSubmissions.evgreenSharePercent,
+            crowdfundingProjectId: spaceSubmissions.crowdfundingProjectId,
+            spaceType: spaceSubmissions.spaceType,
             estimatedInvestmentCop: spaceSubmissions.estimatedInvestmentCop,
             estimatedPowerKw: spaceSubmissions.estimatedPowerKw,
             estimatedChargerCount: spaceSubmissions.estimatedChargerCount,
@@ -2104,6 +2156,13 @@ export const spacesRouter = router({
           if (value !== undefined) {
             cleanFields[key] = value;
           }
+        }
+        const distributionChanged = input.allySharePercent !== undefined;
+        const nextDistribution = distributionChanged ? resolveSpaceCommercialDistribution({ ...previousSubmission, ...input }) : null;
+        if (nextDistribution) {
+          Object.assign(cleanFields, spaceDistributionColumns(nextDistribution));
+          cleanFields.financialProjectionUpdatedAt = toSqlTimestamp();
+          cleanFields.financialProjectionUpdatedBy = ctx.user.id;
         }
         if (cleanFields.electricalDistance === undefined && electricalDistanceM !== undefined) {
           cleanFields.electricalDistance = electricalDistanceM;
@@ -2205,7 +2264,7 @@ export const spacesRouter = router({
         ].some((field) => cleanFields[field] !== undefined && Number(cleanFields[field]) !== Number(previousSubmission[field as keyof typeof previousSubmission]));
         const operatingProjectionInputChanged = ["operatingHoursStart", "operatingHoursEnd", "is24Hours"]
           .some((field) => cleanFields[field] !== undefined && String(cleanFields[field]) !== String(previousSubmission[field as keyof typeof previousSubmission]));
-        const projectionInputChanged = numericProjectionInputChanged || operatingProjectionInputChanged;
+        const projectionInputChanged = numericProjectionInputChanged || operatingProjectionInputChanged || distributionChanged || (input.spaceType !== undefined && input.spaceType !== previousSubmission.spaceType);
         if (
           cleanFields.estimatedInvestmentCop !== undefined ||
           cleanFields.minimumInvestmentCop !== undefined ||
@@ -2241,11 +2300,41 @@ export const spacesRouter = router({
         const solarConfigurationChanged = (cleanFields.hasSolarPanels !== undefined && previousHasSolarPanels !== nextHasSolarPanels)
           || (cleanFields.solarCoveragePercent !== undefined && Number(cleanFields.solarCoveragePercent) !== Number(previousSubmission.solarCoveragePercent ?? 0))
           || (cleanFields.solarEnergyCostPerKwh !== undefined && (previousSubmission.solarEnergyCostPerKwh === null || Number(cleanFields.solarEnergyCostPerKwh) !== Number(previousSubmission.solarEnergyCostPerKwh)));
+        // El cambio de acuerdo y sus escenarios se guardan juntos. Un error de
+        // cálculo no puede dejar porcentajes nuevos con ROI/snapshot antiguos.
+        const [distributionProject] = nextDistribution && previousSubmission.crowdfundingProjectId
+          ? await db.select().from(crowdfundingProjects).where(eq(crowdfundingProjects.id, previousSubmission.crowdfundingProjectId)).limit(1)
+          : [];
+        const nextDistributionProjection = nextDistribution
+          ? await buildSpaceCrowdfundingProjection({
+            ...previousSubmission, ...cleanFields,
+            investmentCop: Number(cleanFields.estimatedInvestmentCop ?? previousSubmission.estimatedInvestmentCop ?? 0),
+            totalPowerKw: Number(cleanFields.estimatedPowerKw ?? previousSubmission.estimatedPowerKw ?? 0),
+            chargerCount: Number(cleanFields.estimatedChargerCount ?? previousSubmission.estimatedChargerCount ?? 0),
+            solarCoveragePercent: Number(cleanFields.solarCoveragePercent ?? previousSubmission.solarCoveragePercent ?? 0),
+            solarEnergyCostPerKwh: cleanFields.solarEnergyCostPerKwh ?? previousSubmission.solarEnergyCostPerKwh,
+            currentProject: distributionProject,
+          }) : null;
+        if (nextDistributionProjection) {
+          cleanFields.estimatedRoiPercent = sanitizeProjectionRoi(nextDistributionProjection.selected.roiAnnualPercent);
+          cleanFields.estimatedPaybackMonths = sanitizeProjectionPayback(nextDistributionProjection.selected.paybackMonths);
+        }
         await db.transaction(async (tx: any) => {
           await tx.update(spaceSubmissions)
             .set(cleanFields)
             .where(eq(spaceSubmissions.id, id));
 
+          if (nextDistributionProjection && previousSubmission.crowdfundingProjectId) {
+            await tx.update(crowdfundingProjects).set({
+                financialProjectionSnapshot: nextDistributionProjection.snapshot,
+                financialProjectionScenario: nextDistributionProjection.selectedScenario,
+                estimatedRoiPercent: sanitizeProjectionRoi(nextDistributionProjection.selected.roiAnnualPercent),
+                estimatedPaybackMonths: sanitizeProjectionPayback(nextDistributionProjection.selected.paybackMonths),
+                financialProjectionUpdatedAt: toSqlTimestamp(),
+                financialProjectionUpdatedBy: ctx.user.id,
+            })
+              .where(eq(crowdfundingProjects.id, previousSubmission.crowdfundingProjectId));
+          }
           if (solarConfigurationChanged) {
             await tx.insert(spaceSolarScopeHistory).values({
               submissionId: id,
@@ -2284,7 +2373,7 @@ export const spacesRouter = router({
         }
 
         let updatedSubmission: any;
-        if (projectionInputChanged) {
+        if (projectionInputChanged && !distributionChanged) {
           const [submissionForProjection] = await db
             .select()
             .from(spaceSubmissions)
@@ -2302,6 +2391,9 @@ export const spacesRouter = router({
               investmentCop: Number(submissionForProjection.estimatedInvestmentCop ?? 0),
               totalPowerKw: Number(submissionForProjection.estimatedPowerKw ?? 0),
               spaceType: submissionForProjection.spaceType,
+              allySharePercent: submissionForProjection.allySharePercent,
+              investorSharePercent: submissionForProjection.investorSharePercent,
+              evgreenSharePercent: submissionForProjection.evgreenSharePercent,
               estimatedDailyVehicles: Number(submissionForProjection.estimatedDailyVehicles ?? 0),
               estimatedEvPercent: Number(submissionForProjection.estimatedEvPercent ?? 0),
               chargerCount: Number(submissionForProjection.estimatedChargerCount ?? 0),
@@ -2327,11 +2419,8 @@ export const spacesRouter = router({
             if (submissionForProjection?.crowdfundingProjectId) {
               await db.update(crowdfundingProjects)
                 .set({
-                  financialProjectionSnapshot: JSON.stringify(projection.snapshot),
-                  selectedFinancialScenario: projection.selectedScenario,
-                  hostSharePercent: String(projection.snapshot.assumptions.hostSharePercent),
-                  investorSharePercent: String(projection.investorSharePercent),
-                  evgreenSharePercent: String(projection.evgreenSharePercent),
+                  financialProjectionSnapshot: projection.snapshot,
+                  financialProjectionScenario: projection.selectedScenario,
                 } as any)
                 .where(eq(crowdfundingProjects.id, submissionForProjection.crowdfundingProjectId));
             }
@@ -2344,7 +2433,7 @@ export const spacesRouter = router({
           "estimatedPaybackMonths", "estimatedPowerKw", "estimatedChargerCount",
           "estimatedDailyVehicles", "estimatedEvPercent", "recommendedChargerType",
           "technicalScore", "technicalNotes", "aiScore", "aiAnalysis", "hasSolarPanels",
-          "solarCoveragePercent", "solarEnergyCostPerKwh",
+          "solarCoveragePercent", "solarEnergyCostPerKwh", "allySharePercent", "investorSharePercent", "evgreenSharePercent",
         ];
         if (inheritedFields.some((field) => cleanFields[field] !== undefined)) {
           [updatedSubmission] = await db
@@ -2835,9 +2924,9 @@ export const spacesRouter = router({
   generateProspectoPdf: protectedProcedure
     .input(z.object({
       submissionId: z.number(),
-      allySharePercent: z.number().min(0).max(50).default(10),
-      investorSharePercent: z.number().min(0).max(100).default(70),
-      platformSharePercent: z.number().min(0).max(100).default(30),
+      allySharePercent: z.number().min(0).max(50).optional(),
+      investorSharePercent: z.number().min(0).max(100).optional(),
+      platformSharePercent: z.number().min(0).max(100).optional(),
       installedPowerKw: z.number().positive().max(5000).optional(),
       tarifaKwhCop: z.number().positive().max(10000).optional(),
       energyCostPerKwhCop: z.number().min(0).max(10000).optional(),
@@ -2845,7 +2934,8 @@ export const spacesRouter = router({
       capexIncludesGridUpgrade: z.boolean().default(false),
       technicalConditionNote: z.string().trim().max(2000).optional(),
     }).refine(
-      data => isNetRevenueDistributionValid(data.investorSharePercent, data.platformSharePercent),
+      data => (data.investorSharePercent === undefined && data.platformSharePercent === undefined)
+        || isNetRevenueDistributionValid(data.investorSharePercent, data.platformSharePercent),
       { message: "La participación de Inversionista y EVGreen debe sumar exactamente 100 % del margen neto" },
     ))
     .mutation(async ({ input, ctx }) => {
@@ -2879,7 +2969,14 @@ export const spacesRouter = router({
 
 	      // Construir un escenario auditable con la tarifa vigente y con la condición eléctrica explícita.
 	      const platformSettings = await getPlatformSettings();
-	      const requestedPowerKw = input.installedPowerKw ?? Number(submission.estimatedPowerKw ?? 0);
+	      const savedDistribution = await resolveSubmissionDistribution(db, submission, platformSettings);
+          const pdfDistribution = resolveSpaceCommercialDistribution({
+            spaceType: submission.spaceType,
+            allySharePercent: input.allySharePercent ?? savedDistribution.allySharePercent,
+            investorSharePercent: input.investorSharePercent ?? savedDistribution.investorSharePercent,
+            evgreenSharePercent: input.platformSharePercent ?? savedDistribution.evgreenSharePercent,
+          });
+          const requestedPowerKw = input.installedPowerKw ?? Number(submission.estimatedPowerKw ?? 0);
 	      const technicalCondition = resolveProspectoTechnicalCondition({
 	        totalPowerKw: requestedPowerKw,
 	        transformerCapacityKva: submission.transformerCapacityKva ? Number(submission.transformerCapacityKva) : null,
@@ -2938,9 +3035,9 @@ export const spacesRouter = router({
         chargingSolarAnnualGenerationKwh: submission.chargingSolarAnnualGenerationKwh === null ? null : Number(submission.chargingSolarAnnualGenerationKwh),
         chargingSolarSelfConsumptionPercent: submission.chargingSolarSelfConsumptionPercent === null ? null : Number(submission.chargingSolarSelfConsumptionPercent),
         chargingSolarExportPercent: submission.chargingSolarExportPercent === null ? null : Number(submission.chargingSolarExportPercent),
-        allySharePercent: input.allySharePercent,
-        investorSharePercent: input.investorSharePercent,
-        platformSharePercent: input.platformSharePercent,
+        allySharePercent: pdfDistribution.allySharePercent,
+        investorSharePercent: pdfDistribution.investorSharePercent,
+        platformSharePercent: pdfDistribution.evgreenSharePercent,
 	        installedPowerKw: requestedPowerKw,
 	        tarifaKwhCop: input.tarifaKwhCop ?? Number(platformSettings?.precioVentaDefault ?? 1800),
 	        energyCostPerKwhCop: input.energyCostPerKwhCop ?? Number(platformSettings?.costoEnergiaRed ?? 850),

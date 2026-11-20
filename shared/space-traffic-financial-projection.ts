@@ -28,6 +28,8 @@ export type SpaceTrafficProjectionInput = {
   salePricePerKwh: number;
   energyCostPerKwh: number;
   hostSharePercent?: number;
+  investorSharePercent?: number;
+  evgreenSharePercent?: number;
   fixedMonthlyExpenses?: number;
   /** Capacidad demostrada o aprobada por manguera; por defecto, benchmark EVGreen. */
   benchmarkSessionsPerConnectorPerDay?: number;
@@ -221,7 +223,11 @@ export function buildSpaceTrafficProjection(
     : null;
   if (operatingHoursPerDay !== null && operatingHoursPerDay > 24) throw new Error("Las horas de operación diarias no pueden superar 24");
   if (efficiencyPercent !== null && (efficiencyPercent <= 0 || efficiencyPercent > 100)) throw new Error("La eficiencia de entrega debe estar entre 0 % y 100 %");
-  const distribution = getRevenueDistributionForSpaceType(input.spaceType);
+  const suggestedDistribution = getRevenueDistributionForSpaceType(input.spaceType);
+  const distribution = {
+    investorSharePercent: input.investorSharePercent ?? suggestedDistribution.investorSharePercent,
+    evgreenSharePercent: input.evgreenSharePercent ?? suggestedDistribution.evgreenSharePercent,
+  };
   const connectorCapacitySessionsPerDay = chargerCount * CONNECTORS_PER_CHARGER * benchmarkSessionsPerConnectorPerDay;
   const powerCapacityKwhPerDay = totalPowerKw !== null && operatingHoursPerDay !== null && efficiencyPercent !== null
     ? totalPowerKw * operatingHoursPerDay * (efficiencyPercent / 100)

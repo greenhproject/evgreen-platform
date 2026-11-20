@@ -33,7 +33,7 @@ describe("Espacios mobile-first", () => {
     expect(editDialogSource).not.toContain("sticky top-0");
     expect(editDialogSource).toContain("Guardar cambios");
     expect(spacesSource).toContain("Crear Espacio");
-    expect(spacesSource).toContain("Generar y Descargar");
+    expect(spacesSource).toContain("Guardar reparto y generar");
     expect(spacesSource).toContain("<Eye className=\"mr-1 h-3.5 w-3.5\" /> Ver");
   });
 

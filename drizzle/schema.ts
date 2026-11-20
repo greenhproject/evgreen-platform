@@ -1831,6 +1831,10 @@ export const spaceSubmissions = mysqlTable("space_submissions", {
 	submitterPhone: varchar({ length: 20 }).notNull(),
 	submitterCompany: varchar({ length: 255 }),
 	submitterDocument: varchar({ length: 50 }),
+	// NULL hereda el proyecto o la sugerencia; 0 es un acuerdo explícito.
+	allySharePercent: decimal("ally_share_percent", { precision: 5, scale: 2 }),
+	investorSharePercent: decimal("investor_share_percent", { precision: 5, scale: 2 }),
+	evgreenSharePercent: decimal("evgreen_share_percent", { precision: 5, scale: 2 }),
 	spaceName: varchar({ length: 255 }).notNull(),
 	spaceType: mysqlEnum("space_type", ['parking','mall','gas_station','hotel','restaurant','office_building','residential','supermarket','hospital','university','airport','highway_rest','other']).notNull(),
 	spaceTypeOther: varchar({ length: 255 }),

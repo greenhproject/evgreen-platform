@@ -3,8 +3,9 @@
  * Ficha técnica y comercial del aliado del espacio.
  *
  * Este documento está deliberadamente separado del prospecto de inversión:
- * no recibe ni renderiza CAPEX, meta de inversión, ROI, payback, waterfall,
- * participación del inversionista ni porcentaje económico del aliado.
+ * no renderiza CAPEX, meta de inversión, ROI, TIR, payback, waterfall ni
+ * participaciones del inversionista o EVGreen. Sólo explica el porcentaje,
+ * la base de cálculo y los importes del canon propio del aliado.
  */
 import jsPDFModule from "jspdf";
 import axios from "axios";
@@ -154,6 +155,7 @@ export interface AllyPdfContent {
   technicalRows: Array<[string, string]>;
   operatingRows: Array<[string, string]>;
   incomeProjection: AllyIncomeProjectionSnapshot | null;
+  remuneration: AllyRemunerationDisclosure | null;
   solarProgram: AllySolarProgramSnapshot | null;
   combinedBenefit: {
     chargerMonthlyCop: number;
@@ -274,7 +276,7 @@ export function buildAllySpacePdfContent(data: AllySpacePdfData): AllyPdfContent
         solarEnergyCostPerKwh: data.solarEnergyCostPerKwh,
         salePricePerKwh: Number(data.salePricePerKwh ?? 1800),
         energyCostPerKwh: Number(data.energyCostPerKwh ?? 850),
-        allySharePercent: Number(data.allySharePercent ?? 10),
+        allySharePercent: data.allySharePercent == null ? undefined : Number(data.allySharePercent),
       });
     } catch {
       return null;
@@ -361,6 +363,7 @@ export function buildAllySpacePdfContent(data: AllySpacePdfData): AllyPdfContent
       ["Estado de la oportunidad", statusLabel(data.status)],
     ],
     incomeProjection,
+    remuneration: incomeProjection ? buildAllyRemunerationDisclosure(incomeProjection.assumptions) : null,
     solarProgram,
     combinedBenefit,
     allyResponsibilities: [
@@ -461,6 +464,79 @@ function formatDecimal(value: number | null | undefined, digits = 1): string {
   return Number(value).toLocaleString("es-CO", { maximumFractionDigits: digits });
 }
 
+export interface AllyRemunerationDisclosure {
+  title: string;
+  configuredPercent: string;
+  salePrice: string;
+  effectiveEnergyCost: string;
+  remunerationPerKwhCop: number;
+  remunerationPerKwh: string;
+  formulas: string[];
+  energyCostNote: string;
+}
+
+/** Explica exclusivamente el canon del espacio con los mismos supuestos de los escenarios. */
+export function buildAllyRemunerationDisclosure(assumptions: AllyIncomeProjectionSnapshot["assumptions"]): AllyRemunerationDisclosure {
+  const percent = `${formatDecimal(assumptions.allySharePercent, 2)} %`;
+  const rate = (value: number) => `$${formatDecimal(value, 4)} COP/kWh`;
+  // El modelo no distribuye un margen negativo: el canon mínimo es cero.
+  const remunerationPerKwhCop = Math.max(0, assumptions.salePricePerKwh - assumptions.effectiveEnergyCostPerKwh) * assumptions.allySharePercent / 100;
+  return {
+    title: "Retribución del aliado / canon del espacio",
+    configuredPercent: `${percent} del margen bruto de energía`,
+    salePrice: rate(assumptions.salePricePerKwh),
+    effectiveEnergyCost: rate(assumptions.effectiveEnergyCostPerKwh),
+    remunerationPerKwhCop,
+    remunerationPerKwh: rate(remunerationPerKwhCop),
+    formulas: [
+      "Base: margen bruto de energía = kWh vendidos × (precio de venta - costo energético efectivo).",
+      `Canon mensual = margen bruto de energía del mes × ${percent}; mínimo $0.`,
+      "Canon anualizado = canon mensual × 12 meses. No se calcula sobre la venta total.",
+    ],
+    energyCostNote: assumptions.solarCostApplied
+      ? `Costo efectivo = ${formatDecimal(100 - assumptions.solarCoveragePercent, 2)} % red × ${rate(assumptions.energyCostPerKwh)} + ${formatDecimal(assumptions.solarCoveragePercent, 2)} % solar × ${rate(assumptions.solarEnergyCostPerKwh!)}. Mezcla solar de la electrolinera ya incluida, sin sumarla otra vez como ahorro.`
+      : "Costo efectivo: tarifa de red; no se aplica reducción solar sin cobertura y costo validados.",
+  };
+}
+
+function drawAllyRemunerationBlock(doc: InstanceType<typeof jsPDF>, remuneration: AllyRemunerationDisclosure, x: number, y: number, width: number): number {
+  y = drawSectionTitle(doc, remuneration.title, x, y, width);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.1);
+  const formulaLines: string[] = remuneration.formulas.flatMap(formula => doc.splitTextToSize(formula, width - 12));
+  const energyLines: string[] = doc.splitTextToSize(remuneration.energyCostNote, width - 12);
+  const cardHeight = 28 + (formulaLines.length + energyLines.length) * 3.2;
+  setColor(doc, COLORS.greenLight, "fill");
+  doc.roundedRect(x, y, width, cardHeight, 3, 3, "F");
+  setColor(doc, COLORS.greenDark);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9.5);
+  doc.text(`Porcentaje configurado: ${remuneration.configuredPercent}`, x + 6, y + 8);
+  const metrics = [
+    ["Precio de venta", remuneration.salePrice],
+    ["Costo energético efectivo", remuneration.effectiveEnergyCost],
+    ["Retribución del aliado por kWh", remuneration.remunerationPerKwh],
+  ];
+  metrics.forEach(([label, value], index) => {
+    const metricX = x + 6 + index * (width - 12) / 3;
+    setColor(doc, COLORS.gray500);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(6.6);
+    doc.text(label, metricX, y + 15);
+    setColor(doc, COLORS.gray900);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.1);
+    doc.text(value, metricX, y + 21);
+  });
+  setColor(doc, COLORS.gray700);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.1);
+  doc.text(formulaLines, x + 6, y + 28, { lineHeightFactor: 1.2 });
+  doc.setFontSize(6.8);
+  doc.text(energyLines, x + 6, y + 28 + formulaLines.length * 3.2, { lineHeightFactor: 1.2 });
+  return y + cardHeight + 5;
+}
+
 function buildGoogleMapsSearchUrl(data: AllySpacePdfData): string {
   const query = data.latitude !== null && data.latitude !== undefined && data.longitude !== null && data.longitude !== undefined
     ? `${data.latitude},${data.longitude}`
@@ -485,11 +561,11 @@ const ALLY_PROJECTION_VISIBLE_LABELS = {
   connectors: "Mangueras requeridas*",
   chargers: "Cargadores duales*",
   energy: "Energía/mes",
-  allyEstimate: "Valor estimado para el aliado/mes",
+  allyEstimate: "Canon del aliado/mes",
 } as const;
 
 export function buildAllyProjectionDisclosure(assumptions: AllyIncomeProjectionSnapshot["assumptions"]): string {
-  return `* Las mangueras y cargadores marcados con asterisco son equivalentes teóricos para atender la demanda potencial; la configuración registrada es ${formatNumber(assumptions.chargerCount)} cargadores / ${formatNumber(assumptions.configuredConnectors)} mangueras. La estimación mensual del aliado se deriva de la demanda atendible, la energía por sesión y los supuestos operativos vigentes. La configuración definitiva, la operación real y las condiciones económicas aplicables se validan mediante ingeniería y contrato separado.`;
+  return `* Mangueras y cargadores: equivalentes teóricos de demanda, no equipos comprometidos. Configuración registrada: ${formatNumber(assumptions.chargerCount)} cargadores / ${formatNumber(assumptions.configuredConnectors)} mangueras; ${formatDecimal(assumptions.benchmarkKwhPerSession, 0)} kWh por sesión. La estimación mensual del aliado aplica ${formatDecimal(assumptions.allySharePercent, 2)} % al margen bruto de energía, según la fórmula del canon. Demanda, operación y condiciones finales sujetas a ingeniería y contrato separado.`;
 }
 
 function drawIncomeProjectionPage(
@@ -510,11 +586,11 @@ function drawIncomeProjectionPage(
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.5);
   const intro = doc.splitTextToSize(
-    "Estimación orientativa de la retribución mensual del aliado. Los escenarios parten del flujo vehicular registrado y escalan la adopción EV base al 50 %, 100 % y 150 %; la configuración definitiva depende de ingeniería, operación y validación en sitio.",
+    "Estimación orientativa del canon del aliado. Escenarios pesimista, realista y optimista: adopción EV base al 50 %, 100 % y 150 %, limitada por la capacidad del punto y sujeta a validación.",
     contentWidth,
   );
   doc.text(intro, margin, y);
-  y += intro.length * 4.5 + 7;
+  y += intro.length * 4 + 5;
 
   if (!content.incomeProjection) {
     setColor(doc, [255, 251, 235], "fill");
@@ -531,13 +607,12 @@ function drawIncomeProjectionPage(
 
   const projection = content.incomeProjection;
   const assumptions = projection.assumptions;
+  if (content.remuneration) y = drawAllyRemunerationBlock(doc, content.remuneration, margin, y, contentWidth);
   const assumptionRows: Array<[string, string]> = [
     ["Base de demanda", `${formatNumber(assumptions.estimatedDailyVehicles)} vehículos/día × ${formatDecimal(assumptions.estimatedEvPercent, 1)}% EV`],
     ["Configuración registrada", `${formatNumber(assumptions.chargerCount)} cargadores duales / ${formatNumber(assumptions.configuredConnectors)} mangueras`],
-    ["Energía por sesión", `${formatDecimal(assumptions.benchmarkKwhPerSession, 0)} kWh`],
-    ["Escenarios mostrados", "Pesimista · realista · optimista"],
   ];
-  y = drawRows(doc, assumptionRows, margin, y, contentWidth, 57) + 9;
+  y = drawRows(doc, assumptionRows, margin, y, contentWidth, 57) + 5;
 
   y = drawSectionTitle(doc, "ESCENARIOS DE DEMANDA Y RETRIBUCIÓN DEL ALIADO", margin, y, contentWidth);
   const columns = [
@@ -586,9 +661,13 @@ function drawIncomeProjectionPage(
     y += rowHeight;
   });
 
-  y += 8;
+  y += 5;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.4);
+  const note: string[] = doc.splitTextToSize(buildAllyProjectionDisclosure(assumptions), contentWidth - 12);
+  const noteHeight = 18 + note.length * 3.1;
   setColor(doc, [236, 253, 245], "fill");
-  doc.roundedRect(margin, y, contentWidth, 34, 3, 3, "F");
+  doc.roundedRect(margin, y, contentWidth, noteHeight, 3, 3, "F");
   setColor(doc, COLORS.greenDark);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
@@ -596,11 +675,7 @@ function drawIncomeProjectionPage(
   setColor(doc, COLORS.gray700);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.4);
-  const note = doc.splitTextToSize(
-    buildAllyProjectionDisclosure(assumptions),
-    contentWidth - 12,
-  );
-  doc.text(note.slice(0, 4), margin + 6, y + 16);
+  doc.text(note, margin + 6, y + 16, { lineHeightFactor: 1.2 });
 }
 
 function formatCompactCop(value: number): string {
@@ -696,9 +771,9 @@ function drawAnnualAllyValuePage(
 
   scenarioValues.forEach((scenario, index) => {
     const barX = chartX + barGap + index * (barWidth + barGap);
-    const barHeight = Math.max(3, (scenario.allyIncomeAnnual / maxAnnual) * chartHeight);
+    const barHeight = scenario.allyIncomeAnnual > 0 ? Math.max(3, (scenario.allyIncomeAnnual / maxAnnual) * chartHeight) : 0;
     setColor(doc, index === 1 ? COLORS.green : [148, 163, 184], "fill");
-    doc.roundedRect(barX, baselineY - barHeight, barWidth, barHeight, 2, 2, "F");
+    if (barHeight > 0) doc.roundedRect(barX, baselineY - barHeight, barWidth, barHeight, 2, 2, "F");
     setColor(doc, index === 1 ? COLORS.greenDark : COLORS.gray700);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(7);

@@ -31,13 +31,14 @@ function createCommercialContext(): TrpcContext {
 
 function createLimitedDb(result: unknown[]) {
   const limit = vi.fn().mockResolvedValue(result);
-  return {
+  const db = {
     select: vi.fn(() => ({
       from: vi.fn(() => ({
         where: vi.fn(() => ({ limit })),
       })),
     })),
   };
+  return { ...db, transaction: vi.fn(async (callback: (tx: typeof db) => Promise<unknown>) => callback(db)) };
 }
 
 describe("spaces.admin — permisos tRPC del comercial", () => {

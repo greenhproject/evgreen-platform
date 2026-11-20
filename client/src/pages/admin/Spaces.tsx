@@ -15,13 +15,23 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ManualFormalizationAudit, ManualFormalizationFields } from "@/components/spaces/ManualFormalizationAudit";
 import { SpacePhotoLightbox } from "@/components/spaces/SpacePhotoLightbox";
+import { CommercialDistributionEditor } from "@/components/spaces/CommercialDistributionEditor";
+import {
+  commercialDistributionForForm,
+  commercialDistributionToDraft,
+  commercialDistributionChanged,
+  requireCommercialDistribution,
+  saveCommercialDistributionBeforePdf,
+  suggestedCommercialDistribution,
+  validateCommercialDistributionDraft,
+  type CommercialDistributionDraft,
+} from "@/components/spaces/commercial-distribution-form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { getSpacePipelineAction } from "@shared/space-pipeline-actions";
-import { getRevenueDistributionForSpaceType, resolveDcInfrastructureRequirement } from "@shared/space-investment-scoring-policy";
+import { resolveDcInfrastructureRequirement } from "@shared/space-investment-scoring-policy";
 import { buildSpaceTrafficProjection } from "@shared/space-traffic-financial-projection";
-import { isNetRevenueDistributionValid, parseOptionalBoundedPercentageInput } from "@shared/percentage-input";
 import {
   DEFAULT_GESTOR_COMMISSION_PERCENT,
   MAX_GESTOR_COMMISSION_PERCENT,
@@ -35,7 +45,7 @@ import {
   ChevronRight, Building2, Phone, Mail, Camera, BarChart3,
   TrendingUp, DollarSign, ArrowUpRight, ExternalLink, RefreshCw,
   ChevronDown, X, Pencil, Trash2, AlertTriangle, Users, Download,
-  CheckSquare, Square, Minus, SlidersHorizontal, Calendar, FileDown, Settings2, Plus, Copy, Link2, MessageCircle,
+  CheckSquare, Square, Minus, SlidersHorizontal, Calendar, FileDown, Plus, Copy, Link2, MessageCircle,
   Sun,
 } from "lucide-react";
 
@@ -212,6 +222,8 @@ async function readFileAsBase64(file: File): Promise<string> {
 export default function AdminSpaces() {
   const { user } = useAuth();
   const canManageAdministrativeActions = user?.role === "admin" || user?.role === "staff";
+  const canConfigureCreationDistribution = canManageAdministrativeActions;
+  const { data: createCalculatorParams } = trpc.settings.getCalculatorParams.useQuery();
   const [statusFilter, setStatusFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -254,6 +266,10 @@ export default function AdminSpaces() {
     additionalNotes: "",
     nearbyAttractions: "",
   });
+  // Sólo el borrador no iniciado toma la sugerencia por tipo. Un texto vacío
+  // escrito por el administrador nunca salta de vuelta a los defaults.
+  const [createDistributionDraft, setCreateDistributionDraft] = useState<CommercialDistributionDraft | null>(null);
+  const createDistribution = createDistributionDraft ?? commercialDistributionToDraft(suggestedCommercialDistribution(createForm.spaceType));
   const [createPhotos, setCreatePhotos] = useState<Array<{ file: File; preview: string; photoType: string; isCover?: boolean; isConceptual?: boolean }>>([]);
   const [createSolarOfferPdf, setCreateSolarOfferPdf] = useState<File | null>(null);
   const [createPreparation, setCreatePreparation] = useState<{ stage: "idle" | "preparing" | "submitting"; completed: number; total: number }>({ stage: "idle", completed: 0, total: 0 });
@@ -318,6 +334,7 @@ export default function AdminSpaces() {
       toast.success(`Espacio creado: ${res.code}`);
       setCreateSubmitError(null);
       setShowCreateDialog(false);
+      setCreateDistributionDraft(null);
       setCreateForm({
         spaceName: "", spaceType: "parking", address: "", city: "", department: "",
         submitterName: "", submitterEmail: "", submitterPhone: "",
@@ -427,6 +444,13 @@ export default function AdminSpaces() {
       toast.error(message);
       return;
     }
+    const distributionValidation = validateCommercialDistributionDraft(createDistribution);
+    if (canConfigureCreationDistribution && !distributionValidation.values) {
+      const message = Object.values(distributionValidation.errors)[0]!;
+      setCreateSubmitError(message);
+      toast.error(message);
+      return;
+    }
     const numericError = [
       numericInputError("Transformador", createForm.transformerCapacityKva),
       numericInputError("Área", createForm.availableAreaM2),
@@ -511,6 +535,7 @@ export default function AdminSpaces() {
       setCreatePreparation({ stage: "submitting", completed: createPhotos.length, total: createPhotos.length });
       submittedMutation = true;
       await createSpaceMutation.mutateAsync({
+        ...(canConfigureCreationDistribution ? distributionValidation.values : {}),
         spaceName: createForm.spaceName, spaceType: createForm.spaceType as any, address: createForm.address, city: createForm.city,
         department: createForm.department || undefined, submitterName: createForm.submitterName, submitterEmail: createForm.submitterEmail,
         submitterPhone: createForm.submitterPhone, submitterCompany: createForm.submitterCompany || undefined,
@@ -1339,6 +1364,17 @@ export default function AdminSpaces() {
             </div>
 
             {/* Datos del postulante */}
+            {canConfigureCreationDistribution && <CommercialDistributionEditor
+              value={createDistribution}
+              onChange={setCreateDistributionDraft}
+              spaceType={createForm.spaceType}
+              source="DEFAULT"
+              dirty={createDistributionDraft !== null}
+              disabled={isCreatingManualSpace}
+              saveExplanation="Este reparto se guardará con el espacio al crearlo y será la referencia de sus dos PDF. Revisa la sugerencia y confirma los valores de tu acuerdo."
+              example={createCalculatorParams ? { salePricePerKwh: Number(createCalculatorParams.precioVentaDefault), energyCostPerKwh: Number(createCalculatorParams.costoEnergiaRed) } : undefined}
+            />}
+
             <div className="bg-[#0a0f1a] border border-[#374151] rounded-lg p-3">
               <p className="text-gray-400 text-xs font-semibold mb-2 uppercase tracking-wide">Contacto / Postulante</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -1536,9 +1572,6 @@ function SpaceDetailDialog({
   const [commercialStageNote, setCommercialStageNote] = useState("");
   const [showProspectoDialog, setShowProspectoDialog] = useState(false);
   const [prospectoConfig, setProspectoConfig] = useState<{
-    allySharePercent: number | undefined;
-    investorSharePercent: number | undefined;
-    platformSharePercent: number | undefined;
     installedPowerKw: number | undefined;
     tarifaKwhCop: number | undefined;
     energyCostPerKwhCop: number | undefined;
@@ -1546,9 +1579,6 @@ function SpaceDetailDialog({
     capexIncludesGridUpgrade: boolean;
     technicalConditionNote: string;
   }>({
-    allySharePercent: 10,
-    investorSharePercent: 70,
-    platformSharePercent: 30,
     installedPowerKw: undefined as number | undefined,
     tarifaKwhCop: 1800,
     energyCostPerKwhCop: 850,
@@ -1556,6 +1586,10 @@ function SpaceDetailDialog({
     capexIncludesGridUpgrade: false,
     technicalConditionNote: "",
   });
+  const [editDistributionDraft, setEditDistributionDraft] = useState<CommercialDistributionDraft>(() => commercialDistributionToDraft(suggestedCommercialDistribution()));
+  const [publishDistributionDraft, setPublishDistributionDraft] = useState<CommercialDistributionDraft>(() => commercialDistributionToDraft(suggestedCommercialDistribution()));
+  const [prospectoDistributionDraft, setProspectoDistributionDraft] = useState<CommercialDistributionDraft>(() => commercialDistributionToDraft(suggestedCommercialDistribution()));
+  const [isPreparingProspecto, setIsPreparingProspecto] = useState(false);
   const [publishAmount, setPublishAmount] = useState("");
   const [manualFormalizationReason, setManualFormalizationReason] = useState("");
   const [manualFormalizationEvidence, setManualFormalizationEvidence] = useState("");
@@ -1665,13 +1699,19 @@ function SpaceDetailDialog({
   const commercialNextStep = COMMERCIAL_NEXT_STEPS[space.spaceStatus as string];
   const pipelineAction = getSpacePipelineAction(space.spaceStatus as string);
   const canManageAdministrativeDetails = user?.role === "admin" || user?.role === "staff";
+  const savedDistribution = commercialDistributionForForm(space);
+  const editDistribution = validateCommercialDistributionDraft(editDistributionDraft).values;
+  const distributionExample = calculatorParams ? {
+    salePricePerKwh: Number(calculatorParams.precioVentaDefault),
+    energyCostPerKwh: Number(calculatorParams.costoEnergiaRed),
+  } : undefined;
   const suggestedFinancialProjection = (() => {
     const investmentCop = toOptionalNumber(editForm.estimatedInvestmentCop);
     const totalPowerKw = toOptionalInteger(editForm.estimatedPowerKw);
     const dailyVehicles = toOptionalInteger(editForm.estimatedDailyVehicles);
     const evPercent = toOptionalInteger(editForm.estimatedEvPercent);
     const chargerCount = toOptionalInteger(editForm.estimatedChargerCount);
-    if (!investmentCop || !totalPowerKw || totalPowerKw < 120 || !dailyVehicles || evPercent === undefined) return null;
+    if (!editDistribution || !investmentCop || !totalPowerKw || totalPowerKw < 120 || !dailyVehicles || evPercent === undefined) return null;
     try {
       const snapshot = buildSpaceTrafficProjection({
         investmentCop,
@@ -1687,7 +1727,9 @@ function SpaceDetailDialog({
         spaceType: space.spaceType,
         salePricePerKwh: Number(calculatorParams?.precioVentaDefault ?? 1800),
         energyCostPerKwh: Number(calculatorParams?.costoEnergiaRed ?? 700),
-        hostSharePercent: Number(calculatorParams?.hostPercentage ?? 10),
+        hostSharePercent: editDistribution.allySharePercent,
+        investorSharePercent: editDistribution.investorSharePercent,
+        evgreenSharePercent: editDistribution.evgreenSharePercent,
       });
       return {
         snapshot,
@@ -1706,14 +1748,8 @@ function SpaceDetailDialog({
     chargerCount: Number(space.estimatedChargerCount || 1),
     transformerCapacityKva,
   });
-  // El tipo actual del espacio gobierna la preconfiguración; un análisis IA
-  // histórico no debe sobrescribir el reparto 60/40 propio de una EDS.
-  const revenueDistribution = getRevenueDistributionForSpaceType(space.spaceType);
-  const prospectoDistributionValid = isNetRevenueDistributionValid(
-    prospectoConfig.investorSharePercent,
-    prospectoConfig.platformSharePercent,
-  );
-  const prospectoSharesReady = prospectoConfig.allySharePercent !== undefined && prospectoDistributionValid;
+  const prospectoSharesReady = Boolean(validateCommercialDistributionDraft(prospectoDistributionDraft).values);
+  const prospectoDistributionDirty = commercialDistributionChanged(prospectoDistributionDraft, savedDistribution);
   const prospectoRequiresGridUpgrade = dcInfrastructure.requiresGridUpgrade
     || space.electricalViability === "requires_upgrade"
     || space.electricalViability === "not_viable"
@@ -1722,11 +1758,8 @@ function SpaceDetailDialog({
     || (dcInfrastructure.meetsDcMinimum && prospectoConfig.capexIncludesGridUpgrade && prospectoConfig.technicalConditionNote.trim().length >= 10);
 
   const handleOpenProspectoDialog = () => {
-    const distribution = getRevenueDistributionForSpaceType(space.spaceType);
+    setProspectoDistributionDraft(commercialDistributionToDraft(savedDistribution));
     setProspectoConfig({
-      allySharePercent: 10,
-      investorSharePercent: distribution.investorSharePercent,
-      platformSharePercent: distribution.evgreenSharePercent,
       installedPowerKw: Math.max(120, Number(space.estimatedPowerKw || 0)) || 120,
       tarifaKwhCop: Number(calculatorParams?.precioVentaDefault ?? 1800),
       energyCostPerKwhCop: Number(calculatorParams?.costoEnergiaRed ?? 850),
@@ -1735,6 +1768,11 @@ function SpaceDetailDialog({
       technicalConditionNote: "",
     });
     setShowProspectoDialog(true);
+  };
+
+  const handleOpenPublishDialog = () => {
+    setPublishDistributionDraft(commercialDistributionToDraft(savedDistribution));
+    setShowPublishDialog(true);
   };
 
   const handleLookupOpenSolarProject = async (scope: "charging" | "ally") => {
@@ -1948,9 +1986,14 @@ function SpaceDetailDialog({
       return;
     }
     try {
+      const distribution = requireCommercialDistribution(publishDistributionDraft);
+      if (!canManageAdministrativeDetails && commercialDistributionChanged(publishDistributionDraft, savedDistribution)) {
+        throw new Error("Sólo administración puede cambiar el reparto económico del espacio.");
+      }
       const result = await publishMutation.mutateAsync({
         id,
         targetAmount: amount,
+        ...(canManageAdministrativeDetails ? distribution : {}),
         ...(requiresManualFormalization ? {
           manualFormalizationReason: manualFormalizationReason.trim(),
           manualFormalizationEvidence: manualFormalizationEvidence.trim(),
@@ -1987,7 +2030,7 @@ function SpaceDetailDialog({
     }
     if (pipelineAction.kind === "publish") {
       setShowPipelineActionDialog(false);
-      setShowPublishDialog(true);
+      handleOpenPublishDialog();
       return;
     }
     setShowPipelineActionDialog(false);
@@ -2061,7 +2104,7 @@ function SpaceDetailDialog({
                 </Button>
               )}
               {canManageAdministrativeDetails && space.spaceStatus === "letter_sent" && (
-                <Button size="sm" variant="outline" onClick={() => setShowPublishDialog(true)} className="border-amber-400/50 text-amber-200 hover:bg-amber-500/10 flex-shrink-0 text-xs">
+                <Button size="sm" variant="outline" onClick={handleOpenPublishDialog} className="border-amber-400/50 text-amber-200 hover:bg-amber-500/10 flex-shrink-0 text-xs">
                   <AlertTriangle className="w-3.5 h-3.5 mr-1" /> Formalizar y publicar
                 </Button>
               )}
@@ -2178,6 +2221,7 @@ function SpaceDetailDialog({
                       aiEstimatedPowerKw: ai.estimatedPowerKw || "",
                       aiInvestmentAppeal: ai.investmentAppeal || "",
 	                    });
+                    setEditDistributionDraft(commercialDistributionToDraft(savedDistribution));
 	                    setChargingSolarLookup(null);
 	                    setAllySolarLookup(null);
 	                    setEditSolarOfferPdf(null);
@@ -2189,6 +2233,12 @@ function SpaceDetailDialog({
                   <Trash2 className="w-3.5 h-3.5 mr-1" /> Eliminar
                 </Button>}
               </div>
+            </div>
+
+            <div className="rounded-lg border border-emerald-400/25 bg-emerald-500/5 p-3 text-xs leading-5 text-gray-300">
+              <p className="font-semibold text-emerald-200">Reparto vigente para ambos PDF</p>
+              <p>Aliado {savedDistribution.allySharePercent}% del margen bruto · Inversionista {savedDistribution.investorSharePercent}% / EVGreen {savedDistribution.evgreenSharePercent}% del margen neto.</p>
+              <p className="text-gray-400">{savedDistribution.source === "SPACE" ? "Guardado en este espacio." : savedDistribution.source === "PROJECT" ? "Heredado del proyecto vinculado. Al guardar un cambio se establecerá el reparto propio del espacio." : "Sugerencia por tipo; aún sin acuerdo propio guardado."} Edita y guarda para actualizar la ficha del aliado y el prospecto.</p>
             </div>
 
             <div className="rounded-xl border border-[#374151] bg-[#0a0f1a] p-3 sm:p-4">
@@ -2347,8 +2397,9 @@ function SpaceDetailDialog({
                     )}
                     {aiAnalysis.revenueDistribution && (
                       <div className="mt-3 rounded-lg border border-emerald-400/20 bg-emerald-500/5 p-2.5 text-[11px] text-emerald-100">
-                        <p className="font-semibold text-emerald-200">Distribución aplicable sobre margen neto</p>
+                        <p className="font-semibold text-emerald-200">Referencia histórica del análisis IA · no es el acuerdo vigente</p>
                         <p className="mt-1">{aiAnalysis.revenueDistribution.summary}</p>
+                        <p className="mt-1 text-gray-400">Los PDF usan el reparto vigente del espacio mostrado arriba.</p>
                       </div>
                     )}
                     {aiAnalysis.solarScope?.included && (
@@ -3065,6 +3116,18 @@ function SpaceDetailDialog({
                   <Input inputMode="numeric" value={editForm.estimatedChargerCount || ""} onChange={e => setEditForm(p => ({ ...p, estimatedChargerCount: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
                 </div>
               </div>
+              <div className="mt-3">
+                <CommercialDistributionEditor
+                  value={editDistributionDraft}
+                  onChange={setEditDistributionDraft}
+                  spaceType={space.spaceType}
+                  source={savedDistribution.source}
+                  dirty={commercialDistributionChanged(editDistributionDraft, savedDistribution)}
+                  disabled={updateSpaceMutation.isPending}
+                  saveExplanation="Guardar cambios fija este reparto en el espacio. La proyección sugerida usa estos porcentajes; ambos PDF leerán los valores guardados, no cambios pendientes."
+                  example={distributionExample}
+                />
+              </div>
               {suggestedFinancialProjection ? (
                 <div className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -3085,6 +3148,7 @@ function SpaceDetailDialog({
                       type="button"
                       size="sm"
                       variant="outline"
+                      disabled={suggestedFinancialProjection.selected.investorMonthlyCashflow <= 0}
                       onClick={() => setEditForm((current) => ({
                         ...current,
                         estimatedRoiPercent: String(suggestedFinancialProjection.selected.roiAnnualPercent.toFixed(1)),
@@ -3097,13 +3161,13 @@ function SpaceDetailDialog({
                   </div>
                   <div className="mt-2 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
                     <div><span className="block text-emerald-100/60">ROI anual</span><strong className="text-emerald-200">{suggestedFinancialProjection.selected.roiAnnualPercent.toFixed(1)}%</strong></div>
-                    <div><span className="block text-emerald-100/60">Payback</span><strong className="text-emerald-200">{Math.max(1, Math.round(suggestedFinancialProjection.selected.paybackMonths))} meses</strong></div>
+                    <div><span className="block text-emerald-100/60">Payback</span><strong className="text-emerald-200">{suggestedFinancialProjection.selected.investorMonthlyCashflow > 0 ? `${Math.max(1, Math.round(suggestedFinancialProjection.selected.paybackMonths))} meses` : "Sin recuperación con este reparto"}</strong></div>
                     <div><span className="block text-emerald-100/60">Sesiones/mes</span><strong className="text-emerald-200">{Math.round(suggestedFinancialProjection.selected.sessionsPerDay * 30).toLocaleString("es-CO")}</strong></div>
                     <div><span className="block text-emerald-100/60">Flujo inversionista/mes</span><strong className="text-emerald-200">{formatCOP(Math.round(suggestedFinancialProjection.selected.investorMonthlyCashflow))}</strong></div>
                   </div>
                 </div>
               ) : (
-                <p className="mt-2 text-[11px] text-gray-500">Ingresa inversión y potencia DC (mínimo 120 kW) para recibir un ROI y payback sugeridos. Puedes usar punto o coma en todos los importes.</p>
+                <p className="mt-2 text-[11px] text-gray-400">Completa un reparto válido, inversión, demanda EV y potencia DC (mínimo 120 kW) para recibir un ROI y payback sugeridos. Puedes usar punto o coma en todos los importes.</p>
               )}
               <div className="mt-2">
                 <Label className="text-gray-300 text-xs mb-1 block">Tipo de inversión</Label>
@@ -3308,6 +3372,7 @@ function SpaceDetailDialog({
             </Button>
             <Button onClick={async () => {
               try {
+                const distribution = requireCommercialDistribution(editDistributionDraft);
                 const numericError = [
                   numericInputError("Latitud", editForm.latitude),
                   numericInputError("Longitud", editForm.longitude),
@@ -3355,7 +3420,7 @@ function SpaceDetailDialog({
                 if (stratum !== undefined && (stratum < 1 || stratum > 6)) {
                   throw new Error("El estrato debe estar entre 1 y 6.");
                 }
-                const payload: Record<string, any> = { id };
+                const payload: Record<string, any> = { id, ...distribution };
                 // Campos básicos
                 if (editForm.spaceName !== undefined) payload.spaceName = editForm.spaceName;
                 if (editForm.address !== undefined) payload.address = editForm.address;
@@ -3551,7 +3616,7 @@ function SpaceDetailDialog({
 
       {/* Publish Dialog */}
       <Dialog open={showPublishDialog} onOpenChange={setShowPublishDialog}>
-        <DialogContent className="bg-[#111827] border-[#1f2937] text-white max-w-[95vw] sm:max-w-md">
+        <DialogContent className="max-h-[90dvh] overflow-y-auto bg-[#111827] border-[#1f2937] text-white max-w-[95vw] sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Publicar en Crowdfunding</DialogTitle>
           </DialogHeader>
@@ -3580,12 +3645,25 @@ function SpaceDetailDialog({
                 {publishAmount ? formatCOP(parseInt(publishAmount) || 0) : "Ingrese el monto total"}
               </p>
             </div>
+            <CommercialDistributionEditor
+              value={publishDistributionDraft}
+              onChange={canManageAdministrativeDetails ? setPublishDistributionDraft : undefined}
+              readOnly={!canManageAdministrativeDetails}
+              spaceType={space.spaceType}
+              source={savedDistribution.source}
+              dirty={commercialDistributionChanged(publishDistributionDraft, savedDistribution)}
+              disabled={publishMutation.isPending}
+              saveExplanation={canManageAdministrativeDetails
+                ? "Al publicar se guardará este reparto en el espacio y se usará para el proyecto de crowdfunding y ambos PDF. Confirma el acuerdo antes de continuar."
+                : "La publicación conservará el reparto vigente. Solicita a administración cualquier cambio antes de publicar."}
+              example={distributionExample}
+            />
           </div>
           <DialogFooter className="flex-col sm:flex-row gap-2">
             <Button variant="outline" onClick={() => setShowPublishDialog(false)} className="border-[#374151] text-gray-300 w-full sm:w-auto">
               Cancelar
             </Button>
-            <Button onClick={handlePublish} disabled={publishMutation.isPending} className="bg-green-600 hover:bg-green-700 text-white w-full sm:w-auto">
+            <Button onClick={handlePublish} disabled={publishMutation.isPending || !validateCommercialDistributionDraft(publishDistributionDraft).values} className="bg-green-600 hover:bg-green-700 text-white w-full sm:w-auto">
               {publishMutation.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Globe className="w-4 h-4 mr-1.5" />}
               Publicar
             </Button>
@@ -3594,7 +3672,7 @@ function SpaceDetailDialog({
       </Dialog>
 
       {/* ===== MODAL PROSPECTO DE INVERSIÓN ===== */}
-      <Dialog open={showProspectoDialog} onOpenChange={setShowProspectoDialog}>
+      <Dialog open={showProspectoDialog} onOpenChange={(open) => { if (!isPreparingProspecto) setShowProspectoDialog(open); }}>
         <DialogContent className="!inset-0 !top-0 !left-0 !h-[100dvh] !w-screen !max-h-none !max-w-none !translate-x-0 !translate-y-0 !rounded-none overflow-y-auto overscroll-contain border-[#1f2937] bg-[#111827] p-3 text-white sm:!top-1/2 sm:!left-1/2 sm:!h-auto sm:!max-h-[90dvh] sm:!w-[calc(100vw-1rem)] sm:!max-w-2xl sm:!translate-x-[-50%] sm:!translate-y-[-50%] sm:rounded-lg sm:p-6">
           <DialogHeader className="sticky top-0 z-10 -mx-3 -mt-3 border-b border-[#1f2937] bg-[#111827] px-3 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] pr-14 sm:static sm:m-0 sm:border-0 sm:bg-transparent sm:p-0 sm:pr-0">
             <DialogTitle className="text-white flex items-center gap-2">
@@ -3608,64 +3686,17 @@ function SpaceDetailDialog({
             </p>
 
             {/* Reparto */}
-            <div className="bg-[#1f2937] rounded-lg p-4 space-y-3">
-              <h4 className="text-emerald-400 text-sm font-semibold flex items-center gap-2">
-                <Settings2 className="w-4 h-4" /> Modelo de Reparto de Ingresos
-              </h4>
-              <p className="text-gray-500 text-xs leading-relaxed">Ingreso bruto − energía − gastos fijos = margen bruto. El aliado participa sobre ese margen; Inversor y EVGreen se reparten exclusivamente el margen neto resultante.</p>
-              <p className="rounded-md border border-emerald-400/20 bg-emerald-500/5 px-2.5 py-2 text-xs leading-relaxed text-emerald-100">Preconfiguración: <strong>{revenueDistribution.investorSharePercent}% inversionista / {revenueDistribution.evgreenSharePercent}% EVGreen</strong> sobre margen neto ({revenueDistribution.basis === "EDS" ? "EDS" : "otros negocios"}). Puedes ajustarla para este acuerdo; inversionista y EVGreen deben sumar 100%. La comisión del dueño del sitio se mantiene separada sobre el margen bruto.</p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <Label className="text-gray-300 text-xs mb-1 block">Aliado (% margen bruto)</Label>
-                  <Input
-                    type="number" min={0} max={50} step={1} inputMode="numeric"
-                    value={prospectoConfig.allySharePercent ?? ""}
-                    onChange={e => {
-                      const v = parseOptionalBoundedPercentageInput(e.target.value, 50);
-                      setProspectoConfig(c => ({ ...c, allySharePercent: v }));
-                    }}
-                    className="bg-[#111827] border-[#374151] text-white h-8 text-sm"
-                  />
-                  <p className="mt-1 text-[11px] leading-snug text-gray-500">Use 0% cuando el dueño del espacio sea el mismo inversionista y no aplique una comisión independiente.</p>
-                </div>
-                <div>
-                  <Label className="text-gray-300 text-xs mb-1 block">Inversor (% neto)</Label>
-                  <Input
-                    type="number" min={0} max={100}
-                    value={prospectoConfig.investorSharePercent ?? ""}
-                    onChange={e => setProspectoConfig(c => ({ ...c, investorSharePercent: parseOptionalBoundedPercentageInput(e.target.value) }))}
-                    className="bg-[#111827] border-[#374151] text-white h-8 text-sm"
-                  />
-                </div>
-                <div>
-                  <Label className="text-gray-300 text-xs mb-1 block">EVGreen (% neto)</Label>
-                  <Input
-                    type="number" min={0} max={100}
-                    value={prospectoConfig.platformSharePercent ?? ""}
-                    onChange={e => setProspectoConfig(c => ({ ...c, platformSharePercent: parseOptionalBoundedPercentageInput(e.target.value) }))}
-                    className="bg-[#111827] border-[#374151] text-white h-8 text-sm"
-                  />
-                </div>
-              </div>
-              {!prospectoSharesReady && <p className="rounded border border-amber-400/30 bg-amber-400/10 px-2 py-1.5 text-xs text-amber-100">Completa Aliado, Inversor y EVGreen con valores entre 0% y 100%. Inversor y EVGreen deben sumar exactamente 100% antes de generar el prospecto.</p>}
-              {/* Barra visual del reparto neto: el aliado se descuenta antes. */}
-              {(() => {
-                const allyPct = prospectoConfig.allySharePercent ?? 0;
-                const invNetPct = prospectoConfig.investorSharePercent ?? 0;
-                const platformNetPct = prospectoConfig.platformSharePercent ?? 0;
-                return (
-                  <>
-                    <div className="w-full h-3 rounded-full overflow-hidden flex">
-                      <div className="bg-emerald-500 transition-all duration-300" style={{ width: `${invNetPct}%` }} />
-                      <div className="bg-gray-500 flex-1" />
-                    </div>
-                    <p className="text-gray-500 text-xs text-center leading-relaxed">
-                      <span className="text-blue-400">Aliado {allyPct}% del margen bruto</span><span className="hidden sm:inline"> · </span><br className="sm:hidden" /> <span className="text-emerald-400">Inversor {invNetPct}%</span><span className="hidden sm:inline"> · </span><br className="sm:hidden" /> <span className="text-gray-400">EVGreen {platformNetPct}%</span> <span className="text-gray-600">(sobre margen neto)</span>
-                    </p>
-                  </>
-                );
-              })()}
-            </div>
+            <CommercialDistributionEditor
+              value={prospectoDistributionDraft}
+              onChange={canManageAdministrativeDetails ? setProspectoDistributionDraft : undefined}
+              readOnly={!canManageAdministrativeDetails}
+              disabled={isPreparingProspecto}
+              spaceType={space.spaceType}
+              source={savedDistribution.source}
+              dirty={prospectoDistributionDirty}
+              saveExplanation="Ambos PDF usan el reparto vigente del espacio. Si lo cambias aquí, primero se guardará mediante Guardar reparto y generar; si el guardado falla, no se generará el PDF. Los otros parámetros de este modal sólo ajustan esta proyección."
+              example={distributionExample}
+            />
 
             {/* Proyección financiera */}
             <div className="bg-[#1f2937] rounded-lg p-4 space-y-3">
@@ -3746,27 +3777,36 @@ function SpaceDetailDialog({
             )}
           </div>
           <DialogFooter className="sticky bottom-0 z-10 -mx-3 -mb-3 border-t border-[#1f2937] bg-[#111827] px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:static sm:m-0 sm:border-0 sm:bg-transparent sm:p-0">
-            <Button variant="outline" onClick={() => setShowProspectoDialog(false)} className="w-full border-[#374151] text-gray-300 sm:w-auto">
+            <Button variant="outline" disabled={isPreparingProspecto} onClick={() => setShowProspectoDialog(false)} className="w-full border-[#374151] text-gray-300 sm:w-auto">
               Cancelar
             </Button>
             <Button
               onClick={async () => {
-                if (!prospectoSharesReady || prospectoConfig.allySharePercent === undefined || prospectoConfig.investorSharePercent === undefined || prospectoConfig.platformSharePercent === undefined) {
-                  toast.error("Completa el reparto: Inversor y EVGreen deben sumar exactamente 100% del margen neto.");
+                if (!prospectoSharesReady || !prospectoTechnicalReady || isPreparingProspecto) {
+                  toast.error("Completa el reparto y las condiciones técnicas antes de generar el PDF.");
                   return;
                 }
                 try {
-                  const result = await generateProspectoMutation.mutateAsync({
-                    submissionId: id,
-                    allySharePercent: prospectoConfig.allySharePercent,
-                    investorSharePercent: prospectoConfig.investorSharePercent,
-                    platformSharePercent: prospectoConfig.platformSharePercent,
-                    installedPowerKw: prospectoConfig.installedPowerKw,
-                    tarifaKwhCop: prospectoConfig.tarifaKwhCop,
-                    energyCostPerKwhCop: prospectoConfig.energyCostPerKwhCop,
-                    fixedMonthlyExpensesCop: prospectoConfig.fixedMonthlyExpensesCop ?? 0,
-                    capexIncludesGridUpgrade: prospectoConfig.capexIncludesGridUpgrade,
-                    technicalConditionNote: prospectoConfig.technicalConditionNote.trim() || undefined,
+                  setIsPreparingProspecto(true);
+                  const result = await saveCommercialDistributionBeforePdf({
+                    draft: prospectoDistributionDraft,
+                    saved: savedDistribution,
+                    save: async (distribution) => {
+                      await updateSpaceMutation.mutateAsync({ id, ...distribution });
+                      toast.success("Reparto guardado en el espacio. Será usado por ambos PDF.");
+                      await refetch();
+                      onRefresh();
+                    },
+                    // Sin overrides legacy: el documento debe leer el reparto persistido.
+                    generate: () => generateProspectoMutation.mutateAsync({
+                      submissionId: id,
+                      installedPowerKw: prospectoConfig.installedPowerKw,
+                      tarifaKwhCop: prospectoConfig.tarifaKwhCop,
+                      energyCostPerKwhCop: prospectoConfig.energyCostPerKwhCop,
+                      fixedMonthlyExpensesCop: prospectoConfig.fixedMonthlyExpensesCop ?? 0,
+                      capexIncludesGridUpgrade: prospectoConfig.capexIncludesGridUpgrade,
+                      technicalConditionNote: prospectoConfig.technicalConditionNote.trim() || undefined,
+                    }),
                   });
                   if (result.pdfUrl) {
                     // Usar elemento <a> para compatibilidad con Android WebView
@@ -3778,20 +3818,22 @@ function SpaceDetailDialog({
                     document.body.appendChild(link);
                     link.click();
                     document.body.removeChild(link);
-                    toast.success("✅ Prospecto generado exitosamente");
+                    toast.success("Prospecto generado con el reparto vigente del espacio");
                     setShowProspectoDialog(false);
                   }
                 } catch (err: any) {
                   toast.error(err.message || "Error al generar el prospecto");
+                } finally {
+                  setIsPreparingProspecto(false);
                 }
               }}
-              disabled={generateProspectoMutation.isPending || !prospectoTechnicalReady || !prospectoSharesReady}
+              disabled={isPreparingProspecto || updateSpaceMutation.isPending || generateProspectoMutation.isPending || !prospectoTechnicalReady || !prospectoSharesReady}
               className="w-full bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 sm:w-auto"
             >
-              {generateProspectoMutation.isPending ? (
-                <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Generando PDF...</>
+              {isPreparingProspecto ? (
+                <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> {updateSpaceMutation.isPending ? "Guardando reparto…" : "Generando PDF…"}</>
               ) : (
-                <><FileDown className="w-4 h-4 mr-2" /> Generar y Descargar</>
+                <><FileDown className="w-4 h-4 mr-2" /> {prospectoDistributionDirty ? "Guardar reparto y generar" : "Generar y descargar"}</>
               )}
             </Button>
           </DialogFooter>
