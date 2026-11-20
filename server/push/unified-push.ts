@@ -96,7 +96,7 @@ export async function sendUserPushDetailed(
           title: payload.title,
           body: payload.body,
           image: payload.imageUrl,
-          tag: payload.type,
+          tag: payload.data?.notificationTag || payload.type,
           requireInteraction: ["low_balance", "charging_error", "overstay_alert"].includes(payload.type),
           data: {
             deliveryId,

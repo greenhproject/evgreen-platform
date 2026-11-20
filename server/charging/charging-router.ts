@@ -19,9 +19,9 @@ import * as simulator from "./charging-simulator";
 import { sendUserPush } from "../push/unified-push";
 import { dispatchOrganizationWebhookEvent } from "../api/webhook-dispatcher";
 import { calculateSocEstimation, getManualSocAvailability, resolveOperationalSoc } from "./soc-estimation";
+import { getMeteredBillingResolution } from "./metered-billing";
 import {
   buildPowerHistoryFromMeterValues,
-  resolveBillableEnergyKwh,
   resolveChargingTelemetryFreshness,
   shouldAdvanceTelemetrySample,
   type ChartEnergyReference,
@@ -137,7 +137,7 @@ const activeChargeSessions = new Map<number, {
   // Referencia de cobro observada cuando meterStart OCPP es inconsistente.
   // Es independiente de la curva y no reemplaza el valor crudo auditado.
   billingEnergyBaselineKwh?: number | null;
-  billingEnergyReference?: "meter_start" | "first_session_sample" | "unavailable";
+  billingEnergyReference?: "meter_start" | "first_session_sample" | "observed_segments" | "unavailable";
   voltage: number | null; // Voltaje (V)
   current: number | null; // Corriente (A)
   lastMeterUpdate: Date | null; // Timestamp del último MeterValues
@@ -1440,33 +1440,29 @@ export const chargingRouter = router({
       let voltage: number | null = null;
       let currentAmp: number | null = null;
       const latestStoredMeterValue = await db.getLastMeterValue(activeTransaction.id);
-      const firstStoredEnergyMeterValue = await db.getFirstEnergyMeterValue(activeTransaction.id);
-      const latestStoredEnergyMeterValue = await db.getLatestEnergyMeterValue(activeTransaction.id);
-      const billingEnergyResolution = resolveBillableEnergyKwh({
-        meterStartWh: activeTransaction.meterStart,
-        firstSessionEnergyKwh: firstStoredEnergyMeterValue?.energyKwh,
-        currentEnergyKwh: latestStoredEnergyMeterValue?.energyKwh,
-      });
+      const billingEnergyResolution = await getMeteredBillingResolution(activeTransaction);
       let resolvedPowerHistory = activeSessionInfo?.powerHistory || [];
 
-      // ── Reconstruir powerHistory desde BD si la memoria está vacía (ej: tras reinicio) ──
-      if (resolvedPowerHistory.length < 2) {
-        try {
-          const storedMeterValues = await db.getRecentMeterValuesByTransactionId(activeTransaction.id, 120);
-          if (storedMeterValues.length >= 2) {
-            const meterStart = activeTransaction.meterStart ? parseFloat(activeTransaction.meterStart) : 0;
-            resolvedPowerHistory = buildPowerHistoryFromMeterValues(storedMeterValues, meterStart);
-            if (activeSessionInfo) activeSessionInfo.powerHistory = resolvedPowerHistory;
-          }
-        } catch (_e) { /* no-op: no bloquear si falla */ }
+      // Preserve the origin even in long sessions and after replica restarts.
+      if (billingEnergyResolution.samples.length >= 2) {
+        resolvedPowerHistory = buildPowerHistoryFromMeterValues(
+          billingEnergyResolution.samples,
+          Number(activeTransaction.meterStart),
+          { startTime: activeTransaction.startTime, maxPowerKw: nominalPowerKw },
+        ).slice(-120);
+        if (activeSessionInfo) activeSessionInfo.powerHistory = resolvedPowerHistory;
       }
-      const meterReferenceNeedsReview = resolvedPowerHistory.some((point) => point.energyReference === "first_sample");
+      const meterReferenceNeedsReview = billingEnergyResolution.resetCount > 0
+        || billingEnergyResolution.rejectedJumpCount > 0
+        || resolvedPowerHistory.some((point) => point.energyReference === "first_sample");
       
       if (activeSessionInfo) {
         // Datos actualizados en tiempo real desde MeterValues
         currentKwh = activeSessionInfo.currentKwh;
         currentCost = activeSessionInfo.currentCost;
-        pricePerKwh = activeSessionInfo.pricePerKwh || pricePerKwh;
+        if (activeTransaction.appliedPricePerKwh === null || activeTransaction.appliedPricePerKwh === undefined) {
+          pricePerKwh = activeSessionInfo.pricePerKwh || pricePerKwh;
+        }
         soc = activeSessionInfo.soc;
         currentPower = activeSessionInfo.currentPower || 0;
         currentPowerSource = activeSessionInfo.currentPowerSource ?? "unavailable";
@@ -2179,7 +2175,7 @@ export function updateActiveSessionMeterData(transactionId: number, data: {
   chartEnergyBaselineKwh?: number | null;
   chartEnergyReference?: ChartEnergyReference;
   billingEnergyBaselineKwh?: number | null;
-  billingEnergyReference?: "meter_start" | "first_session_sample" | "unavailable";
+  billingEnergyReference?: "meter_start" | "first_session_sample" | "observed_segments" | "unavailable";
   chartEnergyKwh?: number | null;
   soc?: number | null;
   currentPower?: number | null;
@@ -2548,17 +2544,11 @@ async function completeTransactionLocally(transactionId: number, transaction: an
     // Calcular energía entregada con la misma regla que MeterValues y
     // StopTransaction. Esto evita que el cierre local reintroduzca la resta
     // errónea cuando meterStart es posterior a la primera lectura OCPP.
-    const [firstEnergyMeterValue, latestEnergyMeterValue] = await Promise.all([
-      db.getFirstEnergyMeterValue(transactionId),
-      db.getLatestEnergyMeterValue(transactionId),
-    ]);
-    const localEnergyResolution = resolveBillableEnergyKwh({
-      meterStartWh: transaction.meterStart,
-      firstSessionEnergyKwh: activeSession?.billingEnergyBaselineKwh ?? firstEnergyMeterValue?.energyKwh,
-      currentEnergyKwh: transaction.meterEnd
-        ? Number(transaction.meterEnd) / 1000
-        : latestEnergyMeterValue?.energyKwh,
-    });
+    const localEnergyResolution = await getMeteredBillingResolution(transaction,
+      transaction.meterEnd == null ? [] : [{
+        timestamp: transaction.endTime || endTime,
+        energyKwh: Number(transaction.meterEnd) / 1000,
+      }]);
     const energyDelivered = localEnergyResolution.kwh
       ?? activeSession?.currentKwh
       ?? (transaction.kwhConsumed ? parseFloat(transaction.kwhConsumed) : 0);

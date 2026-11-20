@@ -3,6 +3,8 @@
 // The browser's native HTTP cache handles asset caching efficiently.
 // v8: Fixed push notifications showing as generic Chrome notifications without title/body
 const SW_VERSION = 'v8';
+const PUSH_EVENT_CACHE = 'evgreen-push-events-v1';
+let pushEventQueue = Promise.resolve();
 
 // ============================================
 // INSTALLATION - Clean slate approach
@@ -21,6 +23,7 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((name) => {
+          if (name === PUSH_EVENT_CACHE) return Promise.resolve(false);
           console.log(`[SW ${SW_VERSION}] Deleting cache: ${name}`);
           return caches.delete(name);
         })
@@ -283,8 +286,8 @@ self.addEventListener('push', (event) => {
     icon: '/icons/icon-192x192.png',
     badge: '/icons/badge-72x72.png',
     vibrate: [200, 100, 200],
-    tag: notifType,
-    renotify: true,
+    tag: rawData.data?.notificationTag || rawData.tag || notifType,
+    renotify: notifType !== 'charging_started',
     requireInteraction: ['low_balance', 'charging_error', 'overstay_alert'].includes(notifType),
     data: {
       url: clickAction,
@@ -298,23 +301,40 @@ self.addEventListener('push', (event) => {
     options.image = image;
   }
 
-  event.waitUntil(
-    self.registration.showNotification(title, options)
-      .then(() => {
-        // Forward to any open app windows for in-app notification display
-        return self.clients.matchAll({ type: 'window', includeUncontrolled: true })
-          .then((clientList) => {
-            clientList.forEach((client) => {
-              client.postMessage({
-                type: 'PUSH_NOTIFICATION',
-                title,
-                body,
-                data: rawData.data || {},
-              });
-            });
-          });
-      })
-  );
+  const show = async () => {
+    const eventId = rawData.data?.eventId;
+    const occurredAt = Date.parse(rawData.data?.occurredAt || '');
+    if (notifType === 'charging_started' && Number.isFinite(occurredAt)
+      && Date.now() - occurredAt > 5 * 60 * 1000) return;
+    let cache;
+    let eventUrl;
+    if (eventId) {
+      try {
+        cache = await caches.open(PUSH_EVENT_CACHE);
+        eventUrl = new URL('/__push_event__/' + encodeURIComponent(eventId), self.location.origin).href;
+        if (await cache.match(eventUrl)) return;
+      } catch (error) {
+        console.warn('[SW] Push deduplication storage unavailable', error);
+        cache = undefined;
+      }
+    }
+    await self.registration.showNotification(title, options);
+    if (cache && eventUrl) {
+      try {
+        await cache.put(eventUrl, new Response('seen'));
+        const keys = await cache.keys();
+        await Promise.all(keys.slice(0, Math.max(0, keys.length - 200)).map(key => cache.delete(key)));
+      } catch (error) { console.warn('[SW] Could not persist seen push event', error); }
+    }
+    return self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
+      clientList.forEach(client => client.postMessage({
+        type: 'PUSH_NOTIFICATION', title, body, data: rawData.data || {},
+      }));
+    });
+  };
+  // Serialize concurrent deliveries to this worker; persist seen IDs across restarts.
+  pushEventQueue = pushEventQueue.catch(() => {}).then(show);
+  event.waitUntil(pushEventQueue);
 });
 
 // ============================================

@@ -1692,7 +1692,7 @@ const tariffsRouter = router({
 const transactionsRouter = router({
   // Obtener transacción por ID (solo si pertenece al usuario o es admin)
   getById: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
       const transaction = await db.getTransactionById(input.id);
       
@@ -1716,10 +1716,14 @@ const transactionsRouter = router({
       const evse = await db.getEvseById(transaction.evseId);
       const tariff = transaction.tariffId ? await db.getTariffById(transaction.tariffId) : null;
       
-      // Calcular duración
-      const startTime = new Date(transaction.startTime);
-      const endTime = transaction.endTime ? new Date(transaction.endTime) : new Date();
-      const durationMinutes = Math.floor((endTime.getTime() - startTime.getTime()) / 60000);
+      // Drizzle TIMESTAMP mode:string no devuelve Date. Serializar ambos
+      // extremos en UTC antes de calcular duración o entregar el recibo.
+      const startTimeIso = toIsoDateOrEmpty(transaction.startTime);
+      const endTimeIso = toIsoDateOrEmpty(transaction.endTime);
+      const startMs = Date.parse(startTimeIso);
+      const endMs = transaction.endTime == null ? Date.now() : Date.parse(endTimeIso);
+      const durationMinutes = Number.isFinite(startMs) && Number.isFinite(endMs)
+        ? Math.max(0, Math.floor((endMs - startMs) / 60000)) : 0;
       
       // Obtener precios efectivos de la estación para referencia
       const effectivePrice = await db.getEffectiveStationPrice(transaction.stationId);
@@ -1733,9 +1737,8 @@ const transactionsRouter = router({
         connectorId: evse?.connectorId || 1,
         connectorType: evse?.connectorType || "TYPE_2",
         chargeType: evse?.chargeType || "AC",
-        startTime: transaction.startTime,
-        // @ts-expect-error -- Drizzle type mismatch: schema field type vs inferred type
-        endTime: transaction.endTime?.toISOString() || null,
+        startTime: startTimeIso,
+        endTime: endTimeIso || null,
         durationMinutes,
         kwhConsumed: transaction.kwhConsumed ? parseFloat(transaction.kwhConsumed).toFixed(2) : "0.00",
         // Tarifa aplicada (la que se usó al momento de la carga)
@@ -8365,13 +8368,12 @@ const adminRemoteStartRouter = router({
         },
       });
 
-      // 12. Notificar al usuario que se inició su carga remotamente
+      // RemoteStart is a request, not evidence of a physically started charge.
       const stationName = stationData.name || "Estación EVGreen";
-      const formattedPrice = Math.round(pricePerKwh).toLocaleString("es-CO");
       await db.createNotification({
         userId,
-        title: "\u26a1 Carga iniciada por soporte",
-        message: `El equipo de soporte EVGreen ha iniciado una sesión de carga en ${stationName}, conector ${connectorId}. Tarifa: $${formattedPrice} COP/kWh. Motivo: ${reason}`,
+        title: "Solicitud de carga por soporte",
+        message: `Soporte EVGreen solicitó el inicio en ${stationName}, conector ${connectorId}. Estado: ${sent ? "Esperando confirmación del cargador" : "Pendiente de reintento"}. Motivo: ${reason}`,
         type: "CHARGE_REQUESTED",
         isRead: 0,
       });
@@ -8380,9 +8382,9 @@ const adminRemoteStartRouter = router({
       try {
         const { sendUserPush } = await import("./push/unified-push");
         await sendUserPush(userId, {
-          type: "charging_started",
-          title: "\u26a1 Carga iniciada por soporte",
-          body: `Soporte EVGreen inició tu carga en ${stationName}. Tarifa: $${formattedPrice}/kWh`,
+          type: "system_alert",
+          title: "Solicitud de carga por soporte",
+          body: `Solicitud en ${stationName}: ${sent ? "esperando confirmación del cargador" : "pendiente de reintento"}. El inicio y la tarifa se confirmarán al comenzar.`,
           clickAction: "/charging-monitor",
           data: { stationId: stationId.toString(), connectorId: connectorId.toString() },
         });
