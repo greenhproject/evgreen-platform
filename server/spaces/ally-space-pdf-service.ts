@@ -100,9 +100,47 @@ export interface AllySpacePdfData {
   generatedAt: Date;
 }
 
+export interface AllyPlatformBenefit {
+  id: "dashboard" | "dynamic-pricing" | "carbon-impact" | "loyalty" | "branding";
+  title: string;
+  description: string;
+}
+
+/** Texto comercial sin importes, datos personales ni promesas de certificación. */
+export function buildAllyPlatformBenefits(): AllyPlatformBenefit[] {
+  return [
+    {
+      id: "dashboard",
+      title: "Monitoreo en tiempo real y portal del aliado",
+      description: "La plataforma monitorea las transacciones durante la operación. El aliado dispone de un portal financiero para consultar liquidaciones e ingresos de sus puntos; el detalle operativo en tiempo real para el aliado requiere habilitación específica.",
+    },
+    {
+      id: "dynamic-pricing",
+      title: "Tarifas dinámicas con inteligencia artificial",
+      description: "Tarifas dinámicas opcionales con analítica predictiva de demanda: consideran disponibilidad, ocupación de la estación, horarios e historial. Los ajustes respetan los límites configurados y cuentan con respaldo de tarifa fija.",
+    },
+    {
+      id: "carbon-impact",
+      title: "Trazabilidad del impacto ambiental de las recargas",
+      description: "Los registros de recarga y los kWh entregados sustentan el seguimiento del CO2 evitado estimado con factores documentados y datos de vehículo disponibles. Se distinguen el impacto de movilidad eléctrica y el solar atribuible.",
+    },
+    {
+      id: "loyalty",
+      title: "Puntos y beneficios para fidelizar a los usuarios",
+      description: "Programa configurable de puntos por energía cargada, convertibles en saldo para futuras recargas. La opción de canjes en servicios afiliados requiere convenios e integración del catálogo para su habilitación.",
+    },
+    {
+      id: "branding",
+      title: "Branding que transforma y posiciona el espacio",
+      description: "Identidad EVGreen, señalización, demarcación y orientación mediante QR, según el manual de marca y el diseño aprobado. Más que instalar un cargador: crear un punto reconocible, organizado y con presencia comercial.",
+    },
+  ];
+}
+
 export interface AllyPdfContent {
   coverSubtitle: string;
   statusLabel: string;
+  platformBenefits: AllyPlatformBenefit[];
   profileRows: Array<[string, string]>;
   technicalRows: Array<[string, string]>;
   operatingRows: Array<[string, string]>;
@@ -278,6 +316,7 @@ export function buildAllySpacePdfContent(data: AllySpacePdfData): AllyPdfContent
   return {
     coverSubtitle: `Documento técnico y comercial para el aliado que aporta el espacio. ${spaceTypeDescription(data)}`,
     statusLabel: statusLabel(data.status),
+    platformBenefits: buildAllyPlatformBenefits(),
     profileRows: [
       ["Nombre del espacio", data.spaceName || "No informado"],
       ["Tipo de ubicación", spaceTypeLabel(data.spaceType, data.spaceTypeOther)],
@@ -945,6 +984,87 @@ function addHeader(doc: InstanceType<typeof jsPDF>, data: AllySpacePdfData, logo
   doc.text(`${data.spaceName} · ${data.code}`, width - margin, 9, { align: "right" });
 }
 
+/** Hoja comercial independiente: no altera los escenarios ni el alcance solar. */
+function addPlatformBenefitsPage(
+  doc: InstanceType<typeof jsPDF>,
+  data: AllySpacePdfData,
+  content: AllyPdfContent,
+  logo: { data: string; format: string } | null,
+  cover: { data: string; format: string; aspect: number } | null,
+  width: number,
+  height: number,
+  margin: number,
+) {
+  addHeader(doc, data, logo, width, margin);
+  const contentWidth = width - margin * 2;
+  let y = drawSectionTitle(doc, "EL VALOR DEL ECOSISTEMA EVGREEN", margin, 24, contentWidth);
+  const heroHeight = 39;
+  const imageWidth = 59;
+  setColor(doc, COLORS.navy, "fill");
+  doc.roundedRect(margin, y, contentWidth, heroHeight, 3, 3, "F");
+  if (cover) drawFitImage(doc, cover, width - margin - imageWidth - 5, y + 5, imageWidth, heroHeight - 10, COLORS.navy);
+  setColor(doc, COLORS.greenMid);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7.1);
+  doc.text("SOFTWARE PROPIO + OPERACIÓN + MARCA", margin + 7, y + 9);
+  setColor(doc, COLORS.white);
+  doc.setFontSize(17);
+  doc.text(["Más que cargadores.", "Tecnología que crea valor."], margin + 7, y + 19, { lineHeightFactor: 1.12 });
+  y += heroHeight + 7;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.8);
+  setColor(doc, COLORS.gray700);
+  const intro = doc.splitTextToSize("Una plataforma que conecta la operación del punto con la transparencia para el aliado, la experiencia del usuario y el posicionamiento del espacio.", contentWidth);
+  doc.text(intro, margin, y);
+  y += intro.length * 4.3 + 6;
+
+  for (const [index, benefit] of content.platformBenefits.entries()) {
+    const textX = margin + 20;
+    const textWidth = contentWidth - 26;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.4);
+    const titleLines: string[] = doc.splitTextToSize(benefit.title, textWidth);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.6);
+    const bodyLines: string[] = doc.splitTextToSize(benefit.description, textWidth);
+    const cardHeight = 12 + titleLines.length * 4 + bodyLines.length * 3.8;
+    // Medición previa: nunca dibujar texto en la zona reservada al pie.
+    if (y + cardHeight > height - 32) {
+      doc.addPage();
+      addHeader(doc, data, logo, width, margin);
+      y = drawSectionTitle(doc, "ECOSISTEMA EVGREEN · CONTINUACIÓN", margin, 24, contentWidth);
+    }
+    setColor(doc, index % 2 === 0 ? COLORS.greenLight : COLORS.gray100, "fill");
+    doc.roundedRect(margin, y, contentWidth, cardHeight, 2.5, 2.5, "F");
+    setColor(doc, COLORS.greenDark, "fill");
+    doc.circle(margin + 10, y + 11, 5, "F");
+    setColor(doc, COLORS.white);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.6);
+    doc.text(String(index + 1).padStart(2, "0"), margin + 10, y + 12.1, { align: "center" });
+    setColor(doc, COLORS.gray900);
+    doc.setFontSize(9.4);
+    doc.text(titleLines, textX, y + 8, { lineHeightFactor: 1.2 });
+    setColor(doc, COLORS.gray700);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.6);
+    doc.text(bodyLines, textX, y + 9 + titleLines.length * 4, { lineHeightFactor: 1.2 });
+    y += cardHeight + 3;
+  }
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(6.8);
+  setColor(doc, COLORS.gray500);
+  const notes: string[] = doc.splitTextToSize("El monitoreo depende de la conectividad y la telemetría disponible. El CO2 evitado es una estimación, no créditos de carbono certificados. Los beneficios y el branding se habilitan según el alcance acordado.", contentWidth);
+  if (y + notes.length * 3.1 > height - 18) {
+    doc.addPage();
+    addHeader(doc, data, logo, width, margin);
+    y = 27;
+  }
+  doc.text(notes, margin, y + 3, { lineHeightFactor: 1.2 });
+}
+
 function addCover(doc: InstanceType<typeof jsPDF>, data: AllySpacePdfData, content: AllyPdfContent, logo: { data: string; format: string } | null, cover: { data: string; format: string; aspect: number } | null, coverPhoto: AllySpacePdfData["photos"][number] | null, width: number, height: number, margin: number) {
   setColor(doc, COLORS.navy, "fill");
   doc.rect(0, 0, width, height, "F");
@@ -1330,6 +1450,8 @@ export async function generateAllySpacePdf(data: AllySpacePdfData): Promise<Buff
   );
 
   addCover(doc, data, content, logo, coverImage, coverPhoto, width, height, margin);
+  doc.addPage();
+  addPlatformBenefitsPage(doc, data, content, logo, coverImage, width, height, margin);
   doc.addPage();
   addProfilePage(doc, data, content, logo, width, height, margin, !needsDedicatedOperatingPage);
   if (needsDedicatedOperatingPage) {
