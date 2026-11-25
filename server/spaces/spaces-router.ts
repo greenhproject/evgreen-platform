@@ -22,7 +22,7 @@ import {
 } from "../../drizzle/schema";
 import { eq, desc, and, sql, like, or, inArray, count, gte, lte, isNull, isNotNull } from "drizzle-orm";
 import { randomBytes } from "crypto";
-import { storagePut } from "../storage";
+import { storageGet, storagePut } from "../storage";
 import { scoreSpaceInvestment } from "./space-ai-scoring";
 import { buildEmailParams } from "../utils/email-helper";
 import { optionalFormInteger, optionalFormNumber, optionalLocalizedDecimalString } from "./space-input-normalization";
@@ -1327,6 +1327,80 @@ export const spacesRouter = router({
         const settings = await getPlatformSettings();
         const commercialDistribution = await resolveSubmissionDistribution(db, submission, settings);
         return { ...submission, status: submission.spaceStatus, photos, commercialDistribution };
+      }),
+
+    // Lee la constancia original; descargar no vuelve a firmar ni regenerar el PDF.
+    downloadSignedLetterPdf: commercialPipelineProcedure
+      .input(z.object({ id: z.number().int().positive() }).strict())
+      .mutation(async ({ input }) => {
+        const db = await getDatabase();
+        const [submission] = await db.select({
+          id: spaceSubmissions.id,
+          code: spaceSubmissions.code,
+          letterAcceptedAt: spaceSubmissions.letterAcceptedAt,
+          signedLetterPdfKey: spaceSubmissions.signedLetterPdfKey,
+        }).from(spaceSubmissions)
+          .where(eq(spaceSubmissions.id, input.id))
+          .limit(1);
+
+        if (!submission) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Postulación no encontrada" });
+        }
+        if (!submission.letterAcceptedAt) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "La carta de intención aún no ha sido firmada." });
+        }
+        if (!submission.signedLetterPdfKey?.trim()) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "La carta está firmada, pero su PDF original no está disponible." });
+        }
+
+        const maxBytes = 20 * 1024 * 1024;
+        const controller = new AbortController();
+        let timeout: ReturnType<typeof setTimeout> | undefined;
+        try {
+          // La única URL permitida es la resuelta por el proxy autenticado desde la clave persistida.
+          const { url } = await storageGet(submission.signedLetterPdfKey);
+          if (typeof url !== "string" || !["https:", "http:"].includes(new URL(url).protocol)) {
+            throw new Error("Invalid storage response");
+          }
+          timeout = setTimeout(() => controller.abort(), 20_000);
+          const response = await fetch(url, { signal: controller.signal });
+          if (!response.ok || !response.body) throw new Error("Download unavailable");
+          const contentLength = response.headers.get("content-length");
+          if (contentLength !== null && (!/^\d+$/.test(contentLength) || Number(contentLength) > maxBytes)) {
+            throw new Error("Invalid download size");
+          }
+
+          // Acotar el stream incluso si el servidor omite o falsea Content-Length.
+          const reader = response.body.getReader();
+          const chunks: Buffer[] = [];
+          let size = 0;
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              size += value.byteLength;
+              if (size > maxBytes) throw new Error("Download too large");
+              chunks.push(Buffer.from(value));
+            }
+          } finally {
+            reader.releaseLock();
+          }
+          const pdf = Buffer.concat(chunks, size);
+          if (pdf.length < 5 || !pdf.subarray(0, 5).equals(Buffer.from("%PDF-"))) {
+            throw new Error("Invalid PDF");
+          }
+          return {
+            fileName: `Carta-Intencion-Firmada-${safePdfSegment(submission.code)}.pdf`,
+            base64: pdf.toString("base64"),
+            mimeType: "application/pdf" as const,
+          };
+        } catch {
+          // No exponer claves, URLs firmadas ni mensajes internos del proveedor.
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "No se pudo descargar el PDF firmado original. Inténtalo de nuevo." });
+        } finally {
+          clearTimeout(timeout);
+          controller.abort();
+        }
       }),
 
     // ========================================================================

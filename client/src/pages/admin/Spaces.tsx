@@ -16,6 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ManualFormalizationAudit, ManualFormalizationFields } from "@/components/spaces/ManualFormalizationAudit";
 import { SpacePhotoLightbox } from "@/components/spaces/SpacePhotoLightbox";
 import { CommercialDistributionEditor } from "@/components/spaces/CommercialDistributionEditor";
+import { SignedLetterDownload } from "@/components/spaces/SignedLetterDownload";
 import {
   commercialDistributionForForm,
   commercialDistributionToDraft,
@@ -27,7 +28,7 @@ import {
   type CommercialDistributionDraft,
 } from "@/components/spaces/commercial-distribution-form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { getSpacePipelineAction } from "@shared/space-pipeline-actions";
 import { resolveDcInfrastructureRequirement } from "@shared/space-investment-scoring-policy";
@@ -1684,8 +1685,9 @@ function SpaceDetailDialog({
   if (isLoading || !space) {
     return (
       <Dialog open onOpenChange={onClose}>
-        <DialogContent className="!inset-0 !top-0 !left-0 !h-[100dvh] !w-screen !max-h-none !max-w-none !translate-x-0 !translate-y-0 !rounded-none overflow-y-auto overscroll-contain border-[#1f2937] bg-[#111827] p-3 text-white sm:!top-1/2 sm:!left-1/2 sm:!h-[calc(100dvh-2rem)] sm:!max-h-[calc(100dvh-2rem)] sm:!w-[calc(100vw-2rem)] sm:!max-w-none sm:!translate-x-[-50%] sm:!translate-y-[-50%] sm:rounded-lg sm:p-6 xl:!h-[90vh] xl:!max-h-[90vh] xl:!w-[92vw] xl:!max-w-[72rem]">
-          <div className="flex items-center justify-center py-12">
+        <DialogContent className="!flex !flex-col !gap-0 !overflow-hidden !inset-0 !top-0 !left-0 !h-[100dvh] !w-screen !max-h-none !max-w-none !translate-x-0 !translate-y-0 !rounded-none border-[#1f2937] bg-[#111827] p-0 text-white sm:!top-1/2 sm:!left-1/2 sm:!h-[calc(100dvh-2rem)] sm:!max-h-[calc(100dvh-2rem)] sm:!w-[calc(100vw-2rem)] sm:!max-w-none sm:!translate-x-[-50%] sm:!translate-y-[-50%] sm:rounded-lg xl:!h-[90vh] xl:!max-h-[90vh] xl:!w-[92vw] xl:!max-w-[72rem]">
+          <DialogTitle className="sr-only">Cargando detalle del espacio</DialogTitle>
+          <div className="flex flex-1 items-center justify-center py-12">
             <Loader2 className="w-8 h-8 text-emerald-400 animate-spin" />
           </div>
         </DialogContent>
@@ -2057,9 +2059,9 @@ function SpaceDetailDialog({
   return (
     <>
       <Dialog open onOpenChange={onClose}>
-        <DialogContent className="!inset-0 !top-0 !left-0 !h-[100dvh] !w-screen !max-h-none !max-w-none !translate-x-0 !translate-y-0 !rounded-none overflow-y-auto overscroll-contain border-[#1f2937] bg-[#111827] p-3 text-white sm:!top-1/2 sm:!left-1/2 sm:!h-[calc(100dvh-2rem)] sm:!max-h-[calc(100dvh-2rem)] sm:!w-[calc(100vw-2rem)] sm:!max-w-none sm:!translate-x-[-50%] sm:!translate-y-[-50%] sm:rounded-lg sm:p-6 xl:!h-[90vh] xl:!max-h-[90vh] xl:!w-[92vw] xl:!max-w-[72rem]">
-          {/* Header */}
-          <DialogHeader className="sticky top-0 z-10 -mx-3 -mt-3 border-b border-[#1f2937] bg-[#111827] px-3 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] pr-14 sm:static sm:m-0 sm:border-0 sm:bg-transparent sm:p-0 sm:pr-0">
+        <DialogContent showCloseButton={false} className="!flex !flex-col !gap-0 !overflow-hidden !inset-0 !top-0 !left-0 !h-[100dvh] !w-screen !max-h-none !max-w-none !translate-x-0 !translate-y-0 !rounded-none border-[#1f2937] bg-[#111827] p-0 text-white sm:!top-1/2 sm:!left-1/2 sm:!h-[calc(100dvh-2rem)] sm:!max-h-[calc(100dvh-2rem)] sm:!w-[calc(100vw-2rem)] sm:!max-w-none sm:!translate-x-[-50%] sm:!translate-y-[-50%] sm:rounded-lg xl:!h-[90vh] xl:!max-h-[90vh] xl:!w-[92vw] xl:!max-w-[72rem]">
+          {/* El encabezado no se contrae ni comparte scroll con las acciones. */}
+          <DialogHeader className="relative shrink-0 border-b border-[#1f2937] bg-[#111827] px-3 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] pr-14 sm:px-6 sm:py-4 sm:pr-16">
             <DialogTitle className="flex flex-col sm:flex-row sm:items-center gap-2">
               <span className="font-mono text-emerald-400 text-base sm:text-lg">{space.code}</span>
               <span className={`self-start inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${statusInfo.color}`}>
@@ -2067,9 +2069,15 @@ function SpaceDetailDialog({
                 {statusInfo.label}
               </span>
             </DialogTitle>
+            <DialogClose asChild>
+              <Button type="button" variant="ghost" size="icon" aria-label="Cerrar detalle del espacio" className="absolute right-3 top-[max(0.75rem,env(safe-area-inset-top))] h-10 w-10 text-gray-300 hover:bg-gray-800 hover:text-white sm:right-4 sm:top-3">
+                <X className="h-5 w-5" />
+              </Button>
+            </DialogClose>
           </DialogHeader>
 
-          <div className="space-y-4 sm:space-y-6 mt-2">
+          <div data-slot="space-detail-body" className="min-h-0 flex-1 overflow-y-auto overscroll-contain space-y-4 px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:space-y-6 sm:px-6 sm:pt-4 sm:pb-6">
+            <SignedLetterDownload spaceId={id} acceptedAt={space.letterAcceptedAt} hasStoredPdf={Boolean(space.signedLetterPdfKey)} />
             {/* Action buttons - two rows for mobile visibility */}
             <div className="flex flex-col gap-2">
             {/* Row 1: Status-specific actions */}
@@ -2631,20 +2639,7 @@ function SpaceDetailDialog({
                   {space.letterAcceptedAt && <DetailRow label="Carta aceptada" value={formatDate(space.letterAcceptedAt)} />}
                   {space.letterSignerName && <DetailRow label="Firmante" value={`${space.letterSignerName} (${space.letterSignerDocument})`} />}
                   {space.letterSignerIp && <DetailRow label="IP de firma" value={space.letterSignerIp} />}
-                  {(space as any).signedLetterPdfUrl && (
-                    <div className="mt-3 pt-3 border-t border-gray-700/50">
-                      <a
-                        href={(space as any).signedLetterPdfUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 rounded-xl text-emerald-300 text-sm font-medium transition-all hover:border-emerald-500/50"
-                      >
-                        <Download className="w-4 h-4" />
-                        Descargar Constancia PDF
-                      </a>
-                      <p className="text-[11px] text-gray-500 mt-1.5 ml-1">Documento legal con firma digital, fecha, IP y hash de verificación</p>
-                    </div>
-                  )}
+                  {space.letterAcceptedAt && <p className="mt-3 border-t border-gray-700/50 pt-3 text-xs text-gray-400">La descarga del PDF original está disponible al inicio de este detalle, en “Descargar carta firmada”.</p>}
                 </DetailSection>
               </div>
             </div>

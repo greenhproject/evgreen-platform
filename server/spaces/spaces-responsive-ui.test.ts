@@ -55,6 +55,25 @@ describe("Espacios mobile-first", () => {
     expect(detailDialogSource).not.toContain("sm:!max-w-4xl");
   });
 
+  it("mantiene el encabezado fuera del scroll y evita que bloquee las acciones", () => {
+    expect(detailDialogSource).toContain("!flex !flex-col !gap-0 !overflow-hidden");
+    expect(detailDialogSource).toContain("relative shrink-0 border-b");
+    expect(detailDialogSource).toContain('data-slot="space-detail-body"');
+    expect(detailDialogSource).toContain("min-h-0 flex-1 overflow-y-auto overscroll-contain");
+    expect(detailDialogSource).toContain("Cerrar detalle del espacio");
+    expect(detailDialogSource).not.toContain("sticky top-0");
+    expect(detailDialogSource).not.toContain("-mx-3 -mt-3");
+  });
+
+  it("ofrece la carta conservada antes de las acciones, sin abrir su URL remota", () => {
+    const downloadIndex = detailDialogSource.indexOf("<SignedLetterDownload");
+    expect(downloadIndex).toBeGreaterThan(0);
+    expect(downloadIndex).toBeLessThan(detailDialogSource.indexOf("Action buttons"));
+    expect(detailDialogSource).toContain("acceptedAt={space.letterAcceptedAt}");
+    expect(detailDialogSource).toContain("hasStoredPdf={Boolean(space.signedLetterPdfKey)}");
+    expect(detailDialogSource).not.toContain("href={(space as any).signedLetterPdfUrl}");
+  });
+
   it("mantiene la galería compacta, táctil y accesible", () => {
     expect(lightboxSource).toContain("grid-rows-[auto_minmax(0,1fr)_auto]");
     expect(lightboxSource).toContain("touch-pan-y");
